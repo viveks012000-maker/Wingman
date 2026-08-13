@@ -46,13 +46,22 @@
     window.safeStorageClear = safeStorage.clear.bind(safeStorage);
 
     // Dynamic Global API Endpoint Selector
-    const API_BASE_URL = (
-        (window.location.protocol === 'file:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.'))
-            ? 'http://localhost:3000'
-            : ''
-    );
-
-    function getApiBase() { return API_BASE_URL; }
+    function getApiBase() {
+        if (typeof window !== 'undefined') {
+            if (window.WINGMAN_CONFIG && window.WINGMAN_CONFIG.API_BASE_URL) return String(window.WINGMAN_CONFIG.API_BASE_URL).replace(/\/+$/, '');
+            if (window.API_BASE_URL) return String(window.API_BASE_URL).replace(/\/+$/, '');
+            if (window.RAILWAY_URL) return String(window.RAILWAY_URL).replace(/\/+$/, '');
+            if (window.BACKEND_API_URL) return String(window.BACKEND_API_URL).replace(/\/+$/, '');
+        }
+        const origin = (typeof window !== 'undefined' && window.location) ? window.location.origin : '';
+        if (origin === 'null' || (typeof window !== 'undefined' && window.location.protocol === 'file:')) {
+            return 'http://localhost:3000';
+        }
+        if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.'))) {
+            return 'http://localhost:3000';
+        }
+        return origin && origin !== 'null' ? origin : '';
+    }
 
     // ============================================================
     // GLOBAL STATE & LIFECYCLE
@@ -3026,4 +3035,47 @@ STRICT LAWS:
             const activeMode = isHotlineMode ? "hotline" : "roleplay";
             const missionId = activeScenario.toLowerCase().replace(/[^a-z0-9]/g, '_');
 
-            const userHeaderId = (window.currentSupabaseUser ? (window.currentSupabaseUser.id || window.currentSupabaseUser.email)
+            const userHeaderId = (window.currentSupabaseUser ? (window.currentSupabaseUser.id || window.currentSupabaseUser.email) : 'guest_user');
+            const token = window.getAuthToken ? window.getAuthToken() : null;
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = 'Bearer ' + token;
+
+            const chatResp = await fetch((apiBase || '') + '/api/chat', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({
+                    messages: activeSimulatorThread,
+                    scenario: activeScenario,
+                    mode: activeMode,
+                    isHotline: isHotlineMode,
+                    attractionScore: window.currentAttractionScore
+                })
+            });
+
+            window.showChatboxTypingIndicator(false);
+
+            if (chatResp.ok) {
+                const chatData = await chatResp.json();
+                if (chatData && chatData.reply) {
+                    const aiReply = chatData.reply;
+                    activeSimulatorThread.push({ role: "assistant", content: aiReply });
+                    window.renderChatboxBubble(aiReply, "assistant");
+                    if (typeof chatData.creditsRemaining === 'number') {
+                        window.updateCreditDisplay(chatData.creditsRemaining);
+                    }
+                } else if (chatData && chatData.error) {
+                    window.renderChatboxBubble("Notice: " + chatData.error, "assistant");
+                }
+            } else if (chatResp.status === 402) {
+                window.renderChatboxBubble("⚠️ Insufficient credits. Please top up credits to continue practicing.", "assistant");
+                if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal();
+            } else {
+                window.renderChatboxBubble("Sorry, Maeve is taking a quick breath. Please try sending your message again.", "assistant");
+            }
+        } catch (chatErr) {
+            window.showChatboxTypingIndicator(false);
+            console.error("Chatbox API Error:", chatErr);
+            window.renderChatboxBubble("Connection issue. Please check your network and try again.", "assistant");
+        }
+    };
+});

@@ -48,6 +48,7 @@
     // Dynamic Global API Endpoint Selector (Configurable Base URL Strategy)
     function getApiBase() {
         if (typeof window !== 'undefined') {
+            if (window.WINGMAN_CONFIG && window.WINGMAN_CONFIG.API_BASE_URL) return String(window.WINGMAN_CONFIG.API_BASE_URL).replace(/\/+$/, '');
             if (window.API_BASE_URL) return String(window.API_BASE_URL).replace(/\/+$/, '');
             if (window.RAILWAY_URL) return String(window.RAILWAY_URL).replace(/\/+$/, '');
             if (window.BACKEND_API_URL) return String(window.BACKEND_API_URL).replace(/\/+$/, '');
@@ -56,10 +57,10 @@
         if (origin === 'null' || (typeof window !== 'undefined' && window.location.protocol === 'file:')) {
             return 'http://localhost:3000';
         }
-        if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+        if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.'))) {
             return 'http://localhost:3000';
         }
-        return '';
+        return origin && origin !== 'null' ? origin : '';
     }
 
     // ============================================================
