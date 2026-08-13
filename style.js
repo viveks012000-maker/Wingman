@@ -45,8 +45,11 @@
     window.safeStorageRemove = safeStorage.remove.bind(safeStorage);
     window.safeStorageClear = safeStorage.clear.bind(safeStorage);
 
-    // Dynamic Global API Endpoint Selector (Strict Environment Lock)
+    // Dynamic Global API Endpoint Selector (Delegates to Authoritative window.getApiBase)
     function getApiBase() {
+        if (typeof window !== 'undefined' && typeof window.getApiBase === 'function' && window.getApiBase !== getApiBase) {
+            return window.getApiBase();
+        }
         if (typeof window !== 'undefined' && window.location) {
             const hostname = window.location.hostname || '';
             const protocol = window.location.protocol || '';
