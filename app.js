@@ -45,23 +45,44 @@
     window.safeStorageRemove = safeStorage.remove.bind(safeStorage);
     window.safeStorageClear = safeStorage.clear.bind(safeStorage);
 
-    // Dynamic Global API Endpoint Selector (Configurable Base URL Strategy)
+    // Dynamic Global API Endpoint Selector (Strict Environment Lock)
     function getApiBase() {
-        if (typeof window !== 'undefined') {
-            if (window.WINGMAN_CONFIG && window.WINGMAN_CONFIG.API_BASE_URL) return String(window.WINGMAN_CONFIG.API_BASE_URL).replace(/\/+$/, '');
+        if (typeof window !== 'undefined' && window.location) {
+            const hostname = window.location.hostname || '';
+            const protocol = window.location.protocol || '';
+            const origin = window.location.origin || '';
+
+            // 1. Strict Local Development Environment Lock
+            const isLocalEnv = (
+                protocol === 'file:' ||
+                origin === 'null' ||
+                hostname === 'localhost' ||
+                hostname === '127.0.0.1' ||
+                hostname.startsWith('192.168.') ||
+                hostname.startsWith('10.') ||
+                hostname.endsWith('.local')
+            );
+
+            if (isLocalEnv) {
+                return 'http://localhost:3000';
+            }
+
+            // 2. Production Environment Resolution (Cloudflare Pages / Hosted Domain)
+            if (window.WINGMAN_CONFIG && window.WINGMAN_CONFIG.API_BASE_URL) {
+                return String(window.WINGMAN_CONFIG.API_BASE_URL).replace(/\/+$/, '');
+            }
             if (window.API_BASE_URL) return String(window.API_BASE_URL).replace(/\/+$/, '');
             if (window.RAILWAY_URL) return String(window.RAILWAY_URL).replace(/\/+$/, '');
             if (window.BACKEND_API_URL) return String(window.BACKEND_API_URL).replace(/\/+$/, '');
+
+            // 3. Co-located Production Origin Fallback (No Localhost Fallback in Production)
+            if (origin && origin !== 'null') {
+                return origin.replace(/\/+$/, '');
+            }
         }
-        const origin = (typeof window !== 'undefined' && window.location) ? window.location.origin : '';
-        if (origin === 'null' || (typeof window !== 'undefined' && window.location.protocol === 'file:')) {
-            return 'http://localhost:3000';
-        }
-        if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.'))) {
-            return 'http://localhost:3000';
-        }
-        return origin && origin !== 'null' ? origin : '';
+        return '';
     }
+    window.getApiBase = getApiBase;
 
     // ============================================================
     // GLOBAL STATE & LIFECYCLE
