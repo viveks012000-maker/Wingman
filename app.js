@@ -558,15 +558,22 @@ STRICT LAWS:
         }
 
         if (state.uploadedFiles.length + validFiles.length > 5) {
-            window.showToast("Limit exceeded! You can upload up to 5 screenshots max.", "warning");
+            window.showToast("You can analyze a maximum of 5 images at a time.", "warning");
             return;
         }
 
+        let currentBatchBytes = 0;
         for (let s = 0; s < validFiles.length; s++) {
             if (validFiles[s].size > 5 * 1024 * 1024) {
-                window.showToast("Each screenshot must be under 5MB.", "warning");
+                window.showToast("Image is too large. Maximum size is 5 MB per image.", "warning");
                 return;
             }
+            currentBatchBytes += validFiles[s].size;
+        }
+
+        if (currentBatchBytes > 20 * 1024 * 1024) {
+            window.showToast("These images are too large. Maximum total upload size: 20 MB.", "warning");
+            return;
         }
 
         const si = $("screenshotInput");
@@ -1127,7 +1134,12 @@ STRICT LAWS:
 
             const tabs = ["analyzeSection", "icebreakSection", "optimizeSection", "chatboxSection"];
 
-            if (tabId !== "chatboxSection") {
+            if (tabId === "chatboxSection") {
+                const container = $("chatbox-messages-container");
+                if (!container || container.querySelectorAll(".animate-chat-bubble").length === 0) {
+                    if (typeof window.clearAndResetChatbox === "function") window.clearAndResetChatbox();
+                }
+            } else {
                 document.body.classList.remove("chat-keyboard-open");
                 if (typeof window.resetPracticeChat === "function") window.resetPracticeChat();
             }
@@ -1280,8 +1292,14 @@ STRICT LAWS:
 
             const bi = $("bioInput");
             const btn2 = $("generateIcebreakerBtn");
+            const bioCounter = $("bioCharCounter");
+            if (bi && bioCounter) {
+                const len = bi.value.length;
+                bioCounter.textContent = `${len.toLocaleString()} / 5,000`;
+                bioCounter.style.color = len > 5000 ? '#ef4444' : (len > 4500 ? '#f59e0b' : 'rgba(148, 163, 184, 0.6)');
+            }
             if (btn2) {
-                const isBioValid = bi && bi.value.trim().length >= 5;
+                const isBioValid = bi && bi.value.trim().length >= 5 && bi.value.length <= 5000;
                 const isBtn2Disabled = isLocked || !isBioValid || isLoading;
                 btn2.disabled = isBtn2Disabled;
                 btn2.classList.toggle("opacity-40", isLocked || !isBioValid);
@@ -1291,13 +1309,27 @@ STRICT LAWS:
 
             const ai = $("auditBioInput");
             const btn3 = $("runAuditBtn");
+            const auditCounter = $("auditBioCharCounter");
+            if (ai && auditCounter) {
+                const len = ai.value.length;
+                auditCounter.textContent = `${len.toLocaleString()} / 5,000`;
+                auditCounter.style.color = len > 5000 ? '#ef4444' : (len > 4500 ? '#f59e0b' : 'rgba(148, 163, 184, 0.6)');
+            }
             if (btn3) {
-                const isAuditValid = ai && ai.value.trim().length >= 5;
+                const isAuditValid = ai && ai.value.trim().length >= 5 && ai.value.length <= 5000;
                 const isBtn3Disabled = isLocked || !isAuditValid || isLoading;
                 btn3.disabled = isBtn3Disabled;
                 btn3.classList.toggle("opacity-40", isLocked || !isAuditValid);
                 btn3.classList.toggle("opacity-70", isLoading);
                 btn3.classList.toggle("cursor-not-allowed", isBtn3Disabled);
+            }
+
+            const ci = $("simulator-chat-input");
+            const chatCounter = $("chatCharCounter");
+            if (ci && chatCounter) {
+                const len = ci.value.length;
+                chatCounter.textContent = `${len.toLocaleString()} / 5,000`;
+                chatCounter.style.color = len > 5000 ? '#ef4444' : (len > 4500 ? '#f59e0b' : 'rgba(192, 132, 252, 0.6)');
             }
 
             const btn1 = $("runAnalysisBtn");
@@ -2032,6 +2064,13 @@ STRICT LAWS:
             ai.addEventListener("paste", function() { setTimeout(window.updateButtonStates, 50); });
         }
 
+        const ci = $("simulator-chat-input");
+        if (ci) {
+            ci.addEventListener("input", function() { window.updateButtonStates(); });
+            ci.addEventListener("keyup", function() { window.updateButtonStates(); });
+            ci.addEventListener("paste", function() { setTimeout(window.updateButtonStates, 50); });
+        }
+
         const si = $("screenshotInput");
         if (si) {
             si.addEventListener("change", function(e) {
@@ -2039,6 +2078,13 @@ STRICT LAWS:
                     window.processSelectedFiles(e.target.files);
                 }
             });
+        }
+
+        const container = $("chatbox-messages-container");
+        if (container && container.querySelectorAll(".animate-chat-bubble").length === 0) {
+            if (typeof window.clearAndResetChatbox === "function") {
+                window.clearAndResetChatbox();
+            }
         }
 
         window.updateTermsLockState();
@@ -2717,6 +2763,10 @@ STRICT LAWS:
             window.showNotification("Input Required", "You must enter a valid text input of at least 5 characters first.", "error");
             return;
         }
+        if (text.length > 5000) {
+            window.showNotification("Length Limit Exceeded", "Your message is too long. Maximum: 5,000 characters.", "error");
+            return;
+        }
         text = enforceWordLimitClient(text, 500);
 
         if (!state.isTermsAccepted) {
@@ -2792,6 +2842,10 @@ STRICT LAWS:
         let raw = ai ? ai.value.trim() : "";
         if (raw.length < 5) {
             window.showNotification("Input Required", "You must enter a valid text input of at least 5 characters first.", "error");
+            return;
+        }
+        if (raw.length > 5000) {
+            window.showNotification("Length Limit Exceeded", "Your message is too long. Maximum: 5,000 characters.", "error");
             return;
         }
         raw = enforceWordLimitClient(raw, 500);
@@ -2939,6 +2993,12 @@ STRICT LAWS:
                 : practicePartnerGreetings[Math.floor(Math.random() * practicePartnerGreetings.length)];
             window.renderChatboxBubble(openingLine, "assistant");
             activeSimulatorThread.push({ role: "assistant", content: openingLine });
+        }
+    };
+
+    window.resetPracticeChat = function() {
+        if (typeof window.clearAndResetChatbox === 'function') {
+            window.clearAndResetChatbox();
         }
     };
 
@@ -3123,6 +3183,11 @@ STRICT LAWS:
         if (!inputField) return;
         let userText = inputField.value.trim();
         if (!userText) return;
+
+        if (userText.length > 5000) {
+            window.showNotification("Length Limit Exceeded", "Your message is too long. Maximum: 5,000 characters.", "error");
+            return;
+        }
 
         userText = enforceWordLimitClient(userText, 500);
 

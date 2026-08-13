@@ -28,17 +28,17 @@ const authLimiter = rateLimit({
     legacyHeaders: false
 });
 
-// 3. Core AI Endpoints Rate Limiter: Max 60 requests / minute per IP (Skips local dev test runs)
+// 3. Core AI Endpoints Rate Limiter: Max 60 requests / minute per User ID / IP (User-aware)
 const apiLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 60,
-    message: { success: false, error: 'AI request limit reached. Please try again after 1 minute.' },
+    keyGenerator: (req) => {
+        return (req.user && (req.user.id || req.user.sub)) ? String(req.user.id || req.user.sub) : (req.ip || '127.0.0.1');
+    },
+    validate: { keyGeneratorIpFallback: false },
+    message: { success: false, error: "You're sending requests too quickly. Please wait a moment and try again." },
     standardHeaders: true,
-    legacyHeaders: false,
-    skip: (req) => {
-        const isLocalhost = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
-        return process.env.NODE_ENV !== 'production' && isLocalhost;
-    }
+    legacyHeaders: false
 });
 
 // Helper: Parse cookies safely from request headers
@@ -175,7 +175,7 @@ function blockSensitiveFiles(req, res, next) {
 function sanitizeString(str) {
     if (typeof str !== 'string') return str;
     return str
-        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+        .replace(/<script\b[\s\S]*?<\/script>/gi, '')
         .replace(/javascript:/gi, '')
         .replace(/onerror=/gi, '')
         .replace(/onload=/gi, '');

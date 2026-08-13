@@ -134,10 +134,21 @@ app.use(cors({
     credentials: true
 }));
 
-// 3. Global Rate Limiter (API Scoped) & Express Payload Limits
+// 3. Global Rate Limiter (API Scoped) & Scoped Express Payload Limits
 app.use('/api/', globalLimiter);
-app.use(express.json({ limit: '30mb' }));
-app.use(express.urlencoded({ limit: '30mb', extended: true }));
+app.use('/api/analyze', express.json({ limit: '28mb' }));
+app.use('/api/analyze-chat-screenshot', express.json({ limit: '28mb' }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ limit: '1mb', extended: true }));
+app.use((err, req, res, next) => {
+    if (err && (err.type === 'entity.too.large' || err.status === 413 || err.statusCode === 413)) {
+        return res.status(400).json({
+            success: false,
+            error: "These images are too large. Maximum total upload size: 20 MB."
+        });
+    }
+    next(err);
+});
 app.use('/api/', verifySupabaseToken);
 app.use('/api/', autoProvisionUser);
 app.use(validateImagePayload);
@@ -897,6 +908,15 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
     let deduction = null;
 
     try {
+        let { text, messages } = req.body || {};
+        const textCheck = text || (messages && messages[0] ? messages[0].content : "");
+        if (typeof textCheck === 'string' && textCheck.length > 5000) {
+            return res.status(400).json({
+                success: false,
+                error: "Your message is too long. Maximum: 5,000 characters."
+            });
+        }
+
         deduction = await verifyAndDeductCreditsDB(req, 1.0, 'analyze', reqId);
         if (!deduction.success) {
             if (deduction.unauthenticated) {
@@ -912,7 +932,7 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
             });
         }
 
-        const { tone, image, images, imageBase64, messages, shorthandOption, emojiOption } = req.body;
+        const { tone, image, images, imageBase64, shorthandOption, emojiOption } = req.body;
         const targetImage = image || imageBase64;
 
         // IMAGE PAYLOAD HANDLING: Accept up to 5 valid image data URLs or HTTP links
@@ -1288,6 +1308,15 @@ app.post('/api/icebreaker', requireSupabaseAuth, apiLimiter, async (req, res) =>
     let deduction = null;
 
     try {
+        let { text, bioText, messages } = req.body || {};
+        const textCheck = String(bioText || text || (messages && messages[0] ? messages[0].content : "") || "");
+        if (textCheck.length > 5000) {
+            return res.status(400).json({
+                success: false,
+                error: "Your message is too long. Maximum: 5,000 characters."
+            });
+        }
+
         deduction = await verifyAndDeductCreditsDB(req, 1.0, 'icebreaker', reqId);
         if (!deduction.success) {
             if (deduction.unauthenticated) {
@@ -1303,8 +1332,11 @@ app.post('/api/icebreaker', requireSupabaseAuth, apiLimiter, async (req, res) =>
             });
         }
 
-        let { tone, text, bioText, messages, shorthandOption, emojiOption } = req.body;
-        text = text || bioText || "";
+        const bodyData = req.body || {};
+        let tone = bodyData.tone;
+        let shorthandOption = bodyData.shorthandOption;
+        let emojiOption = bodyData.emojiOption;
+        let textVal = text || bioText || "";
         if (typeof text === 'string' && text.includes('FORCE_REFUND_TEST')) {
             throw new Error('Simulated AI Provider Network Failure');
         }
@@ -1535,6 +1567,15 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, apiLimite
     let deduction = null;
 
     try {
+        let { text, bioText, messages } = req.body || {};
+        const textCheck = text || bioText || (messages && messages[0] ? messages[0].content : "");
+        if (typeof textCheck === 'string' && textCheck.length > 5000) {
+            return res.status(400).json({
+                success: false,
+                error: "Your message is too long. Maximum: 5,000 characters."
+            });
+        }
+
         deduction = await verifyAndDeductCreditsDB(req, 1.0, 'optimize', reqId);
         if (!deduction.success) {
             if (deduction.unauthenticated) {
@@ -1550,7 +1591,10 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, apiLimite
             });
         }
 
-        let { tone, text, messages, style, shorthandOption, emojiOption } = req.body;
+        let tone = req.body.tone;
+        let style = req.body.style;
+        let shorthandOption = req.body.shorthandOption;
+        let emojiOption = req.body.emojiOption;
         const requestedStyle = tone || style || "Punchy";
         const useShorthand = shorthandOption !== false;
         const emojiLevel = typeof emojiOption === 'number' ? emojiOption : 1;
@@ -1779,6 +1823,26 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, apiLimiter, 
     let deduction = null;
 
     try {
+        let { message, userMessage, messages, conversationHistory, sessionHistory } = req.body || {};
+        const rawUserMsg = message || userMessage || (messages && messages.length > 0 ? messages[messages.length - 1].content : "");
+
+        if (typeof rawUserMsg === 'string' && rawUserMsg.length > 5000) {
+            return res.status(400).json({
+                success: false,
+                error: "Your message is too long. Maximum: 5,000 characters."
+            });
+        }
+
+        let historyArr = Array.isArray(conversationHistory) ? conversationHistory : (Array.isArray(sessionHistory) ? sessionHistory : (Array.isArray(messages) ? messages : []));
+        const totalContextLength = historyArr.reduce((acc, m) => acc + (typeof (m.content || m.text) === 'string' ? (m.content || m.text).length : 0), 0) + (typeof rawUserMsg === 'string' ? rawUserMsg.length : 0);
+
+        if (totalContextLength > 50000) {
+            return res.status(400).json({
+                success: false,
+                error: "Your conversation has reached the maximum context size."
+            });
+        }
+
         deduction = await verifyAndDeductCreditsDB(req, 0.2, 'chat', reqId);
         if (!deduction.success) {
             if (deduction.unauthenticated) {
@@ -1794,13 +1858,13 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, apiLimiter, 
             });
         }
 
-        const { mode, message, userMessage, conversationHistory, sessionHistory, scenario, shorthandOption, emojiOption } = req.body;
+        const { mode, scenario, shorthandOption, emojiOption } = req.body || {};
         const currentScenario = scenario || "Flirting & Teasing";
         const useShorthand = shorthandOption !== false;
         const emojiLevel = typeof emojiOption === 'number' ? emojiOption : 1;
         const isHotline = mode === "hotline" || currentScenario === "Coach Hotline";
 
-        const userTextRaw = message || userMessage || (req.body.messages && req.body.messages.length > 0 ? req.body.messages[req.body.messages.length - 1].content : "");
+        const userTextRaw = message || userMessage || (messages && messages.length > 0 ? messages[messages.length - 1].content : "");
         const userText = (userTextRaw || "").toLowerCase().trim();
 
         if (isHotline) {
@@ -1926,7 +1990,9 @@ STRICT FLIRTING & TEASING LAWS:
    - Output complete, natural sentences with clean endings. Never leave thoughts truncated or cut off mid-phrase.`;
         }
 
-        let historyArr = req.body.messages || conversationHistory || sessionHistory || [];
+        if (!historyArr || historyArr.length === 0) {
+            historyArr = (req.body && req.body.messages) || conversationHistory || sessionHistory || [];
+        }
         const nonSystemHistory = (historyArr || []).filter(m => m.role !== 'system').map(m => {
             let textVal = m.content || m.text || "";
             textVal = textVal.replace(/(showtunes|alien time|27 o'clock|spill the tea|spill tea)/gi, "tease me for my dry text");
@@ -2389,6 +2455,12 @@ app.get('/api/config', (req, res) => {
 
 // Centralized Error Handler (Prevents stack trace leaks)
 app.use((err, req, res, next) => {
+    if (err && (err.type === 'entity.too.large' || err.status === 413 || err.statusCode === 413)) {
+        return res.status(400).json({
+            success: false,
+            error: "These images are too large. Maximum total upload size: 20 MB."
+        });
+    }
     if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
         return res.status(400).json({ success: false, error: "Invalid JSON body format." });
     }
