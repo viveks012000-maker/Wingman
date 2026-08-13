@@ -274,22 +274,51 @@ async function getUserCreditsDB(req) {
     try {
         const { data, error } = await supabaseAdmin
             .from('profiles')
-            .select('credits')
+            .select('credits, created_at, updated_at')
             .eq('id', uid)
             .maybeSingle();
 
         if (!error && data && typeof data.credits === 'number') {
+            // Check if profile was freshly created by DB trigger with default 100 credits
+            const isFreshProfile = data.credits === 100 && (
+                !data.updated_at ||
+                data.created_at === data.updated_at ||
+                (new Date(data.updated_at).getTime() - new Date(data.created_at).getTime() < 5000)
+            );
+
+            if (isFreshProfile) {
+                // Initialize brand-new profile to exactly 50 credits ONCE upon signup
+                const nowIso = new Date().toISOString();
+                try {
+                    await supabaseAdmin
+                        .from('profiles')
+                        .update({ credits: 50, updated_at: nowIso })
+                        .eq('id', uid);
+                    return 50 / CREDITS_PER_INR;
+                } catch (uErr) {}
+            }
+
             return Number(data.credits) / CREDITS_PER_INR;
         }
 
-        // Auto-provision profile row in Supabase 'profiles' table if missing
+        // Brand-new profile creation if DB trigger did not run
         try {
             await supabaseAdmin
                 .from('profiles')
-                .upsert({ id: uid, credits: 0 });
+                .insert({ id: uid, credits: 50 });
         } catch (autoErr) {}
 
-        return 0.00;
+        const { data: newProf } = await supabaseAdmin
+            .from('profiles')
+            .select('credits')
+            .eq('id', uid)
+            .maybeSingle();
+
+        if (newProf && typeof newProf.credits === 'number') {
+            return Number(newProf.credits) / CREDITS_PER_INR;
+        }
+
+        return 50 / CREDITS_PER_INR;
     } catch (e) {
         console.warn(`[getUserCreditsDB Notice] Supabase query notice for ${uid}:`, e.message);
         return 0.00;
