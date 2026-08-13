@@ -27,13 +27,7 @@ const cors = require('cors');
 
 const CREDITS_PER_INR = 10;
 const helmet = require('helmet');
-let initializeDatabase = null;
-try {
-    initializeDatabase = require('./database').initializeDatabase;
-} catch (dbLoadErr) {
-    console.warn('[DB Notice] Native sqlite3 package unavailable. Server operating in pure 3-Tier Supabase Postgres mode.');
-}
-let db = null; // Global SQLite database instance (optional secondary cache)
+let db = null; // Global SQLite database instance (disabled in production, optional dev cache)
 
 const { TARGET_MARKET_LOCK, BIO_MODE_PROMPTS, MAEVE_SYSTEM_PROMPT } = require('./config/promptSystem');
 
@@ -2290,13 +2284,21 @@ app.use((err, req, res, next) => {
 // Server Startup (Supabase Postgres Primary, Optional Local SQLite Fallback)
 async function startWingmanServer() {
     try {
-        if (typeof initializeDatabase === 'function') {
+        const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
+        if (!isProduction && process.env.ENABLE_LOCAL_SQLITE === 'true') {
             try {
+                const { initializeDatabase } = require('./database');
                 db = await initializeDatabase();
-                console.log("[DB Notice] Local SQLite attached as secondary storage.");
+                if (db) {
+                    console.log("[DB Notice] Local SQLite attached as secondary dev storage.");
+                } else {
+                    console.warn("[DB Notice] Local SQLite driver unavailable, running with Supabase Postgres primary storage.");
+                }
             } catch (dbErr) {
                 console.warn("[DB Notice] Local SQLite unavailable, running with Supabase Postgres primary storage.");
             }
+        } else {
+            console.log("[DB Notice] Production environment detected (or local SQLite disabled). Running in pure 3-Tier Supabase Postgres mode.");
         }
         const server = app.listen(PORT, '0.0.0.0', () => {
             console.log(`🚀 Secure Wingman 3-Tier Backend Online on port ${PORT} (Supabase Postgres Active)`);

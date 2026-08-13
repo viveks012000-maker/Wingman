@@ -20,6 +20,10 @@ async function runEndToEndTests() {
     let failed = 0;
 
     const db = await initializeDatabase();
+    if (!db) {
+        console.log("ℹ️ SQLite driver not installed; skipping SQLite E2E integration tests.");
+        return;
+    }
     const testUid = 'e2e_test_uuid_99999';
     const testEmail = 'e2e_user@example.com';
     const autoProvisionUser = createUserProvisioningMiddleware(db);

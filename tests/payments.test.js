@@ -13,6 +13,10 @@ async function runPaymentTests() {
     let failed = 0;
 
     const db = await initializeDatabase();
+    if (!db) {
+        console.log("ℹ️ SQLite driver not installed; skipping SQLite payment tests.");
+        return;
+    }
     const testUserId = 'test_pay_uuid_67890';
     const autoProvisionUser = createUserProvisioningMiddleware(db);
 

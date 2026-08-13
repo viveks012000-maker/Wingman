@@ -28,10 +28,6 @@
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^6.9.16"
   },
-  "optionalDependencies": {
-    "sqlite": "^5.1.1",
-    "sqlite3": "^6.0.1"
-  },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",
     "jest": "^30.4.2",

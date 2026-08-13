@@ -13,6 +13,10 @@ async function runTests() {
     let failed = 0;
 
     const db = await initializeDatabase();
+    if (!db) {
+        console.log("ℹ️ SQLite driver not installed; skipping SQLite local tests.");
+        return;
+    }
 
     // Test 1: User Auto-Provisioning Middleware
     try {

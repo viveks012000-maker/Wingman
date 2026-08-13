@@ -1,7 +1,4 @@
-const sqlite3 = require('sqlite3');
-const { open } = require('sqlite');
 const path = require('path');
-
 const fs = require('fs');
 
 const DATA_DIR = path.join(__dirname, 'data');
@@ -23,6 +20,16 @@ if (fs.existsSync(LEGACY_DB_PATH) && !fs.existsSync(DB_PATH)) {
 }
 
 async function initializeDatabase() {
+    let sqlite3 = null;
+    let open = null;
+    try {
+        sqlite3 = require('sqlite3');
+        open = require('sqlite').open;
+    } catch (driverErr) {
+        console.warn('[DB Notice] Native sqlite3/sqlite package not available. SQLite storage skipped.');
+        return null;
+    }
+
     const targetDbPath = fs.existsSync(DB_PATH) ? DB_PATH : (fs.existsSync(LEGACY_DB_PATH) ? LEGACY_DB_PATH : DB_PATH);
     const db = await open({
         filename: targetDbPath,
