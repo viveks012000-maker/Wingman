@@ -262,9 +262,7 @@ async function ensureUserProfile(uid, email) {
     }
 }
 
-// Read credits from Supabase Postgres 'profiles' table with optional SQLite fallback
-const devCreditsMap = {};
-
+// Read credits from Supabase Postgres 'profiles' table (Authoritative Source of Truth)
 async function getUserCreditsDB(req) {
     const uid = getUserIdFromReq(req);
     if (!uid || uid === 'guest_user') {
@@ -284,20 +282,15 @@ async function getUserCreditsDB(req) {
             return Number(data.credits) / CREDITS_PER_INR;
         }
 
-        if (typeof devCreditsMap[uid] === 'number') {
-            return devCreditsMap[uid] / CREDITS_PER_INR;
-        }
-
         // Auto-provision profile row in Supabase 'profiles' table if missing
         try {
             await supabaseAdmin
                 .from('profiles')
                 .upsert({ id: uid, credits: 0 });
         } catch (autoErr) {}
-            
-        return (devCreditsMap[uid] || 0) / CREDITS_PER_INR;
+
+        return 0.00;
     } catch (e) {
-        if (typeof devCreditsMap[uid] === 'number') return devCreditsMap[uid] / CREDITS_PER_INR;
         console.warn(`[getUserCreditsDB Notice] Supabase query notice for ${uid}:`, e.message);
         return 0.00;
     }
@@ -333,7 +326,7 @@ async function verifyAndDeductCreditsDB(req, costInr, featureName = 'ai_feature'
     const costCredits = Math.round(costInr * CREDITS_PER_INR);
     const reqId = idempotencyKey || ('req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
 
-    // Priority 1: Try atomic Postgres RPC function 'deduct_credits' in Supabase
+    // Priority 1: Atomic Postgres RPC function 'deduct_credits' in Supabase
     try {
         const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('deduct_credits', {
             p_user_id: uid,
@@ -342,24 +335,32 @@ async function verifyAndDeductCreditsDB(req, costInr, featureName = 'ai_feature'
             p_request_id: reqId
         });
 
-        if (!rpcErr && rpcRes && typeof rpcRes === 'object') {
-            if (rpcRes.success === false) {
-                return { success: false, currentCredits: typeof rpcRes.currentCredits === 'number' ? rpcRes.currentCredits : 0 };
-            }
-            if (rpcRes.success === true) {
-                const rem = typeof rpcRes.remainingCredits === 'number' ? rpcRes.remainingCredits : 0;
-                return {
-                    success: true,
-                    remainingCredits: rem,
-                    remainingInr: rem / CREDITS_PER_INR
-                };
+        if (!rpcErr && rpcRes) {
+            const row = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
+            if (row && typeof row === 'object') {
+                if (row.success === false) {
+                    const currentBal = typeof row.new_balance === 'number' ? row.new_balance : (typeof row.currentCredits === 'number' ? row.currentCredits : 0);
+                    return {
+                        success: false,
+                        currentCredits: currentBal,
+                        error: row.error_message || 'Insufficient credit balance.'
+                    };
+                }
+                if (row.success === true) {
+                    const rem = typeof row.new_balance === 'number' ? row.new_balance : (typeof row.remainingCredits === 'number' ? row.remainingCredits : 0);
+                    return {
+                        success: true,
+                        remainingCredits: rem,
+                        remainingInr: rem / CREDITS_PER_INR
+                    };
+                }
             }
         }
     } catch (rpcEx) {
-        // Fallback to table query if RPC function is not installed in Supabase Postgres
+        // Fallback to direct query pipeline if RPC function is unavailable
     }
 
-    // Priority 2: Standard Supabase Postgres Query Pipeline
+    // Priority 2: Direct Supabase Postgres Query Pipeline
     try {
         const { data: profile, error: selectErr } = await supabaseAdmin
             .from('profiles')
@@ -371,47 +372,40 @@ async function verifyAndDeductCreditsDB(req, costInr, featureName = 'ai_feature'
 
         let currentCredits = (profile && typeof profile.credits === 'number')
             ? Number(profile.credits)
-            : (typeof devCreditsMap[uid] === 'number' ? devCreditsMap[uid] : 0);
+            : 0;
 
         if (!profile) {
             try { await supabaseAdmin.from('profiles').upsert({ id: uid, credits: 0 }); } catch (e) {}
-            currentCredits = typeof devCreditsMap[uid] === 'number' ? devCreditsMap[uid] : 0;
+            currentCredits = 0;
         }
 
         if (currentCredits < costCredits) {
-            return { success: false, currentCredits: currentCredits };
+            return { success: false, currentCredits: currentCredits, error: 'Insufficient credit balance.' };
         }
 
         const remainingCredits = currentCredits - costCredits;
-        devCreditsMap[uid] = remainingCredits;
 
-        try {
-            const { error: updateErr } = await supabaseAdmin
-                .from('profiles')
-                .update({ credits: remainingCredits })
-                .eq('id', uid);
-            if (updateErr && process.env.NODE_ENV === 'production') {
-                console.error('[verifyAndDeductCreditsDB Supabase Update ERROR]:', updateErr.message);
-            }
-        } catch (updateEx) {}
+        const { error: updateErr } = await supabaseAdmin
+            .from('profiles')
+            .update({ credits: remainingCredits })
+            .eq('id', uid);
 
-        // Log entry in credit_transactions
+        if (updateErr) {
+            console.error('[verifyAndDeductCreditsDB Supabase Update ERROR]:', updateErr.message);
+            return { success: false, currentCredits: currentCredits, error: 'Credit update failed.' };
+        }
+
+        // Audit log entry in credit_transactions
         try {
             await supabaseAdmin
                 .from('credit_transactions')
                 .insert({
                     user_id: uid,
                     amount: -costCredits,
-                    feature: featureName,
-                    request_id: reqId,
                     created_at: new Date().toISOString()
                 });
         } catch (txErr) {
             console.warn('[credit_transactions audit notice]:', txErr.message);
-        }
-
-        if (db && process.env.ENABLE_LOCAL_SQLITE === 'true') {
-            db.run('UPDATE user_profiles SET credits_balance = ROUND(credits_balance - ?, 2) WHERE user_id = ? AND credits_balance >= ?', [costInr, uid, costInr]).catch(() => {});
         }
 
         return {
@@ -421,14 +415,7 @@ async function verifyAndDeductCreditsDB(req, costInr, featureName = 'ai_feature'
         };
     } catch (err) {
         console.warn('[verifyAndDeductCreditsDB Notice] Supabase credit deduction error:', err.message);
-        // CRITICAL SECURITY RULE: In production, NEVER fall back to SQLite for credit mutations. Return 500 error.
-        if (process.env.NODE_ENV === 'production' || process.env.ENABLE_LOCAL_SQLITE !== 'true') {
-            return { success: false, currentCredits: 0, error: 'Credit service unavailable. Please try again.' };
-        }
-        if (db) {
-            return await verifyAndDeductCreditsSQLite(req, costInr, featureName, reqId);
-        }
-        return { success: false, currentCredits: 0, error: 'Database service unavailable.' };
+        return { success: false, currentCredits: 0, error: 'Credit service unavailable. Please try again.' };
     }
 }
 
@@ -482,60 +469,38 @@ async function addUserCreditsDB(req, amountInr, tierName = 'purchase', paymentId
 
     const addCredits = Math.round(amountInr * CREDITS_PER_INR);
 
-    try {
-        const { data: profile } = await supabaseAdmin
-            .from('profiles')
-            .select('credits')
-            .eq('id', uid)
-            .maybeSingle();
+    const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('credits')
+        .eq('id', uid)
+        .maybeSingle();
 
-        const currentCredits = (profile && typeof profile.credits === 'number')
-            ? Number(profile.credits)
-            : (typeof devCreditsMap[uid] === 'number' ? devCreditsMap[uid] : 0);
-        const newCredits = currentCredits + addCredits;
-        devCreditsMap[uid] = newCredits;
+    const currentCredits = (profile && typeof profile.credits === 'number') ? Number(profile.credits) : 0;
+    const newCredits = currentCredits + addCredits;
 
-        try {
-            const { error: upsertErr } = await supabaseAdmin
-                .from('profiles')
-                .upsert({ id: uid, credits: newCredits });
-            if (upsertErr && process.env.NODE_ENV === 'production') {
-                console.error('[addUserCreditsDB Supabase Upsert ERROR]:', upsertErr.message);
-            }
-        } catch (upsertEx) {}
+    const { error: upsertErr } = await supabaseAdmin
+        .from('profiles')
+        .upsert({ id: uid, credits: newCredits });
 
-        // Log entry in credit_transactions
-        try {
-            await supabaseAdmin
-                .from('credit_transactions')
-                .insert({
-                    user_id: uid,
-                    amount: addCredits,
-                    feature: tierName,
-                    payment_id: paymentId || ('sim_' + Date.now()),
-                    created_at: new Date().toISOString()
-                });
-        } catch (txErr) {
-            console.warn('[credit_transactions topup notice]:', txErr.message);
-        }
-
-        if (db) {
-            db.run('UPDATE user_profiles SET credits_balance = ROUND(credits_balance + ?, 2) WHERE user_id = ?', [amountInr, uid]).catch(() => {});
-        }
-
-        return newCredits / CREDITS_PER_INR;
-    } catch (err) {
-        console.warn('[addUserCreditsDB Notice] Supabase top-up failed, attempting local fallback:', err.message);
-        if (db) {
-            await ensureUserProfile(uid, (req.user && req.user.email) || null);
-            return await withTransactionRetry(db, async (db) => {
-                await db.run('UPDATE user_profiles SET credits_balance = ROUND(credits_balance + ?, 2) WHERE user_id = ?', [amountInr, uid]);
-                const updatedRow = await db.get('SELECT credits_balance FROM user_profiles WHERE user_id = ?', [uid]);
-                return updatedRow ? Number(updatedRow.credits_balance) : 0.00;
-            });
-        }
-        throw err;
+    if (upsertErr) {
+        console.error('[addUserCreditsDB Supabase Upsert ERROR]:', upsertErr.message);
+        throw new Error('Failed to update credit balance in Supabase database.');
     }
+
+    // Log entry in credit_transactions
+    try {
+        await supabaseAdmin
+            .from('credit_transactions')
+            .insert({
+                user_id: uid,
+                amount: addCredits,
+                created_at: new Date().toISOString()
+            });
+    } catch (txErr) {
+        console.warn('[credit_transactions topup notice]:', txErr.message);
+    }
+
+    return newCredits / CREDITS_PER_INR;
 }
 
 function sanitizeResponseText(text) {
