@@ -111,6 +111,9 @@ function isOriginAllowed(origin, allowedList) {
     if (/^https:\/\/[a-zA-Z0-9-]+\.pages\.dev$/.test(origin)) {
         return true;
     }
+    if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        return true;
+    }
     return false;
 }
 
