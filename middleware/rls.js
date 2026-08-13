@@ -23,6 +23,11 @@ class RlsError extends Error {
 
 const SAFE_ORDER_BY = ['created_at DESC', 'created_at ASC'];
 
+let supabaseAdmin = null;
+try {
+    supabaseAdmin = require('./supabaseAuth').supabaseAdmin;
+} catch (e) {}
+
 /**
  * Build a scoped data-access handle bound to the authenticated request.
  * Every returned helper refuses to run without a server-validated user id and always
@@ -53,32 +58,59 @@ function forRequest(req, db) {
         async list(table, { orderBy = 'created_at DESC' } = {}) {
             assertAuthenticated();
             assertScopedTable(table);
-            const order = SAFE_ORDER_BY.includes(orderBy) ? orderBy : 'created_at DESC';
-            try {
-                return await db.all(`SELECT * FROM ${table} WHERE user_id = ? ORDER BY ${order}`, uid);
-            } catch (e) {
-                return [];
+            if (db) {
+                const order = SAFE_ORDER_BY.includes(orderBy) ? orderBy : 'created_at DESC';
+                try {
+                    return await db.all(`SELECT * FROM ${table} WHERE user_id = ? ORDER BY ${order}`, uid);
+                } catch (e) {
+                    return [];
+                }
             }
+            if (supabaseAdmin) {
+                try {
+                    const { data } = await supabaseAdmin.from(table).select('*').eq('user_id', uid);
+                    return data || [];
+                } catch (e) {
+                    return [];
+                }
+            }
+            return [];
         },
 
         /** INSERT a row with user_id forced to the validated uid (client cannot set owner). */
         async create(table, columns, values) {
             assertAuthenticated();
             assertScopedTable(table);
-            const cols = [...columns, 'user_id'];
-            const params = [...values, uid];
-            const placeholders = params.map(() => '?').join(', ');
-            return db.run(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders})`, params);
+            if (db) {
+                const cols = [...columns, 'user_id'];
+                const params = [...values, uid];
+                const placeholders = params.map(() => '?').join(', ');
+                return db.run(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders})`, params);
+            }
+            if (supabaseAdmin) {
+                try {
+                    const rowObj = { user_id: uid };
+                    columns.forEach((col, idx) => { rowObj[col] = values[idx]; });
+                    return await supabaseAdmin.from(table).insert([rowObj]);
+                } catch (e) {}
+            }
         },
 
         /** Hard-delete EVERY row owned by the validated uid across all scoped tables. */
         async purgeAll() {
             assertAuthenticated();
-            for (const table of USER_SCOPED_TABLES) {
-                try {
-                    await db.run(`DELETE FROM ${table} WHERE user_id = ?`, uid);
-                } catch (e) {
-                    // Continue purging remaining tables.
+            if (db) {
+                for (const table of USER_SCOPED_TABLES) {
+                    try {
+                        await db.run(`DELETE FROM ${table} WHERE user_id = ?`, uid);
+                    } catch (e) {}
+                }
+            }
+            if (supabaseAdmin) {
+                for (const table of USER_SCOPED_TABLES) {
+                    try {
+                        await supabaseAdmin.from(table).delete().eq('user_id', uid);
+                    } catch (e) {}
                 }
             }
         }

@@ -27,9 +27,13 @@ const cors = require('cors');
 
 const CREDITS_PER_INR = 10;
 const helmet = require('helmet');
-const crypto = require('crypto');
-const { initializeDatabase } = require('./database');
-let db; // Global SQLite database instance
+let initializeDatabase = null;
+try {
+    initializeDatabase = require('./database').initializeDatabase;
+} catch (dbLoadErr) {
+    console.warn('[DB Notice] Native sqlite3 package unavailable. Server operating in pure 3-Tier Supabase Postgres mode.');
+}
+let db = null; // Global SQLite database instance (optional secondary cache)
 
 const { TARGET_MARKET_LOCK, BIO_MODE_PROMPTS, MAEVE_SYSTEM_PROMPT } = require('./config/promptSystem');
 
@@ -2137,9 +2141,15 @@ app.get('/api/health', async (req, res) => {
         let userCount = 0;
         let dbStatus = 'disconnected';
         if (db) {
-            dbStatus = 'connected';
+            dbStatus = 'sqlite_active';
             const countRow = await db.get('SELECT COUNT(*) as count FROM user_profiles');
             userCount = countRow ? countRow.count : 0;
+        } else if (supabaseAdmin) {
+            dbStatus = 'supabase_active';
+            try {
+                const { count } = await supabaseAdmin.from('profiles').select('id', { count: 'exact', head: true });
+                userCount = count || 0;
+            } catch (sErr) {}
         }
         res.json({
             status: 'ok',
