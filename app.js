@@ -1792,8 +1792,11 @@ STRICT LAWS:
             else b.classList.remove("hidden");
         }
 
-        const canvas = $("ambient-plexus-canvas");
-        if (canvas) canvas.style.display = 'block';
+        if (state.showPlexus !== false) {
+            if (typeof window.startPlexusAnimation === 'function') window.startPlexusAnimation();
+        } else {
+            if (typeof window.stopPlexusAnimation === 'function') window.stopPlexusAnimation();
+        }
     };
 
     // ============================================================
@@ -2043,12 +2046,188 @@ STRICT LAWS:
             plexusInput.addEventListener("change", function(e) {
                 state.showPlexus = e.target.checked;
                 safeStorage.set("wingman_setting_plexus", e.target.checked ? "true" : "false");
+                if (state.showPlexus) {
+                    if (typeof window.startPlexusAnimation === "function") window.startPlexusAnimation();
+                } else {
+                    if (typeof window.stopPlexusAnimation === "function") window.stopPlexusAnimation();
+                }
             });
+        }
+    }
+
+    // ============================================================
+    // STAR PLEXUS CANVAS ANIMATION SYSTEM (HIGH-DPI & HIGH-CONTRAST)
+    // ============================================================
+    function initAmbientPlexusCanvas() {
+        const canvas = document.getElementById("ambient-plexus-canvas");
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+
+        let dpr = Math.max(1, window.devicePixelRatio || 1);
+        let cssWidth = window.innerWidth || document.documentElement.clientWidth;
+        let cssHeight = window.innerHeight || document.documentElement.clientHeight;
+
+        function resizeCanvas() {
+            dpr = Math.max(1, window.devicePixelRatio || 1);
+            cssWidth = window.innerWidth || document.documentElement.clientWidth;
+            cssHeight = window.innerHeight || document.documentElement.clientHeight;
+
+            canvas.width = Math.floor(cssWidth * dpr);
+            canvas.height = Math.floor(cssHeight * dpr);
+            canvas.style.width = cssWidth + "px";
+            canvas.style.height = cssHeight + "px";
+
+            for (let i = 0; i < numParticles; i++) {
+                const p = particles[i];
+                if (p) {
+                    if (p.x > cssWidth) p.x = Math.random() * cssWidth;
+                    if (p.y > cssHeight) p.y = Math.random() * cssHeight;
+                }
+            }
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('orientationchange', resizeCanvas);
+
+        const isMobile = window.innerWidth < 768;
+        const numParticles = Math.min(65, Math.max(isMobile ? 32 : 20, Math.floor((cssWidth * cssHeight) / (isMobile ? 9000 : 18000))));
+        const particles = [];
+
+        for (let i = 0; i < numParticles; i++) {
+            particles.push({
+                x: Math.random() * cssWidth,
+                y: Math.random() * cssHeight,
+                vx: (Math.random() - 0.5) * (isMobile ? 0.6 : 0.45),
+                vy: (Math.random() - 0.5) * (isMobile ? 0.6 : 0.45),
+                radius: Math.random() * (isMobile ? 2.8 : 2.4) + (isMobile ? 1.8 : 1.5)
+            });
+        }
+
+        resizeCanvas();
+
+        let mouse = { x: null, y: null, radius: 170 };
+        window.addEventListener("mousemove", function (e) {
+            if (e.target.closest('#pricing') || e.target.closest('#pricingTiers') || e.target.closest('.pricing-tier-card') || e.target.closest('.glass-card')) {
+                mouse.x = null;
+                mouse.y = null;
+                return;
+            }
+            const rect = canvas.getBoundingClientRect();
+            mouse.x = e.clientX - rect.left;
+            mouse.y = e.clientY - rect.top;
+        });
+        window.addEventListener("mouseleave", function () {
+            mouse.x = null;
+            mouse.y = null;
+        });
+
+        let animId = null;
+
+        function animate() {
+            if (state.showPlexus === false) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                canvas.style.display = 'none';
+                animId = null;
+                return;
+            }
+
+            canvas.style.display = 'block';
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            ctx.scale(dpr, dpr);
+
+            ctx.shadowBlur = 0;
+
+            for (let i = 0; i < numParticles; i++) {
+                const p = particles[i];
+
+                p.x += p.vx;
+                p.y += p.vy;
+
+                if (p.x < 0) { p.x = 0; p.vx *= -1; }
+                else if (p.x > cssWidth) { p.x = cssWidth; p.vx *= -1; }
+                if (p.y < 0) { p.y = 0; p.vy *= -1; }
+                else if (p.y > cssHeight) { p.y = cssHeight; p.vy *= -1; }
+
+                if (mouse.x !== null && mouse.y !== null) {
+                    const dx = mouse.x - p.x;
+                    const dy = mouse.y - p.y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist < mouse.radius) {
+                        const force = (mouse.radius - dist) / mouse.radius;
+                        p.x += (dx / dist) * force * 0.7;
+                        p.y += (dy / dist) * force * 0.7;
+                    }
+                }
+
+                // Node bright neon glow
+                ctx.shadowBlur = 18;
+                ctx.shadowColor = '#d946ef';
+
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.fillStyle = "rgba(217, 70, 239, 0.95)";
+                ctx.fill();
+                ctx.closePath();
+
+                // Core highlight center dot
+                ctx.shadowBlur = 0;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius * 0.5, 0, Math.PI * 2);
+                ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+                ctx.fill();
+                ctx.closePath();
+
+                for (let j = i + 1; j < numParticles; j++) {
+                    const p2 = particles[j];
+                    const dx = p.x - p2.x;
+                    const dy = p.y - p2.y;
+                    const dist = Math.hypot(dx, dy);
+                    const maxDist = isMobile ? 110 : 135;
+                    if (dist < maxDist) {
+                        ctx.beginPath();
+                        ctx.moveTo(p.x, p.y);
+                        ctx.lineTo(p2.x, p2.y);
+                        const alpha = (maxDist - dist) / maxDist;
+                        ctx.strokeStyle = `rgba(192, 132, 252, ${alpha * 0.85})`;
+                        ctx.lineWidth = 1.35;
+                        ctx.stroke();
+                        ctx.closePath();
+                    }
+                }
+            }
+
+            ctx.restore();
+            animId = requestAnimationFrame(animate);
+        }
+
+        window.startPlexusAnimation = function () {
+            if (!animId && state.showPlexus !== false) {
+                canvas.style.display = 'block';
+                animId = requestAnimationFrame(animate);
+            }
+        };
+
+        window.stopPlexusAnimation = function () {
+            if (animId) {
+                cancelAnimationFrame(animId);
+                animId = null;
+            }
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            canvas.style.display = 'none';
+        };
+
+        if (state.showPlexus !== false) {
+            window.startPlexusAnimation();
+        } else {
+            canvas.style.display = 'none';
         }
     }
 
     function initFormInputListeners() {
         initSettingsListeners();
+        initAmbientPlexusCanvas();
 
         const bi = $("bioInput");
         if (bi) {
@@ -2101,6 +2280,11 @@ STRICT LAWS:
         if (plexusInput) {
             state.showPlexus = plexusInput.checked;
             safeStorage.set("wingman_setting_plexus", plexusInput.checked ? "true" : "false");
+            if (state.showPlexus) {
+                if (typeof window.startPlexusAnimation === "function") window.startPlexusAnimation();
+            } else {
+                if (typeof window.stopPlexusAnimation === "function") window.stopPlexusAnimation();
+            }
         }
     };
 
