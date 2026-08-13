@@ -267,7 +267,7 @@ STRICT LAWS:
                     .from('profiles')
                     .select('credits')
                     .eq('id', userId)
-                    .single();
+                    .maybeSingle();
                 if (!error && data && typeof data.credits === 'number') {
                     window.updateUICredits(data.credits);
                     return data.credits;

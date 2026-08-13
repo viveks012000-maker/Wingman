@@ -81,7 +81,7 @@
         return t && typeof t === 'string' && t.trim().length > 10 && t !== 'undefined' && t !== 'null';
     }
 
-    // Direct Supabase 'profiles' Table Credit Reader
+    // Direct Supabase 'profiles' Table Credit Reader (Safe 406-Free Query)
     window.fetchProfileCredits = async function(userId) {
         const client = window.supabaseClient;
         if (!client || !userId) return null;
@@ -90,12 +90,26 @@
                 .from('profiles')
                 .select('credits')
                 .eq('id', userId)
-                .single();
+                .maybeSingle();
             if (!error && data && typeof data.credits === 'number') {
                 return data.credits;
             }
+            if (!error && !data) {
+                // Profile row missing in Supabase. Query trusted backend to safely auto-provision profile (0 initial credits)
+                const apiBase = typeof window.getApiBase === 'function' ? window.getApiBase() : '';
+                const headers = typeof window.getSupabaseAuthHeaders === 'function' ? await window.getSupabaseAuthHeaders() : {};
+                const resp = await fetch((apiBase || '') + '/api/credits', { headers: headers });
+                if (resp.ok) {
+                    const creditData = await resp.json();
+                    if (creditData && creditData.data && typeof creditData.data.credits_inr === 'number') {
+                        return Math.round(creditData.data.credits_inr * 10);
+                    } else if (creditData && typeof creditData.credits === 'number') {
+                        return creditData.credits;
+                    }
+                }
+            }
         } catch (e) {
-            console.warn('[SupabaseClient] Error querying profiles credits:', e);
+            console.warn('[SupabaseClient] Notice querying profiles credits:', e);
         }
         return null;
     };
