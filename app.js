@@ -2807,4 +2807,386 @@ STRICT LAWS:
         }
     };
 
+    // ============================================================
+    // PRACTICE PARTNER CHAT DRILL PROTOCOLS & WINDOW EXPORTS
+    // ============================================================
+    const practicePartnerGreetings = [
+        "Hey! Ready to practice your conversation skills? Pick a scenario and send your opener!",
+        "Hey there! What scenario do you want to practice today?",
+        "Hey! Let's drill text responses. Send your opener whenever you're ready!"
+    ];
+
+    window.currentAttractionScore = 65;
+    window.sessionStats = {
+        messagesSent: 0,
+        attractionHistory: [65],
+        dryMessageCount: 0,
+        totalWords: 0,
+        apologyCount: 0,
+        hasDateOffer: false
+    };
+
+    window.loadPresetBio = function(btn) {
+        if (!state.isTermsAccepted) {
+            window.highlightTermsCheckbox();
+            window.showToast("Please agree to the Terms of Service & Privacy Protocol box first!", "warning");
+            return;
+        }
+        const bi = $("bioInput");
+        if (bi && btn && typeof btn.getAttribute === 'function' && btn.getAttribute("data-sample")) {
+            bi.value = btn.getAttribute("data-sample");
+            window.showToast("Sample bio loaded", "info");
+            window.updateButtonStates();
+        }
+    };
+
+    window.selectPracticeScenario = function(btnEl, scenarioName) {
+        document.querySelectorAll('.scenario-chip, .scenario-pill').forEach(btn => {
+            btn.classList.remove('active', 'bg-gradient-to-r', 'from-violet-600', 'to-indigo-600', 'border-violet-400/50', 'text-white', 'font-bold', 'shadow-md', 'shadow-violet-950/40');
+            btn.classList.add('bg-neutral-900/90', 'border-white/15', 'text-slate-300', 'font-medium');
+        });
+        if (btnEl) {
+            btnEl.classList.remove('bg-neutral-900/90', 'border-white/15', 'text-slate-300', 'font-medium');
+            btnEl.classList.add('active', 'bg-gradient-to-r', 'from-violet-600', 'to-indigo-600', 'border-violet-400/50', 'text-white', 'font-bold', 'shadow-md', 'shadow-violet-950/40');
+        }
+        window.activePracticeScenario = scenarioName;
+        window.activePracticeMode = (scenarioName === 'Coach Hotline' || (btnEl && btnEl.dataset && btnEl.dataset.mode === 'hotline')) ? 'hotline' : 'roleplay';
+        if (typeof window.clearAndResetChatbox === 'function') window.clearAndResetChatbox();
+    };
+
+    window.clearAndResetChatbox = function() {
+        activeSimulatorThread = [];
+        activeSimulatorThread.push({ role: "system", content: practicePartnerSystemContext });
+
+        window.currentAttractionScore = 65;
+        window.sessionStats = {
+            messagesSent: 0,
+            attractionHistory: [65],
+            dryMessageCount: 0,
+            totalWords: 0,
+            apologyCount: 0,
+            hasDateOffer: false
+        };
+
+        const isHotline = (window.activePracticeMode === "hotline" || window.activePracticeScenario === "Coach Hotline" || !window.activePracticeScenario);
+        if (isHotline) {
+            window.activePracticeMode = "hotline";
+            window.activePracticeScenario = "Coach Hotline";
+        }
+
+        if (window.updateAttractionMeter) window.updateAttractionMeter(65, 0);
+        if (window.updateCharacterMood) window.updateCharacterMood(isHotline ? "Coach 🧠" : "Playful 😏");
+
+        const container = $("chatbox-messages-container");
+        if (container) {
+            container.innerHTML = "";
+            const openingLine = isHotline
+                ? "Hey! I'm Maeve, your AI Dating & Communication Coach. What can I help you with today? Ask me for texting advice, help drafting a reply, analyzing a situation, or dating strategy!"
+                : practicePartnerGreetings[Math.floor(Math.random() * practicePartnerGreetings.length)];
+            window.renderChatboxBubble(openingLine, "assistant");
+            activeSimulatorThread.push({ role: "assistant", content: openingLine });
+        }
+    };
+
+    window.renderChatboxBubble = function(text, sender) {
+        const container = $("chatbox-messages-container");
+        if (!container) return;
+
+        let cleanText = text;
+        if (typeof cleanText === "string") {
+            cleanText = cleanText.replace(/<think>[\s\S]*?<\/think>/gi, "");
+            cleanText = cleanText.replace(/```json[\s\S]*?```/gi, "");
+            cleanText = cleanText.replace(/```[\s\S]*?```/gi, "");
+            cleanText = cleanText.replace(/[\{\}\[\]]/g, "");
+            cleanText = cleanText.replace(/[\#\*\_\|\`\>]/g, "");
+            cleanText = cleanText.replace(/^\s*[\-\*]\s+/gm, "• ");
+
+            cleanText = cleanText.replace(/\s*[\-\—\=]{3,}\s*/g, "\n\n");
+            cleanText = cleanText.replace(/([^\n])\s*(\b\d{1,2}\.\s+)/g, "$1\n\n$2");
+            cleanText = cleanText.replace(/([^\n])\s*(•\s+)/g, "$1\n\n$2");
+            cleanText = cleanText.replace(/([^\n])\s*(💡\s*Pro Tip:|Pro Tip:|💡\s*Tip:|Note:|Want me to|Let me know if|Just say the word)/gi, "$1\n\n$2");
+            cleanText = cleanText.replace(/\n{3,}/g, "\n\n");
+
+            cleanText = cleanText.trim();
+            const isHotlineMode = window.activePracticeMode === "hotline" || (window.activePracticeScenario === "Coach Hotline");
+            if (!isHotlineMode && (sender === "assistant" || sender === "girlfriend" || sender === "maeve")) {
+                cleanText = cleanText.toLowerCase();
+            }
+        }
+
+        const bubble = document.createElement("div");
+        bubble.className = "animate-chat-bubble";
+        bubble.style.maxWidth = "85%";
+        bubble.style.padding = "12px 16px";
+        bubble.style.borderRadius = "14px";
+        bubble.style.fontSize = "14px";
+        bubble.style.fontFamily = "'Inter', -apple-system, BlinkMacSystemFont, sans-serif";
+        bubble.style.lineHeight = "1.5";
+        bubble.style.wordBreak = "break-word";
+        bubble.style.whiteSpace = "pre-wrap";
+        if (sender === "user") {
+            bubble.style.alignSelf = "flex-end";
+            bubble.style.background = "linear-gradient(135deg, #a855f7 0%, #6b21a8 100%)";
+            bubble.style.color = "#fff";
+            bubble.style.borderBottomRightRadius = "2px";
+        } else {
+            bubble.style.alignSelf = "flex-start";
+            bubble.style.background = "#1a122c";
+            bubble.style.border = "1px solid #2e1a47";
+            bubble.style.color = "#fff";
+            bubble.style.borderBottomLeftRadius = "2px";
+        }
+
+        bubble.textContent = cleanText;
+        container.appendChild(bubble);
+        try {
+            container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+        } catch(e) {
+            container.scrollTop = container.scrollHeight;
+        }
+    };
+
+    window.showChatboxTypingIndicator = function(show) {
+        const container = $("chatbox-messages-container");
+        if (!container) return;
+        const existing = $("chatbox-typing-indicator");
+        if (existing) existing.remove();
+        if (show) {
+            const indicator = document.createElement("div");
+            indicator.id = "chatbox-typing-indicator";
+            indicator.style.alignSelf = "flex-start";
+            indicator.style.background = "#1a122c";
+            indicator.style.border = "1px solid #2e1a47";
+            indicator.style.color = "#a855f7";
+            indicator.style.padding = "10px 14px";
+            indicator.style.borderRadius = "12px";
+            indicator.style.borderBottomLeftRadius = "2px";
+            indicator.style.fontSize = "14px";
+            indicator.textContent = "Typing...";
+            container.appendChild(indicator);
+            container.scrollTop = container.scrollHeight;
+        }
+    };
+
+    window.renderTurnEvaluationCard = function(evalData) {
+        if (!evalData) return;
+        const container = $("chatbox-messages-container");
+        if (!container) return;
+
+        const isSuccess = evalData.status === "PASSED";
+        const badgeColor = isSuccess ? "#10b981" : (evalData.status === "FAILED" ? "#ef4444" : "#f59e0b");
+        const badgeBg = isSuccess ? "rgba(16, 185, 129, 0.15)" : (evalData.status === "FAILED" ? "rgba(239, 68, 68, 0.15)" : "rgba(245, 158, 11, 0.15)");
+        const badgeBorder = isSuccess ? "rgba(16, 185, 129, 0.4)" : (evalData.status === "FAILED" ? "rgba(239, 68, 68, 0.4)" : "rgba(245, 158, 11, 0.4)");
+        const badgeText = evalData.status === "PASSED" ? "HIGH STATUS • SCORE " + evalData.score + "/100" : (evalData.status === "FAILED" ? "DRILL FAILED • SCORE " + evalData.score + "/100" : "NEEDS REFINEMENT • SCORE " + evalData.score + "/100");
+
+        const card = document.createElement("div");
+        card.className = "animate-chat-bubble turn-eval-card";
+        card.style.cssText = "align-self: center; width: 94%; max-width: 520px; background: rgba(18, 14, 32, 0.95); border: 1px solid " + badgeBorder + "; border-radius: 14px; padding: 12px 16px; font-size: 12px; color: #e2e8f0; font-family: sans-serif; line-height: 1.5; margin: 8px 0; box-shadow: 0 6px 20px rgba(0,0,0,0.4); border-left: 4px solid " + badgeColor + ";";
+
+        let html = '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">';
+        html += '<span style="background: ' + badgeBg + '; border: 1px solid ' + badgeBorder + '; color: ' + badgeColor + '; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 9999px; font-family: monospace;">' + badgeText + '</span>';
+        html += '<button type="button" onclick="window.retryLastTurn()" style="background: rgba(168, 85, 247, 0.2); border: 1px solid rgba(168, 85, 247, 0.4); color: #c084fc; font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">↺ Retry Turn</button>';
+        html += '</div>';
+
+        html += '<div style="color: #cbd5e1; font-size: 12px; margin-bottom: 4px;"><strong>Feedback:</strong> ' + (evalData.critique || '') + '</div>';
+
+        if (evalData.alternative) {
+            html += '<div style="color: #a855f7; font-size: 11.5px; background: rgba(168, 85, 247, 0.1); padding: 6px 10px; border-radius: 8px; border: 1px dashed rgba(168, 85, 247, 0.3); margin-top: 4px;"><strong>Suggested High-Status Line:</strong> "' + (evalData.alternative || '') + '"</div>';
+        }
+
+        card.innerHTML = html;
+        container.appendChild(card);
+        window.scrollToBottom(true);
+    };
+
+    window.retryLastTurn = function() {
+        const container = $("chatbox-messages-container");
+        if (!container) return;
+
+        if (activeSimulatorThread.length >= 2) {
+            activeSimulatorThread.pop();
+            activeSimulatorThread.pop();
+        }
+
+        const bubbles = container.querySelectorAll(".animate-chat-bubble");
+        const toRemove = Math.min(3, bubbles.length);
+        for (let i = 0; i < toRemove; i++) {
+            bubbles[bubbles.length - 1 - i].remove();
+        }
+
+        const inputField = $("simulator-chat-input");
+        if (inputField) inputField.focus();
+        window.showToast("Turn reset! Try sending a higher-status line.", "info");
+    };
+
+    window.updateAttractionMeter = function(score, delta) {
+        const numScore = Math.max(0, Math.min(100, Number(score) || 60));
+        window.currentAttractionScore = numScore;
+        if (window.sessionStats && window.sessionStats.attractionHistory) {
+            window.sessionStats.attractionHistory.push(numScore);
+        }
+    };
+
+    window.updateCharacterMood = function(moodStr) {};
+    window.renderInFeedCheckpointCard = function(checkpointData, turnIndex) {};
+
+    window.replayFromTurn = function(targetTurnIndex) {
+        const container = $("chatbox-messages-container");
+        if (!container) return;
+
+        if (targetTurnIndex >= 0 && targetTurnIndex < activeSimulatorThread.length) {
+            activeSimulatorThread = activeSimulatorThread.slice(0, targetTurnIndex);
+        }
+
+        container.innerHTML = "";
+        activeSimulatorThread.forEach(function(msg) {
+            if (msg.role !== 'system') {
+                window.renderChatboxBubble(msg.content || msg.text, msg.role);
+            }
+        });
+
+        const inputField = $("simulator-chat-input");
+        if (inputField) inputField.focus();
+        window.showToast("Rewound to Message #" + targetTurnIndex + ". Try a new high-status angle!", "info");
+    };
+
+    window.openHolisticReviewModal = function() {
+        if (window.triggerFinishAndReview) window.triggerFinishAndReview();
+    };
+
+    window.closeHolisticReviewModal = function() {
+        if (window.closeSessionReviewModal) window.closeSessionReviewModal();
+    };
+
+    window.submitChatboxMessage = async function() {
+        const inputField = $("simulator-chat-input");
+        if (!inputField) return;
+        let userText = inputField.value.trim();
+        if (!userText) return;
+
+        userText = enforceWordLimitClient(userText, 500);
+
+        if (!(await hasSufficientCredits(2))) return;
+
+        const sendBtn = $("chatbox-send-btn");
+        if (sendBtn) {
+            sendBtn.disabled = true;
+            sendBtn.classList.add("opacity-50", "cursor-not-allowed");
+        }
+
+        const isDryMsg = /^(hi|hello|hey|nothing|idk|ok|k|whatever|dunno|nevermind|nm)$/i.test(userText);
+        const isApologyMsg = /sorry|apologize|my bad/i.test(userText);
+        const hasDateMsg = /(coffee|drinks?|rooftop|dinner|lunch|bar)\b.*(this|on|at|around)?\s*(thursday|friday|saturday|sunday|weekend|8\s*pm|7\s*pm)/i.test(userText);
+
+        if (!window.sessionStats) {
+            window.sessionStats = { messagesSent: 0, attractionHistory: [65], dryMessageCount: 0, totalWords: 0, apologyCount: 0, hasDateOffer: false };
+        }
+        window.sessionStats.messagesSent++;
+        window.sessionStats.totalWords += userText.split(/\s+/).length;
+        if (isDryMsg) window.sessionStats.dryMessageCount++;
+        if (isApologyMsg) window.sessionStats.apologyCount++;
+        if (hasDateMsg) window.sessionStats.hasDateOffer = true;
+
+        inputField.value = "";
+        window.renderChatboxBubble(userText, "user");
+        try {
+            inputField.focus();
+            if (window.innerWidth < 768) {
+                document.body.classList.add("chat-keyboard-open");
+            }
+        } catch(e) {}
+        window.scrollToBottom(true);
+
+        if (activeSimulatorThread.length === 0) {
+            activeSimulatorThread.push({ role: "system", content: practicePartnerSystemContext });
+        }
+
+        activeSimulatorThread.push({ role: "user", content: userText, text: userText, attractionScore: window.currentAttractionScore });
+        window.showChatboxTypingIndicator(true);
+
+        try {
+            const apiBase = getApiBase();
+            const activeScenario = window.activePracticeScenario || "Coach Hotline";
+            const isHotlineMode = (window.activePracticeMode === "hotline" || activeScenario === "Coach Hotline");
+            const activeMode = isHotlineMode ? "hotline" : "roleplay";
+
+            const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
+            const headers = {
+                'Content-Type': 'application/json',
+                ...authHeaders
+            };
+
+            const chatResp = await fetch((apiBase || '') + '/api/chat', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({
+                    messages: activeSimulatorThread,
+                    scenario: activeScenario,
+                    mode: activeMode,
+                    isHotline: isHotlineMode,
+                    attractionScore: window.currentAttractionScore
+                })
+            });
+
+            window.showChatboxTypingIndicator(false);
+
+            if (chatResp.ok) {
+                const chatData = await chatResp.json();
+                if (chatData && chatData.reply) {
+                    const aiReply = chatData.reply;
+                    activeSimulatorThread.push({ role: "assistant", content: aiReply });
+                    window.renderChatboxBubble(aiReply, "assistant");
+                    const updatedBal = typeof chatData.credits === 'number' ? chatData.credits : (typeof chatData.creditsRemaining === 'number' ? chatData.creditsRemaining : null);
+                    if (updatedBal !== null) {
+                        window.updateUICredits(updatedBal);
+                    }
+                } else if (chatData && chatData.error) {
+                    window.renderChatboxBubble("Notice: " + chatData.error, "assistant");
+                }
+            } else if (chatResp.status === 402) {
+                window.renderChatboxBubble("⚠️ Insufficient credits. Please top up credits to continue practicing.", "assistant");
+                if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal();
+            } else {
+                const errJson = await chatResp.json().catch(() => ({}));
+                if (errJson.refunded && typeof errJson.credits === 'number') {
+                    window.updateUICredits(errJson.credits);
+                    window.showToast("Maeve AI request failed. Your 2 credits were not charged.", "info");
+                }
+                window.renderChatboxBubble("Sorry, Maeve is taking a quick breath. Please try sending your message again.", "assistant");
+            }
+        } catch (chatErr) {
+            window.showChatboxTypingIndicator(false);
+            console.error("Chatbox API Error:", chatErr);
+            window.renderChatboxBubble("Connection issue. Please check your network and try again.", "assistant");
+        } finally {
+            if (sendBtn) {
+                sendBtn.disabled = false;
+                sendBtn.classList.remove("opacity-50", "cursor-not-allowed");
+            }
+        }
+    };
+
+    window.toggleInterstitialAcceptButton = function() {
+        const chk = document.getElementById('interstitialAgreementCheck');
+        const btn = document.getElementById('interstitialAcceptBtn');
+        if (!chk || !btn) return;
+        if (chk.checked) {
+            btn.classList.remove('opacity-50', 'pointer-events-none');
+        } else {
+            btn.classList.add('opacity-50', 'pointer-events-none');
+        }
+    };
+
+    window.acceptInterstitialTerms = function() {
+        safeStorage.set('wingman_terms_accepted', 'true');
+        const modal = document.getElementById('interstitialModal');
+        if (modal) modal.classList.add('hidden');
+    };
+
+    window.closeUnreadableErrorModal = function(e) {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        const modal = document.getElementById('unreadableErrorModal');
+        if (modal) modal.classList.add('hidden');
+    };
+
 })();
