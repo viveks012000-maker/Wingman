@@ -1,0 +1,50 @@
+/**
+ * =========================================================================================
+ * MYWINGMAN CUSTOM CSS UTILITIES & ANIMATION STYLESHEET
+ * =========================================================================================
+ */
+
+/* Anti-FOUT & Touch Action Core Reset */
+html, body {
+    background-color: #000000 !important;
+    color: #ffffff;
+    -webkit-overflow-scrolling: touch;
+}
+
+* {
+    -webkit-tap-highlight-color: transparent !important;
+}
+
+button, a, .tone-chip, .vibe-chip, .bio-style-chip, .nav-tab-mobile, .nav-tab-desktop {
+    touch-action: manipulation !important;
+}
+
+/* Custom Scrollbar Styles */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.6);
+    border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(139, 92, 246, 0.4);
+    border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(168, 85, 247, 0.7);
+}
+
+/* Terms Shake Pulse Animation */
+@keyframes termsShakePulse {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-4px); }
+    40%, 80% { transform: translateX(4px); }
+}
+
+.terms-shake-pulse {
+    animation: termsShakePulse 0.4s ease-in-out 2;
+    border-color: rgba(239, 68, 68, 0.8) !important;
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.4) !important;
+}

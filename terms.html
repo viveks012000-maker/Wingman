@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Terms of Service | MyWingman</title>
+    <meta name="description" content="Terms of Service, Eligibility, Credit Usage Policies, and User Agreement for MyWingman."/>
+    
+    <link rel="stylesheet" href="output.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #000000; color: #f8fafc; }
+    </style>
+</head>
+<body class="bg-black text-slate-100 min-h-screen flex flex-col justify-between selection:bg-violet-500 selection:text-white">
+
+    <!-- Header Navigation Bar -->
+    <header class="w-full bg-black/90 border-b border-white/10 sticky top-0 z-40 backdrop-blur-md">
+        <div class="max-w-5xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
+            <a href="index.html" class="flex items-center gap-2.5">
+                <img src="logo.png" alt="MyWingman Logo" class="h-12 w-auto object-contain" onerror="this.style.display='none'"/>
+                <span class="font-extrabold text-xl tracking-tight text-white">MyWingman</span>
+            </a>
+            <a href="index.html" class="text-xs font-mono text-slate-400 hover:text-white transition-colors border border-white/10 px-3 py-1.5 rounded-lg bg-white/5">
+                Back to Home
+            </a>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-4xl mx-auto px-4 md:px-8 py-12 md:py-16 flex-1 w-full">
+        
+        <div class="border-b border-white/10 pb-6 mb-10">
+            <span class="font-mono text-xs uppercase tracking-widest text-violet-400 font-bold">Legal Framework</span>
+            <h1 class="text-3xl md:text-4xl font-extrabold text-white mt-2 tracking-tight">Terms of Service</h1>
+            <p class="font-mono text-xs text-slate-400 mt-2">Effective Date: July 28, 2026</p>
+        </div>
+
+        <div class="space-y-10 text-slate-300 text-sm leading-relaxed font-normal">
+
+            <!-- ARTICLE I -->
+            <section class="bg-neutral-950/80 border border-white/10 p-6 md:p-8 rounded-2xl space-y-3">
+                <h2 class="text-base font-bold text-white uppercase tracking-wide font-mono text-violet-300">ARTICLE I: CONTRACTUAL RELATIONSHIP AND CONSENT TO AI DATA PROCESSING</h2>
+                <p>
+                    These Terms of Service constitute a valid, legally binding agreement between you and the Platform operator. By checking the agreement box prior to workspace access or feature execution, you convey your informed, affirmative assent to these Terms and explicitly consent to the transient data processing of your submitted inputs by our secure Third-Party AI Data Processors (including AICREDITS / OpenRouter) solely to generate automated real-time responses. If you do not agree to these terms, do not check the box and do not utilize the workspace.
+                </p>
+            </section>
+
+            <!-- ARTICLE II -->
+            <section class="bg-neutral-950/80 border border-white/10 p-6 md:p-8 rounded-2xl space-y-3">
+                <h2 class="text-base font-bold text-white uppercase tracking-wide font-mono text-violet-300">ARTICLE II: ELIGIBILITY AND AGE REQUIREMENTS (18+)</h2>
+                <p>
+                    The Platform is intended solely for users who are eighteen (18) years of age or older. By checking the verification checkbox, you represent and warrant that you meet this age requirement. Users are strictly prohibited from lying about their age to gain access to the platform. If we discover or reasonably verify that an account has been created by an individual under 18 who misrepresented their age, we may immediately suspend or terminate access.
+                </p>
+            </section>
+
+            <!-- ARTICLE III -->
+            <section class="bg-neutral-950/80 border border-white/10 p-6 md:p-8 rounded-2xl space-y-4">
+                <h2 class="text-base font-bold text-white uppercase tracking-wide font-mono text-violet-300">ARTICLE III: FEATURE CREDIT CONSUMPTION BREAKDOWN & PRICING TIERS</h2>
+                <p>
+                    The Platform operates on a transparent, pay-as-you-go credit wallet system. Users acquire credit bundles through secure payment gateways. Purchased credits never expire. Prices are displayed in USD (or converted to local currency equivalent at checkout by integrated payment processors).
+                </p>
+                <div class="space-y-3 pl-4 border-l-2 border-violet-500/40">
+                    <p><strong class="text-white">Section 3.1: Credit Pack Bundle Tiers:</strong></p>
+                    <ul class="list-disc pl-5 space-y-1 text-slate-300 font-mono text-xs">
+                        <li><strong class="text-white">Starter Pack ($4.99):</strong> 250 Credits (Equivalent to 25 Elite Chat Generations or 125 Practice Partner message turns).</li>
+                        <li><strong class="text-white">Pro Pack ($9.99):</strong> 600 Credits (Equivalent to 60 Elite Chat Generations or 300 Practice Partner message turns).</li>
+                        <li><strong class="text-white">Elite Pack ($19.99):</strong> 3000 Credits (Equivalent to 300 Elite Chat Generations or 1500 Practice Partner message turns).</li>
+                    </ul>
+
+                    <p class="pt-2"><strong class="text-white">Section 3.2: Precise Feature Credit Deductions:</strong> Each workspace tool consumes credits from your account balance upon execution as follows:</p>
+                    <ul class="list-disc pl-5 space-y-1.5 text-slate-300 font-mono text-xs">
+                        <li><strong class="text-violet-300">Screenshot Analyzer (/api/analyze):</strong> Consumes <strong class="text-white">10 Credits</strong> per request (Generates 10 tailored reply strategy options).</li>
+                        <li><strong class="text-violet-300">Icebreaker Generator (/api/icebreaker):</strong> Consumes <strong class="text-white">10 Credits</strong> per request (Generates 10 opener options).</li>
+                        <li><strong class="text-violet-300">Profile Bio Optimizer (/api/optimize):</strong> Consumes <strong class="text-white">10 Credits</strong> per request (Generates 10 optimized multi-line dating bios).</li>
+                        <li><strong class="text-violet-300">Practice Partner & Coach Maeve (/api/chat):</strong> Consumes <strong class="text-white">2 Credits</strong> per conversational text turn reply.</li>
+                    </ul>
+
+                    <p class="pt-2"><strong class="text-white">Section 3.3: Credit Use and Refund Rules:</strong> Credits consumed for completed AI generations are non-refundable due to immediate server computation expenditure. Unused credit balances are non-refundable except where required by applicable law or under verified technical payment crediting failures.</p>
+                    <p><strong class="text-white">Section 3.4: Verified Refund Scenarios:</strong> Refunds may be issued under the following conditions:</p>
+                    <ul class="list-disc pl-5 space-y-1 text-slate-400">
+                        <li>Duplicate charges caused by payment gateway processing glitches.</li>
+                        <li>Verified technical failures where a payment was debited but credits failed to add to your user wallet balance prior to credit consumption.</li>
+                    </ul>
+                    <p><strong class="text-white">Section 3.5: Support Desk:</strong> For transaction inquiries or assistance, contact our billing desk at: <a href="mailto:support.mywingman@gmail.com" class="text-violet-400 hover:underline font-medium">support.mywingman@gmail.com</a>.</p>
+                </div>
+            </section>
+
+            <!-- ARTICLE IV -->
+            <section class="bg-neutral-950/80 border border-white/10 p-6 md:p-8 rounded-2xl space-y-3">
+                <h2 class="text-base font-bold text-white uppercase tracking-wide font-mono text-violet-300">ARTICLE IV: CONTENT UPLOAD AUTHORIZATION & SCREENSHOT PRIVACY</h2>
+                <p class="text-slate-300 leading-relaxed font-body text-sm">
+                    <strong class="text-white font-semibold">Section 4.1: Screenshot Handling & Retention:</strong> Chat screenshots uploaded to the Screenshot Analyzer are processed via encrypted HTTPS connections through secure Third-Party AI processors to extract conversation text. Your uploaded images will be deleted from the website shortly after uploading.
+                </p>
+                <p class="text-slate-300 leading-relaxed font-body text-sm pt-2">
+                    <strong class="text-white font-semibold">Section 4.2: User Content Rights & Authorization Warranty:</strong> If you upload screenshots, chat dialogue logs, or profile notes involving third parties, you represent and warrant that you possess all necessary rights, authorization, and legal consent to submit such content for automated AI analysis. You are strictly forbidden from uploading unauthorized, non-consensual private or confidential media.
+                </p>
+            </section>
+
+            <!-- ARTICLE V -->
+            <section class="bg-neutral-950/80 border border-white/10 p-6 md:p-8 rounded-2xl space-y-3">
+                <h2 class="text-base font-bold text-white uppercase tracking-wide font-mono text-violet-300">ARTICLE V: AI DISCLAIMER & USER RESPONSIBILITY FOR ACTIONS</h2>
+                <p>
+                    <strong class="text-white font-semibold">Section 5.1: AI Output & Error Disclaimer:</strong> The system functions as an automated text design helper workspace. Any AI-generated reply cards, openers, profile bios, or coach recommendations are provided for guidance, practice, and entertainment only. AI models may contain inaccuracies, errors, or non-ideal suggestions.
+                </p>
+                <p class="pt-2">
+                    <strong class="text-white font-semibold">Section 5.2: User Sole Responsibility:</strong> You remain 100% solely responsible for your own communications, choices, dating decisions, and real-world actions. The Platform operator assumes no responsibility or liability for real-world interpersonal outcomes, messaging results, or human interactions.
+                </p>
+            </section>
+
+            <!-- ARTICLE VI -->
+            <section class="bg-neutral-950/80 border border-white/10 p-6 md:p-8 rounded-2xl space-y-3">
+                <h2 class="text-base font-bold text-white uppercase tracking-wide font-mono text-violet-300">ARTICLE VI: PROHIBITED USES AND ACCEPTABLE USE POLICY</h2>
+                <p>
+                    You agree not to use the Platform or generated text output to facilitate harassment, threats, hate speech, spam, impersonation, fraud, stalking, coercion, or attempts to deceive individuals for unlawful purposes. Uploading malware, running automated scraping bots, or abusing AI infrastructure is strictly prohibited.
+                </p>
+            </section>
+
+            <!-- ARTICLE VII -->
+            <section class="bg-neutral-950/80 border border-white/10 p-6 md:p-8 rounded-2xl space-y-3">
+                <h2 class="text-base font-bold text-white uppercase tracking-wide font-mono text-violet-300">ARTICLE VII: LIMITATION OF LIABILITY</h2>
+                <p>
+                    To the maximum extent permitted by applicable law, the Platform and its operator shall not be liable for indirect, incidental, special, or consequential losses arising from use of the Service. We hold no affiliation or partnership with any third-party messaging platform (Tinder, Bumble, Hinge, Instagram). Total liability shall not exceed the total amount paid by you during the preceding thirty (30) days.
+                </p>
+            </section>
+
+            <!-- ARTICLE VIII -->
+            <section class="bg-neutral-950/80 border border-white/10 p-6 md:p-8 rounded-2xl space-y-4">
+                <h2 class="text-base font-bold text-white uppercase tracking-wide font-mono text-violet-300">ARTICLE VIII: THIRD-PARTY AI INFRASTRUCTURE & OUTPUT DISCLAIMER</h2>
+                <div class="space-y-3 pl-4 border-l-2 border-violet-500/40">
+                    <p><strong class="text-white">Section 8.1: Third-Party AI Vendors:</strong> Core features of this Application—including practice coaching, bio generation, icebreaker suggestions, and screenshot analysis—rely on third-party AI infrastructure providers, including <strong class="text-white">AICREDITS</strong> (<code class="text-violet-300 font-mono">aicredits.in</code>). By using these features, you acknowledge and agree that your inputs are processed through third-party AI models.</p>
+                    <p><strong class="text-white">Section 8.2: Accuracy & Disclaimer of Output:</strong> AI-generated advice, icebreakers, bios, and chat analyses are provided for entertainment, practice, and personal development purposes only. We do not guarantee the accuracy, effectiveness, or real-world outcome of any AI-generated response. You are solely responsible for reviewing and verifying any AI output before using or sharing it.</p>
+                    <p><strong class="text-white">Section 8.3: Service Availability:</strong> We are not liable for any temporary feature disruptions, latency, or outages caused by third-party AI vendor downtime, system maintenance, or API rate limits.</p>
+                </div>
+            </section>
+
+            <!-- ARTICLE IX -->
+            <section class="bg-neutral-950/80 border border-white/10 p-6 md:p-8 rounded-2xl space-y-3">
+                <h2 class="text-base font-bold text-white uppercase tracking-wide font-mono text-violet-300">ARTICLE IX: GOVERNING LAW AND JURISDICTION</h2>
+                <p>
+                    This agreement shall be governed by and construed in accordance with the laws of the Republic of India. Any legal disputes shall be subject to the exclusive jurisdiction of the competent courts having authority over Churu, Rajasthan, India.
+                </p>
+            </section>
+
+            <!-- ARTICLE X -->
+            <section class="bg-neutral-950/80 border border-white/10 p-6 md:p-8 rounded-2xl space-y-4">
+                <h2 class="text-base font-bold text-white uppercase tracking-wide font-mono text-violet-300">ARTICLE X: LEGAL IDENTITY AND ADMINISTRATION</h2>
+                <p>
+                    This web application and digital service are owned and operated by Naresh Kumar, carrying on business under the trade name 'MyWingman'. Contact: <a href="mailto:support.mywingman@gmail.com" class="text-violet-400 hover:underline">support.mywingman@gmail.com</a>.
+                </p>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="py-8 px-4 border-t border-white/10 bg-black text-center text-xs font-mono text-slate-500">
+        <div class="max-w-4xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            <p>&copy; 2026 MyWingman. All rights reserved.</p>
+            <div class="flex items-center gap-6">
+                <a href="terms.html" class="text-slate-300 hover:text-white transition-colors">Terms of Service</a>
+                <a href="privacy.html" class="text-slate-400 hover:text-white transition-colors">Privacy Policy</a>
+                <a href="refund.html" class="text-slate-400 hover:text-white transition-colors">Refund Policy</a>
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>

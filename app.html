@@ -1,0 +1,2265 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
+    <meta name="apple-mobile-web-app-capable" content="yes"/>
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+    <meta name="theme-color" content="#000000"/>
+    <meta name="mobile-web-app-capable" content="yes"/>
+    <title>MyWingman - Dashboard Workspace</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦅</text></svg>"/>
+    <meta name="description" content="MyWingman Dashboard Tool: Upload chat screenshots for instant reply breakdown, icebreaker generation, and conversation optimization."/>
+    <!-- Content Security Policy Meta Tag -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co http://localhost:* ws://localhost:*; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.supabase.co; script-src-elem 'self' 'unsafe-inline' https://*.supabase.co; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co http://localhost:* ws://localhost:* https://aicredits.in; worker-src 'self' blob:;"/>
+    <!-- Compiled Static Tailwind CSS -->
+    <link rel="stylesheet" href="output.css">
+    <!-- Cropper.js for Smooth Flexible Image Cropping - now local -->
+    <link rel="stylesheet" href="./vendor/cropperjs/cropper.min.css"/>
+    <script src="./vendor/cropperjs/cropper.min.js"></script>
+    <!-- HEIC/HEIF Image Converter for iOS Screenshots - now local -->
+    <script src="./vendor/heic2any.min.js"></script>
+    <!-- Supabase Authentication JS SDK & Central Client Helper -->
+    <script src="vendor/supabase.min.js"></script>
+    <script src="supabaseClient.js"></script>
+    <!-- Google Fonts: Plus Jakarta Sans, Inter, Geist, Material Symbols Outlined -->
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,800&family=Inter:wght@400;500;600;700;800&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=block" rel="stylesheet"/>
+    
+
+    <link rel="stylesheet" href="style.css"/>
+    <style>
+
+        /* Anti-FOUT / Icon Font Text Flash Prevention */
+        html, body {
+            background-color: #000000 !important;
+            -webkit-overflow-scrolling: touch;
+        }
+        * {
+            -webkit-tap-highlight-color: transparent !important;
+        }
+        button, a, .tone-chip, .vibe-chip, .bio-style-chip, .nav-tab-mobile, .nav-tab-desktop {
+            touch-action: manipulation !important;
+        }
+        .tab-content-panel, .glass-card, .chatbox-wrapper, #cropCard {
+            transform: translateZ(0);
+            backface-visibility: hidden;
+        }
+        .material-symbols-outlined {
+            display: inline-block !important;
+            vertical-align: middle !important;
+            max-width: 1em !important;
+            height: 1em !important;
+            overflow: hidden !important;
+            white-space: nowrap !important;
+            line-height: 1 !important;
+            font-display: block !important;
+        }
+
+        .output-text, .chat-bubble, .result-card-text {
+            position: relative !important;
+            z-index: 10 !important;
+            pointer-events: auto !important;
+        }
+
+        /* Minimalist Premium Webkit Scrollbars (Desktop viewports) */
+        @media (min-width: 768px) {
+            ::-webkit-scrollbar { width: 6px; height: 6px; }
+            ::-webkit-scrollbar-track { background: transparent; }
+            ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 99px; }
+            ::-webkit-scrollbar-thumb:hover { background: rgba(139,92,246,0.4); }
+        }
+
+        /* Computer Vision Matrix & Upload Target Animations */
+        @keyframes grid-sweep { 
+            0% { transform: translateY(-100%); } 
+            100% { transform: translateY(200%); } 
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.8; box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.4); }
+            50% { transform: scale(1.05); opacity: 1; box-shadow: 0 0 25px 8px rgba(139, 92, 246, 0.25); }
+            100% { transform: scale(0.95); opacity: 0.8; box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
+        }
+        @keyframes spin-slow {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        @keyframes ambient-float { 
+            0%, 100% { transform: translateY(0px) scale(1); } 
+            50% { transform: translateY(-5px) scale(1.01); } 
+        }
+        @keyframes cameraGlow {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 25px rgba(168, 85, 247, 0.5), inset 0 0 15px rgba(168, 85, 247, 0.3);
+                border-color: rgba(168, 85, 247, 0.6);
+            }
+            50% {
+                transform: scale(1.07);
+                box-shadow: 0 0 45px rgba(217, 70, 239, 0.85), inset 0 0 25px rgba(217, 70, 239, 0.5);
+                border-color: rgba(236, 72, 153, 0.9);
+            }
+        }
+        .animate-camera-glow {
+            animation: cameraGlow 3s ease-in-out infinite !important;
+        }
+        .animate-ambient-float {
+            animation: ambient-float 4s ease-in-out infinite;
+        }
+        .animate-pulse-ring {
+            animation: pulse-ring 3s ease-in-out infinite;
+        }
+        .animate-spin-slow {
+            animation: spin-slow 12s linear infinite;
+        }
+
+        /* Unified Luxury Results Panel Animations */
+        @keyframes unified-results-reveal {
+            0% {
+                opacity: 0;
+                transform: translateY(16px) scale(0.985);
+                filter: blur(8px);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+                filter: blur(0px);
+            }
+        }
+        @keyframes hero-glow-pulse {
+            0% { border-color: rgba(139, 92, 246, 0.3); box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
+            50% { border-color: rgba(139, 92, 246, 0.95); box-shadow: 0 0 35px 6px rgba(139, 92, 246, 0.4); }
+            100% { border-color: rgba(139, 92, 246, 0.4); box-shadow: 0 0 12px 0 rgba(139, 92, 246, 0.15); }
+        }
+        .animate-results-reveal {
+            animation: unified-results-reveal 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .animate-hero-glow {
+            animation: hero-glow-pulse 1.4s ease-in-out forwards;
+        }
+
+        /* Smooth Cropper.js Custom Theme Overrides with Violet Dashed Boundary & Glow Handles */
+        .cropper-view-box {
+            outline: 2px dashed #8b5cf6 !important;
+            outline-color: rgba(139, 92, 246, 0.95) !important;
+            position: relative;
+            overflow: hidden !important;
+        }
+        .cropper-view-box::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #c084fc, #ffffff, #c084fc, transparent);
+            box-shadow: 0 0 15px 3px rgba(192, 132, 252, 0.9);
+            animation: laserScan 2.2s infinite ease-in-out alternate !important;
+            pointer-events: none;
+            z-index: 10;
+        }
+        @keyframes laserScan {
+            0% { top: 0%; opacity: 0.8; }
+            50% { opacity: 1; }
+            100% { top: calc(100% - 3px); opacity: 0.8; }
+        }
+        .cropper-line {
+            background-color: #8b5cf6 !important;
+        }
+        .cropper-point {
+            background-color: #c084fc !important;
+            width: 14px !important;
+            height: 14px !important;
+            border-radius: 3px !important;
+            box-shadow: 0 0 12px rgba(139, 92, 246, 0.8) !important;
+            transition: transform 0.2s ease !important;
+        }
+        .cropper-point:hover {
+            transform: scale(1.25) !important;
+        }
+        .cropper-bg {
+            background-image: none !important;
+            background-color: #000000 !important;
+        }
+        .cropper-modal {
+            background-color: rgba(0, 0, 0, 0.75) !important;
+        }
+
+        /* Terms Container Highlight & Shake Pulse Animation */
+        @keyframes termsShakePulse {
+            0%, 100% { transform: translateX(0) scale(1); border-color: rgba(239, 68, 68, 0.4); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+            15% { transform: translateX(-6px) scale(1.02); border-color: rgba(139, 92, 246, 0.9); box-shadow: 0 0 20px rgba(139, 92, 246, 0.6); }
+            30% { transform: translateX(6px) scale(1.02); border-color: rgba(139, 92, 246, 0.9); box-shadow: 0 0 20px rgba(139, 92, 246, 0.6); }
+            45% { transform: translateX(-4px) scale(1.01); border-color: rgba(139, 92, 246, 0.9); box-shadow: 0 0 15px rgba(139, 92, 246, 0.5); }
+            60% { transform: translateX(4px) scale(1.01); border-color: rgba(139, 92, 246, 0.9); box-shadow: 0 0 15px rgba(139, 92, 246, 0.5); }
+            75% { transform: translateX(-2px) scale(1.005); }
+        }
+        .terms-shake-pulse {
+            animation: termsShakePulse 0.7s ease-in-out forwards;
+            border-color: rgba(139, 92, 246, 0.9) !important;
+        }
+
+        /* Primary Action Buttons & Checkout Buttons styling override */
+        .premium-action-btn, 
+        #confirmPurchaseBtn,
+        .primary-btn {
+            background: linear-gradient(135deg, #a855f7 0%, #6b21a8 100%) !important;
+            border: none !important;
+            transition: all 0.2s ease-in-out !important;
+        }
+
+        button.primary-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(168, 85, 247, 0.4); }
+        button.primary-btn:active { transform: translateY(0px); box-shadow: 0 4px 10px rgba(168, 85, 247, 0.2); }
+
+        .premium-action-btn:hover:not(:disabled),
+        #confirmPurchaseBtn:hover {
+            transform: translateY(-2px) !important;
+            box-shadow: 0 8px 20px rgba(168, 85, 247, 0.4) !important;
+        }
+        .premium-action-btn:active:not(:disabled),
+        #confirmPurchaseBtn:active {
+            transform: translateY(0px) !important;
+            box-shadow: 0 4px 10px rgba(168, 85, 247, 0.2) !important;
+        }
+
+        /* Navigation Tabs: Outlined when inactive, Solid Gradient when active */
+        .active-tab {
+            background: linear-gradient(135deg, #a855f7 0%, #6b21a8 100%) !important;
+            border: none !important;
+            color: #ffffff !important;
+            transition: all 0.2s ease-in-out !important;
+        }
+        .active-tab:hover {
+            transform: translateY(-2px) !important;
+            box-shadow: 0 8px 20px rgba(168, 85, 247, 0.4) !important;
+        }
+        .active-tab:active {
+            transform: translateY(0px) !important;
+            box-shadow: 0 4px 10px rgba(168, 85, 247, 0.2) !important;
+        }
+
+        /* Special active/hover state for the Crown Jewel Chatbox Button */
+        #btn-chatbox {
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease-in-out !important;
+        }
+        #btn-chatbox.active-tab {
+            box-shadow: 0 0 20px rgba(168, 85, 247, 0.6) !important;
+            border: 1px solid rgba(168, 85, 247, 0.8) !important;
+            background: linear-gradient(135deg, #a855f7 0%, #6b21a8 100%) !important;
+        }
+        #btn-chatbox:hover {
+            box-shadow: 0 0 15px rgba(168, 85, 247, 0.4) !important;
+            border-color: rgba(168, 85, 247, 0.5) !important;
+            transform: translateY(-2px) !important;
+        }
+
+        /* Normalization & Uniformity Rules */
+        .nav-tab-desktop {
+            height: 56px !important;
+            border-radius: 12px !important;
+            padding: 0 16px !important;
+            display: flex !important;
+            flex-direction: row !important;
+            align-items: center !important;
+            gap: 12px !important;
+            box-sizing: border-box !important;
+        }
+        .nav-tab-desktop span,
+        .nav-tab-desktop div {
+            font-size: 14px !important;
+            line-height: 1.2 !important;
+        }
+
+        #analyzeToneContainer label,
+        #vibeContainer label,
+        #bioStyleContainer label,
+        .tone-chip,
+        .vibe-chip,
+        .bio-style-chip,
+        .vibe-chip-premium {
+            height: 38px !important;
+            border-radius: 9999px !important;
+            padding: 0 14px !important;
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            box-sizing: border-box !important;
+            position: relative !important;
+            z-index: 60 !important; /* Top-tier layering priority */
+            pointer-events: auto !important; /* Forced pointer events */
+            cursor: pointer !important;
+            user-select: none !important;
+            -webkit-user-select: none !important;
+            -moz-user-select: none !important;
+            -ms-user-select: none !important;
+            background: rgba(23, 23, 23, 0.9) !important;
+            border: 1px solid rgba(255, 255, 255, 0.15) !important;
+            color: #cbd5e1 !important;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            white-space: nowrap !important;
+            flex: 1 1 calc(25% - 8px) !important;
+            min-width: max-content !important;
+        }
+
+        .tone-chip:hover,
+        .vibe-chip:hover,
+        .bio-style-chip:hover,
+        .vibe-chip-premium:hover {
+            color: #ffffff !important;
+            border-color: rgba(255, 255, 255, 0.3) !important;
+            transform: translateY(-1px) scale(1.02) !important;
+        }
+
+        .tone-chip:active,
+        .vibe-chip:active,
+        .bio-style-chip:active,
+        .vibe-chip-premium:active {
+            transform: scale(0.96) !important;
+        }
+
+        .tone-chip.active,
+        .vibe-chip.active,
+        .bio-style-chip.active,
+        .vibe-chip-premium.active {
+            background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%) !important;
+            border: 1px solid rgba(167, 139, 250, 0.6) !important;
+            color: #ffffff !important;
+            font-weight: 700 !important;
+            box-shadow: 0 4px 20px -2px rgba(124, 58, 237, 0.5), 0 0 12px rgba(167, 139, 250, 0.3) !important;
+            transform: translateY(-1px) scale(1.03) !important;
+        }
+
+        /* Responsive flex wrap layout to eliminate overlapping and squishing */
+        #analyzeToneContainer,
+        #vibeContainer,
+        #bioStyleContainer {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            gap: 8px !important;
+            overflow: visible !important;
+            padding: 4px 0 4px 0 !important;
+            position: relative !important;
+            z-index: 50 !important; /* Raised depth layer */
+            pointer-events: auto !important; /* Forced pointer events */
+            user-select: none !important;
+            -webkit-user-select: none !important;
+            -moz-user-select: none !important;
+            -ms-user-select: none !important;
+            width: 100% !important;
+        }
+
+        #runAnalysisBtn,
+        #generateIcebreakerBtn,
+        #runAuditBtn,
+        .premium-action-btn {
+            height: 48px !important;
+            border-radius: 10px !important;
+            font-size: 15px !important;
+            font-weight: 600 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            box-sizing: border-box !important;
+        }
+
+        .chat-utility-btn,
+        #add-credits-btn {
+            height: 36px !important;
+            padding: 0 16px !important;
+            border-radius: 8px !important;
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            box-sizing: border-box !important;
+            transition: all 0.2s ease-in-out !important;
+        }
+
+        .tab-content-panel h2,
+        #optimizeSection h1,
+        #icebreakSection h1,
+        #analyzeSection h1 {
+            font-size: 20px !important;
+            font-weight: 700 !important;
+            letter-spacing: -0.02em !important;
+        }
+        @media (min-width: 768px) {
+            .tab-content-panel h2,
+            #optimizeSection h1,
+            #icebreakSection h1,
+            #analyzeSection h1 {
+                font-size: 28px !important;
+            }
+        }
+
+        #analyzer-output-panel,
+        #icebreaker-output-grid,
+        #optimizer-results-container {
+            background: rgba(9, 13, 22, 0.55) !important;
+            border: 1px solid rgba(168, 85, 247, 0.15) !important;
+            pointer-events: none !important; /* Forces clicks to pass through empty bounds */
+        }
+
+        /* ==================== MASTER TRANSPARENCY — PLEXUS VISIBLE LIKE HOME PAGE ==================== */
+        /* Sidebar & header: thin tinted glass, animation clearly visible behind */
+        aside {
+            background: rgba(9, 13, 22, 0.5) !important;
+            border-color: rgba(255, 255, 255, 0.08) !important;
+        }
+        header {
+            background: rgba(9, 13, 22, 0.55) !important;
+        }
+
+        /* Feature input cards: semi-transparent, plexus peeks through edges/gaps */
+        #analyzeSection > div > div,
+        #icebreakSection > div > div,
+        #optimizeSection > div > div {
+            background: rgba(9, 13, 22, 0.55) !important;
+            border-color: rgba(255, 255, 255, 0.08) !important;
+        }
+
+        /* Chatbox wrapper: Subdue background animation behind Maeve chat */
+        .chatbox-wrapper {
+            background: rgba(12, 10, 24, 0.92) !important;
+            backdrop-filter: blur(28px) !important;
+            -webkit-backdrop-filter: blur(28px) !important;
+        }
+
+        /* Input fields: slightly darker but still translucent */
+        #dropzone,
+        .screenshot-preview-container {
+            background: rgba(0, 0, 0, 0.35) !important;
+        }
+        #bioInput,
+        #auditBioInput,
+        .bio-input-field {
+            background: rgba(0, 0, 0, 0.3) !important;
+        }
+
+        /* Auth banner & info boxes */
+        #topAuthBanner {
+            background: rgba(13, 18, 34, 0.7) !important;
+        }
+
+        /* Empty state panels: very transparent so the radar animation + plexus show */
+        #icebreakEmptyState,
+        #optimizeEmptyState,
+        #analyzeEmptyState {
+            background: rgba(5, 5, 14, 0.3) !important;
+        }
+
+        /* STRICT ZERO-TRANSPARENCY LAWS FOR NOTIFICATIONS & TOASTS */
+        #toastContainer,
+        #toastContainer > div,
+        .toast-enter,
+        .toast-exit,
+        [class*="toast-"] {
+            opacity: 1 !important;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.95), 0 0 25px rgba(0, 0, 0, 0.8) !important;
+            z-index: 99999 !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+        #toastContainer .bg-\[\#062419\] {
+            background-color: #062419 !important;
+            color: #a7f3d0 !important;
+        }
+        #toastContainer .bg-\[\#291b05\] {
+            background-color: #291b05 !important;
+            color: #fde68a !important;
+        }
+        #toastContainer .bg-\[\#290910\] {
+            background-color: #290910 !important;
+            color: #fecdd3 !important;
+        }
+        #toastContainer .bg-\[\#131124\] {
+            background-color: #131124 !important;
+            color: #ffffff !important;
+        }
+
+        #analyzer-output-panel > *,
+        #icebreaker-output-grid > *,
+        #optimizer-results-container > *,
+        #analyzer-output-panel button,
+        #icebreaker-output-grid button,
+        #optimizer-results-container button,
+        #analyzer-output-panel a,
+        #icebreaker-output-grid a,
+        #optimizer-results-container a {
+            pointer-events: auto !important; /* Re-enable pointer events for actual content */
+        }
+
+        .output-container, #icebreaker-options, #bio-options, [class*="options-container"] {
+            overflow-y: auto !important;
+            max-height: calc(100vh - 160px) !important;
+            padding-bottom: 40px !important;
+            box-sizing: border-box !important;
+        }
+
+        #analyzeEmptyState,
+        #icebreakEmptyState,
+        #optimizeEmptyState,
+        #analyzeEmptyState *,
+        #icebreakEmptyState *,
+        #optimizeEmptyState * {
+            color: rgba(156, 163, 175, 0.4) !important;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+        }
+
+        .nav-tab-desktop:not(.active-tab),
+        .nav-tab-mobile:not(.active-tab) {
+            background: transparent !important;
+            border: 2px solid #a855f7 !important;
+            color: #cbd5e1 !important;
+            transition: all 0.2s ease-in-out !important;
+        }
+        .nav-tab-desktop:not(.active-tab):hover,
+        .nav-tab-mobile:not(.active-tab):hover {
+            background: rgba(168, 85, 247, 0.1) !important;
+            color: #ffffff !important;
+            transform: translateY(-1px) !important;
+        }
+        .re-roll-btn {
+            background: rgba(168, 85, 247, 0.05) !important;
+            border: 1px solid #4a287a !important;
+            color: #a855f7 !important;
+            border-radius: 8px !important;
+            padding: 10px 24px !important;
+            font-weight: 600 !important;
+            font-size: 14px !important;
+            cursor: pointer !important;
+            transition: all 0.2s ease-in-out !important;
+            display: flex !important;
+            align-items: center !important;
+            gap: 8px !important;
+            margin: 20px auto 0 auto !important;
+            width: fit-content !important;
+        }
+        .re-roll-btn:hover {
+            background: rgba(168, 85, 247, 0.15) !important;
+            border-color: #a855f7 !important;
+            color: #fff !important;
+            transform: scale(1.02) !important;
+        }
+
+        /* Fluid content canvas styling with clean mobile viewport behavior */
+        #mainContentCanvas {
+            height: auto !important;
+            overflow-y: visible !important;
+            padding-bottom: 100px !important; /* Clears mobile bottom nav bar */
+        }
+        @media (min-width: 768px) {
+            #mainContentCanvas {
+                height: 100vh !important;
+                overflow-y: auto !important;
+                padding-bottom: 24px !important;
+            }
+        }
+
+        /* ==================== COMPREHENSIVE MOBILE RESPONSIVE OVERRIDES ==================== */
+        @media (max-width: 767px) {
+
+            /* --- MOBILE BOTTOM NAV: Remove heavy purple borders, use clean pill style --- */
+            .nav-tab-mobile:not(.active-tab) {
+                background: transparent !important;
+                border: none !important;
+                color: #94a3b8 !important;
+            }
+            .nav-tab-mobile:not(.active-tab):hover {
+                background: transparent !important;
+                border: none !important;
+            }
+            .nav-tab-mobile.active-tab {
+                border: none !important;
+                border-radius: 12px !important;
+            }
+
+            /* --- SECTION HEADINGS: Scale down for mobile screens --- */
+            .tab-content-panel h2,
+            #optimizeSection h1,
+            #icebreakSection h1,
+            #analyzeSection h1,
+            .font-headline {
+                font-size: 22px !important;
+                line-height: 1.25 !important;
+            }
+
+            /* --- AUTH BANNER: Stack vertically on mobile --- */
+            #topAuthBanner {
+                padding: 14px !important;
+                gap: 12px !important;
+                border-radius: 16px !important;
+                margin-bottom: 16px !important;
+            }
+            #topAuthBanner h4 {
+                font-size: 13px !important;
+            }
+            #topAuthBanner p {
+                font-size: 11px !important;
+            }
+
+            /* --- CHIP ROWS: Allow wrapping, smaller sizing for mobile --- */
+            .tone-chip,
+            .vibe-chip,
+            .bio-style-chip,
+            .vibe-chip-premium {
+                height: 36px !important;
+                padding: 0 14px !important;
+                font-size: 13px !important;
+            }
+
+            /* --- OUTPUT PANELS: Full-width and allow natural flow on mobile --- */
+            .output-container, #icebreaker-options, #bio-options, [class*="options-container"] {
+                max-height: none !important;
+                overflow-y: visible !important;
+                padding-bottom: 20px !important;
+            }
+
+            /* --- EMPTY STATE CONTAINERS: Reduce min-height on mobile --- */
+            #analyzeEmptyState,
+            #icebreakEmptyState,
+            #optimizeEmptyState {
+                min-height: 240px !important;
+            }
+
+            /* --- RESULTS PANELS: Proper padding and no clipping --- */
+            #analyzer-output-panel,
+            #icebreaker-output-grid,
+            #optimizer-results-container {
+                padding: 16px !important;
+                border-radius: 16px !important;
+                margin-bottom: 16px !important;
+            }
+
+            /* --- DROPZONE: Scale proportionally for mobile --- */
+            #dropzone {
+                min-height: 200px !important;
+                padding: 16px !important;
+            }
+            #dropzone .w-28 {
+                width: 80px !important;
+                height: 80px !important;
+            }
+
+            /* --- THUMBNAIL GRID: 3 columns on mobile instead of 5 --- */
+            #thumbnailGrid {
+                grid-template-columns: repeat(3, 1fr) !important;
+                gap: 6px !important;
+            }
+
+            /* --- CHATBOX SECTION: Full mobile-safe height --- */
+            #chatboxSection {
+                min-height: calc(100vh - 160px) !important;
+                padding: 0 !important;
+            }
+            #chatbox-simulator-panel {
+                padding: 12px !important;
+            }
+            .chatbox-wrapper {
+                min-height: calc(100vh - 240px) !important;
+                max-width: 100% !important;
+                border-radius: 16px !important;
+            }
+            #chatbox-messages-container {
+                max-height: calc(100vh - 380px) !important;
+                padding: 12px !important;
+            }
+            .chatbox-footer {
+                padding: 10px !important;
+            }
+
+            /* --- CROPPER OVERRIDES FOR MOBILE SCREENSHOT ROTATION --- */
+            .cropper-point {
+                width: 14px !important;
+                height: 14px !important;
+                margin-top: -7px !important;
+                margin-left: -7px !important;
+                border-radius: 4px !important;
+                opacity: 0.95 !important;
+                background-color: #a855f7 !important;
+                border: 2px solid #ffffff !important;
+                box-shadow: 0 0 8px rgba(168, 85, 247, 0.8) !important;
+            }
+            .cropper-point.point-n,
+            .cropper-point.point-s,
+            .cropper-point.point-e,
+            .cropper-point.point-w {
+                display: none !important;
+            }
+            .cropper-line {
+                background-color: rgba(168, 85, 247, 0.6) !important;
+            }
+            .cropper-view-box {
+                outline: 2px solid #a855f7 !important;
+                outline-color: rgba(168, 85, 247, 0.8) !important;
+                box-shadow: 0 0 15px rgba(168, 85, 247, 0.4) !important;
+            }
+            .chatbox-footer input,
+            #simulator-chat-input {
+                font-size: 15px !important;
+                padding: 10px 12px !important;
+            }
+
+            /* --- ACTION BUTTONS: Full width, touch-friendly --- */
+            #runAnalysisBtn,
+            #generateIcebreakerBtn,
+            #runAuditBtn,
+            .premium-action-btn {
+                height: 50px !important;
+                font-size: 14px !important;
+                border-radius: 12px !important;
+            }
+
+            /* --- DESKTOP NAV TABS: Force hidden redundancy (already hidden via md:flex) --- */
+            .nav-tab-desktop {
+                display: none !important;
+            }
+
+            /* --- SECTIONS: Remove horizontal flex on mobile, stack vertically --- */
+            #analyzeSection,
+            #icebreakSection,
+            #optimizeSection {
+                flex-direction: column !important;
+                gap: 16px !important;
+            }
+
+            /* --- LEFT/RIGHT COLUMNS: Full width on mobile --- */
+            #analyzeSection > div,
+            #icebreakSection > div,
+            #optimizeSection > div {
+                width: 100% !important;
+                max-height: none !important;
+                overflow-y: visible !important;
+                padding-right: 0 !important;
+            }
+
+            /* --- MODALS: Full mobile safe area --- */
+            #cropModal,
+            #purchaseModal,
+            #deleteAccountModal,
+            #authRequiredModal,
+            #unreadableErrorModal,
+            #activationModal {
+                padding: 8px !important;
+                align-items: flex-start !important;
+                padding-top: 24px !important;
+            }
+            #cropCard,
+            #deleteAccountCard,
+            #authRequiredCard,
+            #unreadableErrorCard,
+            #activationCard {
+                max-width: 100% !important;
+                border-radius: 20px !important;
+                max-height: calc(100vh - 48px) !important;
+            }
+            #modalCard {
+                max-width: 460px !important;
+                width: 100% !important;
+                margin-left: auto !important;
+                margin-right: auto !important;
+            }
+
+            /* --- TOAST NOTIFICATIONS: Adjust for mobile viewport --- */
+            #toastContainer {
+                top: 72px !important;
+                right: 12px !important;
+                left: 12px !important;
+                max-width: none !important;
+            }
+
+            /* --- EXTRACTED TEXT BLOCK: Fix overflow on mobile --- */
+            #analyzeResultsState .pr-24 {
+                padding-right: 48px !important;
+            }
+
+            /* --- PRIVACY NOTICE: Smaller text on mobile --- */
+            #analyzeSection .bg-neutral-900\\/60 p.text-\\[10px\\] {
+                font-size: 10px !important;
+                line-height: 1.5 !important;
+            }
+
+            /* --- STRATEGY HEADER: Responsive text sizing --- */
+            #strategy-title-target {
+                font-size: 20px !important;
+            }
+
+            /* --- BIO INPUT FIELDS: Adequate height --- */
+            .bio-input-field {
+                min-height: 120px !important;
+            }
+
+            /* --- TRAJECTORY METER: Fix flex wrap --- */
+            #trajectory-meter .status-row {
+                flex-wrap: wrap !important;
+                gap: 4px !important;
+                font-size: 12px !important;
+            }
+
+            /* --- RE-ROLL BUTTON: Mobile padding --- */
+            .re-roll-btn {
+                padding: 10px 18px !important;
+                font-size: 13px !important;
+            }
+
+            /* --- AMBIENT GLOWS: Mobile size scaling and vibrant opacity --- */
+            .ambient-glow-1 {
+                width: 320px !important;
+                height: 320px !important;
+                filter: blur(80px) !important;
+                opacity: 0.8 !important;
+                display: block !important;
+            }
+            .ambient-glow-2 {
+                width: 250px !important;
+                height: 250px !important;
+                filter: blur(70px) !important;
+                opacity: 0.7 !important;
+                display: block !important;
+            }
+            .ambient-glow-3 {
+                width: 220px !important;
+                height: 220px !important;
+                filter: blur(60px) !important;
+                opacity: 0.6 !important;
+                display: block !important;
+            }
+        }
+
+        /* Extra small devices (< 375px) */
+        @media (max-width: 374px) {
+            .nav-tab-mobile {
+                padding: 4px 2px !important;
+            }
+            .nav-tab-mobile .text-\\[10px\\] {
+                font-size: 9px !important;
+            }
+            .nav-tab-mobile .text-\\[24px\\] {
+                font-size: 20px !important;
+            }
+            #topAuthBanner h4 {
+                font-size: 12px !important;
+            }
+            .tone-chip,
+            .vibe-chip,
+            .bio-style-chip,
+            .vibe-chip-premium {
+                height: 32px !important;
+                padding: 0 10px !important;
+                font-size: 12px !important;
+            }
+        }
+
+        /* --- MOBILE Z-INDEX: Bottom nav MUST layer above chip containers --- */
+        @media (max-width: 767px) {
+            nav.fixed.bottom-0 {
+                z-index: 70 !important;
+            }
+            /* Reduce chip z-indexes on mobile so they don't layer above nav */
+            #analyzeToneContainer,
+            #vibeContainer,
+            #bioStyleContainer {
+                z-index: 10 !important;
+            }
+            .tone-chip,
+            .vibe-chip,
+            .bio-style-chip,
+            .vibe-chip-premium {
+                z-index: 15 !important;
+            }
+
+            /* --- CROPPER: Enlarge touch targets for mobile finger interaction --- */
+            .cropper-point {
+                width: 28px !important;
+                height: 28px !important;
+            }
+            .cropper-point.point-se,
+            .cropper-point.point-sw,
+            .cropper-point.point-nw,
+            .cropper-point.point-ne {
+                width: 32px !important;
+                height: 32px !important;
+            }
+        }
+
+        /* --- ACCESSIBILITY: Respect reduced motion preferences --- */
+        @media (prefers-reduced-motion: reduce) {
+            .animate-marquee,
+            .animate-ambient-float,
+            .animate-pulse-ring,
+            .animate-spin-slow,
+            .animate-scan-wave,
+            .scanner-line,
+            .is-analyzing .scanner-line,
+            .ambient-glow-1,
+            .ambient-glow-2 {
+                animation: none !important;
+            }
+        }
+
+        /* --- DISABLE ANIMATIONS/TRANSFORMS FOR SPECIFIC ACTION BUTTONS --- */
+        #runAnalysisBtn, #generateIcebreakerBtn, #runAuditBtn {
+            transition: none !important;
+            transform: none !important;
+            animation: none !important;
+            box-shadow: none !important;
+        }
+        #runAnalysisBtn:hover, #generateIcebreakerBtn:hover, #runAuditBtn:hover,
+        #runAnalysisBtn:active, #generateIcebreakerBtn:active, #runAuditBtn:active {
+            transform: none !important;
+            box-shadow: none !important;
+            filter: none !important;
+        }
+
+        /* Dynamic Shimmer and Scanning Loader Styles */
+        @keyframes shimmer-slide {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        .shimmer-sweep {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+            animation: shimmer-slide 1.6s infinite;
+        }
+
+        /* Bio Optimizer Main Text Style overrides */
+        .option-card .bio-main-text, .option-card p {
+            color: #ffffff !important;
+            font-size: 1.05rem !important;
+            font-weight: 600 !important;
+            font-style: normal !important;
+            margin-top: 14px !important;
+            line-height: 1.5 !important;
+            display: block !important;
+        }
+
+        /* Redesigned diagnostics stat box interaction & neon effects */
+        .matrix-item, [class*="telemetry-row"], [class*="vibe-card"] {
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+            cursor: pointer !important;
+            border: 1px solid rgba(147, 51, 234, 0.1) !important; /* Soft dark purple baseline border */
+            position: relative !important;
+        }
+
+        /* Extreme high-end cursor interaction feedback */
+        .matrix-item:hover, [class*="telemetry-row"]:hover, [class*="vibe-card"]:hover {
+            transform: translateY(-3px) scale(1.02) !important; /* Elegant lift and slight zoom */
+            background: rgba(147, 51, 234, 0.06) !important; /* Subtle translucent purple tint shift */
+            border-color: rgba(168, 85, 247, 0.6) !important; /* Brighten border line on touch */
+            box-shadow: 0 8px 24px rgba(147, 51, 234, 0.25) !important; /* Vivid ambient neon glow drop shadow */
+        }
+
+        /* Make text metrics change emphasis color dynamically on hover */
+        .matrix-item:hover span, [class*="telemetry-row"]:hover div {
+            color: #e9d5ff !important; /* Switch text to a bright silver-purple hue */
+            text-shadow: 0 0 8px rgba(168, 85, 247, 0.5) !important;
+        }
+
+        @keyframes spin-reverse {
+            from {
+                transform: rotate(360deg);
+            }
+            to {
+                transform: rotate(0deg);
+            }
+        }
+
+        /* Practice Partner & Coach Profile Header & Identity CSS Overhaul */
+        .gf-profile-header {
+            position: relative !important;
+            background: rgba(26, 18, 44, 0.9) !important;
+            border-bottom: 1px solid rgba(147, 51, 234, 0.2) !important;
+            display: flex !important;
+            flex-direction: column !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+            border-top-left-radius: 20px !important;
+            border-top-right-radius: 20px !important;
+        }
+
+        .gf-header-banner {
+            width: 100% !important;
+            height: 60px !important;
+            background: linear-gradient(90deg, #6b21a8 0%, #a855f7 50%, #db2777 100%) !important;
+            opacity: 0.85 !important;
+        }
+
+        .gf-profile-info-block {
+            display: flex !important;
+            align-items: center !important;
+            gap: 16px !important;
+            padding: 0 20px 16px 20px !important;
+            margin-top: -30px !important; /* Pull avatar up into the banner */
+            position: relative !important;
+            z-index: 10 !important;
+            flex: 1 !important;
+        }
+
+        .gf-avatar-container {
+            position: relative !important;
+            width: 70px !important;
+            height: 70px !important;
+        }
+
+        .gf-profile-pic {
+            width: 70px !important;
+            height: 70px !important;
+            border-radius: 50% !important;
+            object-fit: cover !important;
+            border: 3px solid #130d22 !important;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+        }
+
+        .gf-online-dot {
+            position: absolute !important;
+            bottom: 2px !important;
+            right: 2px !important;
+            width: 12px !important;
+            height: 12px !important;
+            background-color: #22c55e !important;
+            border: 2px solid #130d22 !important;
+            border-radius: 50% !important;
+            box-shadow: 0 0 10px #22c55e !important;
+        }
+
+        .gf-text-details {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 4px !important;
+            margin-top: 25px !important;
+        }
+
+        .gf-display-name {
+            font-family: 'Plus Jakarta Sans', sans-serif !important;
+            font-weight: 800 !important;
+            font-size: 1.2rem !important;
+            color: #ffffff !important;
+            letter-spacing: 0.5px !important;
+            margin: 0 !important;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.4) !important;
+        }
+
+        .gf-mood-badge {
+            display: inline-flex !important;
+            align-items: center !important;
+            font-family: 'Geist', monospace !important;
+            font-size: 0.7rem !important;
+            font-weight: 600 !important;
+            color: #f472b6 !important;
+            background: rgba(217, 70, 239, 0.1) !important;
+            border: 1px solid rgba(217, 70, 239, 0.2) !important;
+            padding: 2px 8px !important;
+            border-radius: 12px !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.5px !important;
+            width: fit-content !important;
+        }
+
+        .gf-reset-btn {
+            position: absolute !important;
+            right: 20px !important;
+            bottom: 16px !important;
+            background: rgba(168, 85, 247, 0.1) !important;
+            border: 1px solid rgba(168, 85, 247, 0.4) !important;
+            color: #c084fc !important;
+            font-family: 'Geist', sans-serif !important;
+            font-size: 0.75rem !important;
+            font-weight: 700 !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.5px !important;
+            padding: 6px 14px !important;
+            border-radius: 8px !important;
+            cursor: pointer !important;
+            transition: all 0.2s ease-in-out !important;
+            z-index: 20 !important;
+        }
+
+        .gf-reset-btn:hover {
+            background: rgba(168, 85, 247, 0.2) !important;
+            border-color: rgba(168, 85, 247, 0.8) !important;
+            color: #ffffff !important;
+            box-shadow: 0 0 12px rgba(168, 85, 247, 0.3) !important;
+        }
+
+    </style>
+</head>
+<body class="bg-[#090d16] text-on-surface font-sans min-h-screen md:h-screen flex flex-col md:flex-row antialiased selection:bg-primary-container selection:text-white relative overflow-x-hidden md:overflow-hidden">
+
+    <!-- Local File Protocol Warning Banner (Only visible when opened directly as file:// from Downloads) -->
+    <div id="fileProtocolWarningBanner" class="hidden fixed top-0 left-0 right-0 z-[100] w-full bg-amber-950/90 backdrop-blur-md border-b border-amber-500/40 px-4 py-2.5 text-center text-xs text-amber-200 font-medium shadow-lg">
+        ⚡ <strong>Running from local file system (file://):</strong> Google Sign-In & AI backend features require running via local server. Open <a href="http://localhost:3000/app.html" class="underline font-bold text-white hover:text-amber-300 ml-1">http://localhost:3000/app.html</a> or double-click <strong>START_WINGMAN.vbs</strong> in your project folder!
+    </div>
+    <script>
+        if (window.location.protocol === 'file:') {
+            document.addEventListener('DOMContentLoaded', function() {
+                var b = document.getElementById('fileProtocolWarningBanner');
+                if (b) b.classList.remove('hidden');
+            });
+        }
+        window.openPurchaseModal = window.openPurchaseModal || function() {
+            var modal = document.getElementById('purchaseModal');
+            if (modal) modal.classList.remove('hidden');
+        };
+    </script>
+
+    <!-- Ambient Radial Background Glows -->
+    <div class="fixed top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[750px] h-[750px] bg-gradient-to-tr from-violet-600/25 via-purple-700/20 to-pink-600/15 rounded-full blur-[140px] pointer-events-none ambient-glow-1 z-0"></div>
+    <div class="fixed top-1/3 left-1/4 w-[500px] h-[500px] bg-gradient-to-br from-pink-500/20 via-rose-600/15 to-purple-600/10 rounded-full blur-[120px] pointer-events-none ambient-glow-2 z-0"></div>
+    <div class="fixed bottom-1/4 right-1/4 w-[450px] h-[450px] bg-gradient-to-tl from-cyan-500/15 via-blue-600/10 to-violet-600/15 rounded-full blur-[110px] pointer-events-none ambient-glow-3 z-0"></div>
+
+    <!-- Global Interactive Ambient Star Plexus Canvas -->
+    <div class="fixed inset-0 w-full h-full overflow-hidden pointer-events-none z-0">
+        <canvas id="ambient-plexus-canvas"></canvas>
+    </div>
+
+    <!-- ==================== DESKTOP STICKY SIDEBAR (md:flex) ==================== -->
+    <aside class="hidden md:flex w-64 md:sticky md:top-0 md:h-screen bg-neutral-950/25 backdrop-blur-md border-r border-white/10 flex-col justify-between p-6 shadow-2xl z-40 shrink-0">
+        <div class="flex flex-col gap-8">            <!-- Brand Logo Gateway & Home Backlink -->
+            <a href="index.html" class="flex items-center justify-between group cursor-pointer" title="Back to Landing Page">
+                <div class="flex items-center gap-3">
+                    <img src="logo.png" alt="MyWingman Logo" class="w-11 h-11 object-contain rounded-md transition-transform group-hover:scale-105" onerror="this.style.display='none'; this.nextElementSibling.style.marginLeft='0'"/>
+                    <span class="text-2xl tracking-tight">
+                        <span class="font-light text-slate-400">My </span>
+                        <span class="font-extrabold italic bg-gradient-to-r from-white via-slate-200 to-violet-400 bg-clip-text text-transparent">Wingman</span>
+                    </span>
+                </div>
+                <span class="material-symbols-outlined text-slate-400 group-hover:text-white transition-colors text-[22px]" title="Return Home">home</span>
+            </a>
+
+            <!-- Desktop Navigation Controllers -->
+            <nav class="flex flex-col gap-2" id="desktopNav">
+                <button type="button" id="btn-screenshot" class="nav-tab-desktop active-tab flex items-center gap-3 px-4 py-3 rounded-xl text-white bg-violet-600/30 border border-violet-500/40 font-label text-sm transition-all shadow-[0_4px_15px_-3px_rgba(139,92,246,0.3)] w-full text-left" data-tab="analyzeSection" onclick="window.switchTab('analyzeSection')">
+                    <span class="material-symbols-outlined text-[22px]" style="font-variation-settings: 'FILL' 1;">analytics</span>
+                    <span>Analyze Chat Screenshot</span>
+                </button>
+                <button type="button" id="btn-icebreaker" class="nav-tab-desktop flex items-center gap-3 px-4 py-3 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 font-label text-sm transition-all w-full text-left" data-tab="icebreakSection" onclick="window.switchTab('icebreakSection')">
+                    <span class="material-symbols-outlined text-[22px]">auto_awesome</span>
+                    <span>Icebreaker Generator</span>
+                </button>
+                <button type="button" id="btn-optimizer" class="nav-tab-desktop flex items-center gap-3 px-4 py-3 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 font-label text-sm transition-all w-full text-left" data-tab="optimizeSection" onclick="window.switchTab('optimizeSection')">
+                    <span class="material-symbols-outlined text-[22px]">insights</span>
+                    <span>Profile Bio Optimizer</span>
+                </button>
+                <button type="button" id="btn-chatbox" class="nav-tab-desktop flex items-center gap-3 px-4 py-3 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 font-label text-sm transition-all w-full text-left" data-tab="chatboxSection" onclick="window.switchTab('chatboxSection')">
+                    <svg class="w-[22px] h-[22px] text-violet-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
+                    </svg>
+                    <span>Practice Partner & Coach</span>
+                </button>
+            </nav>
+        </div>
+
+        <!-- Desktop Credit Widget & Home Return Button -->
+        <div class="flex flex-col gap-3 pt-4 border-t border-white/10">
+            <!-- Credit Balance Widget -->
+            <div class="flex items-center justify-between bg-black/30 backdrop-blur-sm p-3 rounded-xl border border-white/10">
+                <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-violet-400 text-[18px]">bolt</span>
+                    <span class="font-label text-xs text-white font-semibold" id="desktopCreditCount">0 Credits</span>
+                </div>
+                <button type="button" id="add-credits-btn" class="bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs px-3 py-1 rounded-lg transition-transform active:scale-95 shadow-md" onclick="window.openPurchaseModal()">
+                    + Add
+                </button>
+            </div>
+            
+            <!-- Sidebar User Card & Auth Section -->
+            <div id="sidebarUserCard" class="sidebar-user-card p-3 rounded-xl bg-slate-900/60 border border-slate-800/80 mt-auto hidden">
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <div class="w-8 h-8 rounded-full bg-purple-600/30 text-purple-400 flex items-center justify-center font-bold text-xs flex-shrink-0 border border-purple-500/30" id="userAvatarBadge">
+                            U
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-xs font-semibold text-white truncate" id="userEmailBadge">user@example.com</p>
+                            <p class="text-[10px] text-slate-400 truncate">Free Plan</p>
+                        </div>
+                    </div>
+                </div>
+                <button id="signOutBtn" type="button" onclick="window.handleSignOut(event)" class="w-full py-1.5 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium transition flex items-center justify-center gap-2 border border-red-500/20 cursor-pointer">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                    Sign Out
+                </button>
+            </div>
+
+            <button type="button" id="desktopAuthBtn" class="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-label text-xs py-2.5 px-3 rounded-xl font-bold shadow-lg shadow-violet-600/30 transition-all transform active:scale-95 cursor-pointer border border-violet-400/30" onclick="window.handleAuthBtnClick(event)">
+                <svg class="w-4 h-4 text-white shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                </svg>
+                <span id="desktopAuthBtnLabel">Sign In / Account</span>
+            </button>
+
+            <button type="button" class="flex items-center justify-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors py-1.5 rounded-lg hover:bg-white/5 font-label w-full cursor-pointer" onclick="window.openSettingsModal(event)">
+                <span class="material-symbols-outlined text-[16px]">settings</span>
+                <span>Settings</span>
+            </button>
+            
+            <a href="index.html" class="flex items-center justify-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors py-1.5 rounded-lg hover:bg-white/5 font-label" id="exitLandingLink">
+                <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+                <span>Exit to Landing Page</span>
+            </a>
+        </div>
+    </aside>
+
+    <!-- ==================== MOBILE TOP APP BAR (md:hidden) ==================== -->
+    <header class="w-full top-0 sticky z-40 bg-black/35 backdrop-blur-md border-b border-white/10 flex md:hidden items-center justify-between h-20 px-5 shrink-0">
+        <a href="index.html" class="flex items-center gap-3 cursor-pointer">
+            <img src="logo.png" alt="MyWingman Logo" class="w-11 h-11 object-contain rounded-md" onerror="this.style.display='none'; this.nextElementSibling.style.marginLeft='0'"/>
+            <span class="text-2xl tracking-tight">
+                <span class="font-light text-slate-300">My </span>
+                <span class="font-extrabold italic bg-gradient-to-r from-white via-slate-200 to-violet-400 bg-clip-text text-transparent">Wingman</span>
+            </span>
+        </a>
+        
+        <div class="flex items-center gap-1.5 sm:gap-2">
+            <!-- Mobile Sign In / Account Button -->
+            <button type="button" id="mobileAuthBtn" class="h-9 px-3 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 border border-violet-400/40 text-white flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-md shrink-0 font-label text-xs font-bold" title="Account Sign In" onclick="window.handleAuthBtnClick(event)">
+                <svg class="w-4 h-4 text-white shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                </svg>
+                <span id="mobileAuthBtnLabel" class="hidden sm:inline">Sign In</span>
+            </button>
+
+            <!-- Mobile Credit Badge Trigger with + Add Button -->
+            <div class="flex items-center gap-1.5 bg-neutral-900/90 hover:bg-neutral-800/90 rounded-full pl-2.5 pr-1 py-1 border border-violet-500/40 cursor-pointer transition-all active:scale-95 shadow-md shrink-0" onclick="window.openPurchaseModal()" title="Buy Credits">
+                <span class="material-symbols-outlined text-amber-400 text-[15px] shrink-0">bolt</span>
+                <span class="font-label text-[11px] sm:text-xs text-white font-extrabold tracking-tight whitespace-nowrap" id="mobileCreditCount">0 Credits</span>
+                <span class="bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-bold text-[11px] px-2 py-0.5 rounded-full flex items-center justify-center shadow-sm shrink-0">+ Add</span>
+            </div>
+
+            <!-- Mobile Settings Icon Button -->
+            <button type="button" class="w-9 h-9 rounded-full bg-neutral-900/90 hover:bg-white/15 border border-white/20 text-slate-200 hover:text-white flex items-center justify-center transition-all active:scale-95 cursor-pointer shadow-md shrink-0" title="Settings" onclick="window.openSettingsModal()">
+                <span class="material-symbols-outlined text-[20px] text-violet-300">settings</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- ==================== MAIN FLUID CONTENT CANVAS ==================== -->
+    <main class="flex-1 w-full max-w-7xl mx-auto p-4 md:p-6 flex flex-col md:overflow-hidden md:h-full relative z-10" id="mainContentCanvas" style="box-sizing: border-box !important; scroll-behavior: smooth; position: relative; z-index: 10;">
+        
+
+
+        <!-- ==================== SECTION 1: Screenshot Reply Analyzer ==================== -->
+        <section class="w-full h-auto overflow-visible flex flex-col space-y-6 md:flex-row md:space-y-0 md:gap-6 transition-all duration-300 md:h-full" id="analyzeSection">
+            
+            <!-- LEFT SETUP COLUMN: Input Utilities & Dropzone -->
+            <div class="w-full md:w-1/2 h-auto md:max-h-[calc(100vh-4rem)] md:overflow-y-auto md:custom-scrollbar md:pr-2 space-y-5 pb-6 md:pb-12" style="position: relative !important; z-index: 20 !important;">
+                <div class="flex flex-col gap-4 bg-neutral-950/30 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl">
+                    <div>
+                        <h1 class="font-headline text-2xl md:text-3xl text-white font-bold">Analyze Chat Screenshot</h1>
+                        <p class="text-xs text-slate-400 mt-1">Upload up to 5 chat screenshots to generate unified tailored replies.</p>
+                    </div>
+
+
+
+                    <div class="screenshot-preview-container" id="screenshotPreviewContainer">
+                    <input type="file" id="screenshotInput" accept="image/*,.heic,.heif" multiple style="display: none;" onclick="event.stopPropagation();"/>
+                    <div class="scanner-line"></div>
+                    <div class="rounded-2xl p-6 flex flex-col items-center justify-center border-dashed border-2 border-white/10 hover:border-violet-500/80 hover:shadow-[0_0_35px_rgba(139,92,246,0.25)] bg-black/40 backdrop-blur-md transition-all duration-500 cursor-pointer min-h-[260px] w-full mx-auto group relative overflow-hidden shadow-inner" id="dropzone" onclick="window.triggerDropzoneClick(event)">
+                        
+                        <!-- Sleek High-Tech Vision Lens Target Node Graphic Placeholder -->
+                        <div class="flex flex-col items-center justify-center w-full p-2" id="dropzoneEmpty">
+                            
+                            <!-- Interactive Pulsing Optical Scanner Target Node -->
+                            <div class="relative w-32 h-32 flex items-center justify-center mb-4 group-hover:scale-105 transition-transform duration-500 animate-ambient-float">
+                                <!-- Rotating Outer Caliper Bounds -->
+                                <div class="absolute inset-0 rounded-full border border-dashed border-violet-500/40 animate-spin-slow"></div>
+                                <!-- Soft Glowing Inner Ring -->
+                                <div class="absolute inset-2 rounded-full border border-violet-500/20 bg-violet-950/20 backdrop-blur-md animate-pulse-ring"></div>
+                                <!-- Center Vision Lens Core -->
+                                <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600/50 to-fuchsia-900/70 border border-violet-400/60 flex items-center justify-center animate-camera-glow transition-all duration-300">
+                                    <svg class="w-9 h-9 text-violet-200 animate-pulse group-hover:text-white transition-colors duration-300 drop-shadow-[0_0_10px_rgba(168,85,247,0.9)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 4h4M3 4v4M21 4h-4M21 4v4M3 20h4M3 20v-4M21 20h-4M21 20v-4"></path>
+                                    </svg>
+                                </div>
+                            </div>
+
+                            <p class="font-label text-base sm:text-lg text-white font-bold tracking-wide">Upload Chat Screenshots (Up to 5)</p>
+                            <span class="font-body text-slate-300 text-xs sm:text-sm mt-1 font-medium">Supports Tinder, Bumble, Hinge, Instagram DMs</span>
+                        </div>
+
+                        <!-- Horizontal Thumbnail Ribbon Preview Grid -->
+                        <div class="hidden w-full flex-col gap-3 relative" id="dropzonePreview">
+                            <div class="flex items-center justify-between px-1">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="text-xs font-label text-slate-300 font-medium" id="uploadedCountLabel">0 / 5 Screenshots Loaded</span>
+                                    <span class="text-[10px] sm:text-[11px] font-body text-slate-400 font-normal opacity-80">⋮⋮ Drag onto another image to reorder</span>
+                                </div>
+                                <button type="button" class="text-[11px] text-violet-400 hover:underline font-semibold" onclick="window.triggerAddMoreImages(event)">+ Add Image</button>
+                            </div>
+                            <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 w-full" id="thumbnailGrid"></div>
+                        </div>
+                    </div>
+                    </div>
+
+                    <!-- Response Tone Chips (Clean Typography - Emojis Stripped) -->
+                    <div class="flex flex-col gap-2">
+                        <p class="font-label text-[12px] uppercase tracking-wider text-slate-400">Desired Response Tone</p>
+                        <div id="analyzeToneContainer">
+                            <button type="button" id="tone-witty" class="tone-chip vibe-chip-premium active" data-tone="Witty">🎯 Witty</button>
+                            <button type="button" id="tone-flirty" class="tone-chip vibe-chip-premium" data-tone="Flirty">🔥 Flirty</button>
+                            <button type="button" id="tone-casual" class="tone-chip vibe-chip-premium" data-tone="Casual">💬 Casual</button>
+                            <button type="button" id="tone-bold" class="tone-chip vibe-chip-premium" data-tone="Bold">⚡ Bold</button>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button Container with Dynamic Credit Proxy -->
+                    <div class="flex flex-col gap-2 pt-2">
+                        <button type="button" id="runAnalysisBtn" class="w-full premium-action-btn primary-btn text-white py-3.5 rounded-xl font-label text-sm flex items-center justify-center gap-2 font-bold opacity-40 cursor-not-allowed" onclick="window.runAnalysis(event)">
+                            <span>Generate Perfect Replies</span>
+                        </button>
+                        <div class="text-[11px] text-slate-400 text-center px-1 font-mono">
+                            <span id="creditCostLabel">Consumes 10 Credits</span>
+                        </div>
+                        
+                        <!-- Privacy Notice -->
+                        <div class="bg-neutral-900/60 border border-white/5 rounded-xl p-3 flex items-start gap-2.5 mt-2">
+                            <span class="material-symbols-outlined text-[16px] text-violet-400 shrink-0 mt-0.5">lock</span>
+                            <p class="text-[10px] text-slate-400 font-body leading-relaxed text-left">
+                                How We Handle Your Data: Your screenshots are automatically deleted from the website interface shortly after uploading. We clear the session memory instantly to ensure your private conversations do not linger on the site.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT RESULTS COLUMN: Master Consolidated Framework -->
+            <div class="w-full md:w-1/2 h-auto md:max-h-[calc(100vh-4rem)] md:overflow-y-auto md:custom-scrollbar md:pr-2 flex flex-col justify-start space-y-5 pb-12 bg-neutral-900/60 border border-white/5 rounded-2xl p-6 shadow-2xl" id="analyzer-output-panel" style="position: relative !important; z-index: 10 !important;">
+                
+                <!-- Dynamic Emerald SVG Radial Success Meter Header Line -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-6 pt-1 shrink-0">
+                    <div class="flex flex-col">
+                        <span class="text-xs md:text-sm text-slate-400 font-bold uppercase tracking-widest font-mono">Analysis Strategy</span>
+                        <span class="text-2xl md:text-3xl font-extrabold text-white mt-1 tracking-tight" id="strategy-title-target">The Playful Pivot</span>
+                    </div>
+                    
+                    <div class="flex items-center gap-2 bg-neutral-950/80 border border-white/10 px-3.5 py-2 rounded-xl text-left">
+                        <span class="material-symbols-outlined text-[16px] text-violet-400 shrink-0">info</span>
+                        <span class="text-[10px] font-mono text-slate-400 leading-tight">AI-generated estimate for guidance only; not based on verified real-world outcomes.</span>
+                    </div>
+                </div>
+
+                <!-- PHASE 'EMPTY': Initial Spacious Centered Empty Frame -->
+                <div class="border border-white/5 bg-neutral-950/20 backdrop-blur-md rounded-3xl p-8 md:p-12 text-center flex flex-col items-center justify-center my-auto min-h-[400px] w-full relative overflow-hidden transition-all duration-300 hover:border-violet-500/20" id="analyzeEmptyState">
+                    <!-- Subtle Glow -->
+                    <div class="absolute -top-12 -right-12 w-48 h-48 bg-violet-600/10 rounded-full blur-3xl pointer-events-none"></div>
+                    
+                    <div class="flex flex-col items-center max-w-sm">
+                        <!-- Icon Circle -->
+                        <div class="w-16 h-16 rounded-full bg-violet-500/10 border border-violet-500/25 flex items-center justify-center mb-6 shadow-[0_0_20px_rgba(168,85,247,0.15)] animate-pulse">
+                            <svg class="w-7 h-7 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 21a9 9 0 100-18 9 9 0 000 18zM12 15a3 3 0 100-6 3 3 0 000 6zM12 3v3M12 18v3M3 12h3M18 12h3"></path>
+                            </svg>
+                        </div>
+                        
+                        <!-- Headline -->
+                        <h3 class="text-lg font-bold text-white mb-2 font-headline tracking-wide uppercase">AWAITING CHAT SCREENSHOT</h3>
+                        
+                        <!-- Description -->
+                        <p class="text-sm text-slate-400 leading-relaxed mb-6 font-body font-medium">
+                            Upload a screenshot of your chat on the left. We'll analyze the conversation flow and craft the perfect reply options.
+                        </p>
+                        
+                        <!-- Status Badge -->
+                        <div class="inline-flex items-center gap-2 bg-neutral-950 border border-white/10 px-3 py-1 rounded-full text-xs font-mono text-slate-400">
+                            <span class="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse"></span>
+                            <span class="uppercase">SYSTEM READY</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PHASE 'ANALYZING': Elegant Uniform Skeleton Array -->
+                <div class="hidden flex-col gap-5 py-4 min-h-[380px] items-center justify-center text-center animate-pulse-ring" id="analyzeSkeletonState">
+                    <!-- Beautiful Scanning Radar Ring -->
+                    <div class="relative w-24 h-24 flex items-center justify-center">
+                        <!-- Outermost spinning glow ring -->
+                        <div class="absolute inset-0 rounded-full border border-dashed border-violet-500/30 animate-spin-slow"></div>
+                        <!-- Middle breathing pulse ring -->
+                        <div class="absolute w-20 h-20 rounded-full border border-violet-500/50 animate-pulse bg-violet-950/20 shadow-[0_0_15px_rgba(139,92,246,0.15)]"></div>
+                        <!-- Inner core with icon -->
+                        <div class="relative w-16 h-16 rounded-full bg-neutral-900 border border-violet-500/60 flex items-center justify-center shadow-[0_0_20px_rgba(139,92,246,0.3)]">
+                            <span class="material-symbols-outlined text-[32px] text-violet-400 animate-pulse">image_search</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Analysis Status & Telemetry -->
+                    <div class="flex flex-col gap-2 w-full max-w-sm mt-2">
+                        <div class="flex justify-between items-center text-[10px] font-mono text-violet-400 tracking-wider">
+                            <span id="analyze-telemetry-status">INITIALIZING RADAR PIPELINE...</span>
+                            <span id="analyze-telemetry-pct" class="font-bold">0%</span>
+                        </div>
+                        <!-- Loading Progress Bar -->
+                        <div class="h-1.5 w-full bg-violet-950/50 rounded-full overflow-hidden border border-white/5 relative">
+                            <div id="analyze-telemetry-bar" class="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full transition-all duration-300" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Shimmering Skeleton Mockup Cards -->
+                    <div class="w-full flex flex-col gap-3 mt-4 text-left">
+                        <div class="glass-card rounded-2xl p-4 border border-white/5 bg-neutral-950/20 relative overflow-hidden">
+                            <div class="shimmer-sweep"></div>
+                            <div class="h-3 w-1/4 bg-white/10 rounded mb-3"></div>
+                            <div class="h-4 w-3/4 bg-white/5 rounded"></div>
+                        </div>
+                        <div class="glass-card rounded-2xl p-4 border border-white/5 bg-neutral-950/20 relative overflow-hidden">
+                            <div class="shimmer-sweep"></div>
+                            <div class="h-3 w-1/5 bg-white/10 rounded mb-3"></div>
+                            <div class="h-4 w-5/6 bg-white/5 rounded"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PHASE 'REVEALED': Consolidated Master Single-Result Layout -->
+                <div class="hidden flex-col space-y-4" id="analyzeResultsState">
+                    
+                    <!-- Dating Trajectory Thermometer Widget -->
+                    <div id="trajectory-meter" class="ui-widget" style="margin-bottom: 20px;">
+                      <div class="status-row" style="display: flex; color: #fff;">
+                        <span>Match Momentum: <strong id="momentum-status-val">Analyzing...</strong></span>
+                      </div>
+                      <div class="meter-bg" style="background: #1e1b4b; height: 8px; border-radius: 4px; margin-top: 8px; overflow: hidden;">
+                        <div id="meter-fill" style="background: linear-gradient(90deg, #a855f7, #ef4444); width: 0%; height: 100%; transition: width 0.5s ease;"></div>
+                      </div>
+                    </div>
+
+                    <div id="analyzeResultsCards" class="flex flex-col space-y-4"></div>
+                    <div id="breakdownTagline" style="display:none;"></div>
+                    <div id="breakdownTip" style="display:none;"></div>
+                    <div id="reply1Text" style="display:none;"></div>
+                    <div id="reply2Text" style="display:none;"></div>
+
+                </div>
+
+            </div>
+        </section>
+
+        <!-- ==================== SECTION 2: Icebreaker Generator ==================== -->
+        <section class="hidden w-full h-auto overflow-visible flex flex-col space-y-6 md:flex-row md:space-y-0 md:gap-6 transition-all duration-300 md:h-full" id="icebreakSection">
+            
+            <!-- LEFT COLUMN: Bio Input & Vibe Chips -->
+            <div class="w-full md:w-1/2 h-auto md:max-h-[calc(100vh-4rem)] md:overflow-y-auto md:custom-scrollbar md:pr-2 space-y-5 pb-6 md:pb-12" style="position: relative !important; z-index: 20 !important;">
+                <div class="flex flex-col gap-4 bg-neutral-950/30 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl">
+                    <div>
+                        <h1 class="font-headline text-2xl md:text-3xl text-white font-bold">Icebreaker Generator</h1>
+                        <p class="text-xs text-slate-400 mt-1">Paste profile bio or prompt details to craft high-conversion openers.</p>
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <div class="flex items-center justify-between">
+                            <label class="font-label text-xs uppercase tracking-wider text-slate-400" for="bioInput">Bio / Profile Context</label>
+                        </div>
+                        <div class="rounded-2xl p-1 bg-black/40 backdrop-blur-md border border-white/10">
+                            <textarea id="bioInput" class="bio-input-field w-full bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-3.5 text-white focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all resize-none font-body text-sm min-h-[185px] placeholder:text-slate-500" placeholder="Paste their bio or describe their profile (min 5 chars)..." spellcheck="false"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <p class="font-label text-xs uppercase tracking-wider text-slate-400">Opening Vibe</p>
+                        <div id="vibeContainer">
+                            <button type="button" id="vibe-direct" class="vibe-chip vibe-chip-premium active" data-vibe="Direct">🎯 Direct</button>
+                            <button type="button" id="vibe-intriguing" class="vibe-chip vibe-chip-premium" data-vibe="Intriguing">🔮 Intriguing</button>
+                            <button type="button" id="vibe-humorous" class="vibe-chip vibe-chip-premium" data-vibe="Humorous">😂 Humorous</button>
+                            <button type="button" id="vibe-compliment" class="vibe-chip vibe-chip-premium" data-vibe="Compliment">✨ Compliment</button>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button & Protocol Notice -->
+                    <div class="flex flex-col gap-2 pt-1">
+                        <button type="button" id="generateIcebreakerBtn" class="w-full premium-action-btn primary-btn text-white py-3.5 rounded-xl font-label text-sm flex items-center justify-center gap-2 font-bold cursor-pointer transition-all active:scale-95 shadow-lg shadow-violet-600/30" onclick="window.generateIcebreaker(event)">
+                            <span>Generate Icebreaker</span>
+                        </button>
+                        <div class="text-[11px] text-slate-400 text-center px-1 font-mono">
+                            <span id="icebreakerCreditCostLabel">Consumes 10 Credits</span>
+                        </div>
+                        
+                        <!-- Strategy Protocol -->
+                        <div class="bg-neutral-950/40 backdrop-blur-md border border-white/5 rounded-xl p-3 flex items-start gap-2.5 mt-1">
+                            <span class="material-symbols-outlined text-[16px] text-emerald-400 shrink-0 mt-0.5">tips_and_updates</span>
+                            <p class="text-[10px] text-slate-400 font-body leading-relaxed text-left">
+                                Icebreaker Strategy Protocol: High-converting openers target specific profile details (interests, photos, bio prompts). Avoid generic greetings ("hey", "how is your week") to trigger immediate engagement.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT COLUMN: Icebreaker Output -->
+            <div class="w-full md:w-1/2 h-auto md:max-h-[calc(100vh-4rem)] md:overflow-y-auto md:custom-scrollbar md:pr-2 flex flex-col justify-start space-y-5 pb-12 bg-neutral-900/60 border border-white/5 rounded-2xl p-6 shadow-2xl" id="icebreaker-output-grid" style="position: relative !important; z-index: 10 !important;">
+                
+                <div class="border border-white/5 bg-neutral-950/20 backdrop-blur-md rounded-3xl p-8 md:p-12 text-center flex flex-col items-center justify-center my-auto min-h-[400px] w-full relative overflow-hidden transition-all duration-300 hover:border-emerald-500/20" id="icebreakEmptyState">
+                    <!-- Subtle Glow -->
+                    <div class="absolute -top-12 -right-12 w-48 h-48 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none"></div>
+                    
+                    <div class="flex flex-col items-center max-w-sm">
+                        <!-- Icon Circle -->
+                        <div class="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center mb-6 shadow-[0_0_20px_rgba(16,185,129,0.15)] animate-pulse">
+                            <svg class="w-7 h-7 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                        </div>
+                        
+                        <!-- Headline -->
+                        <h3 class="text-lg font-bold text-white mb-2 font-headline tracking-wide uppercase">AWAITING PROFILE BIO</h3>
+                        
+                        <!-- Description -->
+                        <p class="text-sm text-slate-400 leading-relaxed mb-6 font-body font-medium">
+                            Paste your match's profile description on the left. We'll decode their vibes and generate charming opening lines.
+                        </p>
+                        
+                        <!-- Status Badge -->
+                        <div class="inline-flex items-center gap-2 bg-neutral-950 border border-white/10 px-3 py-1 rounded-full text-xs font-mono text-slate-400">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                            <span class="uppercase">SYSTEM READY</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hidden flex-col gap-5 py-4 min-h-[380px] items-center justify-center text-center animate-pulse-ring" id="icebreakSkeletonState">
+                    <!-- Beautiful Chat Synthesis Ring -->
+                    <div class="relative w-24 h-24 flex items-center justify-center">
+                        <div class="absolute inset-0 rounded-full border border-dashed border-emerald-500/30 animate-spin-slow"></div>
+                        <div class="absolute w-20 h-20 rounded-full border border-emerald-500/50 animate-pulse bg-emerald-950/20 shadow-[0_0_15px_rgba(16,185,129,0.15)]"></div>
+                        <div class="relative w-16 h-16 rounded-full bg-neutral-900 border border-emerald-500/60 flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+                            <span class="material-symbols-outlined text-[32px] text-emerald-400 animate-pulse">forum</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Telemetry -->
+                    <div class="flex flex-col gap-2 w-full max-w-sm mt-2">
+                        <div class="flex justify-between items-center text-[10px] font-mono text-emerald-400 tracking-wider">
+                            <span id="icebreak-telemetry-status">ISOLATING CONVERSATION SEGMENTS...</span>
+                            <span id="icebreak-telemetry-pct" class="font-bold">0%</span>
+                        </div>
+                        <div class="h-1.5 w-full bg-emerald-950/50 rounded-full overflow-hidden border border-white/5 relative">
+                            <div id="icebreak-telemetry-bar" class="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-300" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Shimmering Skeletons -->
+                    <div class="w-full flex flex-col gap-3 mt-4 text-left">
+                        <div class="glass-card rounded-2xl p-4 border border-white/5 bg-neutral-950/20 relative overflow-hidden">
+                            <div class="shimmer-sweep"></div>
+                            <div class="h-3 w-1/4 bg-white/10 rounded mb-3"></div>
+                            <div class="h-4 w-3/4 bg-white/5 rounded"></div>
+                        </div>
+                        <div class="glass-card rounded-2xl p-4 border border-white/5 bg-neutral-950/20 relative overflow-hidden">
+                            <div class="shimmer-sweep"></div>
+                            <div class="h-3 w-1/5 bg-white/10 rounded mb-3"></div>
+                            <div class="h-4 w-5/6 bg-white/5 rounded"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hidden flex-col space-y-4" id="icebreakResultsState"></div>
+
+            </div>
+        </section>
+
+        <!-- ==================== SECTION 3: Profile Optimizer ==================== -->
+        <section class="hidden w-full h-auto overflow-visible flex flex-col space-y-6 md:flex-row md:space-y-0 md:gap-6 transition-all duration-300 md:h-full" id="optimizeSection">
+            
+            <!-- LEFT COLUMN: Profile Audit Controls -->
+            <div class="w-full md:w-1/2 h-auto md:max-h-[calc(100vh-4rem)] md:overflow-y-auto md:custom-scrollbar md:pr-2 space-y-5 pb-6 md:pb-12" style="position: relative !important; z-index: 20 !important;">
+                <div class="flex flex-col gap-4 bg-neutral-950/30 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl">
+                    <div>
+                        <h1 class="font-headline text-2xl md:text-3xl text-white font-bold">Profile Bio Optimizer</h1>
+                        <p class="text-xs text-slate-400 mt-1">Refine your profile bio text to instantly optimize your match probability and dictate your conversation trajectory.</p>
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <label class="font-label text-xs uppercase tracking-wider text-slate-400" for="auditBioInput">Your Current Profile Bio</label>
+                        <div class="rounded-2xl p-1 bg-black/40 backdrop-blur-md border border-white/10">
+                            <textarea id="auditBioInput" class="bio-input-field w-full bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-3.5 text-white focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all resize-none font-body text-sm min-h-[185px] placeholder:text-slate-500" placeholder="Paste your current profile bio (min 5 chars)..." spellcheck="false"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <p class="font-label text-xs uppercase tracking-wider text-slate-400">DESIRED BIO STYLE</p>
+                        <div id="bioStyleContainer">
+                            <button type="button" id="style-punchy" class="bio-style-chip vibe-chip-premium active" data-bio-style="Punchy">⚡ Punchy</button>
+                            <button type="button" id="style-playful" class="bio-style-chip vibe-chip-premium" data-bio-style="Playful">😜 Playful</button>
+                            <button type="button" id="style-greenflag" class="bio-style-chip vibe-chip-premium" data-bio-style="Green Flag">🟢 Green Flag</button>
+                            <button type="button" id="style-mysterious" class="bio-style-chip vibe-chip-premium" data-bio-style="Mysterious">🕶️ Mysterious</button>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button & Protocol Notice -->
+                    <div class="flex flex-col gap-2 pt-1">
+                        <button type="button" id="runAuditBtn" class="w-full premium-action-btn primary-btn text-white py-3.5 rounded-xl font-label text-sm flex items-center justify-center gap-2 font-bold cursor-pointer transition-all active:scale-95 shadow-lg shadow-violet-600/30" onclick="window.runAudit(event)">
+                            <span>Optimize My Bio</span>
+                        </button>
+                        <div class="text-[11px] text-slate-400 text-center px-1 font-mono">
+                            <span id="optimizerCreditCostLabel">Consumes 10 Credits</span>
+                        </div>
+                        
+                        <!-- Optimization Protocol -->
+                        <div class="bg-neutral-950/40 backdrop-blur-md border border-white/5 rounded-xl p-3 flex items-start gap-2.5 mt-1">
+                            <span class="material-symbols-outlined text-[16px] text-fuchsia-400 shrink-0 mt-0.5">verified</span>
+                            <p class="text-[10px] text-slate-400 font-body leading-relaxed text-left">
+                                Bio Optimization Protocol: High-converting dating bios use a 3-line formula: an engaging self-awareness hook, a relatable lifestyle vibe, and a low-pressure call-to-action prompt to make starting conversations effortless.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT COLUMN: Audit Results Dashboard -->
+            <div class="w-full md:w-1/2 h-auto md:max-h-[calc(100vh-4rem)] md:overflow-y-auto md:custom-scrollbar md:pr-2 flex flex-col justify-start space-y-5 pb-12 bg-neutral-900/60 border border-white/5 rounded-2xl p-6 shadow-2xl" id="optimizer-results-container" style="position: relative !important; z-index: 10 !important;">
+                
+                <div class="border border-white/5 bg-neutral-950/20 backdrop-blur-md rounded-3xl p-8 md:p-12 text-center flex flex-col items-center justify-center my-auto min-h-[400px] w-full relative overflow-hidden transition-all duration-300 hover:border-fuchsia-500/20" id="optimizeEmptyState">
+                    <!-- Subtle Glow -->
+                    <div class="absolute -top-12 -right-12 w-48 h-48 bg-fuchsia-600/10 rounded-full blur-3xl pointer-events-none"></div>
+                    
+                    <div class="flex flex-col items-center max-w-sm">
+                        <!-- Icon Circle -->
+                        <div class="w-16 h-16 rounded-full bg-fuchsia-500/10 border border-fuchsia-500/25 flex items-center justify-center mb-6 shadow-[0_0_20px_rgba(217,70,239,0.15)] animate-pulse">
+                            <svg class="w-7 h-7 text-fuchsia-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4M4 19h4M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5L13 3z"></path>
+                            </svg>
+                        </div>
+                        
+                        <!-- Headline -->
+                        <h3 class="text-lg font-bold text-white mb-2 font-headline tracking-wide uppercase">AWAITING BIO TEXT</h3>
+                        
+                        <!-- Description -->
+                        <p class="text-sm text-slate-400 leading-relaxed mb-6 font-body font-medium">
+                            Enter your current bio text on the left. We'll audit it for conversion power and suggest 10 premium variations.
+                        </p>
+                        
+                        <!-- Status Badge -->
+                        <div class="inline-flex items-center gap-2 bg-neutral-950 border border-white/10 px-3 py-1 rounded-full text-xs font-mono text-slate-400">
+                            <span class="w-1.5 h-1.5 rounded-full bg-fuchsia-400 animate-pulse"></span>
+                            <span class="uppercase">SYSTEM READY</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hidden flex-col gap-5 py-4 min-h-[380px] items-center justify-center text-center animate-pulse-ring" id="optimizeSkeletonState">
+                    <!-- Beautiful Copywriter Magnet Ring -->
+                    <div class="relative w-24 h-24 flex items-center justify-center">
+                        <div class="absolute inset-0 rounded-full border border-dashed border-violet-500/30 animate-spin-slow"></div>
+                        <div class="absolute w-20 h-20 rounded-full border border-violet-500/50 animate-pulse bg-violet-950/20 shadow-[0_0_15px_rgba(139,92,246,0.15)]"></div>
+                        <div class="relative w-16 h-16 rounded-full bg-neutral-900 border border-violet-500/60 flex items-center justify-center shadow-[0_0_20px_rgba(139,92,246,0.3)]">
+                            <span class="material-symbols-outlined text-[32px] text-violet-400 animate-pulse">edit_note</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Telemetry -->
+                    <div class="flex flex-col gap-2 w-full max-w-sm mt-2">
+                        <div class="flex justify-between items-center text-[10px] font-mono text-violet-400 tracking-wider">
+                            <span id="optimize-telemetry-status">CALIBRATING COPYWRITING HOOKS...</span>
+                            <span id="optimize-telemetry-pct" class="font-bold">0%</span>
+                        </div>
+                        <div class="h-1.5 w-full bg-violet-950/50 rounded-full overflow-hidden border border-white/5 relative">
+                            <div id="optimize-telemetry-bar" class="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full transition-all duration-300" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Shimmering Skeletons -->
+                    <div class="w-full flex flex-col gap-3 mt-4 text-left">
+                        <div class="glass-card rounded-2xl p-4 border border-white/5 bg-neutral-950/20 relative overflow-hidden">
+                            <div class="shimmer-sweep"></div>
+                            <div class="h-3 w-1/4 bg-white/10 rounded mb-3"></div>
+                            <div class="h-4 w-3/4 bg-white/5 rounded"></div>
+                        </div>
+                        <div class="glass-card rounded-2xl p-4 border border-white/5 bg-neutral-950/20 relative overflow-hidden">
+                            <div class="shimmer-sweep"></div>
+                            <div class="h-3 w-1/5 bg-white/10 rounded mb-3"></div>
+                            <div class="h-4 w-5/6 bg-white/5 rounded"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- STAGE 3: Dynamic Results Dashboard -->
+                <div class="hidden flex-col space-y-4" id="optimizeResultsState"></div>
+
+            </div>
+        </section>
+
+        <!-- ==================== SECTION 4: Practice Partner & Conversation Coach ==================== -->
+        <section class="hidden w-full h-auto overflow-visible flex-col transition-all duration-300 md:h-full relative z-10" id="chatboxSection" style="position: relative !important; z-index: 10 !important; min-height: 100%; width: 100%;">
+            <div id="chatbox-simulator-panel" class="tab-content-panel w-full relative z-10" style="padding: 20px; position: relative !important; z-index: 10 !important;">
+              <div style="margin-bottom: 16px;">
+                <h2 class="font-headline text-white" style="margin-bottom: 6px;">Practice Partner & Conversation Coach</h2>
+                <p style="color: #94a3b8; font-size: 14px;">Practice real-world flirting, teasing, and dating scenarios with real-time feedback to build natural confidence.</p>
+              </div>
+
+              <!-- Practice Scenario Selector Bar Header & Horizontal Touch Ribbon -->
+              <div class="flex flex-col gap-1.5 mb-3 relative z-10">
+                <div class="flex items-center justify-between px-0.5">
+                  <span class="text-[11px] font-bold text-violet-400 font-mono uppercase tracking-wider">SELECT DRILL SCENARIO:</span>
+                </div>
+                <div class="flex items-center gap-2 overflow-x-auto py-1 px-0.5 hide-scrollbar scroll-smooth no-scrollbar" id="practiceScenarioBar" style="-webkit-overflow-scrolling: touch;">
+                  <button type="button" class="scenario-chip scenario-pill active bg-gradient-to-r from-violet-600 to-indigo-600 border border-violet-400/50 text-white text-xs px-3.5 py-2 rounded-full font-bold transition-all shrink-0 cursor-pointer shadow-md shadow-violet-950/40" data-mode="hotline" onclick="window.selectPracticeScenario(this, 'Coach Hotline')">💬 Coach Hotline (Ask Anything)</button>
+                  <button type="button" class="scenario-chip scenario-pill bg-neutral-900/90 border border-white/15 text-slate-300 hover:text-white text-xs px-3.5 py-2 rounded-full font-medium transition-all shrink-0 cursor-pointer" onclick="window.selectPracticeScenario(this, 'Flirting & Teasing')">✨ Flirting & Teasing</button>
+                  <button type="button" class="scenario-chip scenario-pill bg-neutral-900/90 border border-white/15 text-slate-300 hover:text-white text-xs px-3.5 py-2 rounded-full font-medium transition-all shrink-0 cursor-pointer" onclick="window.selectPracticeScenario(this, 'First Date Setup')">☕ First Date Setup</button>
+                  <button type="button" class="scenario-chip scenario-pill bg-neutral-900/90 border border-white/15 text-slate-300 hover:text-white text-xs px-3.5 py-2 rounded-full font-medium transition-all shrink-0 cursor-pointer" onclick="window.selectPracticeScenario(this, 'Deep Connection')">💬 Deep Connection</button>
+                </div>
+              </div>
+              <p id="practiceModeSubtitle" class="text-[11px] text-violet-300/80 font-mono mb-3">MODE: OPEN COACHING • Ask for advice, critique texts, or ask dating questions.</p>
+
+              <!-- Space-Optimized Smartphone Mockup Container (Expanded Viewport) -->
+              <div class="chatbox-wrapper relative z-10" style="background: rgba(11, 9, 22, 0.95) !important; border: 1px solid rgba(168, 85, 247, 0.4) !important; border-radius: 20px; overflow: visible !important; box-shadow: 0 15px 40px rgba(0,0,0,0.85); backdrop-filter: blur(28px) !important; -webkit-backdrop-filter: blur(28px) !important; width: 100% !important; max-width: 100% !important; flex-grow: 1 !important; min-height: calc(100vh - 210px) !important; display: flex !important; flex-direction: column !important; margin: 0 auto !important; position: relative !important; z-index: 10 !important;">
+                <div class="gf-profile-header">
+                    <div class="gf-header-banner"></div>
+                    <div class="gf-profile-info-block">
+                        <div class="gf-avatar-container">
+                            <img src="maeve.jpg" onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2250%22 fill=%22%237c3aed%22/%3E%3Ctext x=%2250%22 y=%2255%22 text-anchor=%22middle%22 font-size=%2236%22 font-family=%22sans-serif%22 fill=%22white%22%3EM%3C/text%3E%3C/svg%3E'" class="gf-profile-pic" alt="Maeve">
+                            <span class="gf-online-dot"></span>
+                        </div>
+                        <div class="gf-text-details">
+                            <h3 class="gf-display-name">Maeve</h3>
+                            <span class="gf-mood-badge">Conversation Coach • Online</span>
+                        </div>
+                    </div>
+                    <div class="chat-header-actions flex items-center ml-auto" style="margin-left: auto;">
+                        <button id="reset-chat-btn" type="button" class="reset-chat-btn finish-review-btn text-xs bg-gradient-to-r from-violet-600 via-fuchsia-500 to-pink-500 hover:from-violet-500 hover:to-pink-400 text-white font-extrabold px-4 py-2 rounded-xl shadow-lg shadow-violet-500/30 border border-violet-400/40 transition-all transform hover:scale-105 cursor-pointer" onclick="window.resetPracticeChat()">
+                            Reset Chat
+                        </button>
+                    </div>
+                </div>
+                <div id="chatbox-messages-container" style="flex: 1; padding: 22px; padding-bottom: 28px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; background: #090714 !important; opacity: 1 !important; scrollbar-width: thin; scrollbar-color: #2e1a47 #090714;"></div>
+                
+                <!-- Sticky Glassmorphic Floating Input Footer -->
+                <div class="chatbox-footer-sticky-wrapper" style="position: sticky; left: 0; right: 0; width: 100%; z-index: 30; background: rgba(12, 9, 24, 0.92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-top: 1px solid rgba(168, 85, 247, 0.35); box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.7);">
+                  <div class="chatbox-footer" style="padding: 12px; display: flex; gap: 10px; align-items: center;">
+                    <input type="text" id="simulator-chat-input" onkeydown="if(event.key === 'Enter') window.submitChatboxMessage()" placeholder="Type a message to practice your response..." style="flex: 1; background: #07050f; border: 1px solid #2e1a47; border-radius: 12px; padding: 12px 16px; color: #fff; outline: none; font-size: 14px; font-family: sans-serif; transition: all 0.2s ease; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);" onfocus="this.style.borderColor='#a855f7'; this.style.boxShadow='0 0 15px rgba(168,85,247,0.3)';" onblur="this.style.borderColor='#2e1a47'; this.style.boxShadow='inset 0 2px 4px rgba(0,0,0,0.5)';">
+                    <button id="chatbox-send-btn" class="chat-utility-btn" onmousedown="event.preventDefault()" onclick="window.submitChatboxMessage()" style="background: linear-gradient(135deg, #a855f7 0%, #6b21a8 100%) !important; border: none !important; color: #fff !important; cursor: pointer; box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4) !important; font-weight: 700 !important; padding: 0 20px !important;">Send</button>
+                  </div>
+                  <div id="chatbox-credit-notice" style="text-align: center; padding: 2px 0 8px 0; font-size: 11px; color: rgba(192, 132, 252, 0.6); font-family: monospace; letter-spacing: 0.5px;">
+                    Consumes 2 Credits
+                  </div>
+                </div>
+              </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ==================== MOBILE BOTTOM NAV BAR (md:hidden) ==================== -->
+    <nav id="mobileNavBar" class="fixed bottom-0 w-full z-[70] rounded-t-2xl bg-black/90 backdrop-blur-xl border-t border-white/10 shadow-[0_-10px_30px_-10px_rgba(139,92,246,0.4)] flex md:hidden justify-around items-center h-auto min-h-[80px] px-2 py-2 pb-safe transition-all duration-200">
+        <button type="button" class="nav-tab-mobile active-tab flex flex-col items-center justify-center text-violet-300 bg-violet-600/20 rounded-xl p-2 active:scale-95 transition-all duration-200 flex-1" data-tab="analyzeSection" onclick="window.switchTab('analyzeSection')">
+            <span class="material-symbols-outlined text-[24px]" style="font-variation-settings: 'FILL' 1;">analytics</span>
+            <span class="font-label text-[10px] mt-1">Analyze</span>
+        </button>
+        <button type="button" class="nav-tab-mobile flex flex-col items-center justify-center text-slate-400 p-2 hover:text-violet-300 transition-colors flex-1" data-tab="icebreakSection" onclick="window.switchTab('icebreakSection')">
+            <span class="material-symbols-outlined text-[24px]">auto_awesome</span>
+            <span class="font-label text-[10px] mt-1">Icebreak</span>
+        </button>
+        <button type="button" class="nav-tab-mobile flex flex-col items-center justify-center text-slate-400 p-2 hover:text-violet-300 transition-colors flex-1" data-tab="optimizeSection" onclick="window.switchTab('optimizeSection')">
+            <span class="material-symbols-outlined text-[24px]">insights</span>
+            <span class="font-label text-[10px] mt-1">Optimize</span>
+        </button>
+        <button type="button" class="nav-tab-mobile flex flex-col items-center justify-center text-slate-400 p-2 hover:text-violet-300 transition-colors flex-1" data-tab="chatboxSection" onclick="window.switchTab('chatboxSection')">
+            <svg class="w-[24px] h-[24px] text-current" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
+            </svg>
+            <span class="font-label text-[10px] mt-1">Practice</span>
+        </button>
+    </nav>
+
+    <!-- ==================== PREMIUM CROP INTERACTIVE MODAL OVERHAUL ==================== -->
+    <div id="cropModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 animate-fade-in transition-all duration-300 transform scale-100 backdrop-blur-md bg-black/70 opacity-0 pointer-events-none">
+        <div class="relative w-full max-w-2xl bg-black rounded-3xl border border-violet-500/30 shadow-[0_0_60px_rgba(124,58,237,0.35)] flex flex-col overflow-hidden transform scale-95 transition-all duration-300" id="cropCard">
+            <div class="flex items-center justify-between p-4 border-b border-white/10 bg-neutral-900">
+                <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-violet-300 text-[22px]">crop</span>
+                    <h3 class="font-label text-sm font-bold text-white">Crop &amp; Select Chat Region</h3>
+                </div>
+                <button type="button" class="text-slate-400 hover:text-white transition-colors p-1" onclick="window.closeCropModal(event)">
+                    <span class="material-symbols-outlined block text-[20px]">close</span>
+                </button>
+            </div>
+            
+            <div class="p-2 sm:p-4 flex items-center justify-center bg-black h-[50vh] sm:h-[440px] max-h-[550px] min-h-[300px] overflow-hidden">
+                <div class="w-full h-full flex items-center justify-center overflow-hidden">
+                    <img id="cropperTargetImage" src="" alt="Crop Target" class="max-w-full max-h-full block" style="max-width: 100%; max-height: 100%; display: block;"/>
+                </div>
+            </div>
+
+            <div class="p-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-neutral-900/80">
+                <div class="flex items-center gap-2">
+                    <button type="button" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-xs font-label transition-all flex items-center gap-1 cursor-pointer" onclick="window.cropperRotate(90)" title="Rotate 90°">
+                        <span class="material-symbols-outlined text-[15px]">rotate_right</span>
+                        <span class="hidden sm:inline">Rotate</span>
+                    </button>
+                    <button type="button" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-xs font-label transition-all flex items-center gap-1 cursor-pointer" onclick="window.cropperReset()" title="Reset Crop Area">
+                        <span class="material-symbols-outlined text-[15px]">restart_alt</span>
+                        <span class="hidden sm:inline">Reset</span>
+                    </button>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <button type="button" class="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-label transition-all cursor-pointer" onclick="window.closeCropModal(event)">Cancel</button>
+                    <button type="button" class="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-label transition-all shadow-md flex items-center gap-1.5 font-bold cursor-pointer hover:shadow-[0_0_20px_rgba(139,92,246,0.4)]" onclick="window.confirmCrop(event)">
+                        <span class="material-symbols-outlined text-[16px]">check</span>
+                        <span>Confirm Crop &amp; Use</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== SYSTEM SETTINGS MODAL ==================== -->
+    <div id="settingsModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300">
+        <div class="relative w-full max-w-md bg-[#090d16] rounded-3xl border border-white/10 shadow-[0_0_50px_rgba(255,255,255,0.05)] flex flex-col p-6 space-y-6 transform scale-95 transition-all duration-300" id="settingsCard">
+            
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between border-b border-white/10 pb-4">
+                <div class="flex items-center gap-2.5 text-violet-400">
+                    <span class="material-symbols-outlined text-[24px]">settings</span>
+                    <h3 class="font-headline text-lg font-bold text-white tracking-tight">System Settings</h3>
+                </div>
+                <button type="button" class="text-slate-400 hover:text-white transition-colors bg-white/5 p-1.5 rounded-full border border-white/10 active:scale-95" onclick="window.closeSettingsModal(event)">
+                    <span class="material-symbols-outlined block text-[18px]">close</span>
+                </button>
+            </div>
+
+            <!-- Customization Settings -->
+            <div class="flex flex-col space-y-5">
+                <!-- Toggle: Texting Style -->
+                <div class="flex items-center justify-between">
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-sm font-semibold text-white">Linguistic Shorthand</span>
+                        <span class="text-[11px] text-slate-400">Enforce lowercase and casual spacing</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer select-none">
+                        <input type="checkbox" id="settingLinguisticShorthand" class="sr-only peer" checked>
+                        <div class="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-violet-600"></div>
+                    </label>
+                </div>
+
+                <!-- Selector: Emoji Density -->
+                <div class="flex flex-col gap-2">
+                    <div class="flex justify-between">
+                        <span class="text-sm font-semibold text-white">Emoji Formatting</span>
+                        <span class="text-xs text-violet-400 font-semibold" id="emojiLevelLabel">Minimal (End only)</span>
+                    </div>
+                    <input type="range" id="settingEmojiDensity" min="0" max="2" value="1" class="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-violet-500">
+                </div>
+
+                <!-- Toggle: Particle Performance Canvas -->
+                <div class="flex items-center justify-between">
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-sm font-semibold text-white">Background Plexus Canvas</span>
+                        <span class="text-[11px] text-slate-400">Turn off interactive lines to extend battery life</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer select-none">
+                        <input type="checkbox" id="settingPlexusToggle" class="sr-only peer" checked onclick="window.togglePlexusPerformance()">
+                        <div class="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-violet-600"></div>
+                    </label>
+                </div>
+
+                <!-- System Metadata -->
+                <div class="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col gap-2.5 font-mono text-[10px] text-slate-400">
+                    <div class="flex justify-between">
+                        <span>Client Architecture</span>
+                        <span class="text-white">Safe Web Client</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Text Model Engine</span>
+                        <span class="text-white">qwen3-235b-a22b-2507</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Vision Model Engine</span>
+                        <span class="text-white">qwen3.5-flash-02-23</span>
+                    </div>
+                </div>
+
+                <!-- Destructive Actions -->
+                <div class="border-t border-white/10 pt-4 flex flex-col gap-2">
+                    <button type="button" class="w-full bg-red-600/10 hover:bg-red-600/20 text-red-400 font-label text-xs py-3.5 rounded-xl border border-red-500/20 transition-all font-bold cursor-pointer text-center active:scale-95 flex items-center justify-center gap-1.5" onclick="window.openDeleteFromSettings(event)">
+                        <span class="material-symbols-outlined text-[16px]">delete_forever</span>
+                        <span>Permanently Delete Profile</span>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ==================== DESTRUCTIVE ACTION CONFIRMATION MODAL ==================== -->
+    <div id="deleteAccountModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300">
+        <div class="relative w-full max-w-lg bg-[#0c0d14] rounded-3xl border border-red-500/30 shadow-[0_0_60px_rgba(239,68,68,0.25)] flex flex-col p-6 space-y-6 transform scale-95 transition-all duration-300" id="deleteAccountCard">
+            
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between border-b border-white/10 pb-4">
+                <div class="flex items-center gap-2.5 text-red-400">
+                    <span class="material-symbols-outlined text-[24px]">warning</span>
+                    <h3 class="font-headline text-lg font-bold text-white tracking-tight">Confirm Account Purge</h3>
+                </div>
+                <button type="button" class="text-slate-400 hover:text-white transition-colors bg-white/5 p-1.5 rounded-full border border-white/10 active:scale-95" onclick="window.closeDeleteAccountModal(event)">
+                    <span class="material-symbols-outlined block text-[18px]">close</span>
+                </button>
+            </div>
+
+            <!-- Exact Destructive Confirmation Statement -->
+            <p class="font-body text-xs text-slate-300 leading-relaxed bg-red-950/20 border border-red-500/20 p-4 rounded-2xl">
+                Permanently Delete Profile? This action is absolute. Your Google identity mapping, dynamic credit token balance, and conversational history logs will be immediately and permanently erased from our production databases. In strict alignment with our Terms of Service, this action cannot be undone, reversed, or restored, and all remaining token balances are instantly forfeited without financial compensation or refund liability.
+            </p>
+
+            <!-- Action Buttons Row -->
+            <div class="grid grid-cols-2 gap-3 pt-2">
+                <!-- Button A (Cancel) -->
+                <button type="button" class="w-full bg-white/5 hover:bg-white/10 text-white font-label text-xs py-3.5 rounded-xl border border-white/10 transition-all font-bold cursor-pointer text-center active:scale-95" onclick="window.closeDeleteAccountModal(event)">
+                    <span>Cancel Action</span>
+                </button>
+
+                <!-- Button B (Confirm) -->
+                <button type="button" id="confirmDeleteAccountBtn" class="w-full bg-red-600 hover:bg-red-500 text-white font-label text-xs py-3.5 rounded-xl border border-red-400/40 transition-all font-bold shadow-lg shadow-red-900/40 cursor-pointer text-center active:scale-95 flex items-center justify-center gap-1.5" onclick="window.confirmPermanentDeletion(event)">
+                    <span class="material-symbols-outlined text-[16px]">delete_forever</span>
+                    <span>Confirm Permanent Deletion</span>
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ==================== SIGN IN REQUIRED MODAL POPUP FOR CREDIT PURCHASES & AUTH ==================== -->
+    <div id="authRequiredModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300">
+        <div class="relative w-full max-w-md bg-[#090d16] rounded-3xl border border-violet-500/30 shadow-[0_0_50px_rgba(139,92,246,0.3)] flex flex-col p-6 space-y-4 transform scale-95 transition-all duration-300" id="authRequiredCard">
+            
+            <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors p-1" onclick="window.closeAuthRequiredModal(event)">
+                <span class="material-symbols-outlined block text-[20px]">close</span>
+            </button>
+
+            <div class="text-center space-y-1.5 pt-1">
+                <div class="w-12 h-12 rounded-2xl bg-violet-950/80 border border-violet-500/40 flex items-center justify-center text-violet-300 mx-auto">
+                    <span class="material-symbols-outlined text-[24px]">lock</span>
+                </div>
+                <h3 class="font-headline text-lg font-bold text-white tracking-tight" id="authModalTitle">Sign In to MyWingman</h3>
+                <p class="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto" id="authModalDesc">
+                    Sync your credit wallet balance and secure your workspace sessions.
+                </p>
+            </div>
+
+            <!-- Google Sign-In Button inside Modal Container -->
+            <button type="button" class="w-full bg-white hover:bg-slate-100 text-slate-900 font-label text-sm py-3 px-4 rounded-xl font-bold flex items-center justify-center gap-3 transition-all duration-200 shadow-md active:scale-95 cursor-pointer border border-slate-200" onclick="window.signInWithGoogle(event)">
+                <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+                <span>Continue with Google</span>
+            </button>
+
+            <div class="flex items-center gap-2 my-1">
+                <div class="h-px bg-white/10 flex-1"></div>
+                <span class="text-[11px] font-mono text-slate-400 uppercase">OR EMAIL</span>
+                <div class="h-px bg-white/10 flex-1"></div>
+            </div>
+            <form id="supabaseAuthForm" onsubmit="window.handleSupabaseAuthSubmit(event); return false;" novalidate class="space-y-3">
+                <!-- Domain 5: Bot Defense Honeypot Input Field -->
+                <input type="text" id="website_hp" name="website_hp" tabindex="-1" autocomplete="off" style="display:none !important;" aria-hidden="true" />
+                <div class="space-y-1 text-left">
+                    <label class="text-[11px] font-label uppercase tracking-wider text-slate-400" for="authEmailInput">Email Address</label>
+                    <input type="email" id="authEmailInput" placeholder="name@example.com" class="w-full bg-black/50 border border-white/15 rounded-xl p-2.5 text-sm text-white focus:border-violet-500 focus:outline-none transition-all"/>
+                </div>
+                <div class="space-y-1 text-left" id="authPasswordGroup">
+                    <div class="flex items-center justify-between">
+                        <label class="text-[11px] font-label uppercase tracking-wider text-slate-400" for="authPasswordInput">Password</label>
+                        <button type="button" id="forgotPasswordBtn" class="text-[10px] text-violet-400 hover:text-violet-300 font-medium cursor-pointer transition-colors" onclick="window.showForgotPasswordView()">Forgot Password?</button>
+                    </div>
+                    <div class="relative">
+                        <input type="password" id="authPasswordInput" placeholder="••••••••" class="w-full bg-black/50 border border-white/15 rounded-xl p-2.5 pr-10 text-sm text-white focus:border-violet-500 focus:outline-none transition-all"/>
+                        <button type="button" id="togglePasswordBtn" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors cursor-pointer" onclick="window.togglePasswordVisibility()" tabindex="-1">
+                            <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 0;">visibility_off</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="authErrorMessage" class="hidden text-xs text-red-400 bg-red-950/50 border border-red-500/30 p-2 rounded-lg text-center font-medium"></div>
+
+                <button type="submit" id="authSubmitBtn" class="w-full bg-violet-600 hover:bg-violet-500 text-white font-label text-sm py-3 rounded-xl font-bold transition-all shadow-lg cursor-pointer active:scale-95" onclick="window.handleSupabaseAuthSubmit(event)">
+                    Sign In with Email
+                </button>
+            </form>
+
+            <!-- Forgot Password Reset View (Hidden by default) -->
+            <div id="forgotPasswordView" class="hidden space-y-3">
+                <div class="space-y-1 text-left">
+                    <label class="text-[11px] font-label uppercase tracking-wider text-slate-400" for="resetEmailInput">Email Address</label>
+                    <input type="email" id="resetEmailInput" placeholder="name@example.com" class="w-full bg-black/50 border border-white/15 rounded-xl p-2.5 text-sm text-white focus:border-violet-500 focus:outline-none transition-all"/>
+                </div>
+                <div id="resetErrorMessage" class="hidden text-xs text-red-400 bg-red-950/50 border border-red-500/30 p-2 rounded-lg text-center font-medium"></div>
+                <div id="resetSuccessMessage" class="hidden text-xs text-emerald-400 bg-emerald-950/50 border border-emerald-500/30 p-2 rounded-lg text-center font-medium"></div>
+                <button type="button" id="resetPasswordSubmitBtn" class="w-full bg-violet-600 hover:bg-violet-500 text-white font-label text-sm py-3 rounded-xl font-bold transition-all shadow-lg cursor-pointer active:scale-95" onclick="window.handleResetPassword()">
+                    Send Reset Link
+                </button>
+                <button type="button" class="w-full text-xs text-slate-400 hover:text-white font-medium cursor-pointer transition-colors py-1" onclick="window.hideForgotPasswordView()">
+                    ← Back to Sign In
+                </button>
+            </div>
+
+            <div class="text-center pt-1" id="authToggleContainer">
+                <button type="button" id="authToggleModeBtn" class="text-xs text-violet-400 hover:underline font-medium" onclick="window.toggleAuthMode()">
+                    Need an account? Sign Up
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ==================== DYNAMIC ACTIVATION WELCOME MODAL ==================== -->
+    <div id="activationModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300">
+        <div class="relative w-full max-w-[420px] bg-black rounded-3xl border border-violet-500/30 shadow-[0_0_60px_rgba(124,58,237,0.35)] flex flex-col overflow-hidden transform scale-95 transition-all duration-300" id="activationCard">
+            
+            <div class="flex flex-col items-center justify-center p-6 pt-8 text-center bg-gradient-to-b from-violet-950/50 to-transparent">
+                <img src="logo.png" alt="MyWingman Logo" class="w-12 h-12 object-contain rounded-md mb-3" onerror="this.style.display='none'"/>
+                <span class="text-xs uppercase tracking-widest text-violet-400 font-bold font-label" id="activationBadge">Elite Pack Unlocked</span>
+                <h2 class="font-headline text-2xl text-white font-extrabold mt-1" id="activationTitle">Welcome to MyWingman</h2>
+                <p class="font-body text-xs text-slate-300 mt-2 max-w-[300px] leading-relaxed" id="activationDesc">
+                    Your 200 credits are active! Upload your chat screenshots on the left to generate tailored replies.
+                </p>
+            </div>
+
+            <div class="p-6 pt-2 border-t border-white/10 bg-black">
+                <button type="button" class="w-full bg-violet-600 hover:bg-violet-500 text-white font-label text-sm py-3.5 rounded-xl border border-white/10 transition-all font-bold shadow-lg active:scale-95" onclick="window.closeActivationModal(event)">
+                    Start Analyzing Screenshots
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== UNREADABLE SCREENSHOT ERROR NOTICE MODAL ==================== -->
+    <div id="unreadableErrorModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300">
+        <div class="relative w-full max-w-md bg-[#090d16] rounded-3xl border border-red-500/30 shadow-[0_0_50px_rgba(239,68,68,0.25)] flex flex-col p-6 space-y-5 transform scale-95 transition-all duration-300" id="unreadableErrorCard">
+            
+            <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors p-1" onclick="window.closeUnreadableErrorModal(event)">
+                <span class="material-symbols-outlined block text-[20px]">close</span>
+            </button>
+
+            <div class="text-center space-y-3 pt-2">
+                <div class="w-12 h-12 rounded-2xl bg-red-950/80 border border-red-500/40 flex items-center justify-center text-red-400 mx-auto">
+                    <span class="material-symbols-outlined text-[24px]" id="errorModalIcon">broken_image</span>
+                </div>
+                <h3 class="font-headline text-lg font-bold text-white tracking-tight font-sans" id="errorModalTitle">Analysis Interrupted</h3>
+                <p class="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto font-sans" id="errorModalDescription">
+                    The image text is unreadable. Please ensure your screenshot is clear and unblurred so the engine can decode the subtext.
+                </p>
+            </div>
+
+            <div class="flex flex-col gap-2 pt-2">
+                <button type="button" class="w-full bg-neutral-900 hover:bg-neutral-800 text-white font-label text-sm py-3.5 rounded-xl border border-white/10 transition-all font-bold active:scale-95 cursor-pointer text-center" onclick="window.closeUnreadableErrorModal(event)">
+                    Got It
+                </button>
+                <div class="text-[10px] text-red-400 text-center font-mono font-bold mt-1" id="errorModalFooter">
+                    Credit Preserved. Adjust your image and try again.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="purchaseModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300 overflow-y-auto">
+        <div class="relative w-full max-w-[460px] max-h-[88vh] bg-[#090714] rounded-3xl border border-violet-500/40 shadow-[0_0_80px_rgba(124,58,237,0.35)] flex flex-col overflow-hidden my-auto transform scale-95 transition-all duration-300 mx-auto" id="modalCard" style="max-width: 460px; width: 100%;">
+            
+            <button type="button" class="absolute top-3.5 right-3.5 z-20 text-slate-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-full p-1.5 border border-white/10 active:scale-95 cursor-pointer" onclick="window.closePurchaseModal(event)">
+                <span class="material-symbols-outlined block text-[18px]">close</span>
+            </button>
+
+            <!-- Sleek Compact Header -->
+            <div class="flex flex-col items-center justify-center p-4 sm:p-5 pt-5 border-b border-white/10 bg-gradient-to-b from-violet-950/40 to-transparent shrink-0 text-center">
+                <div class="w-9 h-9 rounded-xl bg-violet-900/40 border border-violet-500/40 flex items-center justify-center mb-2 shadow-[0_0_15px_rgba(124,58,237,0.4)]">
+                    <span class="material-symbols-outlined text-violet-300 text-[20px]">electric_bolt</span>
+                </div>
+                <h2 class="font-headline text-xl font-extrabold text-white tracking-tight">Boost Your Credit Balance</h2>
+                <p class="font-body text-[11px] text-slate-300 mt-1 max-w-xs leading-normal">Select a credit pack below to unlock instant AI screenshot analysis, bio optimization &amp; practice coach turns.</p>
+            </div>
+
+            <!-- Scrollable Pricing Cards Container -->
+            <div class="p-4 overflow-y-auto max-h-[calc(88vh-160px)] touch-pan-y overscroll-contain flex-1 custom-scrollbar" id="pricingTiers" style="padding-bottom: 90px; -webkit-overflow-scrolling: touch;">
+                
+                <div class="flex flex-col gap-4 w-full items-stretch pb-4">
+
+                    <!-- 1. Starter Pack ($4.99) -->
+                    <label class="pricing-tier-card block relative rounded-2xl border border-white/10 bg-[#0c0919]/90 p-4 cursor-pointer transition-all group hover:border-white/20 flex flex-col justify-between" onclick="window.selectPricingCard(this)">
+                        <input class="peer sr-only" name="pricing_tier" type="radio" value="starter" data-credits="250" data-price="4.99"/>
+                        <div>
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <span class="font-label text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Starter Pack</span>
+                                    <span class="font-headline text-xl text-white font-extrabold mt-0.5 tracking-tight">250 Credits</span>
+                                </div>
+                                <div class="text-right">
+                                    <span class="font-headline text-2xl text-white font-extrabold tracking-tight">$4.99</span>
+                                    <span class="text-[10px] text-slate-400 font-label block">one-time</span>
+                                </div>
+                            </div>
+
+                            <ul class="mt-3.5 space-y-2 text-[11px] text-slate-300 font-mono">
+                                <li class="flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-[14px] text-emerald-400 font-bold shrink-0">check_circle</span>
+                                    <span>25 Elite Chat Generations</span>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-[14px] text-emerald-400 font-bold shrink-0">check_circle</span>
+                                    <span>Decodes hidden social subtext</span>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-[14px] text-emerald-400 font-bold shrink-0">check_circle</span>
+                                    <span>Full analysis of intent</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </label>
+
+                    <!-- 2. Pro Pack ($9.99 - STANDARD SUITE) -->
+                    <label class="pricing-tier-card block relative rounded-2xl border border-violet-500/40 bg-[#0f0b21]/90 p-4 cursor-pointer transition-all group hover:border-violet-400 flex flex-col justify-between shadow-[0_0_20px_rgba(124,58,237,0.15)]" onclick="window.selectPricingCard(this)">
+                        <input class="peer sr-only" name="pricing_tier" type="radio" value="pro" data-credits="600" data-price="9.99"/>
+                        <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-violet-600 to-indigo-600 border border-violet-400/40 text-white font-mono text-[9px] font-bold uppercase tracking-wider py-0.5 px-3 rounded-full shadow-[0_0_12px_rgba(124,58,237,0.5)] whitespace-nowrap">
+                            STANDARD SUITE
+                        </div>
+                        <div>
+                            <div class="flex items-center justify-between mt-1">
+                                <div>
+                                    <span class="font-label text-[10px] text-violet-300 font-bold uppercase tracking-wider block">Pro Pack</span>
+                                    <span class="font-headline text-xl text-white font-extrabold mt-0.5 tracking-tight">600 Credits</span>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-xs text-slate-400/90 line-through font-mono font-semibold">$14.99</span>
+                                    <div class="flex items-baseline gap-1">
+                                        <span class="font-headline text-2xl text-white font-extrabold tracking-tight">$9.99</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <ul class="mt-3.5 space-y-2 text-[11px] text-slate-300 font-mono">
+                                <li class="flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-[14px] text-emerald-400 font-bold shrink-0">check_circle</span>
+                                    <span>60 Elite Chat Generations</span>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-[14px] text-emerald-400 font-bold shrink-0">check_circle</span>
+                                    <span>Calibrated for attraction &amp; tension</span>
+                                </li>
+                                <li class="flex items-center gap-2 text-[#a78bfa] font-semibold">
+                                    <span class="material-symbols-outlined text-[14px] text-emerald-400 font-bold shrink-0">check_circle</span>
+                                    <span>Multi-turn conversation pacing</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </label>
+
+                    <!-- 3. Elite Pack ($19.99 - ULTIMATE VALUE PACK) -->
+                    <label class="pricing-tier-card block relative rounded-2xl border-2 border-violet-500 bg-[#110c28]/95 p-4 cursor-pointer transition-all group active-tier flex flex-col justify-between shadow-[0_0_30px_rgba(124,58,237,0.3)]" onclick="window.selectPricingCard(this)">
+                        <input checked class="peer sr-only" name="pricing_tier" type="radio" value="elite" data-credits="3000" data-price="19.99"/>
+                        <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-violet-600 to-indigo-600 border border-violet-400/40 text-white font-mono text-[9px] font-bold uppercase tracking-wider py-0.5 px-3 rounded-full shadow-[0_0_12px_rgba(124,58,237,0.5)] whitespace-nowrap">
+                            ULTIMATE VALUE PACK
+                        </div>
+                        <div>
+                            <div class="flex items-center justify-between mt-1">
+                                <div>
+                                    <span class="font-label text-[10px] text-violet-300 font-bold uppercase tracking-wider block">Elite Pack</span>
+                                    <span class="font-headline text-xl text-white font-extrabold mt-0.5 tracking-tight">3000 Credits</span>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-xs text-slate-400/90 line-through font-mono font-semibold">$29.99</span>
+                                    <div class="flex items-baseline gap-1">
+                                        <span class="font-headline text-2xl text-white font-extrabold tracking-tight">$19.99</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <ul class="mt-3.5 space-y-2 text-[11px] text-slate-200 font-mono">
+                                <li class="flex items-center gap-2 text-emerald-400 font-bold">
+                                    <span class="material-symbols-outlined text-[14px] text-emerald-400 font-bold shrink-0">check_circle</span>
+                                    <span>300 Elite Chat Generations</span>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-[14px] text-emerald-400 font-bold shrink-0">check_circle</span>
+                                    <span>Complete profile bio overhaul</span>
+                                </li>
+                                <li class="flex items-center gap-2 text-emerald-400 font-bold">
+                                    <span class="material-symbols-outlined text-[14px] text-emerald-400 font-bold shrink-0">check_circle</span>
+                                    <span>Total tactical freedom &amp; max value</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </label>
+
+                </div>
+            </div>
+
+            <!-- Compact Bottom Action Bar -->
+            <div class="p-3.5 border-t border-white/10 bg-[#06040d] mt-auto shrink-0 z-10 flex flex-col items-center justify-between gap-2 text-center">
+                <p class="font-mono text-[10px] text-slate-400 flex items-center justify-center gap-1">
+                    <span class="material-symbols-outlined text-[14px] text-emerald-400">verified_user</span> 100% Secure Checkout • Credits Never Expire
+                </p>
+                <button type="button" id="confirmPurchaseBtn" class="w-full primary-btn bg-violet-600 hover:bg-violet-500 text-white font-label text-xs py-2.5 px-6 rounded-full border border-violet-400 transition-all duration-300 ease-out hover:-translate-y-0.5 hover:shadow-[0_0_20px_rgba(139,92,246,0.4)] flex items-center justify-center gap-2 active:scale-95 font-bold cursor-pointer shrink-0" onclick="window.confirmPurchase(event)">
+                    <span id="purchaseBtnText">Secure Discount Now - $19.99</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== INTERSTITIAL AGE & LEGAL AGREEMENT MODAL ==================== -->
+    <div id="interstitialModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300">
+        <div class="relative w-full max-w-md bg-gradient-to-b from-[#0f1424] via-[#090d16] to-[#05070d] rounded-3xl border border-violet-500/30 shadow-[0_0_60px_rgba(139,92,246,0.3)] flex flex-col p-6 space-y-5 transform scale-95 transition-all duration-300" id="interstitialCard">
+            
+            <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors p-1.5 rounded-full hover:bg-white/10" onclick="window.closeInterstitialModal()">
+                <span class="material-symbols-outlined block text-[20px]">close</span>
+            </button>
+
+            <!-- Value-First High-Impact Header -->
+            <div class="text-center space-y-1.5 pt-1">
+                <div class="inline-flex items-center gap-1.5 bg-violet-500/15 border border-violet-500/30 px-3 py-1 rounded-full text-violet-300 font-mono text-[11px] font-semibold tracking-wide mb-1">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span>100% Encrypted Workspace</span>
+                </div>
+                <h3 class="font-headline text-2xl text-white font-extrabold tracking-tight">Unlock Your AI Wingman 🚀</h3>
+                <p class="text-xs text-slate-300 leading-relaxed font-body">Generate high-status replies, optimize profile bios &amp; practice with your 24/7 AI Coach.</p>
+            </div>
+
+            <!-- Features Checklist -->
+            <div class="bg-violet-950/20 rounded-2xl border border-violet-500/20 p-4 space-y-2.5">
+                <div class="flex items-start gap-2.5">
+                    <span class="material-symbols-outlined text-[16px] text-emerald-400 mt-0.5 shrink-0">check_circle</span>
+                    <p class="text-xs text-slate-200 font-body"><strong class="text-white">Screenshot Decoder:</strong> Extract intent, subtext &amp; exact 10-option reply variations.</p>
+                </div>
+                <div class="flex items-start gap-2.5">
+                    <span class="material-symbols-outlined text-[16px] text-emerald-400 mt-0.5 shrink-0">check_circle</span>
+                    <p class="text-xs text-slate-200 font-body"><strong class="text-white">Profile Bio Optimizer:</strong> 70/30 hook-to-question ratio calibrated for attraction.</p>
+                </div>
+                <div class="flex items-start gap-2.5">
+                    <span class="material-symbols-outlined text-[16px] text-emerald-400 mt-0.5 shrink-0">check_circle</span>
+                    <p class="text-xs text-slate-200 font-body"><strong class="text-white">Maeve AI Coach:</strong> Drill flirting, date setups, and awkward recoveries live.</p>
+                </div>
+            </div>
+
+            <!-- Single Master Checkbox -->
+            <div class="bg-black/40 rounded-2xl border border-white/10 p-3.5 transition-all hover:border-violet-500/40" id="termsCheckboxContainer">
+                <label class="flex items-start gap-3 cursor-pointer group">
+                    <input type="checkbox" id="interstitialAgreementCheck" class="mt-1 w-4 h-4 rounded border-violet-500/50 bg-black/60 text-violet-600 focus:ring-violet-500 focus:ring-offset-0 cursor-pointer transition-all" onchange="window.toggleInterstitialAcceptButton()"/>
+                    <span class="text-[11px] text-slate-300 leading-snug font-body group-hover:text-white transition-colors">
+                        I confirm I am <strong>18 years or older</strong> and agree to the <a href="terms.html" target="_blank" class="text-violet-400 underline hover:text-violet-300 font-semibold" onclick="event.stopPropagation()">Terms of Service</a> &amp; <a href="privacy.html" target="_blank" class="text-violet-400 underline hover:text-violet-300 font-semibold" onclick="event.stopPropagation()">Privacy Policy</a>.
+                    </span>
+                </label>
+            </div>
+
+            <!-- Single High-Contrast CTA Button -->
+            <button type="button" id="interstitialAcceptBtn" class="w-full primary-btn bg-violet-600 hover:bg-violet-500 text-white font-label text-sm py-3.5 rounded-2xl border border-violet-400/40 transition-all font-bold text-center flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(124,58,237,0.4)] active:scale-95 cursor-pointer opacity-50 pointer-events-none" onclick="window.acceptInterstitialTerms()">
+                <span>Accept &amp; Enter Workspace</span>
+                <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Supabase JS Client & Main Application Bundles -->
+    <script src="vendor/supabase.min.js"></script>
+    <script src="supabaseClient.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

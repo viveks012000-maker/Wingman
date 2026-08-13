@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Refund Policy - MyWingman</title>
+    <link rel="stylesheet" href="output.css"/>
+</head>
+<body class="bg-[#000000] text-slate-200 font-sans min-h-screen flex flex-col selection:bg-violet-900 selection:text-white">
+
+    <!-- Header / Navigation Bar -->
+    <header class="w-full border-b border-white/10 bg-black/90 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-4xl mx-auto px-6 h-20 flex items-center justify-between">
+            <a href="index.html" class="flex items-center gap-3 group">
+                <img src="logo.png" alt="MyWingman Logo" class="h-14 w-auto object-contain transition-transform group-hover:scale-105"/>
+                <span class="font-extrabold text-xl tracking-tight text-white">MyWingman</span>
+            </a>
+            <a href="index.html" class="text-xs font-mono uppercase tracking-widest text-slate-400 hover:text-white transition-colors flex items-center gap-1.5">
+                <span>&larr; Return Home</span>
+            </a>
+        </div>
+    </header>
+
+    <!-- Main Legal Document Body -->
+    <main class="flex-1 max-w-4xl w-full mx-auto px-6 py-12 md:py-16">
+        <div class="border-b border-white/10 pb-8 mb-10">
+            <span class="font-mono text-xs uppercase tracking-widest text-violet-400 font-bold">Financial Terms &amp; Credit Disclosure</span>
+            <h1 class="font-headline text-3xl md:text-4xl text-white font-extrabold mt-2 tracking-tight">REFUND POLICY &amp; TRANSACTION DISCLOSURE</h1>
+            <p class="font-mono text-xs text-slate-400 mt-2">Effective Date: July 28, 2026</p>
+        </div>
+
+        <article class="space-y-10 text-sm text-slate-300 font-body leading-relaxed">
+            
+            <section class="space-y-3">
+                <h2 class="font-headline text-lg font-bold text-white tracking-wide border-l-2 border-violet-500 pl-3">Section 1: Feature Credit Consumption & Token Tiers</h2>
+                <p>
+                    MyWingman operates on a transparent digital credit wallet system. Users acquire credit bundles through authorized payment gateways:
+                </p>
+                <ul class="list-disc pl-5 space-y-1 text-slate-300 font-mono text-xs">
+                    <li><strong class="text-white">Starter Pack ($4.99):</strong> 250 Credits (25 Elite Chat Generations or 125 Practice Partner message turns).</li>
+                    <li><strong class="text-white">Pro Pack ($9.99):</strong> 600 Credits (60 Elite Chat Generations or 300 Practice Partner message turns).</li>
+                    <li><strong class="text-white">Elite Pack ($19.99):</strong> 3000 Credits (300 Elite Chat Generations or 1500 Practice Partner message turns).</li>
+                </ul>
+                <p class="pt-2">
+                    <strong class="text-white">Feature Deduction Rates:</strong>
+                </p>
+                <ul class="list-disc pl-5 space-y-1 text-slate-300 font-mono text-xs">
+                    <li><strong class="text-violet-300">Screenshot Analyzer (/api/analyze):</strong> 10 Credits per generation (10 strategy options output).</li>
+                    <li><strong class="text-violet-300">Icebreaker Generator (/api/icebreaker):</strong> 10 Credits per generation (10 opener options output).</li>
+                    <li><strong class="text-violet-300">Profile Bio Optimizer (/api/optimize):</strong> 10 Credits per generation (10 bio variations output).</li>
+                    <li><strong class="text-violet-300">Practice Partner & Coach Maeve (/api/chat):</strong> <strong class="text-white">2 Credits per message turn reply</strong>.</li>
+                </ul>
+            </section>
+
+            <section class="space-y-3">
+                <h2 class="font-headline text-lg font-bold text-white tracking-wide border-l-2 border-violet-500 pl-3">Section 2: Credit Usage Finality & Refund Conditions</h2>
+                <p>
+                    Credits that have been consumed for completed AI responses or chat turns are non-refundable due to immediate computational expenditure incurred by inference engine processing. Unused credits purchased in credit packs do not expire.
+                </p>
+                <p>
+                    Refunds for unconsumed purchases may be approved under the following verified conditions:
+                </p>
+                <ul class="list-disc pl-5 space-y-1 text-slate-300 font-mono text-xs">
+                    <li>Duplicate transactions caused by payment gateway communication errors.</li>
+                    <li>Verified technical crediting failures where a payment was successfully debited but credits failed to credit to your account wallet prior to credit usage.</li>
+                </ul>
+                <p class="text-xs text-slate-400">
+                    To request assistance or submit a billing inquiry, contact our operations desk at: <a href="mailto:support.mywingman@gmail.com" class="text-violet-400 hover:underline">support.mywingman@gmail.com</a>.
+                </p>
+            </section>
+
+            <section class="space-y-3">
+                <h2 class="font-headline text-lg font-bold text-white tracking-wide border-l-2 border-violet-500 pl-3">Section 3: Chargeback Mitigation & Transaction Verification</h2>
+                <p>
+                    To prevent fraudulent chargebacks and billing disputes, the platform maintains secure, immutable logs of payment transaction IDs, Google OAuth subject identifiers, credit allocation records, and feature consumption events. In the event of an unauthorized dispute filing with a banking institution or credit card issuer, these terms and transaction logs will be provided to demonstrate legitimate service fulfillment.
+                </p>
+            </section>
+
+        </article>
+    </main>
+
+    <!-- Footer -->
+    <footer class="w-full border-t border-white/10 bg-black py-8 px-6 mt-16">
+        <div class="max-w-4xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-xs font-mono text-slate-500">
+            <p>&copy; 2026 MyWingman. All rights reserved.</p>
+            <div class="flex items-center gap-6">
+                <a href="terms.html" class="hover:text-white transition-colors">Terms of Service</a>
+                <a href="privacy.html" class="hover:text-white transition-colors">Privacy Policy</a>
+                <a href="refund.html" class="text-slate-300 hover:text-white transition-colors">Refund Policy</a>
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>

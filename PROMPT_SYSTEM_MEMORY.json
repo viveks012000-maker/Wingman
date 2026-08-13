@@ -1,0 +1,230 @@
+{
+  "systemInfo": {
+    "appName": "My Wingman App",
+    "extractedAt": "2026-08-08T10:37:00Z",
+    "extractionType": "READ_ONLY_SNAPSHOT",
+    "architectureVersion": "2026.08.MASTER_ARCHITECTURAL_SPEC",
+    "dataFiduciary": "MyWingman (Naresh Kumar, Churu, Rajasthan, India)",
+    "apiGateway": "https://aicredits.in/v1",
+    "backendServer": "server.js (Localhost:3000)",
+    "globalTimeoutMs": 25000
+  },
+  "globalGuardrails": {
+    "maxInputWordLimit": 500,
+    "maxEmojiCapPerString": 1,
+    "shorthandCasingDefault": "natural, lowercase-heavy casing",
+    "expressiveEmojiPool": ["😏", "😉", "👀", "🔥", "✨", "💅", "☕", "💯", "🥂", "⚡"],
+    "bannedCoupletTemplates": [
+      "X by habit, Y by obsession",
+      "X by day, Y by night",
+      "X for the [noun], Y for the [noun]"
+    ],
+    "bannedElitistParentheticals": [
+      "(no pop playlists allowed)",
+      "(no fast food lovers)",
+      "don't swipe if",
+      "must love X"
+    ],
+    "bannedPassiveAggressivePhrases": [
+      "upgrade your attention span",
+      "got ghosted",
+      "ignoring me",
+      "why no reply",
+      "too good to reply"
+    ],
+    "bannedMetaNarrationConstructs": [
+      "switching from... to...",
+      "switching from X to Y",
+      "saying hiii like nothing happened",
+      "saying hi like nothing happened",
+      "sending reels then saying",
+      "after that reel"
+    ],
+    "sanitizerPipeline": {
+      "midWordCapitalizationFix": "benches In -> benches in (preserves Roorkee, GPS, Broadway, Hamilton)",
+      "emojiSanitization": "Regex \\p{Extended_Pictographic} / \\p{Emoji_Presentation} hard cap = 1",
+      "doubleSpaceCollapse": "Collapse multiple spaces into single space"
+    }
+  },
+  "features": {
+    "bioOptimizer": {
+      "endpoints": ["/api/optimize", "/api/bio-optimizer"],
+      "httpMethod": "POST",
+      "creditCost": 10,
+      "aiModel": "qwen3-235b-a22b-2507",
+      "temperature": 0.25,
+      "topP": 0.80,
+      "maxTokens": 1200,
+      "resultCount": 10,
+      "responseSchema": {
+        "type": "OBJECT",
+        "properties": {
+          "options": {
+            "type": "ARRAY",
+            "items": { "type": "STRING" }
+          }
+        },
+        "required": ["options"]
+      },
+      "globalRules": [
+        "RESULT COUNT LAW: Exactly 10 distinct options per request.",
+        "NO REDUNDANT NAMES: Never start bios with user's name.",
+        "COMPLETE 2-TO-3 LINE BIOS: Every bio must have a lifestyle hook AND an easy conversation starter.",
+        "FIRST-PERSON PERSPECTIVE ONLY.",
+        "ABSOLUTE BAN ON POETIC FLUFF & CLICHÉS: Banned: 'partner in crime', 'coffee and chaos', 'engine hum', 'curtain rise', 'ride first ask questions later', 'fight me on', 'bring snacks or don't show up', 'spokes before words', 'pedal fast', 'two wheels, one spotlight', 'theater kid energy', 'biker by instinct', 'daredevil'."
+      ],
+      "modes": {
+        "Punchy": {
+          "wordLimit": "Max 20 words total per bio string",
+          "phrasalStyle": "Sharp, staccato phrasing or bullet-style fragments. No long stories.",
+          "ctaStyle": "Short direct question under 6 words",
+          "bannedElements": ["Long stories", "Fluff", "Filler words", "Romantic prose", "Corporate buzzwords"],
+          "exampleOutput": "hometown born. football player. motorcycle road trips. best taco spot in the city?"
+        },
+        "Playful": {
+          "tone": "High social energy, fun debates, self-aware banter",
+          "ctaStyle": "Fun debate or choice question (banned: 'settle this:')",
+          "bannedElements": ["Wholesome green-flag energy", "Broody mystery", "Resume listing"],
+          "exampleOutput": "grew up playing sports, which basically prepared me for riding motorcycles in terrible weather. real question: taco truck or a 24-hour diner after a long ride?"
+        },
+        "Green Flag": {
+          "tone": "Radiates warmth, grounded lifestyle habits, emotional safety, and stability",
+          "ctaStyle": "Warm, open-ended conversational question",
+          "bannedElements": ["Sarcasm", "Edgy banter", "Broody mystery"],
+          "exampleOutput": "grew up playing sports in the rain, now mostly spending weekends on motorcycle road trips and finding 24-hour diners. 🌿 what's your favorite weekend getaway?"
+        },
+        "Mysterious": {
+          "tone": "Understated flex with a curiosity gap that leaves an unanswered story hook",
+          "ctaStyle": "\"Ask me about...\" or an intriguing curiosity gap",
+          "bannedElements": ["ZERO metaphors or poetry ('streets whisper', 'boots remember', 'tattoos')", "Creepy questions"],
+          "exampleOutput": "grew up taking highway rides with no GPS. ask me about the worst wrong turn i've taken on two wheels."
+        }
+      }
+    },
+    "chatAnalyzer": {
+      "endpoints": ["/api/analyze", "/api/analyze-chat-screenshot"],
+      "httpMethod": "POST",
+      "creditCost": 10,
+      "architecture": "Two-Step Vision & Generation Pipeline",
+      "stepAVisionModel": {
+        "primary": "qwen3.5-flash-02-23",
+        "fallback1": "qwen/qwen3.5-flash-02-23",
+        "fallback2": "google/gemini-2.5-flash",
+        "temperature": 0.20,
+        "maxTokens": 350,
+        "spatialRules": [
+          "X > 50% width (Right-Aligned) = Sent by User (Me / Guy)",
+          "X < 50% width (Left-Aligned) = Sent by Them (Girl)",
+          "Right-side Seen / timestamp without left-side reply -> STATUS = USER_LEFT_ON_SEEN"
+        ],
+        "reelThumbnailOCRRule": "DO NOT hyper-fixate on or transcribe video thumbnail titles (e.g. 'Nvidia Nemotron'). Output: [Shared Media: Video Reel Box]."
+      },
+      "stepBTextGenModel": {
+        "model": "qwen3-235b-a22b-2507",
+        "temperature": 0.20,
+        "maxTokens": 800,
+        "resultCount": 10,
+        "chronologicalRecencyHierarchy": [
+          "Read chat strictly from BOTTOM to TOP.",
+          "Bottom-most message bubble is the ONLY active conversation state.",
+          "Stale media (reels sent hours prior above latest text) is EXPIRED and MUST BE IGNORED.",
+          "Focus on active text smoothly."
+        ],
+        "metaNarrationBan": [
+          "NEVER comment on message sequence or texting patterns.",
+          "BANNED: 'switching from... to...', 'saying hiii like nothing happened', 'sending reels then saying', 'after that reel'."
+        ]
+      },
+      "modes": {
+        "Casual": {
+          "vibe": "Chill, relaxed, low-pressure, friend-vibe continuity.",
+          "firewallRule": "ABSOLUTE BAN on flirting, pickup lines, or romantic references ('shy smile', 'someone you like', 'date', 'cute').",
+          "strategicBuckets": [
+            "Options 1-2: Easygoing Reaction",
+            "Options 3-4: Low-Key Question",
+            "Options 5-6: Relatable Take",
+            "Options 7-8: Casual Topic Shift",
+            "Options 9-10: Short Chill Text (2-4 words)"
+          ]
+        },
+        "Witty": {
+          "vibe": "Sharp observations, dry humor, sarcastic banter, self-aware.",
+          "firewallRule": "ABSOLUTE BAN on generic compliments or cheesy pickup lines.",
+          "strategicBuckets": [
+            "Options 1-2: Sharp Observation",
+            "Options 3-4: Dry Banter",
+            "Options 5-6: Clever Question",
+            "Options 7-8: Witty Topic Pivot",
+            "Options 9-10: Snappy Minimalist (2-4 words)"
+          ]
+        },
+        "Flirty": {
+          "vibe": "Playful tension, charming banter, subtle romantic teasing.",
+          "firewallRule": "Builds romantic chemistry and warm tension.",
+          "strategicBuckets": [
+            "Options 1-2: Playful Charm",
+            "Options 3-4: Flirty Tease",
+            "Options 5-6: Intriguing Spark",
+            "Options 7-8: Smooth Vibe Setup",
+            "Options 9-10: Cheeky Minimalist (2-4 words)"
+          ]
+        },
+        "Bold / Closer": {
+          "vibe": "High energy, direct, confident, making direct moves/plans.",
+          "firewallRule": "Unapologetic charm and clear plan proposal.",
+          "strategicBuckets": [
+            "Options 1-2: Direct Callout",
+            "Options 3-4: Bold Challenge",
+            "Options 5-6: Direct Plan Move",
+            "Options 7-8: High-Energy Hook",
+            "Options 9-10: Power Minimalist (2-4 words)"
+          ]
+        }
+      }
+    },
+    "icebreakerGenerator": {
+      "endpoints": ["/api/icebreaker"],
+      "httpMethod": "POST",
+      "creditCost": 10,
+      "aiModel": "qwen3-235b-a22b-2507",
+      "temperature": 0.80,
+      "maxTokens": 650,
+      "resultCount": 10,
+      "globalRules": [
+        "NO BORING OPENERS: Banned: 'hey how are you', 'how's your week', 'nice profile', 'what brings you here'.",
+        "NO CREEPY / POETIC PHRASING: Banned: 'stolen glances', 'destiny', 'pushing boundaries'.",
+        "Format: Fully lowercase, max 12 words per option, max 1 emoji at end."
+      ],
+      "vibes": ["Witty", "Flirty", "Casual", "Bold", "Closer"]
+    },
+    "practiceCoach": {
+      "endpoints": ["/api/chat", "/api/simulator/chat"],
+      "httpMethod": "POST",
+      "creditCost": 0.2,
+      "persona": "Maeve, 22-year-old Gen Z practice partner & dating coach.",
+      "avatarAsset": "maeve.jpg",
+      "operatingModes": {
+        "CoachHotline": {
+          "condition": "mode === 'hotline' || scenario === 'Coach Hotline'",
+          "aiModel": "qwen3-235b-a22b-2507",
+          "temperature": 0.70,
+          "maxTokens": 1500,
+          "role": "Warm, supportive, free-form dating advice advisor.",
+          "strictMediaLaw": "Maeve CANNOT receive, read, or process images/screenshots. MUST instruct user to type or paste text."
+        },
+        "RoleplayDrills": {
+          "condition": "mode === 'roleplay'",
+          "aiModel": "qwen3-235b-a22b-2507",
+          "temperature": 0.60,
+          "maxTokens": 120,
+          "scenarios": {
+            "Awkward Recovery": "Thread revival drill after 'k cool' dry text. Calls out dry replies.",
+            "First Date Setup": "Leadership & decisiveness drill. Demands specific day + time + venue.",
+            "Deep Connection": "Warm concise momentum drill. Strictly maintains active topic, max 15-20 words.",
+            "Flirting & Teasing": "High-status banter & subject consistency drill. Max 1 emoji per message."
+          }
+        }
+      }
+    }
+  }
+}
