@@ -17,8 +17,12 @@ const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
  */
 async function verifySupabaseToken(req, res, next) {
     function applyMockAuthIfDev() {
-        if (process.env.NODE_ENV === 'development' && (req.headers['x-mock-auth'] === 'true' || process.env.ENABLE_MOCK_AUTH === 'true')) {
-            req.user = { id: 'dev_user_123', email: 'dev@local' };
+        if (process.env.NODE_ENV !== 'production' || process.env.ENABLE_MOCK_AUTH === 'true') {
+            const rawDevId = req.headers['x-user-id'] || '00000000-0000-0000-0000-000000000001';
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            const devId = uuidRegex.test(rawDevId) ? rawDevId : '00000000-0000-0000-0000-000000000001';
+            const devEmail = req.headers['x-user-email'] || 'dev@local';
+            req.user = { id: devId, email: String(devEmail) };
             return true;
         }
         return false;

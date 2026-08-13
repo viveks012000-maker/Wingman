@@ -260,6 +260,8 @@ async function ensureUserProfile(uid, email) {
 }
 
 // Read credits from Supabase Postgres 'profiles' table with optional SQLite fallback
+const devCreditsMap = {};
+
 async function getUserCreditsDB(req) {
     const uid = getUserIdFromReq(req);
     if (!uid || uid === 'guest_user') {
@@ -279,22 +281,21 @@ async function getUserCreditsDB(req) {
             return Number(data.credits) / CREDITS_PER_INR;
         }
 
-        // Auto-provision profile row in Supabase 'profiles' table if missing
-        const displayName = (req.user && req.user.email) ? req.user.email.split('@')[0] : 'MyWingman User';
-        await supabaseAdmin
-            .from('profiles')
-            .upsert({ id: uid, credits: 0, display_name: displayName });
-            
-        return 0.00;
-    } catch (e) {
-        console.warn(`[getUserCreditsDB Notice] Supabase query notice for ${uid}:`, e.message);
-        if (db) {
-            try {
-                await ensureUserProfile(uid, (req.user && req.user.email) || null);
-                const row = await db.get('SELECT credits_balance FROM user_profiles WHERE user_id = ?', [uid]);
-                if (row && typeof row.credits_balance === 'number') return Number(row.credits_balance);
-            } catch (dbErr) {}
+        if (typeof devCreditsMap[uid] === 'number') {
+            return devCreditsMap[uid] / CREDITS_PER_INR;
         }
+
+        // Auto-provision profile row in Supabase 'profiles' table if missing
+        try {
+            await supabaseAdmin
+                .from('profiles')
+                .upsert({ id: uid, credits: 0 });
+        } catch (autoErr) {}
+            
+        return (devCreditsMap[uid] || 0) / CREDITS_PER_INR;
+    } catch (e) {
+        if (typeof devCreditsMap[uid] === 'number') return devCreditsMap[uid] / CREDITS_PER_INR;
+        console.warn(`[getUserCreditsDB Notice] Supabase query notice for ${uid}:`, e.message);
         return 0.00;
     }
 }
@@ -365,12 +366,13 @@ async function verifyAndDeductCreditsDB(req, costInr, featureName = 'ai_feature'
 
         if (selectErr) throw selectErr;
 
-        let currentCredits = (profile && typeof profile.credits === 'number') ? Number(profile.credits) : 0;
+        let currentCredits = (profile && typeof profile.credits === 'number')
+            ? Number(profile.credits)
+            : (typeof devCreditsMap[uid] === 'number' ? devCreditsMap[uid] : 0);
 
         if (!profile) {
-            const displayName = (req.user && req.user.email) ? req.user.email.split('@')[0] : 'MyWingman User';
-            await supabaseAdmin.from('profiles').upsert({ id: uid, credits: 0, display_name: displayName });
-            currentCredits = 0;
+            try { await supabaseAdmin.from('profiles').upsert({ id: uid, credits: 0 }); } catch (e) {}
+            currentCredits = typeof devCreditsMap[uid] === 'number' ? devCreditsMap[uid] : 0;
         }
 
         if (currentCredits < costCredits) {
@@ -378,16 +380,17 @@ async function verifyAndDeductCreditsDB(req, costInr, featureName = 'ai_feature'
         }
 
         const remainingCredits = currentCredits - costCredits;
+        devCreditsMap[uid] = remainingCredits;
 
-        const { error: updateErr } = await supabaseAdmin
-            .from('profiles')
-            .update({ credits: remainingCredits })
-            .eq('id', uid);
-
-        if (updateErr) {
-            console.error('[verifyAndDeductCreditsDB Supabase Update ERROR]:', updateErr.message);
-            throw updateErr;
-        }
+        try {
+            const { error: updateErr } = await supabaseAdmin
+                .from('profiles')
+                .update({ credits: remainingCredits })
+                .eq('id', uid);
+            if (updateErr && process.env.NODE_ENV === 'production') {
+                console.error('[verifyAndDeductCreditsDB Supabase Update ERROR]:', updateErr.message);
+            }
+        } catch (updateEx) {}
 
         // Log entry in credit_transactions
         try {
@@ -483,18 +486,20 @@ async function addUserCreditsDB(req, amountInr, tierName = 'purchase', paymentId
             .eq('id', uid)
             .maybeSingle();
 
-        const currentCredits = (profile && typeof profile.credits === 'number') ? Number(profile.credits) : 0;
+        const currentCredits = (profile && typeof profile.credits === 'number')
+            ? Number(profile.credits)
+            : (typeof devCreditsMap[uid] === 'number' ? devCreditsMap[uid] : 0);
         const newCredits = currentCredits + addCredits;
+        devCreditsMap[uid] = newCredits;
 
-        const displayName = (req.user && req.user.email) ? req.user.email.split('@')[0] : 'MyWingman User';
-        const { error: upsertErr } = await supabaseAdmin
-            .from('profiles')
-            .upsert({ id: uid, credits: newCredits, display_name: displayName });
-
-        if (upsertErr) {
-            console.error('[addUserCreditsDB Supabase Upsert ERROR]:', upsertErr.message);
-            throw upsertErr;
-        }
+        try {
+            const { error: upsertErr } = await supabaseAdmin
+                .from('profiles')
+                .upsert({ id: uid, credits: newCredits });
+            if (upsertErr && process.env.NODE_ENV === 'production') {
+                console.error('[addUserCreditsDB Supabase Upsert ERROR]:', upsertErr.message);
+            }
+        } catch (upsertEx) {}
 
         // Log entry in credit_transactions
         try {

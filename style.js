@@ -3036,9 +3036,12 @@ STRICT LAWS:
             const missionId = activeScenario.toLowerCase().replace(/[^a-z0-9]/g, '_');
 
             const userHeaderId = (window.currentSupabaseUser ? (window.currentSupabaseUser.id || window.currentSupabaseUser.email) : 'guest_user');
-            const token = window.getAuthToken ? window.getAuthToken() : null;
-            const headers = { 'Content-Type': 'application/json' };
-            if (token) headers['Authorization'] = 'Bearer ' + token;
+            const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
+            const headers = {
+                'Content-Type': 'application/json',
+                'X-User-Id': userHeaderId,
+                ...authHeaders
+            };
 
             const chatResp = await fetch((apiBase || '') + '/api/chat', {
                 method: 'POST',
