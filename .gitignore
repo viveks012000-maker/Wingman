@@ -9,30 +9,29 @@
 .env.production
 .env.test
 .env.*
+!.env.example
 data/
 *.sqlite
+*.sqlite-journal
 *.db
+*.pem
+*.key
+*.crt
 
-# Dependencies
+# Dependencies & Build Logs
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+logs/
+*.log
 
-# Server & Internal Source (Do not expose internal modules)
-middleware/
-config/
-tests/
+# Scratch & Temporary Files
 scratch/
+tmp/
+temp/
 
-# Windows & Background Startup Scripts
-*.bat
-*.vbs
-START_WINGMAN.bat
-START_WINGMAN.vbs
-WingmanAutoStart.vbs
-
-# System & OS Files
+# Windows & OS Background Files
 .DS_Store
 Thumbs.db
 desktop.ini
@@ -47,8 +46,10 @@ desktop.ini
 .agents/
 .gemini/
 
-# Internal Documentation & Scripts
-PROJECT_MASTER_SPECIFICATION.md
-API_DOCUMENTATION.md
+# Internal Tooling & Local Scripts
 audit.ps1
 cleanup_legacy.ps1
+START_WINGMAN.bat
+START_WINGMAN.vbs
+WingmanAutoStart.vbs
+

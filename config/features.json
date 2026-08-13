@@ -1,0 +1,64 @@
+{
+  "api_gateway": {
+    "base_url": "https://aicredits.in/v1",
+    "deprecated_url": "api.aicredits.in",
+    "express_payload_limit": "30mb",
+    "global_timeout_seconds": 25,
+    "max_user_input_word_limit": 500,
+    "local_port": 3000
+  },
+  "features": {
+    "screenshot_analyzer": {
+      "endpoint": "/api/analyze",
+      "input_word_limit": 500,
+      "vision_step_a": {
+        "model": "qwen3.5-flash-02-23",
+        "temperature": 0.2,
+        "max_tokens": 120,
+        "execution_mode": "parallel_promise_all",
+        "timeout_seconds": 25,
+        "max_screenshots": 5
+      },
+      "text_step_b": {
+        "model": "qwen3-235b-a22b-2507",
+        "temperature": 0.78,
+        "max_tokens": 650,
+        "timeout_seconds": 25,
+        "result_count": 10,
+        "word_limit_per_card": "15-22 words max"
+      }
+    },
+    "icebreaker_generator": {
+      "endpoint": "/api/icebreaker",
+      "input_word_limit": 500,
+      "model": "qwen3-235b-a22b-2507",
+      "temperature": 0.8,
+      "timeout_seconds": 25,
+      "result_count": 10,
+      "word_limit_per_opener": "12 words max"
+    },
+    "bio_optimizer": {
+      "endpoint": "/api/optimize",
+      "input_word_limit": 500,
+      "model": "qwen3-235b-a22b-2507",
+      "temperature": 0.8,
+      "timeout_seconds": 25,
+      "result_count": 10,
+      "line_breaks": "mandatory 2-3 lines",
+      "perspective": "first-person only",
+      "word_limit_total": "15-30 words"
+    },
+    "ai_girlfriend": {
+      "endpoint": "/api/chat",
+      "input_word_limit": 500,
+      "model": "qwen3-235b-a22b-2507",
+      "temperature": 0.7,
+      "max_tokens": 28,
+      "timeout_seconds": 25,
+      "persona": "Maeve",
+      "age": 22,
+      "avatar": "maeve.jpg",
+      "word_limit_per_text": "5-8 words max"
+    }
+  }
+}
