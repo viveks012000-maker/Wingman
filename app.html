@@ -1309,10 +1309,10 @@
                     <div class="flex flex-col gap-2">
                         <p class="font-label text-[12px] uppercase tracking-wider text-slate-400">Desired Response Tone</p>
                         <div id="analyzeToneContainer">
-                            <button type="button" id="tone-witty" class="tone-chip vibe-chip-premium active" data-tone="Witty">🎯 Witty</button>
-                            <button type="button" id="tone-flirty" class="tone-chip vibe-chip-premium" data-tone="Flirty">🔥 Flirty</button>
-                            <button type="button" id="tone-casual" class="tone-chip vibe-chip-premium" data-tone="Casual">💬 Casual</button>
-                            <button type="button" id="tone-bold" class="tone-chip vibe-chip-premium" data-tone="Bold">⚡ Bold</button>
+                            <button type="button" id="tone-witty" class="tone-chip vibe-chip-premium active" data-tone="Witty" onclick="window.selectTone(this, 'Witty')">🎯 Witty</button>
+                            <button type="button" id="tone-flirty" class="tone-chip vibe-chip-premium" data-tone="Flirty" onclick="window.selectTone(this, 'Flirty')">🔥 Flirty</button>
+                            <button type="button" id="tone-casual" class="tone-chip vibe-chip-premium" data-tone="Casual" onclick="window.selectTone(this, 'Casual')">💬 Casual</button>
+                            <button type="button" id="tone-bold" class="tone-chip vibe-chip-premium" data-tone="Bold" onclick="window.selectTone(this, 'Bold')">⚡ Bold</button>
                         </div>
                     </div>
 
@@ -1469,10 +1469,10 @@
                     <div class="flex flex-col gap-2">
                         <p class="font-label text-xs uppercase tracking-wider text-slate-400">Opening Vibe</p>
                         <div id="vibeContainer">
-                            <button type="button" id="vibe-direct" class="vibe-chip vibe-chip-premium active" data-vibe="Direct">🎯 Direct</button>
-                            <button type="button" id="vibe-intriguing" class="vibe-chip vibe-chip-premium" data-vibe="Intriguing">🔮 Intriguing</button>
-                            <button type="button" id="vibe-humorous" class="vibe-chip vibe-chip-premium" data-vibe="Humorous">😂 Humorous</button>
-                            <button type="button" id="vibe-compliment" class="vibe-chip vibe-chip-premium" data-vibe="Compliment">✨ Compliment</button>
+                            <button type="button" id="vibe-direct" class="vibe-chip vibe-chip-premium active" data-vibe="Direct" onclick="window.selectVibe(this, 'Direct')">🎯 Direct</button>
+                            <button type="button" id="vibe-intriguing" class="vibe-chip vibe-chip-premium" data-vibe="Intriguing" onclick="window.selectVibe(this, 'Intriguing')">🔮 Intriguing</button>
+                            <button type="button" id="vibe-humorous" class="vibe-chip vibe-chip-premium" data-vibe="Humorous" onclick="window.selectVibe(this, 'Humorous')">😂 Humorous</button>
+                            <button type="button" id="vibe-compliment" class="vibe-chip vibe-chip-premium" data-vibe="Compliment" onclick="window.selectVibe(this, 'Compliment')">✨ Compliment</button>
                         </div>
                     </div>
 
@@ -1589,10 +1589,10 @@
                     <div class="flex flex-col gap-2">
                         <p class="font-label text-xs uppercase tracking-wider text-slate-400">DESIRED BIO STYLE</p>
                         <div id="bioStyleContainer">
-                            <button type="button" id="style-punchy" class="bio-style-chip vibe-chip-premium active" data-bio-style="Punchy">⚡ Punchy</button>
-                            <button type="button" id="style-playful" class="bio-style-chip vibe-chip-premium" data-bio-style="Playful">😜 Playful</button>
-                            <button type="button" id="style-greenflag" class="bio-style-chip vibe-chip-premium" data-bio-style="Green Flag">🟢 Green Flag</button>
-                            <button type="button" id="style-mysterious" class="bio-style-chip vibe-chip-premium" data-bio-style="Mysterious">🕶️ Mysterious</button>
+                            <button type="button" id="style-punchy" class="bio-style-chip vibe-chip-premium active" data-bio-style="Punchy" onclick="window.selectBioStyle(this, 'Punchy')">⚡ Punchy</button>
+                            <button type="button" id="style-playful" class="bio-style-chip vibe-chip-premium" data-bio-style="Playful" onclick="window.selectBioStyle(this, 'Playful')">😜 Playful</button>
+                            <button type="button" id="style-greenflag" class="bio-style-chip vibe-chip-premium" data-bio-style="Green Flag" onclick="window.selectBioStyle(this, 'Green Flag')">🟢 Green Flag</button>
+                            <button type="button" id="style-mysterious" class="bio-style-chip vibe-chip-premium" data-bio-style="Mysterious" onclick="window.selectBioStyle(this, 'Mysterious')">🕶️ Mysterious</button>
                         </div>
                     </div>
 

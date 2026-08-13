@@ -2939,8 +2939,14 @@ STRICT LAWS:
 
         bubble.textContent = cleanText;
         container.appendChild(bubble);
+        window.scrollToBottom(true);
+    };
+
+    window.scrollToBottom = function(smooth = true) {
+        const container = $("chatbox-messages-container") || document.getElementById("chatbox-messages-container");
+        if (!container) return;
         try {
-            container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+            container.scrollTo({ top: container.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
         } catch(e) {
             container.scrollTop = container.scrollHeight;
         }
