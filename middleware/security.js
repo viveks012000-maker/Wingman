@@ -28,13 +28,17 @@ const authLimiter = rateLimit({
     legacyHeaders: false
 });
 
-// 3. Core AI Endpoints Rate Limiter: Max 10 requests / minute per IP
+// 3. Core AI Endpoints Rate Limiter: Max 60 requests / minute per IP (Skips local dev test runs)
 const apiLimiter = rateLimit({
     windowMs: 60 * 1000,
-    max: 10,
-    message: { success: false, error: 'AI request limit reached (10 requests/min). Please try again after 1 minute.' },
+    max: 60,
+    message: { success: false, error: 'AI request limit reached. Please try again after 1 minute.' },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    skip: (req) => {
+        const isLocalhost = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
+        return process.env.NODE_ENV !== 'production' && isLocalhost;
+    }
 });
 
 // Helper: Parse cookies safely from request headers
@@ -178,7 +182,7 @@ function sanitizeString(str) {
 }
 
 function sanitizeObject(obj) {
-    if (!obj || typeof obj !== 'object') return;
+    if (!obj || typeof obj !== 'object' || obj === null) return;
     for (const key of Object.keys(obj)) {
         if (typeof obj[key] === 'string') {
             obj[key] = sanitizeString(obj[key]);

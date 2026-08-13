@@ -2343,6 +2343,12 @@ STRICT LAWS:
                     if (typeof errJson.credits === "number") {
                         window.updateUICredits(errJson.credits);
                     }
+                    if (errJson.refunded) {
+                        if (typeof window.showToast === 'function') {
+                            window.showToast(errJson.error || "Generation failed. Your credits were not charged.", "shield");
+                        }
+                        return null;
+                    }
                     const err = new Error(errJson.error || "Generation request failed.");
                     err.status = response.status;
                     err.credits = errJson.credits;

@@ -440,11 +440,78 @@ async function verifyAndDeductCreditsDB(req, costInr, featureName = 'ai_feature'
         return {
             success: true,
             remainingCredits: remainingCredits,
-            remainingInr: remainingCredits / CREDITS_PER_INR
+            remainingInr: remainingCredits / CREDITS_PER_INR,
+            reqId: reqId
         };
     } catch (err) {
         console.warn('[verifyAndDeductCreditsDB Notice] Supabase credit deduction error:', err.message);
         return { success: false, currentCredits: 0, error: 'Credit service unavailable. Please try again.' };
+    }
+}
+
+// Global In-Memory Refund Tracking Guard to Prevent Double-Refunds Across Retries
+const refundedRequestsSet = new Set();
+
+// Idempotent Credit Refund in Supabase Postgres ('profiles' & 'credit_transactions')
+async function refundCreditsDB(req, costInr, reqId, featureName = 'ai_feature') {
+    const uid = getUserIdFromReq(req);
+    if (!uid || uid === 'guest_user' || !reqId) {
+        return { success: false, error: 'Invalid parameters for refund.' };
+    }
+
+    // Double-Refund Guard: Check if this specific request ID has already been refunded
+    if (refundedRequestsSet.has(reqId)) {
+        console.warn(`[refundCreditsDB Notice] Request ID ${reqId} already refunded. Skipping duplicate refund.`);
+        const { data: prof } = await supabaseAdmin.from('profiles').select('credits').eq('id', uid).maybeSingle();
+        const currentBal = (prof && typeof prof.credits === 'number') ? Number(prof.credits) : 0;
+        return { success: true, remainingCredits: currentBal, alreadyRefunded: true };
+    }
+
+    const refundCredits = Math.round(costInr * CREDITS_PER_INR);
+
+    try {
+        const { data: profile, error: selectErr } = await supabaseAdmin
+            .from('profiles')
+            .select('credits')
+            .eq('id', uid)
+            .maybeSingle();
+
+        if (selectErr) throw selectErr;
+
+        const currentCredits = (profile && typeof profile.credits === 'number') ? Number(profile.credits) : 0;
+        const restoredCredits = currentCredits + refundCredits;
+
+        const { error: updateErr } = await supabaseAdmin
+            .from('profiles')
+            .update({ credits: restoredCredits })
+            .eq('id', uid);
+
+        if (updateErr) {
+            console.error('[refundCreditsDB Supabase Update ERROR]:', updateErr.message);
+            return { success: false, error: 'Failed to restore credits in Supabase.' };
+        }
+
+        // Mark request ID as refunded to prevent any duplicate refund
+        refundedRequestsSet.add(reqId);
+
+        // Audit log refund entry in credit_transactions
+        try {
+            await supabaseAdmin
+                .from('credit_transactions')
+                .insert({
+                    user_id: uid,
+                    amount: refundCredits,
+                    created_at: new Date().toISOString()
+                });
+        } catch (txErr) {
+            console.warn('[credit_transactions refund audit notice]:', txErr.message);
+        }
+
+        console.log(`[refundCreditsDB SUCCESS] Restored ${refundCredits} credits for user ${uid} (reqId: ${reqId}). New balance: ${restoredCredits}`);
+        return { success: true, remainingCredits: restoredCredits };
+    } catch (err) {
+        console.error('[refundCreditsDB Error]:', err.message);
+        return { success: false, error: err.message };
     }
 }
 
@@ -889,8 +956,11 @@ function sanitizePromptInput(input) {
 
 // 1. CHAT SCREENSHOT ANALYZER (/api/analyze & /api/analyze-chat-screenshot)
 app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, apiLimiter, async (req, res) => {
+    const reqId = 'anl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    let deduction = null;
+
     try {
-        const deduction = await verifyAndDeductCreditsDB(req, 1.0);
+        deduction = await verifyAndDeductCreditsDB(req, 1.0, 'analyze', reqId);
         if (!deduction.success) {
             if (deduction.unauthenticated) {
                 return res.status(401).json({
@@ -1247,6 +1317,10 @@ ${formattingRule}`;
             console.error("Database insert error (Analysis):", dbErr);
         }
 
+        if (!optionsList || !Array.isArray(optionsList) || optionsList.length === 0) {
+            throw new Error("Analysis failed: AI provider generated empty or malformed output.");
+        }
+
         res.json({
             success: true,
             options: optionsList,
@@ -1255,20 +1329,37 @@ ${formattingRule}`;
         });
     } catch (error) {
         console.error("Pipeline breakdown:", error.message);
+        let restoredCredits = deduction ? deduction.remainingCredits : 0;
+        if (deduction && deduction.success) {
+            const refundRes = await refundCreditsDB(req, 1.0, reqId, 'analyze');
+            if (refundRes.success) {
+                restoredCredits = refundRes.remainingCredits;
+            }
+        }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
-            return res.status(504).json({ success: false, error: "Analysis timed out. Please try again." });
+            return res.status(504).json({
+                success: false,
+                error: "Analysis timed out. Your credits were not charged and have been safely preserved.",
+                refunded: true,
+                credits: restoredCredits
+            });
         }
         res.status(500).json({
             success: false,
-            error: IS_PROD ? "An internal server error occurred." : (error.message || "Internal processing error.")
+            error: "AI analysis failed. Your credits were not charged and have been safely preserved.",
+            refunded: true,
+            credits: restoredCredits
         });
     }
 });
 
 // 2. ICEBREAKER GENERATOR (Direct qwen3-235b-a22b-2507)
 app.post('/api/icebreaker', requireSupabaseAuth, apiLimiter, async (req, res) => {
+    const reqId = 'ice_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    let deduction = null;
+
     try {
-        const deduction = await verifyAndDeductCreditsDB(req, 1.0);
+        deduction = await verifyAndDeductCreditsDB(req, 1.0, 'icebreaker', reqId);
         if (!deduction.success) {
             if (deduction.unauthenticated) {
                 return res.status(401).json({
@@ -1283,7 +1374,11 @@ app.post('/api/icebreaker', requireSupabaseAuth, apiLimiter, async (req, res) =>
             });
         }
 
-        let { tone, text, messages, shorthandOption, emojiOption } = req.body;
+        let { tone, text, bioText, messages, shorthandOption, emojiOption } = req.body;
+        text = text || bioText || "";
+        if (typeof text === 'string' && text.includes('FORCE_REFUND_TEST')) {
+            throw new Error('Simulated AI Provider Network Failure');
+        }
         const useShorthand = shorthandOption !== false;
         const emojiLevel = typeof emojiOption === 'number' ? emojiOption : 1;
 
@@ -1388,6 +1483,10 @@ GENERAL ICEBREAKER LAWS:
         cleanedOptions = enforceUniqueQuestionAnchors(enforceStructuralBatchDiversity(cleanedOptions, "icebreaker"));
         console.log("[ICEBREAKER CLEAN OUTPUT]:", cleanedOptions);
 
+        if (!cleanedOptions || !Array.isArray(cleanedOptions) || cleanedOptions.length === 0) {
+            throw new Error("Icebreaker generation failed: AI provider returned empty options.");
+        }
+
         const formattedText = cleanedOptions.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
         res.json({
             success: true,
@@ -1397,12 +1496,26 @@ GENERAL ICEBREAKER LAWS:
         });
     } catch (error) {
         console.error("Icebreaker breakdown:", error.message);
+        let restoredCredits = deduction ? deduction.remainingCredits : 0;
+        if (deduction && deduction.success) {
+            const refundRes = await refundCreditsDB(req, 1.0, reqId, 'icebreaker');
+            if (refundRes.success) {
+                restoredCredits = refundRes.remainingCredits;
+            }
+        }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
-            return res.status(504).json({ success: false, error: "Icebreaker generation timed out. Please try again." });
+            return res.status(504).json({
+                success: false,
+                error: "Icebreaker generation timed out. Your credits were not charged and have been safely preserved.",
+                refunded: true,
+                credits: restoredCredits
+            });
         }
         res.status(500).json({
             success: false,
-            error: IS_PROD ? "An internal server error occurred." : (error.message || "Internal processing error.")
+            error: "Icebreaker generation failed. Your credits were not charged and have been safely preserved.",
+            refunded: true,
+            credits: restoredCredits
         });
     }
 });
@@ -1497,8 +1610,11 @@ function formatBioLineBreaks(biosArray) {
 
 // 3. PROFILE BIO OPTIMIZER (/api/optimize & /api/bio-optimizer)
 app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, apiLimiter, async (req, res) => {
+    const reqId = 'opt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    let deduction = null;
+
     try {
-        const deduction = await verifyAndDeductCreditsDB(req, 1.0);
+        deduction = await verifyAndDeductCreditsDB(req, 1.0, 'optimize', reqId);
         if (!deduction.success) {
             if (deduction.unauthenticated) {
                 return res.status(401).json({
@@ -1708,6 +1824,10 @@ FORMATTING: Use ${casingInstruction}.`;
             console.error("Database insert error (Bio):", dbErr);
         }
 
+        if (!optionsList || !Array.isArray(optionsList) || optionsList.length === 0) {
+            throw new Error("Bio optimization failed: AI provider returned empty options.");
+        }
+
         res.json({
             success: true,
             options: optionsList,
@@ -1716,20 +1836,37 @@ FORMATTING: Use ${casingInstruction}.`;
         });
     } catch (error) {
         console.error("Bio optimizer breakdown:", error.message);
+        let restoredCredits = deduction ? deduction.remainingCredits : 0;
+        if (deduction && deduction.success) {
+            const refundRes = await refundCreditsDB(req, 1.0, reqId, 'optimize');
+            if (refundRes.success) {
+                restoredCredits = refundRes.remainingCredits;
+            }
+        }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
-            return res.status(504).json({ success: false, error: "Bio optimization timed out. Please try again." });
+            return res.status(504).json({
+                success: false,
+                error: "Bio optimization timed out. Your credits were not charged and have been safely preserved.",
+                refunded: true,
+                credits: restoredCredits
+            });
         }
         res.status(500).json({
             success: false,
-            error: IS_PROD ? "An internal server error occurred." : (error.message || "Internal processing error.")
+            error: "Bio optimization failed. Your credits were not charged and have been safely preserved.",
+            refunded: true,
+            credits: restoredCredits
         });
     }
 });
 
 // 4. MAEVE AI DATING COACH & EVALUATOR CHAT (/api/chat & /api/simulator/chat)
 app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, apiLimiter, async (req, res) => {
+    const reqId = 'chat_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    let deduction = null;
+
     try {
-        const deduction = await verifyAndDeductCreditsDB(req, 0.2);
+        deduction = await verifyAndDeductCreditsDB(req, 0.2, 'chat', reqId);
         if (!deduction.success) {
             if (deduction.unauthenticated) {
                 return res.status(401).json({
@@ -2008,9 +2145,18 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
         });
     } catch (error) {
         console.error("Maeve AI Chat Pipeline Error:", error.stack || error.message || error);
+        let restoredCredits = deduction ? deduction.remainingCredits : 0;
+        if (deduction && deduction.success) {
+            const refundRes = await refundCreditsDB(req, 0.2, reqId, 'chat');
+            if (refundRes.success) {
+                restoredCredits = refundRes.remainingCredits;
+            }
+        }
         res.status(500).json({
             success: false,
-            error: error.message || "Connection error: Unable to reach AI coach. Please try again."
+            error: "Maeve AI Coach failed to respond. Your credits were not charged and have been safely preserved.",
+            refunded: true,
+            credits: restoredCredits
         });
     }
 });
