@@ -1264,7 +1264,7 @@
 
 
                     <div class="screenshot-preview-container" id="screenshotPreviewContainer">
-                    <input type="file" id="screenshotInput" accept="image/*,.heic,.heif" multiple style="display: none;" onclick="event.stopPropagation();"/>
+                    <input type="file" id="screenshotInput" accept="image/*,.heic,.heif" multiple style="display: none;" onclick="event.stopPropagation();" onchange="if(this.files && this.files.length > 0) window.processSelectedFiles(this.files);"/>
                     <div class="scanner-line"></div>
                     <div class="rounded-2xl p-6 flex flex-col items-center justify-center border-dashed border-2 border-white/10 hover:border-violet-500/80 hover:shadow-[0_0_35px_rgba(139,92,246,0.25)] bg-black/40 backdrop-blur-md transition-all duration-500 cursor-pointer min-h-[260px] w-full mx-auto group relative overflow-hidden shadow-inner" id="dropzone" onclick="window.triggerDropzoneClick(event)">
                         
@@ -1462,7 +1462,7 @@
                             <label class="font-label text-xs uppercase tracking-wider text-slate-400" for="bioInput">Bio / Profile Context</label>
                         </div>
                         <div class="rounded-2xl p-1 bg-black/40 backdrop-blur-md border border-white/10">
-                            <textarea id="bioInput" class="bio-input-field w-full bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-3.5 text-white focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all resize-none font-body text-sm min-h-[185px] placeholder:text-slate-500" placeholder="Paste their bio or describe their profile (min 5 chars)..." spellcheck="false"></textarea>
+                            <textarea id="bioInput" class="bio-input-field w-full bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-3.5 text-white focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all resize-none font-body text-sm min-h-[185px] placeholder:text-slate-500" placeholder="Paste their bio or describe their profile (min 5 chars)..." spellcheck="false" oninput="window.updateButtonStates()"></textarea>
                         </div>
                     </div>
 
@@ -1582,7 +1582,7 @@
                     <div class="flex flex-col gap-2">
                         <label class="font-label text-xs uppercase tracking-wider text-slate-400" for="auditBioInput">Your Current Profile Bio</label>
                         <div class="rounded-2xl p-1 bg-black/40 backdrop-blur-md border border-white/10">
-                            <textarea id="auditBioInput" class="bio-input-field w-full bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-3.5 text-white focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all resize-none font-body text-sm min-h-[185px] placeholder:text-slate-500" placeholder="Paste your current profile bio (min 5 chars)..." spellcheck="false"></textarea>
+                            <textarea id="auditBioInput" class="bio-input-field w-full bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-3.5 text-white focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all resize-none font-body text-sm min-h-[185px] placeholder:text-slate-500" placeholder="Paste your current profile bio (min 5 chars)..." spellcheck="false" oninput="window.updateButtonStates()"></textarea>
                         </div>
                     </div>
 

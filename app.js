@@ -965,8 +965,9 @@ STRICT LAWS:
         window.cropperCurrentAngle = 0;
         window.editingImageIndex = (typeof targetIndex === 'number' && targetIndex >= 0) ? targetIndex : null;
 
-        const targetImg = $("cropperTargetImage");
-        const cm = $("cropModal"), cc = $("cropCard");
+        const targetImg = $("cropperTargetImage") || document.getElementById("cropperTargetImage");
+        const cm = $("cropModal") || document.getElementById("cropModal");
+        const cc = $("cropCard") || document.getElementById("cropCard");
         if (!targetImg || !cm || !cc) return;
 
         targetImg.crossOrigin = "anonymous";
@@ -975,6 +976,7 @@ STRICT LAWS:
         };
         targetImg.src = dataUrl;
         cm.style.display = "flex";
+        cm.style.removeProperty("visibility");
         cm.classList.remove("opacity-0", "pointer-events-none", "hidden");
         cm.classList.add("opacity-100", "pointer-events-auto");
         cc.classList.remove("scale-95");
@@ -982,18 +984,31 @@ STRICT LAWS:
     };
 
     window.closeCropModal = function (e) {
-        if (e) e.preventDefault();
-        const cm = $("cropModal"), cc = $("cropCard");
-        if (cc) { cc.classList.remove("scale-100"); cc.classList.add("scale-95"); }
-        if (cm) {
-            cm.classList.remove("opacity-100", "pointer-events-auto");
-            cm.classList.add("opacity-0", "pointer-events-none", "hidden");
-            cm.style.display = "none";
-        }
-        if (activeCropperInstance) {
-            activeCropperInstance.destroy();
-            activeCropperInstance = null;
-        }
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        const cm = $("cropModal") || document.getElementById("cropModal");
+        const cc = $("cropCard") || document.getElementById("cropCard");
+
+        try {
+            if (cc) {
+                cc.classList.remove("scale-100");
+                cc.classList.add("scale-95");
+            }
+            if (cm) {
+                cm.classList.remove("opacity-100", "pointer-events-auto");
+                cm.classList.add("opacity-0", "pointer-events-none", "hidden");
+                cm.style.display = "none";
+                cm.style.setProperty("display", "none", "important");
+                cm.style.visibility = "hidden";
+            }
+        } catch (err) {}
+
+        try {
+            if (activeCropperInstance) {
+                activeCropperInstance.destroy();
+            }
+        } catch (err) {}
+
+        activeCropperInstance = null;
         window.editingImageIndex = null;
         currentWorkingCropperDataUrl = null;
         window.cropperCurrentAngle = 0;
@@ -1039,34 +1054,53 @@ STRICT LAWS:
     };
 
     window.confirmCrop = async function (e) {
-        if (e) e.preventDefault();
-        let croppedDataUrl = null;
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        try {
+            let croppedDataUrl = null;
 
-        if (activeCropperInstance) {
-            try {
-                const cv = activeCropperInstance.getCroppedCanvas();
-                if (cv) croppedDataUrl = cv.toDataURL("image/jpeg", 0.88);
-            } catch (cropErr) {
-                console.warn("Canvas crop fallback engaged:", cropErr);
-                croppedDataUrl = currentWorkingCropperDataUrl || currentUploadedRawDataUrl;
+            const targetImg = $("cropperTargetImage") || document.getElementById("cropperTargetImage");
+
+            if (activeCropperInstance) {
+                try {
+                    const cv = activeCropperInstance.getCroppedCanvas({
+                        maxWidth: 2048,
+                        maxHeight: 2048,
+                        fillColor: '#000000'
+                    });
+                    if (cv) {
+                        croppedDataUrl = cv.toDataURL("image/jpeg", 0.88);
+                    }
+                } catch (cropErr) {
+                    console.warn("Canvas crop fallback engaged:", cropErr);
+                }
             }
-        }
 
-        if (!croppedDataUrl) croppedDataUrl = currentWorkingCropperDataUrl || currentUploadedRawDataUrl;
-
-        if (croppedDataUrl) {
-            if (window.editingImageIndex !== null && window.editingImageIndex >= 0 && window.editingImageIndex < state.uploadedFiles.length) {
-                state.uploadedFiles[window.editingImageIndex] = croppedDataUrl;
-            } else if (state.uploadedFiles.length < 5) {
-                state.uploadedFiles.push(croppedDataUrl);
-                state.croppedWebpDataUrl = croppedDataUrl;
+            if (!croppedDataUrl || croppedDataUrl.length < 100) {
+                croppedDataUrl = currentWorkingCropperDataUrl || currentUploadedRawDataUrl || (targetImg ? targetImg.src : null);
             }
-            renderThumbnailGrid();
-            window.setLifecycleState("SELECTED");
-        }
 
-        window.editingImageIndex = null;
-        window.closeCropModal();
+            if (croppedDataUrl && croppedDataUrl.length > 50) {
+                if (typeof window.editingImageIndex === 'number' && window.editingImageIndex !== null && window.editingImageIndex >= 0 && window.editingImageIndex < state.uploadedFiles.length) {
+                    state.uploadedFiles[window.editingImageIndex] = croppedDataUrl;
+                } else if (state.uploadedFiles.length < 5) {
+                    state.uploadedFiles.push(croppedDataUrl);
+                    state.croppedWebpDataUrl = croppedDataUrl;
+                } else {
+                    state.uploadedFiles[state.uploadedFiles.length - 1] = croppedDataUrl;
+                    state.croppedWebpDataUrl = croppedDataUrl;
+                }
+                renderThumbnailGrid();
+                window.setLifecycleState("SELECTED");
+                if (typeof window.showToast === 'function') {
+                    window.showToast("Screenshot saved and added to analysis queue!", "success");
+                }
+            }
+        } catch (err) {
+            console.error("confirmCrop Error:", err);
+        } finally {
+            window.editingImageIndex = null;
+            window.closeCropModal();
+        }
     };
 
     // ============================================================
@@ -1213,17 +1247,14 @@ STRICT LAWS:
     window.updateTermsLockState = function () {
         try {
             const cb = $("privacyConsent");
-            const isAuth = sessionStorage.getItem("wingman_authenticated") === "true" || localStorage.getItem("wingman_user_authenticated") === "true" || (typeof window.currentSupabaseUser === 'object' && window.currentSupabaseUser);
+            const isAuth = safeStorage.get("wingman_authenticated") === "true" || safeStorage.get("wingman_user_authenticated") === "true" || sessionStorage.getItem("wingman_authenticated") === "true" || localStorage.getItem("wingman_user_authenticated") === "true" || (typeof window.currentSupabaseUser === 'object' && window.currentSupabaseUser);
+            const savedTerms = safeStorage.get("wingman_terms_accepted") === "true" || localStorage.getItem("wingman_terms_accepted") === "true";
 
-            if (cb) {
-                if (isAuth && !cb.checked) {
-                    cb.checked = true;
-                    try { localStorage.setItem("wingman_terms_accepted", "true"); } catch (e) {}
-                }
+            if (savedTerms || isAuth) {
+                state.isTermsAccepted = true;
+                if (cb) cb.checked = true;
+            } else if (cb) {
                 state.isTermsAccepted = cb.checked;
-                try {
-                    localStorage.setItem("wingman_terms_accepted", cb.checked ? "true" : "false");
-                } catch (e) {}
             } else {
                 state.isTermsAccepted = true;
             }
@@ -1984,10 +2015,39 @@ STRICT LAWS:
         }
     }
 
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", initSettingsListeners);
-    } else {
+    function initFormInputListeners() {
         initSettingsListeners();
+
+        const bi = $("bioInput");
+        if (bi) {
+            bi.addEventListener("input", function() { window.updateButtonStates(); });
+            bi.addEventListener("keyup", function() { window.updateButtonStates(); });
+            bi.addEventListener("paste", function() { setTimeout(window.updateButtonStates, 50); });
+        }
+
+        const ai = $("auditBioInput");
+        if (ai) {
+            ai.addEventListener("input", function() { window.updateButtonStates(); });
+            ai.addEventListener("keyup", function() { window.updateButtonStates(); });
+            ai.addEventListener("paste", function() { setTimeout(window.updateButtonStates, 50); });
+        }
+
+        const si = $("screenshotInput");
+        if (si) {
+            si.addEventListener("change", function(e) {
+                if (e.target.files && e.target.files.length > 0) {
+                    window.processSelectedFiles(e.target.files);
+                }
+            });
+        }
+
+        window.updateTermsLockState();
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initFormInputListeners);
+    } else {
+        initFormInputListeners();
     }
 
     window.togglePlexusPerformance = function () {
@@ -2343,13 +2403,7 @@ STRICT LAWS:
                     if (typeof errJson.credits === "number") {
                         window.updateUICredits(errJson.credits);
                     }
-                    if (errJson.refunded) {
-                        if (typeof window.showToast === 'function') {
-                            window.showToast(errJson.error || "Generation failed. Your credits were not charged.", "shield");
-                        }
-                        return null;
-                    }
-                    const err = new Error(errJson.error || "Generation request failed.");
+                    const err = new Error(errJson.error || "Generation request failed. If you were charged credits, please contact support.mywingman@gmail.com.");
                     err.status = response.status;
                     err.credits = errJson.credits;
                     throw err;
@@ -3154,11 +3208,11 @@ STRICT LAWS:
                 if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal();
             } else {
                 const errJson = await chatResp.json().catch(() => ({}));
-                if (errJson.refunded && typeof errJson.credits === 'number') {
+                if (typeof errJson.credits === 'number') {
                     window.updateUICredits(errJson.credits);
-                    window.showToast("Maeve AI request failed. Your 2 credits were not charged.", "info");
                 }
-                window.renderChatboxBubble("Sorry, Maeve is taking a quick breath. Please try sending your message again.", "assistant");
+                const errMsg = errJson.error || "Sorry, Maeve is taking a quick breath. If you were charged credits, please contact support.mywingman@gmail.com.";
+                window.renderChatboxBubble("Notice: " + errMsg, "assistant");
             }
         } catch (chatErr) {
             window.showChatboxTypingIndicator(false);

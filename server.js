@@ -449,71 +449,8 @@ async function verifyAndDeductCreditsDB(req, costInr, featureName = 'ai_feature'
     }
 }
 
-// Global In-Memory Refund Tracking Guard to Prevent Double-Refunds Across Retries
-const refundedRequestsSet = new Set();
-
-// Idempotent Credit Refund in Supabase Postgres ('profiles' & 'credit_transactions')
-async function refundCreditsDB(req, costInr, reqId, featureName = 'ai_feature') {
-    const uid = getUserIdFromReq(req);
-    if (!uid || uid === 'guest_user' || !reqId) {
-        return { success: false, error: 'Invalid parameters for refund.' };
-    }
-
-    // Double-Refund Guard: Check if this specific request ID has already been refunded
-    if (refundedRequestsSet.has(reqId)) {
-        console.warn(`[refundCreditsDB Notice] Request ID ${reqId} already refunded. Skipping duplicate refund.`);
-        const { data: prof } = await supabaseAdmin.from('profiles').select('credits').eq('id', uid).maybeSingle();
-        const currentBal = (prof && typeof prof.credits === 'number') ? Number(prof.credits) : 0;
-        return { success: true, remainingCredits: currentBal, alreadyRefunded: true };
-    }
-
-    const refundCredits = Math.round(costInr * CREDITS_PER_INR);
-
-    try {
-        const { data: profile, error: selectErr } = await supabaseAdmin
-            .from('profiles')
-            .select('credits')
-            .eq('id', uid)
-            .maybeSingle();
-
-        if (selectErr) throw selectErr;
-
-        const currentCredits = (profile && typeof profile.credits === 'number') ? Number(profile.credits) : 0;
-        const restoredCredits = currentCredits + refundCredits;
-
-        const { error: updateErr } = await supabaseAdmin
-            .from('profiles')
-            .update({ credits: restoredCredits })
-            .eq('id', uid);
-
-        if (updateErr) {
-            console.error('[refundCreditsDB Supabase Update ERROR]:', updateErr.message);
-            return { success: false, error: 'Failed to restore credits in Supabase.' };
-        }
-
-        // Mark request ID as refunded to prevent any duplicate refund
-        refundedRequestsSet.add(reqId);
-
-        // Audit log refund entry in credit_transactions
-        try {
-            await supabaseAdmin
-                .from('credit_transactions')
-                .insert({
-                    user_id: uid,
-                    amount: refundCredits,
-                    created_at: new Date().toISOString()
-                });
-        } catch (txErr) {
-            console.warn('[credit_transactions refund audit notice]:', txErr.message);
-        }
-
-        console.log(`[refundCreditsDB SUCCESS] Restored ${refundCredits} credits for user ${uid} (reqId: ${reqId}). New balance: ${restoredCredits}`);
-        return { success: true, remainingCredits: restoredCredits };
-    } catch (err) {
-        console.error('[refundCreditsDB Error]:', err.message);
-        return { success: false, error: err.message };
-    }
-}
+// Note: Automatic credit refunds are disabled per business rules.
+// If an AI service fails, credits remain deducted and users can contact support at support.mywingman@gmail.com.
 
 // Fallback SQLite Deduction Helper
 async function verifyAndDeductCreditsSQLite(req, costInr, featureName, idempotencyKey) {
@@ -1329,26 +1266,18 @@ ${formattingRule}`;
         });
     } catch (error) {
         console.error("Pipeline breakdown:", error.message);
-        let restoredCredits = deduction ? deduction.remainingCredits : 0;
-        if (deduction && deduction.success) {
-            const refundRes = await refundCreditsDB(req, 1.0, reqId, 'analyze');
-            if (refundRes.success) {
-                restoredCredits = refundRes.remainingCredits;
-            }
-        }
+        const currentBal = deduction ? deduction.remainingCredits : 0;
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
-                error: "Analysis timed out. Your credits were not charged and have been safely preserved.",
-                refunded: true,
-                credits: restoredCredits
+                error: "Analysis timed out. If you were charged credits, please contact support.mywingman@gmail.com.",
+                credits: currentBal
             });
         }
         res.status(500).json({
             success: false,
-            error: "AI analysis failed. Your credits were not charged and have been safely preserved.",
-            refunded: true,
-            credits: restoredCredits
+            error: "AI analysis failed. If you were charged credits, please contact support.mywingman@gmail.com.",
+            credits: currentBal
         });
     }
 });
@@ -1496,26 +1425,18 @@ GENERAL ICEBREAKER LAWS:
         });
     } catch (error) {
         console.error("Icebreaker breakdown:", error.message);
-        let restoredCredits = deduction ? deduction.remainingCredits : 0;
-        if (deduction && deduction.success) {
-            const refundRes = await refundCreditsDB(req, 1.0, reqId, 'icebreaker');
-            if (refundRes.success) {
-                restoredCredits = refundRes.remainingCredits;
-            }
-        }
+        const currentBal = deduction ? deduction.remainingCredits : 0;
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
-                error: "Icebreaker generation timed out. Your credits were not charged and have been safely preserved.",
-                refunded: true,
-                credits: restoredCredits
+                error: "Icebreaker generation timed out. If you were charged credits, please contact support.mywingman@gmail.com.",
+                credits: currentBal
             });
         }
         res.status(500).json({
             success: false,
-            error: "Icebreaker generation failed. Your credits were not charged and have been safely preserved.",
-            refunded: true,
-            credits: restoredCredits
+            error: "Icebreaker generation failed. If you were charged credits, please contact support.mywingman@gmail.com.",
+            credits: currentBal
         });
     }
 });
@@ -1836,26 +1757,18 @@ FORMATTING: Use ${casingInstruction}.`;
         });
     } catch (error) {
         console.error("Bio optimizer breakdown:", error.message);
-        let restoredCredits = deduction ? deduction.remainingCredits : 0;
-        if (deduction && deduction.success) {
-            const refundRes = await refundCreditsDB(req, 1.0, reqId, 'optimize');
-            if (refundRes.success) {
-                restoredCredits = refundRes.remainingCredits;
-            }
-        }
+        const currentBal = deduction ? deduction.remainingCredits : 0;
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
-                error: "Bio optimization timed out. Your credits were not charged and have been safely preserved.",
-                refunded: true,
-                credits: restoredCredits
+                error: "Bio optimization timed out. If you were charged credits, please contact support.mywingman@gmail.com.",
+                credits: currentBal
             });
         }
         res.status(500).json({
             success: false,
-            error: "Bio optimization failed. Your credits were not charged and have been safely preserved.",
-            refunded: true,
-            credits: restoredCredits
+            error: "Bio optimization failed. If you were charged credits, please contact support.mywingman@gmail.com.",
+            credits: currentBal
         });
     }
 });
@@ -2145,18 +2058,11 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
         });
     } catch (error) {
         console.error("Maeve AI Chat Pipeline Error:", error.stack || error.message || error);
-        let restoredCredits = deduction ? deduction.remainingCredits : 0;
-        if (deduction && deduction.success) {
-            const refundRes = await refundCreditsDB(req, 0.2, reqId, 'chat');
-            if (refundRes.success) {
-                restoredCredits = refundRes.remainingCredits;
-            }
-        }
+        const currentBal = deduction ? deduction.remainingCredits : 0;
         res.status(500).json({
             success: false,
-            error: "Maeve AI Coach failed to respond. Your credits were not charged and have been safely preserved.",
-            refunded: true,
-            credits: restoredCredits
+            error: "Maeve AI Coach failed to respond. If you were charged credits, please contact support.mywingman@gmail.com.",
+            credits: currentBal
         });
     }
 });
