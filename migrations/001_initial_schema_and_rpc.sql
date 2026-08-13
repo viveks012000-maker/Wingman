@@ -60,8 +60,8 @@ BEGIN
 
     IF v_current_credits IS NULL THEN
         -- Auto-provision profile if missing
-        INSERT INTO public.profiles (id, credits, display_name)
-        VALUES (p_user_id, 0, 'MyWingman User')
+        INSERT INTO public.profiles (id, credits)
+        VALUES (p_user_id, 0)
         ON CONFLICT (id) DO NOTHING;
         v_current_credits := 0;
     END IF;
