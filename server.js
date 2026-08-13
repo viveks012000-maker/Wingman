@@ -2233,7 +2233,10 @@ app.post('/api/payments/verify', requireSupabaseAuth, apiLimiter, async (req, re
         if (!tier && !credits && !amountInr) {
             return res.status(400).json({ success: false, error: 'Tier or credit amount required.' });
         }
-        // For production we would integrate a real gateway; sandbox is always true for now
+        // Block unverified mock credit top-ups in production mode
+        if (process.env.NODE_ENV === 'production' && process.env.ENABLE_MOCK_PAYMENTS !== 'true') {
+            return res.status(501).json({ success: false, error: 'Production payment gateway integration pending. Real payment gateway required.' });
+        }
         if (sandbox === false) {
             return res.status(501).json({ success: false, error: 'Production payment gateway integration pending.' });
         }
