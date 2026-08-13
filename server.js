@@ -2,10 +2,10 @@
 require('dotenv').config();
 
 // Startup Environment Variables Validation
-const requiredEnvVars = ['AICREDITS_API_KEY'];
+const requiredEnvVars = ['AICREDITS_API_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'];
 const missingEnv = requiredEnvVars.filter(key => !process.env[key]);
 if (missingEnv.length > 0 && process.env.NODE_ENV === 'production') {
-    console.error(`❌ CRITICAL SECURITY FATAL: Missing required environment variables: ${missingEnv.join(', ')}`);
+    console.error(`❌ CRITICAL SECURITY FATAL: Missing required production environment variables: ${missingEnv.join(', ')}`);
     process.exit(1);
 } else if (missingEnv.length > 0) {
     console.warn(`[SECURITY WARN] Missing environment variables: ${missingEnv.join(', ')}. Using secure default fallbacks for local development.`);
@@ -139,9 +139,22 @@ app.use('/api/', verifySupabaseToken);
 app.use('/api/', autoProvisionUser);
 app.use(validateImagePayload);
 
-// 4. Block access to sensitive files & sanitize request bodies
+// 4. Block access to sensitive files, sanitize request bodies & enforce CSRF
 app.use(blockSensitiveFiles);
 app.use(sanitizeRequestBody);
+app.use('/api/', validateCsrfToken);
+
+// Endpoint: Generate & Retrieve CSRF Token
+app.get('/api/csrf-token', (req, res) => {
+    const { parseCookies } = require('./middleware/security');
+    const cookies = parseCookies(req);
+    let csrfToken = cookies['wingman_csrf'];
+    if (!csrfToken) {
+        csrfToken = generateCsrfToken();
+        setHttpOnlyCookie(res, 'wingman_csrf', csrfToken);
+    }
+    res.json({ success: true, csrfToken: csrfToken });
+});
 
 app.use(express.static(path.join(__dirname), {
     index: 'index.html',
@@ -314,13 +327,43 @@ async function verifyAndDeductCreditsDB(req, costInr, featureName = 'ai_feature'
     }
 
     const costCredits = Math.round(costInr * CREDITS_PER_INR);
+    const reqId = idempotencyKey || ('req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
 
+    // Priority 1: Try atomic Postgres RPC function 'deduct_credits' in Supabase
     try {
-        const { data: profile } = await supabaseAdmin
+        const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('deduct_credits', {
+            p_user_id: uid,
+            p_amount: costCredits,
+            p_feature: featureName,
+            p_request_id: reqId
+        });
+
+        if (!rpcErr && rpcRes && typeof rpcRes === 'object') {
+            if (rpcRes.success === false) {
+                return { success: false, currentCredits: typeof rpcRes.currentCredits === 'number' ? rpcRes.currentCredits : 0 };
+            }
+            if (rpcRes.success === true) {
+                const rem = typeof rpcRes.remainingCredits === 'number' ? rpcRes.remainingCredits : 0;
+                return {
+                    success: true,
+                    remainingCredits: rem,
+                    remainingInr: rem / CREDITS_PER_INR
+                };
+            }
+        }
+    } catch (rpcEx) {
+        // Fallback to table query if RPC function is not installed in Supabase Postgres
+    }
+
+    // Priority 2: Standard Supabase Postgres Query Pipeline
+    try {
+        const { data: profile, error: selectErr } = await supabaseAdmin
             .from('profiles')
             .select('credits')
             .eq('id', uid)
             .maybeSingle();
+
+        if (selectErr) throw selectErr;
 
         let currentCredits = (profile && typeof profile.credits === 'number') ? Number(profile.credits) : 0;
 
@@ -354,14 +397,14 @@ async function verifyAndDeductCreditsDB(req, costInr, featureName = 'ai_feature'
                     user_id: uid,
                     amount: -costCredits,
                     feature: featureName,
-                    request_id: idempotencyKey || ('req_' + Date.now()),
+                    request_id: reqId,
                     created_at: new Date().toISOString()
                 });
         } catch (txErr) {
             console.warn('[credit_transactions audit notice]:', txErr.message);
         }
 
-        if (db) {
+        if (db && process.env.ENABLE_LOCAL_SQLITE === 'true') {
             db.run('UPDATE user_profiles SET credits_balance = ROUND(credits_balance - ?, 2) WHERE user_id = ? AND credits_balance >= ?', [costInr, uid, costInr]).catch(() => {});
         }
 
@@ -371,9 +414,13 @@ async function verifyAndDeductCreditsDB(req, costInr, featureName = 'ai_feature'
             remainingInr: remainingCredits / CREDITS_PER_INR
         };
     } catch (err) {
-        console.warn('[verifyAndDeductCreditsDB Notice] Supabase update failed, attempting local fallback:', err.message);
+        console.warn('[verifyAndDeductCreditsDB Notice] Supabase credit deduction error:', err.message);
+        // CRITICAL SECURITY RULE: In production, NEVER fall back to SQLite for credit mutations. Return 500 error.
+        if (process.env.NODE_ENV === 'production' || process.env.ENABLE_LOCAL_SQLITE !== 'true') {
+            return { success: false, currentCredits: 0, error: 'Credit service unavailable. Please try again.' };
+        }
         if (db) {
-            return await verifyAndDeductCreditsSQLite(req, costInr, featureName, idempotencyKey);
+            return await verifyAndDeductCreditsSQLite(req, costInr, featureName, reqId);
         }
         return { success: false, currentCredits: 0, error: 'Database service unavailable.' };
     }
@@ -722,7 +769,9 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
 
         if (!response.ok) {
             const errText = await response.text();
-            throw new Error(`OpenRouter API Failure [${targetModel}]: ${response.status} - ${errText}`);
+            const err = new Error(`OpenRouter API Failure [${targetModel}]: ${response.status} - ${errText}`);
+            err.statusCode = response.status;
+            throw err;
         }
         const data = await response.json();
         if (data.error) {
@@ -823,6 +872,15 @@ function enforceWordLimit(text, maxWords = 500) {
         return words.slice(0, maxWords).join(" ");
     }
     return text;
+}
+
+// Prompt Injection Sanitizer Helper
+function sanitizePromptInput(input) {
+    if (!input || typeof input !== 'string') return '';
+    let clean = input.trim();
+    clean = clean.replace(/ignore\s+(all\s+)?(previous|above)\s+instructions/gi, '[filtered directive]');
+    clean = clean.replace(/system\s*:\s*/gi, '');
+    return clean;
 }
 
 // ==================== THE 4 CORE FEATURE API ENDPOINTS ====================

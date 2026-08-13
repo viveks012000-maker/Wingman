@@ -209,8 +209,10 @@ function validateCsrfToken(req, res, next) {
     const csrfCookie = cookies['wingman_csrf'];
     const csrfHeader = req.headers['x-csrf-token'];
 
-    if (csrfCookie && csrfHeader && csrfCookie !== csrfHeader) {
-        return res.status(403).json({ success: false, error: 'CSRF token validation failed.' });
+    if (csrfCookie) {
+        if (!csrfHeader || csrfCookie !== csrfHeader) {
+            return res.status(403).json({ success: false, error: 'CSRF token validation failed.' });
+        }
     }
     next();
 }
