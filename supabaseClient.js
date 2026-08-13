@@ -14,6 +14,9 @@
 (function () {
     'use strict';
 
+    window.SUPABASE_URL = window.SUPABASE_URL || "https://gstnghuhhrxtwjdafufd.supabase.co";
+    window.SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdzdG5naHVoaHJ4dHdqZGFmdWZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4OTQ1NjksImV4cCI6MjEwMTQ3MDU2OX0.C-zQTjVBNjGsFJy8Yp1dhC11GWAkWD3s5ibbr0jdUuc";
+
     window.supabaseClient = null;
     window.currentSupabaseUser = null;
     window.currentSupabaseSession = null;

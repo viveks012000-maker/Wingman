@@ -45,16 +45,20 @@
     window.safeStorageRemove = safeStorage.remove.bind(safeStorage);
     window.safeStorageClear = safeStorage.clear.bind(safeStorage);
 
-    // Dynamic Global API Endpoint Selector
+    // Dynamic Global API Endpoint Selector (Configurable Base URL Strategy)
     function getApiBase() {
-        const origin = window.location.origin;
-        if (origin === 'null' || window.location.protocol === 'file:') {
+        if (typeof window !== 'undefined') {
+            if (window.API_BASE_URL) return String(window.API_BASE_URL).replace(/\/+$/, '');
+            if (window.RAILWAY_URL) return String(window.RAILWAY_URL).replace(/\/+$/, '');
+            if (window.BACKEND_API_URL) return String(window.BACKEND_API_URL).replace(/\/+$/, '');
+        }
+        const origin = (typeof window !== 'undefined' && window.location) ? window.location.origin : '';
+        if (origin === 'null' || (typeof window !== 'undefined' && window.location.protocol === 'file:')) {
             return 'http://localhost:3000';
         }
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
             return 'http://localhost:3000';
         }
-        // For production (or custom domain), return empty to use relative paths.
         return '';
     }
 
