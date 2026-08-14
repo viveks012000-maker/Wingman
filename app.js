@@ -2307,10 +2307,34 @@ STRICT LAWS:
         }
 
         const si = $("screenshotInput");
-        if (si) {
+        if (si && !si._changeListenerAttached) {
+            si._changeListenerAttached = true;
             si.addEventListener("change", function(e) {
                 if (e.target.files && e.target.files.length > 0) {
                     window.processSelectedFiles(e.target.files);
+                }
+            });
+        }
+
+        const dz = $("dropzone");
+        if (dz && !dz._dragListenersAttached) {
+            dz._dragListenersAttached = true;
+            dz.addEventListener("dragover", function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                dz.classList.add("border-violet-500");
+            });
+            dz.addEventListener("dragleave", function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                dz.classList.remove("border-violet-500");
+            });
+            dz.addEventListener("drop", function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                dz.classList.remove("border-violet-500");
+                if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    window.processSelectedFiles(e.dataTransfer.files);
                 }
             });
         }
@@ -2323,6 +2347,7 @@ STRICT LAWS:
         }
 
         window.updateTermsLockState();
+        window.updateButtonStates();
     }
 
     if (document.readyState === "loading") {
@@ -3021,16 +3046,17 @@ STRICT LAWS:
                 window.updateHUDScoreBadge();
                 window.showToast("Master Strategy Generated! (10 Credits Processed)", "success");
             } else {
-                window.setLifecycleState("EMPTY");
+                window.setLifecycleState(state.uploadedFiles.length > 0 ? "SELECTED" : "EMPTY");
             }
         } catch (err) {
             console.error("Screenshot Analysis Error:", err);
-            window.setLifecycleState("EMPTY");
+            window.setLifecycleState(state.uploadedFiles.length > 0 ? "SELECTED" : "EMPTY");
         } finally {
             stopTelemetryTracker("analyze", "analyze-telemetry-status", "analyze-telemetry-pct", "analyze-telemetry-bar", "ANALYSIS COMPLETE");
             state.isLoading = false;
             setButtonLoadingState("runAnalysisBtn", false, "Analyzing Context...", "Generate Perfect Replies");
             window.updateTermsLockState();
+            window.updateButtonStates();
         }
     };
 

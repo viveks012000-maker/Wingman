@@ -392,33 +392,51 @@ async function verifyAndDeductCreditsDB(req, costParam, featureName = 'ai_featur
     // Priority 1: Authoritative Atomic Postgres RPC function 'reserve_credits' (or 'deduct_credits')
     try {
         if (!supabaseAdmin || !supabaseAdmin.rpc) {
-            if (!IS_PROD && db) {
+            if (!IS_PROD && db && (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)) {
                 return await verifyAndDeductCreditsSQLite(req, costCredits / CREDITS_PER_INR, featureName, reqId);
             }
             return {
                 success: false,
                 currentCredits: 0,
-                error: 'Database connection unavailable in production mode.'
+                serviceUnavailable: true,
+                error: 'Credit database connection unavailable.'
             };
         }
 
-        const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('reserve_credits', {
+        let rpcRes = null;
+        let rpcErr = null;
+
+        const res1 = await supabaseAdmin.rpc('reserve_credits', {
             p_user_id: uid,
             p_amount: costCredits,
             p_feature: featureName,
             p_request_id: reqId
         });
+        rpcRes = res1.data;
+        rpcErr = res1.error;
+
+        // If reserve_credits RPC is not yet in live schema cache, fallback to live deduct_credits RPC
+        if (rpcErr && (rpcErr.message.includes('reserve_credits') || rpcErr.code === 'PGRST202')) {
+            const res2 = await supabaseAdmin.rpc('deduct_credits', {
+                p_user_id: uid,
+                p_amount: costCredits,
+                p_feature: featureName,
+                p_request_id: reqId
+            });
+            rpcRes = res2.data;
+            rpcErr = res2.error;
+        }
 
         if (rpcErr) {
             console.error('[verifyAndDeductCreditsDB RPC Error]:', rpcErr.message);
-            // In dev mode with active local SQLite, allow local development fallback
-            if (!IS_PROD && db) {
+            if (!IS_PROD && db && (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)) {
                 return await verifyAndDeductCreditsSQLite(req, costCredits / CREDITS_PER_INR, featureName, reqId);
             }
             // Production FAIL-CLOSED: Refuse un-locked non-atomic execution
             return {
                 success: false,
                 currentCredits: 0,
+                serviceUnavailable: true,
                 error: 'Credit service temporarily unavailable. Balance unchanged. Please try again.'
             };
         }
@@ -431,6 +449,7 @@ async function verifyAndDeductCreditsDB(req, costParam, featureName = 'ai_featur
                     return {
                         success: false,
                         currentCredits: currentBal,
+                        insufficient: true,
                         error: row.error_message || 'Insufficient credit balance.'
                     };
                 }
@@ -450,17 +469,18 @@ async function verifyAndDeductCreditsDB(req, costParam, featureName = 'ai_featur
         return {
             success: false,
             currentCredits: 0,
+            serviceUnavailable: true,
             error: 'Credit service returned unexpected response. Balance unchanged.'
         };
     } catch (rpcEx) {
         console.error('[verifyAndDeductCreditsDB Exception]:', rpcEx.message);
-        if (!IS_PROD && db) {
+        if (!IS_PROD && db && (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)) {
             return await verifyAndDeductCreditsSQLite(req, costCredits / CREDITS_PER_INR, featureName, reqId);
         }
-        // Production FAIL-CLOSED
         return {
             success: false,
             currentCredits: 0,
+            serviceUnavailable: true,
             error: 'Credit verification failed. Your credits have not been deducted. Please try again.'
         };
     }
@@ -839,12 +859,12 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
     const rawBaseUrl = process.env.AICREDITS_BASE_URL || "https://api.aicredits.in/v1";
     const baseUrl = rawBaseUrl.replace(/\/+$/, '');
 
-    // Support both raw model identifier and prefixed model identifier
-    let candidateModels = [modelIdentifier];
-    if (!modelIdentifier.includes("/")) {
-        candidateModels.push("qwen/" + modelIdentifier);
+    // Support both prefixed model identifier and raw model identifier (prefer prefixed for AICREDITS)
+    let candidateModels = [];
+    if (modelIdentifier.startsWith("qwen/")) {
+        candidateModels = [modelIdentifier, modelIdentifier.replace(/^qwen\//, '')];
     } else {
-        candidateModels.push(modelIdentifier.replace(/^qwen\//, ''));
+        candidateModels = ["qwen/" + modelIdentifier, modelIdentifier];
     }
     candidateModels = [...new Set(candidateModels)];
 
@@ -901,7 +921,9 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
             if (!data.choices || data.choices.length === 0) {
                 throw new Error(`AI API returned no choices. Response: ${JSON.stringify(data)}`);
             }
-            return data.choices[0].message.content;
+            const msg = data.choices[0].message;
+            const outputContent = typeof msg === 'string' ? msg : (msg ? (msg.content || msg.reasoning || '') : '');
+            return outputContent;
         } catch (err) {
             if (timer) clearTimeout(timer);
             if (err.name === 'AbortError') {
@@ -953,20 +975,22 @@ async function queryOpenRouter(modelIdentifier, messagesArray, temperature = 0.7
         }
     }
 
-    // Model Failover Retry Logic (Task 3)
-    const FALLBACK_MODELS = {
-        'qwen3-235b-a22b-2507': 'qwen/qwen2.5-72b-instruct',
-        'qwen/qwen2.5-vl-72b-instruct': 'google/gemini-2.5-flash'
-    };
-    const fallbackModel = FALLBACK_MODELS[modelIdentifier];
-    if (fallbackModel && fallbackModel !== modelIdentifier) {
-        console.warn(`[AI Failover] Model ${modelIdentifier} failed on all keys. Attempting failover to ${fallbackModel}...`);
-        for (const apiKey of keysToTry) {
-            try {
-                const result = await executeSingleOpenRouterCall(apiKey, fallbackModel, messagesArray, temperature, maxTokens, timeoutMs, topP);
-                return result;
-            } catch (err) {
-                lastError = err;
+    // Model Failover Retry Logic (strictly forbidden for Screenshot Analyzer models as per Rule 5 & 6)
+    const isAnalyzerModel = typeof modelIdentifier === 'string' && (modelIdentifier.includes('flash-02-23') || modelIdentifier.includes('235b-a22b-2507'));
+    if (!isAnalyzerModel) {
+        const FALLBACK_MODELS = {
+            'qwen/qwen2.5-vl-72b-instruct': 'google/gemini-2.5-flash'
+        };
+        const fallbackModel = FALLBACK_MODELS[modelIdentifier];
+        if (fallbackModel && fallbackModel !== modelIdentifier) {
+            console.warn(`[AI Failover] Model ${modelIdentifier} failed on all keys. Attempting failover to ${fallbackModel}...`);
+            for (const apiKey of keysToTry) {
+                try {
+                    const result = await executeSingleOpenRouterCall(apiKey, fallbackModel, messagesArray, temperature, maxTokens, timeoutMs, topP);
+                    return result;
+                } catch (err) {
+                    lastError = err;
+                }
             }
         }
     }
@@ -1037,20 +1061,102 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
             });
         }
 
-        const targetImage = image || imageBase64;
+        // 1. Image Normalization into a single canonical array
+        let rawImages = [];
+        if (Array.isArray(images)) {
+            rawImages = images;
+        } else if (image || imageBase64) {
+            rawImages = [image || imageBase64];
+        }
+
+        // 2. Strict Backend Image Validation (Occurs BEFORE credit reservation)
+        if (rawImages.length > 5) {
+            return res.status(400).json({
+                success: false,
+                error: "You can analyze a maximum of 5 images at a time."
+            });
+        }
+
         let imageList = [];
-        if (Array.isArray(images) && images.length > 0) {
-            imageList = images.filter(img => typeof img === 'string' && img.length > 0 && img.startsWith('data:image/'));
-        } else if (targetImage && typeof targetImage === 'string' && targetImage.length > 0) {
-            let cleanImg = targetImage.trim();
-            if (!cleanImg.startsWith('data:image/')) {
-                cleanImg = 'data:image/jpeg;base64,' + cleanImg;
+        let totalDecodedBytes = 0;
+        const MAX_SINGLE_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
+        const MAX_TOTAL_IMAGE_BYTES = 25 * 1024 * 1024; // 25 MB
+        const ALLOWED_MIMES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif', 'image/bmp'];
+
+        for (let i = 0; i < rawImages.length; i++) {
+            const item = rawImages[i];
+            if (!item || typeof item !== 'string') {
+                return res.status(400).json({
+                    success: false,
+                    error: `Screenshot #${i + 1} payload is invalid.`
+                });
             }
-            imageList = [cleanImg];
+            const trimmed = item.trim();
+            if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('//')) {
+                return res.status(400).json({
+                    success: false,
+                    error: "Remote image URLs are not supported. Please upload screenshot files directly."
+                });
+            }
+
+            let mime = 'image/jpeg';
+            let base64Data = '';
+            if (trimmed.startsWith('data:')) {
+                const match = trimmed.match(/^data:([^;]+);base64,(.+)$/s);
+                if (!match) {
+                    return res.status(400).json({
+                        success: false,
+                        error: `Screenshot #${i + 1} contains an invalid data URL or unsupported encoding.`
+                    });
+                }
+                mime = match[1].toLowerCase();
+                base64Data = match[2].replace(/[\r\n\s]+/g, '');
+            } else {
+                base64Data = trimmed.replace(/[\r\n\s]+/g, '');
+            }
+
+            if (!ALLOWED_MIMES.includes(mime)) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Screenshot #${i + 1} has an unsupported format (${mime}). Supported: JPG, PNG, WEBP, HEIC, BMP.`
+                });
+            }
+
+            if (!/^[A-Za-z0-9+/=]+$/.test(base64Data)) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Screenshot #${i + 1} is corrupted or not valid base64 data.`
+                });
+            }
+
+            const decodedBytes = Math.floor((base64Data.length * 3) / 4) - ((base64Data.endsWith('==')) ? 2 : (base64Data.endsWith('=') ? 1 : 0));
+            if (decodedBytes <= 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Screenshot #${i + 1} is empty or unreadable.`
+                });
+            }
+
+            if (decodedBytes > MAX_SINGLE_IMAGE_BYTES) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Screenshot #${i + 1} exceeds the 5 MB per-image limit.`
+                });
+            }
+
+            totalDecodedBytes += decodedBytes;
+            if (totalDecodedBytes > MAX_TOTAL_IMAGE_BYTES) {
+                return res.status(400).json({
+                    success: false,
+                    error: "Total upload size exceeds the 25 MB maximum batch limit."
+                });
+            }
+
+            imageList.push(`data:${mime};base64,${base64Data}`);
         }
 
         if (imageList.length === 0 && (!messages || messages.length === 0)) {
-            return res.status(400).json({ success: false, error: "Base64 image payload or chat history is missing." });
+            return res.status(400).json({ success: false, error: "Please upload at least 1 chat screenshot to analyze." });
         }
 
         deduction = await verifyAndDeductCreditsDB(req, 10, 'analyze', reqId);
@@ -1059,6 +1165,12 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
                 return res.status(401).json({
                     success: false,
                     error: deduction.error || "Authentication required to use this feature."
+                });
+            }
+            if (deduction.serviceUnavailable) {
+                return res.status(503).json({
+                    success: false,
+                    error: deduction.error || "Credit service temporarily unavailable. Please try again."
                 });
             }
             return res.status(402).json({
@@ -1110,27 +1222,24 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
 
             console.log(`Executing Stage 1: Optical Vision & Spatial Parsing for ${imageList.length} screenshot(s) using qwen3.5-flash-02-23...`);
             const transcriptionPromises = imageList.map(async (imgUrl, i) => {
-                try {
-                    const cleanImgUrl = typeof imgUrl === 'string' ? imgUrl.trim().replace(/[\r\n]+/g, '') : imgUrl;
-                    const positionTag = (i === imageList.length - 1)
-                        ? `SCREENSHOT ${i + 1} OF ${imageList.length} (LATEST SCREENSHOT - CONTAINS FINAL MESSAGE)`
-                        : `SCREENSHOT ${i + 1} OF ${imageList.length} (EARLIER CONVERSATION HISTORY)`;
+                const positionTag = (i === imageList.length - 1)
+                    ? `SCREENSHOT ${i + 1} OF ${imageList.length} (LATEST SCREENSHOT - CONTAINS FINAL MESSAGE)`
+                    : `SCREENSHOT ${i + 1} OF ${imageList.length} (EARLIER CONVERSATION HISTORY)`;
 
-                    const visionMessages = [
-                        {
-                            role: "user",
-                            content: [
-                                { type: "text", text: `${visionSystemPrompt}\n\n[SCREENSHOT SEQUENCE TAG: ${positionTag}]` },
-                                { type: "image_url", image_url: { url: cleanImgUrl } }
-                            ]
-                        }
-                    ];
-                    const singleTranscript = await queryOpenRouter("qwen3.5-flash-02-23", visionMessages, 0.1, 400, 25000);
-                    return `--- ${positionTag} ---\n${singleTranscript}`;
-                } catch (vErr) {
-                    console.warn(`Vision extraction error for screenshot ${i + 1}:`, vErr.message);
-                    return `{"chat_history":[{"sender":"SENT_BY_USER","type":"SHARED_REEL","text":"[Video Reel]"},{"sender":"SENT_BY_USER","type":"TEXT","text":"Hiii"}],"latest_sender":"SENT_BY_USER","active_status":"USER_LEFT_ON_READ","match_has_replied":false}`;
+                const visionMessages = [
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: `${visionSystemPrompt}\n\n[SCREENSHOT SEQUENCE TAG: ${positionTag}]` },
+                            { type: "image_url", image_url: { url: imgUrl } }
+                        ]
+                    }
+                ];
+                const singleTranscript = await queryOpenRouter("qwen3.5-flash-02-23", visionMessages, 0.2, 800, 25000);
+                if (!singleTranscript || typeof singleTranscript !== 'string' || singleTranscript.trim().length === 0) {
+                    throw new Error(`Optical parsing failed for screenshot ${i + 1}.`);
                 }
+                return `--- ${positionTag} ---\n${singleTranscript}`;
             });
 
             const transcriptions = await Promise.all(transcriptionPromises);

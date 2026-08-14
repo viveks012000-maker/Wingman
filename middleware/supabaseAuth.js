@@ -10,20 +10,15 @@ if (isProduction && !SUPABASE_SERVICE_ROLE_KEY) {
     console.error('❌ CRITICAL SECURITY FATAL: SUPABASE_SERVICE_ROLE_KEY must be provided in production.');
 }
 
-// Server Admin Client: Requires actual service role key in production; does NOT silently degrade to anon key
-const supabaseAdmin = (SUPABASE_SERVICE_ROLE_KEY)
-    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+// Server Admin Client: Requires actual service role key; does NOT silently degrade to anon key
+const supabaseAdmin = (SUPABASE_SERVICE_ROLE_KEY && SUPABASE_SERVICE_ROLE_KEY.trim().length > 0)
+    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.trim(), {
         auth: {
             autoRefreshToken: false,
             persistSession: false
         }
     })
-    : (isProduction ? null : createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: {
-            autoRefreshToken: false,
-            persistSession: false
-        }
-    }));
+    : null;
 
 /**
  * Middleware: Verifies the Bearer token using supabaseAdmin.auth.getUser(token) or REST verification.
@@ -32,7 +27,8 @@ const supabaseAdmin = (SUPABASE_SERVICE_ROLE_KEY)
 async function verifySupabaseToken(req, res, next) {
     function applyMockAuthIfDev() {
         if (!isProduction && (process.env.ENABLE_MOCK_AUTH === 'true' || req.headers['x-mock-auth'] === 'true')) {
-            req.user = { id: '00000000-0000-0000-0000-000000000001', email: 'dev@local' };
+            const devUid = req.headers['x-test-user-id'] || '00000000-0000-0000-0000-000000000001';
+            req.user = { id: devUid, email: req.headers['x-test-user-email'] || 'dev@local' };
             return true;
         }
         return false;

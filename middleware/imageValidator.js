@@ -33,7 +33,7 @@ function validateImagePayload(req, res, next) {
         return res.status(400).json({ success: false, error: 'You can analyze a maximum of 5 images at a time.' });
     }
 
-    const ALLOWED_MIME_REGEX = /^data:image\/(jpeg|jpg|png|webp|gif|heic|heif);base64,/i;
+    const ALLOWED_MIME_REGEX = /^data:image\/(jpeg|jpg|png|webp|gif|heic|heif|bmp);base64,/i;
     const MAX_PER_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB per image
     const MAX_TOTAL_BYTES = 25 * 1024 * 1024; // 25 MB total for up to 5 images
 
