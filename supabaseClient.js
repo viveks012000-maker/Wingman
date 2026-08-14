@@ -115,23 +115,26 @@
     };
 
     // Global Centralized Fresh Supabase Auth Header Provider
-    window.getSupabaseAuthHeaders = async function() {
+    window.getSupabaseAuthHeaders = async function () {
         const client = window.supabaseClient;
         if (!client) {
-            var fallbackToken = safeGet('wingman_jwt_token');
-            return isValidToken(fallbackToken) ? { 'Authorization': 'Bearer ' + fallbackToken } : {};
+            if (window.currentSupabaseSession && window.currentSupabaseSession.access_token) {
+                return { 'Authorization': 'Bearer ' + window.currentSupabaseSession.access_token };
+            }
+            return {};
         }
         try {
             const { data: { session } } = await client.auth.getSession();
             if (session && session.access_token) {
-                safeSet('wingman_jwt_token', session.access_token);
                 return { 'Authorization': 'Bearer ' + session.access_token };
             }
         } catch (e) {
             console.warn('Failed to get session token:', e);
         }
-        var fallbackToken = safeGet('wingman_jwt_token');
-        return isValidToken(fallbackToken) ? { 'Authorization': 'Bearer ' + fallbackToken } : {};
+        if (window.currentSupabaseSession && window.currentSupabaseSession.access_token) {
+            return { 'Authorization': 'Bearer ' + window.currentSupabaseSession.access_token };
+        }
+        return {};
     };
 
     var initPromise = null;
@@ -187,15 +190,22 @@
                         });
                         window.getSupabaseAuthHeaders = async function() {
                             const client = window.supabaseClient;
-                            if (!client) return {};
+                            if (!client) {
+                                if (window.currentSupabaseSession && window.currentSupabaseSession.access_token) {
+                                    return { 'Authorization': 'Bearer ' + window.currentSupabaseSession.access_token };
+                                }
+                                return {};
+                            }
                             try {
                                 const { data: { session } } = await client.auth.getSession();
                                 if (session && session.access_token) {
-                                    safeSet('wingman_jwt_token', session.access_token);
                                     return { 'Authorization': 'Bearer ' + session.access_token };
                                 }
                             } catch (e) {
                                 console.warn('Failed to get session token:', e);
+                            }
+                            if (window.currentSupabaseSession && window.currentSupabaseSession.access_token) {
+                                return { 'Authorization': 'Bearer ' + window.currentSupabaseSession.access_token };
                             }
                             return {};
                         };
@@ -206,15 +216,12 @@
                     window.currentSupabaseSession = session;
                     window.currentSupabaseUser = session ? session.user : null;
 
-                    if (session && session.user) {
+                    if (session && session.user && session.access_token) {
                         safeSet('wingman_authenticated', 'true');
                         safeSet('wingman_login_agreed', 'true');
                         safeSet('wingman_user_authenticated', 'true');
                         safeSet('wingman_user_email', session.user.email || '');
                         safeSet('wingman_terms_accepted', 'true');
-                        if (session.access_token) {
-                            safeSet('wingman_jwt_token', session.access_token);
-                        }
                         updateAuthUIState(session.user);
                         if (typeof window.checkDashboardAuth === 'function') {
                             window.checkDashboardAuth();
@@ -226,7 +233,6 @@
                         safeRemove('wingman_authenticated');
                         safeRemove('wingman_user_authenticated');
                         safeRemove('wingman_user_email');
-                        safeRemove('wingman_jwt_token');
                         updateAuthUIState(null);
                     }
                 });
@@ -373,16 +379,19 @@
             }
 
             if (resp.data && resp.data.user) {
-
-
-                safeSet('wingman_authenticated', 'true');
-                safeSet('wingman_login_agreed', 'true');
-                safeSet('wingman_user_authenticated', 'true');
-                safeSet('wingman_user_email', resp.data.user.email || cleanEmail);
-                safeSet('wingman_terms_accepted', 'true');
-                updateAuthUIState(resp.data.user);
-                notifyUser('Account created! Welcome to MyWingman.', 'success');
-                return { success: true, user: resp.data.user };
+                if (resp.data.session && resp.data.session.access_token) {
+                    safeSet('wingman_authenticated', 'true');
+                    safeSet('wingman_login_agreed', 'true');
+                    safeSet('wingman_user_authenticated', 'true');
+                    safeSet('wingman_user_email', resp.data.user.email || cleanEmail);
+                    safeSet('wingman_terms_accepted', 'true');
+                    updateAuthUIState(resp.data.user);
+                    notifyUser('Account created! Welcome to MyWingman.', 'success');
+                    return { success: true, user: resp.data.user, session: resp.data.session };
+                } else {
+                    notifyUser('Account created! Please check your email to confirm your account and sign in.', 'info');
+                    return { success: true, user: resp.data.user, session: null, confirmationRequired: true };
+                }
             }
             return { success: false, error: 'Sign up failed.' };
         } catch (err) {
@@ -427,16 +436,19 @@
             }
 
             if (resp.data && resp.data.user) {
-
-
-                safeSet('wingman_authenticated', 'true');
-                safeSet('wingman_login_agreed', 'true');
-                safeSet('wingman_user_authenticated', 'true');
-                safeSet('wingman_user_email', resp.data.user.email || email);
-                safeSet('wingman_terms_accepted', 'true');
-                updateAuthUIState(resp.data.user);
-                notifyUser('Signed in successfully!', 'success');
-                return { success: true, user: resp.data.user };
+                if (resp.data.session && resp.data.session.access_token) {
+                    safeSet('wingman_authenticated', 'true');
+                    safeSet('wingman_login_agreed', 'true');
+                    safeSet('wingman_user_authenticated', 'true');
+                    safeSet('wingman_user_email', resp.data.user.email || email);
+                    safeSet('wingman_terms_accepted', 'true');
+                    updateAuthUIState(resp.data.user);
+                    notifyUser('Signed in successfully!', 'success');
+                    return { success: true, user: resp.data.user, session: resp.data.session };
+                } else {
+                    notifyUser('Please check your email to confirm your account before signing in.', 'warning');
+                    return { success: false, error: 'Email confirmation required.', confirmationRequired: true };
+                }
             }
             return { success: false, error: 'Login failed.' };
         } catch (err) {

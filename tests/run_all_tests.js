@@ -14,7 +14,8 @@ const testSuites = [
     { name: '10. Screenshot Analyzer State Machine & Idempotency', file: 'analyzer_credit_failure_zero_charge.test.js' },
     { name: '11. Exactly-Once 50-Credit & Missing Profile Safety', file: 'analyzer_exactly_once_credits.test.js' },
     { name: '12. Screenshot Analyzer Full End-to-End Integration', file: 'analyzer_full_e2e_integration.test.js' },
-    { name: '13. Public SEO Files (robots.txt & sitemap.xml)', file: 'seo_files.test.js' }
+    { name: '13. Public SEO Files (robots.txt & sitemap.xml)', file: 'seo_files.test.js' },
+    { name: '14. Security Hardening & Audit Verification', file: 'security_hardening_audit.test.js' }
 ];
 
 console.log('========================================================================');

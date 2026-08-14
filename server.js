@@ -1,10 +1,12 @@
 // server.js
 require('dotenv').config();
 
+const { supabaseAdmin, verifySupabaseToken, requireSupabaseAuth, isProduction } = require('./middleware/supabaseAuth');
+
 // Startup Environment Variables Validation
 const requiredEnvVars = ['AICREDITS_API_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'];
 const missingEnv = requiredEnvVars.filter(key => !process.env[key]);
-if (missingEnv.length > 0 && process.env.NODE_ENV === 'production') {
+if (missingEnv.length > 0 && isProduction) {
     console.error(`❌ CRITICAL SECURITY FATAL: Missing required production environment variables: ${missingEnv.join(', ')}`);
     process.exit(1);
 } else if (missingEnv.length > 0) {
@@ -50,7 +52,6 @@ const {
 // Identity is derived ONLY from server-validated tokens. Client-supplied identity parameters
 // (x-user-id, x-user-email, body/query userId) are NEVER trusted for account resolution.
 // =========================================================================================
-const { supabaseAdmin, verifySupabaseToken, requireSupabaseAuth } = require('./middleware/supabaseAuth');
 const { createUserProvisioningMiddleware } = require('./middleware/userProvisioning');
 const autoProvisionUser = createUserProvisioningMiddleware(() => db);
 const { validateImagePayload } = require('./middleware/imageValidator');
@@ -59,7 +60,7 @@ const { forRequest } = require('./middleware/rls');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const IS_PROD = process.env.NODE_ENV === 'production';
+const IS_PROD = isProduction;
 
 // 1. Security Headers Middleware (Helmet + Explicit Production Headers)
 app.use(helmet({
@@ -2637,16 +2638,19 @@ app.post('/api/payments/verify', requireSupabaseAuth, apiLimiter, async (req, re
         if (!uid || uid === 'guest_user') {
             return res.status(401).json({ success: false, error: "Please sign in to verify payments." });
         }
+        // Strict Security: In production, payment verification is unavailable until Razorpay is integrated
+        if (IS_PROD || process.env.ENABLE_MOCK_PAYMENTS !== 'true') {
+            return res.status(503).json({
+                success: false,
+                error: 'Production payment gateway integration pending. Real payment gateway required.'
+            });
+        }
         const { tier, paymentId, sandbox, credits, amountInr } = req.body;
         if (!tier && !credits && !amountInr) {
             return res.status(400).json({ success: false, error: 'Tier or credit amount required.' });
         }
-        // Block unverified mock credit top-ups in production mode
-        if (process.env.NODE_ENV === 'production' && process.env.ENABLE_MOCK_PAYMENTS !== 'true') {
-            return res.status(501).json({ success: false, error: 'Production payment gateway integration pending. Real payment gateway required.' });
-        }
         if (sandbox === false) {
-            return res.status(501).json({ success: false, error: 'Production payment gateway integration pending.' });
+            return res.status(503).json({ success: false, error: 'Production payment gateway integration pending.' });
         }
 
         const tierMap = {
@@ -2701,9 +2705,7 @@ app.post('/api/user/delete-account', requireSupabaseAuth, apiLimiter, async (req
         }
 
         if (!supabaseAdmin || !supabaseAdmin.auth || !supabaseAdmin.auth.admin || typeof supabaseAdmin.auth.admin.deleteUser !== 'function') {
-            if (IS_PROD) {
-                return res.status(500).json({ success: false, error: 'Server authentication admin service is unavailable.' });
-            }
+            return res.status(500).json({ success: false, error: 'Server authentication admin service is unavailable.' });
         }
 
         // 1. Delete user-created dating content from Supabase Postgres tables if they exist
@@ -2723,7 +2725,9 @@ app.post('/api/user/delete-account', requireSupabaseAuth, apiLimiter, async (req
                 console.error('[delete-account credit_transactions error]:', txErr.message);
                 return res.status(500).json({ success: false, error: 'Failed to purge credit transaction history.' });
             }
-        } catch (e) {}
+        } catch (e) {
+            return res.status(500).json({ success: false, error: 'Failed to purge credit transaction history: ' + e.message });
+        }
 
         // 3. Delete user profile
         try {
@@ -2732,7 +2736,9 @@ app.post('/api/user/delete-account', requireSupabaseAuth, apiLimiter, async (req
                 console.error('[delete-account profiles error]:', profErr.message);
                 return res.status(500).json({ success: false, error: 'Failed to purge user profile.' });
             }
-        } catch (e) {}
+        } catch (e) {
+            return res.status(500).json({ success: false, error: 'Failed to purge user profile: ' + e.message });
+        }
 
         // 4. Permanently Delete Supabase Auth User via Supabase Admin SDK
         if (supabaseAdmin && supabaseAdmin.auth && supabaseAdmin.auth.admin) {
@@ -2741,7 +2747,7 @@ app.post('/api/user/delete-account', requireSupabaseAuth, apiLimiter, async (req
                 console.error('[delete-account Auth delete error]:', authDelErr.message);
                 return res.status(500).json({ success: false, error: 'Failed to delete authentication account: ' + authDelErr.message });
             }
-        } else if (IS_PROD) {
+        } else {
             return res.status(500).json({ success: false, error: 'Failed to access authentication admin service.' });
         }
 
