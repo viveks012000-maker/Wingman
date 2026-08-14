@@ -362,9 +362,18 @@ STRICT LAWS:
     };
 
     // Checks local balance after syncing with server
+    function isUserAuthenticated() {
+        return safeStorage.get("wingman_authenticated") === "true" ||
+               safeStorage.get("wingman_user_authenticated") === "true" ||
+               sessionStorage.getItem("wingman_authenticated") === "true" ||
+               localStorage.getItem("wingman_user_authenticated") === "true" ||
+               Boolean(window.currentSupabaseUser) ||
+               Boolean(window.currentSupabaseSession);
+    }
+
     async function hasSufficientCredits(cost) {
         cost = cost || 10;
-        const isAuth = safeStorage.get("wingman_authenticated") === "true" || (window.currentSupabaseUser && window.currentSupabaseUser.id);
+        const isAuth = isUserAuthenticated();
         if (!isAuth) {
             if (typeof window.showToast === 'function') {
                 window.showToast("Authentication required to use AI features. Please sign in.", "warning");
@@ -647,15 +656,10 @@ STRICT LAWS:
             renderThumbnailGrid();
             window.setLifecycleState("SELECTED");
             window.updateButtonStates();
-
-            if (isSingleNewUpload) {
-                state.rawImageFile = validFiles[0];
-                window.openCropModalWithDataUrl(state.uploadedFiles[0], 0);
-            } else {
-                window.showToast(validFiles.length + " screenshot(s) loaded! Click any image to edit or crop.", "success");
-            }
+            window.showToast(validFiles.length + " screenshot(s) loaded! Click 'Generate Perfect Replies' or tap an image to edit.", "success");
         } catch (err) {
             console.error("Error processing screenshots:", err);
+            window.showToast("Error processing image. Please try again.", "error");
         }
     };
 
@@ -1927,7 +1931,7 @@ STRICT LAWS:
     window.simulateDemoPurchase = async function (creditAmount, btnEl) {
         creditAmount = creditAmount || (state.selectedTier && state.selectedTier.credits) || 600;
 
-        const isAuth = safeStorage.get("wingman_authenticated") === "true" || (window.currentSupabaseUser && window.currentSupabaseUser.id);
+        const isAuth = isUserAuthenticated();
         if (!isAuth) {
             if (typeof window.showToast === 'function') {
                 window.showToast("Please sign in to purchase credits.", "warning");
@@ -2658,7 +2662,7 @@ STRICT LAWS:
     // API HELPER – handles 402 with credit sync
     // ============================================================
     window.generateWingmanResponse = async function (endpoint, payload) {
-        const isAuth = safeStorage.get("wingman_authenticated") === "true" || (window.currentSupabaseUser && window.currentSupabaseUser.id);
+        const isAuth = isUserAuthenticated();
         if (!isAuth) {
             if (typeof window.showToast === 'function') window.showToast("Authentication required to use AI features. Please sign in.", "warning");
             if (typeof window.openAuthRequiredModal === 'function') window.openAuthRequiredModal();
