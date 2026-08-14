@@ -716,6 +716,13 @@ STRICT LAWS:
         }
     };
 
+    function updateCreditCostLabel() {
+        const ccl = $("creditCostLabel");
+        if (ccl) {
+            ccl.textContent = "Consumes 10 Credits";
+        }
+    }
+
     function renderThumbnailGrid() {
         const grid = $("thumbnailGrid");
         const de = $("dropzoneEmpty"), dp = $("dropzonePreview");
@@ -2749,6 +2756,21 @@ STRICT LAWS:
                             window.showToast(errJson.error || ("Insufficient credits. Current balance: " + (state.credits || 0) + " credits. Please top up."), "warning");
                         }
                         if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal();
+                        return null;
+                    }
+
+                    if (response.status === 429) {
+                        if (typeof window.showToast === 'function') {
+                            window.showToast("Too many requests. Please slow down and wait a moment.", "warning");
+                        }
+                        return null;
+                    }
+
+                    if (response.status === 503) {
+                        trackWingmanEvent('generation_failed', { endpoint: endpoint, status: 503 });
+                        if (typeof window.showToast === 'function') {
+                            window.showToast(errJson.error || "Credit service is temporarily unavailable. Your generation was not started. Please try again later.", "warning");
+                        }
                         return null;
                     }
 
