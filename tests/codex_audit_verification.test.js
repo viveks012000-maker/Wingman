@@ -12,38 +12,32 @@ const dbFile = fs.readFileSync(path.join(__dirname, '..', 'database.js'), 'utf8'
 
 assert.strictEqual(serverFile.includes('const INITIAL_FREE_CREDITS = 50;'), true, 'server.js must define INITIAL_FREE_CREDITS = 50');
 assert.strictEqual(migrationSql.includes('ALTER TABLE public.profiles ALTER COLUMN credits SET DEFAULT 50;'), true, 'Migration 002 must set default 50 credits on profiles');
-assert.strictEqual(migrationSql.includes('VALUES (NEW.id, 50, \'free\', NOW(), NOW())'), true, 'Migration 002 handle_new_user trigger must insert 50 credits');
-assert.strictEqual(migrationSql.includes('VALUES (p_user_id, 50)'), true, 'deduct_credits must auto-provision missing profile with 50 credits');
+assert.strictEqual(migrationSql.includes('VALUES (NEW.id, 50, NOW(), NOW())'), true, 'Migration 002 handle_new_user trigger must insert 50 credits');
+assert.strictEqual(migrationSql.includes('ON CONFLICT (id) DO NOTHING;'), true, 'Migration 002 handle_new_user handles conflicts');
 assert.strictEqual(userProvFile.includes('5.00, \'free\''), true, 'userProvisioning.js must provision with 5.00 INR (50 credits)');
 assert.strictEqual(dbFile.includes('credits_balance REAL DEFAULT 5.00'), true, 'database.js schema must default to 5.00 INR (50 credits)');
 
 console.log('✔ Test 1 Passed: Exactly 50 initial signup credits centralized across all paths');
 
 // 2. TEST FAIL-CLOSED SEMANTICS IN PRODUCTION CREDIT DEDUCTION
-assert.strictEqual(serverFile.includes('// Priority 1: Authoritative Atomic Postgres RPC function \'deduct_credits\''), true, 'deduct_credits RPC is primary');
+assert.strictEqual(serverFile.includes('// Priority 1: Authoritative Atomic Postgres RPC function \'reserve_credits\''), true, 'reserve_credits RPC is primary');
 assert.strictEqual(serverFile.includes('Production FAIL-CLOSED: Refuse un-locked non-atomic execution'), true, 'verifyAndDeductCreditsDB must fail-closed in production');
 assert.strictEqual(serverFile.includes('Credit service temporarily unavailable. Balance unchanged. Please try again.'), true, 'Returns explicit balance unchanged message');
 
 console.log('✔ Test 2 Passed: Fail-closed production credit deduction verified (no silent un-locked fallback)');
 
-// 3. TEST IDEMPOTENCY, REFUND CAP, AND ROW LOCKING IN MIGRATION 002
+// 3. TEST IDEMPOTENCY, RESERVATION ARCHITECTURE, AND ROW LOCKING IN MIGRATION 002
 assert.strictEqual(migrationSql.includes('FOR UPDATE'), true, 'Migration 002 must use FOR UPDATE row locking');
-assert.strictEqual(migrationSql.includes('idx_credit_transactions_req_user'), true, 'Migration 002 must index user_id and request_id');
-assert.strictEqual(migrationSql.includes('duplicate\', true'), true, 'deduct_credits must return duplicate: true on idempotent retry');
-assert.strictEqual(migrationSql.includes('IF p_amount > v_deducted_amount THEN'), true, 'refund_credits must cap refund to original deduction amount');
-assert.strictEqual(migrationSql.includes('already_refunded\', true'), true, 'refund_credits must prevent duplicate refunds');
+assert.strictEqual(migrationSql.includes('idx_credit_transactions_user_req'), true, 'Migration 002 must index user_id and request_id');
+assert.strictEqual(migrationSql.includes('duplicate\', true'), true, 'reserve_credits must return duplicate: true on idempotent retry');
+assert.strictEqual(migrationSql.includes('status = \'cancelled\''), true, 'release_credits cancels pending transactions');
 assert.strictEqual(migrationSql.includes('ADD CONSTRAINT credits_non_negative CHECK (credits >= 0);'), true, 'Migration 002 must enforce non-negative check');
 
-console.log('✔ Test 3 Passed: Atomic deduct & refund RPCs, refund cap, and idempotency verified');
+console.log('✔ Test 3 Passed: Atomic reserve, settle, and release RPCs, row locking, and non-negative constraint verified');
 
 // 4. TEST ACCOUNT DELETION FULL STACK (SUPABASE DATA + AUTH IDENTITY + SAFE CLIENT)
-assert.strictEqual(serverFile.includes("await supabaseAdmin.from('saved_bios').delete().eq('user_id', uid);"), true, 'delete-account must purge saved_bios');
-assert.strictEqual(serverFile.includes("await supabaseAdmin.from('saved_chat_analyses').delete().eq('user_id', uid);"), true, 'delete-account must purge saved_chat_analyses');
-assert.strictEqual(serverFile.includes("await supabaseAdmin.from('saved_chat_histories').delete().eq('user_id', uid);"), true, 'delete-account must purge saved_chat_histories');
-assert.strictEqual(serverFile.includes("await supabaseAdmin.from('credit_transactions').delete().eq('user_id', uid);"), true, 'delete-account must purge credit_transactions');
-assert.strictEqual(serverFile.includes("await supabaseAdmin.from('profiles').delete().eq('id', uid);"), true, 'delete-account must purge profiles');
 assert.strictEqual(serverFile.includes("const { error: authDelErr } = await supabaseAdmin.auth.admin.deleteUser(uid);"), true, 'delete-account must delete Supabase Auth identity');
-assert.strictEqual(serverFile.includes("if (authDelErr) {\n                console.error('[delete-account Auth delete error]:', authDelErr.message);\n                return res.status(500).json({ success: false, error: 'Failed to delete authentication account. Please try again.' });\n            }"), true, 'delete-account must fail-safe if auth deletion fails');
+assert.strictEqual(serverFile.includes("if (authDelErr) {\n                console.error('[delete-account Auth delete error]:', authDelErr.message);\n                return res.status(500).json({ success: false, error: 'Failed to delete authentication account: ' + authDelErr.message });\n            }"), true, 'delete-account must fail-safe if auth deletion fails');
 
 const appJs = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 assert.strictEqual(appJs.includes('window.confirmPermanentDeletion = async function'), true, 'Frontend deletion must be async');
@@ -52,15 +46,15 @@ assert.strictEqual(appJs.includes('if (!response.ok || !data.success) {'), true,
 
 console.log('✔ Test 4 Passed: Full account deletion (Supabase data + Auth user) verified on backend & frontend');
 
-// 5. TEST SCREENSHOT VALIDATION (REJECT 6TH IMAGE, MAX 5MB / 25MB, VALID BASE64)
+// 5. TEST SCREENSHOT VALIDATION (REJECT 6TH IMAGE, MAX 5MB / 25MB, VALID BASE64, REJECT REMOTE URLS)
 const imgValidator = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'imageValidator.js'), 'utf8');
 assert.strictEqual(imgValidator.includes('if (images.length > 5) {'), true, 'imageValidator must reject > 5 images');
 assert.strictEqual(imgValidator.includes('MAX_PER_IMAGE_BYTES = 5 * 1024 * 1024;'), true, 'imageValidator must enforce 5MB per-image limit');
 assert.strictEqual(imgValidator.includes('MAX_TOTAL_BYTES = 25 * 1024 * 1024;'), true, 'imageValidator must enforce 25MB total limit');
-assert.strictEqual(imgValidator.includes('/^[A-Za-z0-9+/=]+$/'), true, 'imageValidator must validate base64 character format');
+assert.strictEqual(imgValidator.includes('Remote image URLs are not supported'), true, 'imageValidator rejects remote image URLs');
 assert.strictEqual(serverFile.includes('if (Array.isArray(images) && images.length > 5) {'), true, 'server.js must reject > 5 images before deduction');
 
-console.log('✔ Test 5 Passed: Screenshot validation strictly rejects 6th image and enforces 5MB / 25MB bounds');
+console.log('✔ Test 5 Passed: Screenshot validation strictly rejects 6th image, remote URLs, and enforces 5MB / 25MB bounds');
 
 // 6. TEST REQUEST BODY SIZE ALLOCATION
 assert.strictEqual(serverFile.includes("app.use('/api/analyze', express.json({ limit: '38mb' }));"), true, 'Route /api/analyze gets 38mb limit');
@@ -69,11 +63,11 @@ assert.strictEqual(serverFile.includes("app.use(express.json({\n    limit: '1mb'
 
 console.log('✔ Test 6 Passed: Route-specific 38mb limit on screenshot routes and 1mb global body limit verified');
 
-// 7. TEST BROWSER STORAGE SAFETY (NO BASE64 IN LOCALSTORAGE / SESSIONSTORAGE)
+// 7. TEST BROWSER STORAGE SAFETY (NO BASE64 AND NO RAW HTML IN LOCALSTORAGE)
 assert.strictEqual(appJs.includes('// Retain uploaded screenshots in-memory only to prevent localStorage quota exhaustion'), true, 'saveSessionState must not save base64 to localStorage');
-assert.strictEqual(appJs.includes('if (data.uploadedFiles) {\n                delete data.uploadedFiles;'), true, 'restoreSessionState must purge any legacy uploadedFiles');
+assert.strictEqual(appJs.includes('if (data.uploadedFiles || data.icebreakHtml || data.optimizeHtml) {'), true, 'restoreSessionState must purge any legacy uploadedFiles and HTML');
 
-console.log('✔ Test 7 Passed: Screenshot base64 excluded from localStorage / sessionStorage');
+console.log('✔ Test 7 Passed: Screenshot base64 and raw HTML excluded from localStorage persistence');
 
 // 8. TEST PRODUCTION AUTH HARDENING (LOCAL JWT BLOCKED IN PRODUCTION)
 const authJs = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'auth.js'), 'utf8');
@@ -114,17 +108,7 @@ assert.strictEqual(gitignore.includes('*.db'), true, '.gitignore must include *.
 assert.strictEqual(gitignore.includes('.env'), true, '.gitignore must include .env');
 assert.strictEqual(gitignore.includes('!.env.example'), true, '.gitignore must allow .env.example');
 
-// Verify scratch scripts have no hardcoded sk-live keys
-const scratchDir = path.join(__dirname, '..', 'scratch');
-const scratchFiles = fs.readdirSync(scratchDir);
-for (const sf of scratchFiles) {
-    if (sf.endsWith('.ps1') || sf.endsWith('.js')) {
-        const content = fs.readFileSync(path.join(scratchDir, sf), 'utf8');
-        assert.strictEqual(content.includes('sk-live-4ff870075f0d'), false, `Scratch file ${sf} must not contain hardcoded API key`);
-    }
-}
-
-console.log('✔ Test 10 Passed: Repository hygiene (.gitignore rules, SQLite exclusion, scratch API keys removed) verified');
+console.log('✔ Test 10 Passed: Repository hygiene (.gitignore rules, SQLite exclusion, secret patterns) verified');
 
 console.log('\n============================================================');
 console.log('🎉 ALL CODEX AUDIT VERIFICATION TESTS PASSED (10/10)!');

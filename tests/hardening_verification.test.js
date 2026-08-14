@@ -34,7 +34,7 @@ assert.strictEqual(
 );
 console.log('✔ Test 2 Passed: Mock auth bypass is strictly blocked in production');
 
-// 3. TEST SERVER.JS WORD LIMIT AND CREDIT DEDUCTION HARDENING
+// 3. TEST SERVER.JS WORD LIMIT AND ZERO CHARGE RESERVATION HARDENING
 const serverFile = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
 // Check countWords helper in server.js
@@ -43,15 +43,13 @@ assert.strictEqual(serverFile.includes('function countWords(str)'), true, 'serve
 // Check 500-word limit check in /api/optimize
 assert.strictEqual(serverFile.includes('wordCount > 500'), true, 'server.js must validate wordCount > 500 on /api/optimize');
 
-// Check refundCreditsDB definition in server.js
-assert.strictEqual(serverFile.includes('async function refundCreditsDB('), true, 'server.js must define refundCreditsDB');
+// Check settleCreditsDB and releaseCreditsDB definition in server.js
+assert.strictEqual(serverFile.includes('async function settleCreditsDB('), true, 'server.js must define settleCreditsDB');
+assert.strictEqual(serverFile.includes('async function releaseCreditsDB('), true, 'server.js must define releaseCreditsDB');
 
-// Check automatic refund in catch blocks
-assert.strictEqual(serverFile.includes("refundCreditsDB(req, 10, 'analyze'"), true, 'server.js must refund analyze on failure');
-assert.strictEqual(serverFile.includes("refundCreditsDB(req, 10, 'icebreaker'"), true, 'server.js must refund icebreaker on failure');
-assert.strictEqual(serverFile.includes("refundCreditsDB(req, 10, 'optimize'"), true, 'server.js must refund optimize on failure');
-assert.strictEqual(serverFile.includes("refundCreditsDB(req, 2, 'chat'"), true, 'server.js must refund chat on failure');
-console.log('✔ Test 3 Passed: server.js credit deduction, 500-word limit, and automatic refunds verified');
+// Check release in catch blocks
+assert.strictEqual(serverFile.includes("releaseCreditsDB(req, reqId, error.message)"), true, 'server.js must release credits on AI failure');
+console.log('✔ Test 3 Passed: server.js credit deduction, 500-word limit, and zero-charge reservation release verified');
 
 // 4. TEST APP.HTML AND APP.JS ALIGNMENT
 const appHtml = fs.readFileSync(path.join(__dirname, '..', 'app.html'), 'utf8');
@@ -74,8 +72,9 @@ console.log('✔ Test 4 Passed: app.html and app.js UI elements, counters, and s
 // 5. TEST SQL MIGRATION FILE
 const migrationSql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '002_atomic_credits_and_transactions.sql'), 'utf8');
 assert.strictEqual(migrationSql.includes('credits_non_negative'), true, 'Migration must contain credits_non_negative check');
-assert.strictEqual(migrationSql.includes('CREATE OR REPLACE FUNCTION deduct_credits'), true, 'Migration must define deduct_credits RPC');
-assert.strictEqual(migrationSql.includes('CREATE OR REPLACE FUNCTION refund_credits'), true, 'Migration must define refund_credits RPC');
+assert.strictEqual(migrationSql.includes('reserve_credits'), true, 'Migration must define reserve_credits RPC');
+assert.strictEqual(migrationSql.includes('settle_credits'), true, 'Migration must define settle_credits RPC');
+assert.strictEqual(migrationSql.includes('release_credits'), true, 'Migration must define release_credits RPC');
 assert.strictEqual(migrationSql.includes('FOR UPDATE'), true, 'Migration must use FOR UPDATE row locking');
 
 console.log('✔ Test 5 Passed: Migration 002 atomic credit RPCs and non-negative constraints verified');

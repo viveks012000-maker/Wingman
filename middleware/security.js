@@ -206,16 +206,32 @@ function generateCsrfToken() {
 }
 
 function validateCsrfToken(req, res, next) {
+    // Read-only requests are safe from CSRF state changes
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
         return next();
     }
+
+    // Bearer token requests are API calls with custom headers, immune to ambient cookie CSRF
+    const authHeader = req.headers['authorization'];
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        return next();
+    }
+
     const cookies = parseCookies(req);
     const csrfCookie = cookies['wingman_csrf'];
     const csrfHeader = req.headers['x-csrf-token'];
 
-    if (csrfCookie && csrfHeader && csrfCookie !== csrfHeader) {
-        return res.status(403).json({ success: false, error: 'CSRF token validation failed.' });
+    // For cookie-based state-changing requests, require both cookie and matching header
+    if (cookies['wingman_session']) {
+        if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader) {
+            return res.status(403).json({ success: false, error: 'CSRF token validation failed.' });
+        }
+    } else if (csrfCookie || csrfHeader) {
+        if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader) {
+            return res.status(403).json({ success: false, error: 'CSRF token validation failed.' });
+        }
     }
+
     next();
 }
 

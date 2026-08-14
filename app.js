@@ -2479,10 +2479,10 @@ STRICT LAWS:
                 activeTab: state.activeTab || "analyzeSection",
                 activeTone: state.activeTone || "Witty",
                 bioInput: bioVal,
-                icebreakHtml: iceRes ? iceRes.innerHTML : "",
+                icebreakCardsData: state.icebreakCardsData || null,
                 icebreakVisible: iceRes ? !iceRes.classList.contains("hidden") : false,
                 auditInput: auditVal,
-                optimizeHtml: optRes ? optRes.innerHTML : "",
+                optimizeCardsData: state.optimizeCardsData || null,
                 optimizeVisible: optRes ? !optRes.classList.contains("hidden") : false,
                 activeTranscriptCache: state.activeTranscriptCache || null,
                 selectedBioStyle: state.selectedBioStyle || "Punchy",
@@ -2501,9 +2501,11 @@ STRICT LAWS:
             const data = JSON.parse(raw);
             if (!data) return;
 
-            // Security & Storage hygiene: ignore and purge any legacy persisted screenshot base64 strings
-            if (data.uploadedFiles) {
+            // Security & Storage hygiene: ignore and purge any legacy persisted screenshot base64 strings or HTML strings
+            if (data.uploadedFiles || data.icebreakHtml || data.optimizeHtml) {
                 delete data.uploadedFiles;
+                delete data.icebreakHtml;
+                delete data.optimizeHtml;
                 try {
                     safeStorage.set(SESSION_KEY, JSON.stringify(data));
                 } catch (e) {}
@@ -2540,25 +2542,27 @@ STRICT LAWS:
 
             const bi = $("bioInput");
             if (bi && data.bioInput) bi.value = data.bioInput;
-            if (data.icebreakVisible && data.icebreakHtml) {
+            if (data.icebreakVisible && data.icebreakCardsData) {
+                state.icebreakCardsData = data.icebreakCardsData;
                 const empI = $("icebreakEmptyState"), skelI = $("icebreakSkeletonState"), resI = $("icebreakResultsState");
                 if (empI) empI.classList.add("hidden");
                 if (skelI) skelI.classList.add("hidden");
                 if (resI) {
-                    resI.innerHTML = data.icebreakHtml;
                     resI.classList.remove("hidden");
+                    window.renderFiveCards("icebreakResultsState", data.icebreakCardsData);
                 }
             }
 
             const ai = $("auditBioInput");
             if (ai && data.auditInput) ai.value = data.auditInput;
-            if (data.optimizeVisible && data.optimizeHtml) {
+            if (data.optimizeVisible && data.optimizeCardsData) {
+                state.optimizeCardsData = data.optimizeCardsData;
                 const empO = $("optimizeEmptyState"), skelO = $("optimizeSkeletonState"), resO = $("optimizeResultsState");
                 if (empO) empO.classList.add("hidden");
                 if (skelO) skelO.classList.add("hidden");
                 if (resO) {
-                    resO.innerHTML = data.optimizeHtml;
                     resO.classList.remove("hidden");
+                    window.renderFiveCards("optimizeResultsState", data.optimizeCardsData);
                 }
             }
 
@@ -3087,7 +3091,9 @@ STRICT LAWS:
                 if (skel) skel.classList.add("hidden");
                 if (res) {
                     res.classList.remove("hidden");
+                    state.icebreakCardsData = aiText;
                     window.renderFiveCards("icebreakResultsState", aiText);
+                    saveSessionState();
                 }
                 window.showToast("Icebreakers Generated! (10 Credits Processed)", "success");
             } else {
@@ -3169,7 +3175,9 @@ STRICT LAWS:
                 if (skel) skel.classList.add("hidden");
                 if (res) {
                     res.classList.remove("hidden");
+                    state.optimizeCardsData = aiText;
                     window.renderFiveCards("optimizeResultsState", aiText);
+                    saveSessionState();
                 }
                 window.showToast("Bio Options Generated! (10 Credits Processed)", "success");
             } else {

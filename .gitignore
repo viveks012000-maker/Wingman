@@ -24,6 +24,15 @@ wingman.sqlite*
 *.pem
 *.key
 *.crt
+*.p12
+*.pfx
+*.cer
+*.bak
+*.backup
+*.dump
+*.dmp
+*credential*.json
+*service-account*.json
 
 # Dependencies & Build Logs
 node_modules/

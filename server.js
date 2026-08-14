@@ -355,7 +355,23 @@ function countWords(str) {
     return trimmed.split(/\s+/).filter(Boolean).length;
 }
 
-// Atomic Credit Verification & Deduction in Supabase Postgres ('profiles' & 'credit_transactions')
+// In-flight request concurrency lock per authenticated user (Prevents parallel overlapping AI costs)
+const activeUserAiRequests = new Set();
+function acquireUserConcurrencyLock(userId) {
+    if (!userId || userId === 'guest_user') return true;
+    if (activeUserAiRequests.has(userId)) {
+        return false;
+    }
+    activeUserAiRequests.add(userId);
+    return true;
+}
+function releaseUserConcurrencyLock(userId) {
+    if (userId && userId !== 'guest_user') {
+        activeUserAiRequests.delete(userId);
+    }
+}
+
+// Atomic Credit Verification & Reservation in Supabase Postgres ('profiles' & 'credit_transactions')
 // Enforces FAIL-CLOSED semantics: If the atomic RPC is unavailable, the request is rejected safely.
 async function verifyAndDeductCreditsDB(req, costParam, featureName = 'ai_feature', idempotencyKey = null) {
     const uid = getUserIdFromReq(req);
@@ -373,9 +389,20 @@ async function verifyAndDeductCreditsDB(req, costParam, featureName = 'ai_featur
 
     const reqId = idempotencyKey || ('req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
 
-    // Priority 1: Authoritative Atomic Postgres RPC function 'deduct_credits'
+    // Priority 1: Authoritative Atomic Postgres RPC function 'reserve_credits' (or 'deduct_credits')
     try {
-        const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('deduct_credits', {
+        if (!supabaseAdmin || !supabaseAdmin.rpc) {
+            if (!IS_PROD && db) {
+                return await verifyAndDeductCreditsSQLite(req, costCredits / CREDITS_PER_INR, featureName, reqId);
+            }
+            return {
+                success: false,
+                currentCredits: 0,
+                error: 'Database connection unavailable in production mode.'
+            };
+        }
+
+        const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('reserve_credits', {
             p_user_id: uid,
             p_amount: costCredits,
             p_feature: featureName,
@@ -439,54 +466,44 @@ async function verifyAndDeductCreditsDB(req, costParam, featureName = 'ai_featur
     }
 }
 
-// Atomic Credit Refund / Rollback in Supabase Postgres ('profiles' & 'credit_transactions')
-// Enforces FAIL-CLOSED semantics: Calls authoritative atomic RPC function 'refund_credits'.
-async function refundCreditsDB(req, costParam, featureName = 'ai_feature', reqId = null, reason = 'ai_failure') {
+// Settle Credit Reservation in Supabase Postgres on successful AI completion
+async function settleCreditsDB(req, reqId) {
     const uid = getUserIdFromReq(req);
-    if (!uid || uid === 'guest_user' || !reqId) {
-        return { success: false, currentCredits: 0, error: 'Invalid refund context.' };
-    }
-
-    const costCredits = (typeof costParam === 'number' && costParam >= 1 && Number.isInteger(costParam))
-        ? costParam
-        : Math.round((costParam || 0) * CREDITS_PER_INR);
-
-    if (costCredits <= 0) {
-        return { success: false, currentCredits: 0, error: 'Invalid refund amount.' };
-    }
-
-    // Authoritative Atomic Postgres RPC function 'refund_credits'
+    if (!uid || uid === 'guest_user' || !reqId) return { success: true };
     try {
-        const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('refund_credits', {
-            p_user_id: uid,
-            p_amount: costCredits,
-            p_feature: featureName,
-            p_request_id: reqId,
-            p_reason: reason || 'ai_failure'
-        });
-
-        if (rpcErr) {
-            console.error('[refundCreditsDB RPC Error]:', rpcErr.message);
-            return { success: false, remainingCredits: 0, error: rpcErr.message };
+        if (supabaseAdmin && supabaseAdmin.rpc) {
+            await supabaseAdmin.rpc('settle_credits', {
+                p_user_id: uid,
+                p_request_id: reqId
+            });
         }
+    } catch (e) {
+        console.warn('[settleCreditsDB Exception]:', e.message);
+    }
+    return { success: true };
+}
 
-        if (rpcRes) {
-            const row = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
-            if (row && typeof row === 'object') {
+// Release / Cancel Credit Reservation on AI failure (Failed generation costs user ZERO credits)
+async function releaseCreditsDB(req, reqId, reason = 'ai_failure') {
+    const uid = getUserIdFromReq(req);
+    if (!uid || uid === 'guest_user' || !reqId) return { success: false, remainingCredits: 0 };
+    try {
+        if (supabaseAdmin && supabaseAdmin.rpc) {
+            const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('release_credits', {
+                p_user_id: uid,
+                p_request_id: reqId,
+                p_reason: reason || 'ai_failure'
+            });
+            if (!rpcErr && rpcRes) {
+                const row = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
                 const rem = typeof row.new_balance === 'number' ? row.new_balance : (typeof row.remainingCredits === 'number' ? row.remainingCredits : 0);
-                return {
-                    success: row.success !== false,
-                    remainingCredits: rem,
-                    alreadyRefunded: Boolean(row.already_refunded)
-                };
+                return { success: true, remainingCredits: rem };
             }
         }
-
-        return { success: false, remainingCredits: 0 };
-    } catch (rpcEx) {
-        console.error('[refundCreditsDB Exception]:', rpcEx.message);
-        return { success: false, remainingCredits: 0 };
+    } catch (e) {
+        console.error('[releaseCreditsDB Exception]:', e.message);
     }
+    return { success: false, remainingCredits: 0 };
 }
 
 // Fallback SQLite Deduction Helper
@@ -836,7 +853,7 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
         payload.top_p = topP;
     }
 
-    const baseUrl = process.env.AICREDITS_BASE_URL || "https://aicredits.in/v1";
+    const baseUrl = process.env.AICREDITS_BASE_URL || "https://api.aicredits.in/v1";
 
     const fetchOptions = {
         method: "POST",
@@ -978,6 +995,10 @@ function sanitizePromptInput(input) {
 
 // ==================== THE 4 CORE FEATURE API // 1. CHAT SCREENSHOT ANALYZER (/api/analyze & /api/analyze-chat-screenshot)
 app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, apiLimiter, async (req, res) => {
+    const uid = getUserIdFromReq(req);
+    if (!acquireUserConcurrencyLock(uid)) {
+        return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
+    }
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('anl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
@@ -1002,10 +1023,10 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
         const targetImage = image || imageBase64;
         let imageList = [];
         if (Array.isArray(images) && images.length > 0) {
-            imageList = images.filter(img => typeof img === 'string' && img.length > 0 && (img.startsWith('data:image/') || img.startsWith('http://') || img.startsWith('https://')));
+            imageList = images.filter(img => typeof img === 'string' && img.length > 0 && img.startsWith('data:image/'));
         } else if (targetImage && typeof targetImage === 'string' && targetImage.length > 0) {
             let cleanImg = targetImage.trim();
-            if (!cleanImg.startsWith('data:image/') && !cleanImg.startsWith('http://') && !cleanImg.startsWith('https://')) {
+            if (!cleanImg.startsWith('data:image/')) {
                 cleanImg = 'data:image/jpeg;base64,' + cleanImg;
             }
             imageList = [cleanImg];
@@ -1149,64 +1170,64 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
                 "Option 9 reply text [Snappy Minimalist]",
                 "Option 10 reply text [Snappy Minimalist]"
             ],
-            bucketDefinitions: `• Options 1-2 [Sharp Observation]: Witty callout or clever spin on what she said/did.
-• Options 3-4 [Dry Banter]: Playful teasing or sarcastic joke with zero insecurity.
-• Options 5-6 [Clever Question]: Intriguing, sharp question that forces a fun reply.
-• Options 7-8 [Witty Topic Pivot]: Smooth, clever transition to a new topic.
-• Options 9-10 [Snappy Minimalist]: 2-to-4 word snappy, high-status text.`
+            bucketDefinitions: `• Options 1-2 [Sharp Observation]: Clever, dry commentary on something specific in her text/bio.
+• Options 3-4 [Dry Banter]: Playful tease that holds frame and doesn't over-explain.
+• Options 5-6 [Clever Question]: Intriguing open question that makes answering effortless and fun.
+• Options 7-8 [Witty Topic Pivot]: Smooth, unforced shift into an engaging fresh conversation angle.
+• Options 9-10 [Snappy Minimalist]: Ultra-short (2-5 words), effortless high-status punchline.`
         };
 
-        if (cleanToneKey === 'casual') {
-            modeConfig = {
-                name: "CASUAL",
-                description: "Natural, unforced, relaxed texting flow. Grounded, friendly, and zero pressure.",
-                buckets: [
-                    "Option 1 reply text [Easygoing Reaction]",
-                    "Option 2 reply text [Easygoing Reaction]",
-                    "Option 3 reply text [Low-Key Question]",
-                    "Option 4 reply text [Low-Key Question]",
-                    "Option 5 reply text [Relatable Take]",
-                    "Option 6 reply text [Relatable Take]",
-                    "Option 7 reply text [Casual Topic Shift]",
-                    "Option 8 reply text [Casual Topic Shift]",
-                    "Option 9 reply text [Short Chill Text]",
-                    "Option 10 reply text [Short Chill Text]"
-                ],
-                bucketDefinitions: `• Options 1-2 [Easygoing Reaction]: Relaxed, natural comment on her text or situation.
-• Options 3-4 [Low-Key Question]: Simple, effortless question to keep the chat moving without pressure.
-• Options 5-6 [Relatable Take]: Shared lifestyle detail or funny relatable take.
-• Options 7-8 [Casual Topic Shift]: Easy transition into something light and unforced.
-• Options 9-10 [Short Chill Text]: 2-to-4 word effortless replies (e.g., "all good", "fair enough", "sounds like a plan").`
-            };
-        } else if (cleanToneKey === 'flirty') {
+        if (cleanToneKey === "flirty" || cleanToneKey === "flirt") {
             modeConfig = {
                 name: "FLIRTY",
-                description: "Playful charm, teasing, subtle romantic tension, and confident spark.",
+                description: "Charming banter, playful romantic tension, confident teasing, and subtle attraction.",
                 buckets: [
-                    "Option 1 reply text [Playful Charm]",
-                    "Option 2 reply text [Playful Charm]",
-                    "Option 3 reply text [Flirty Tease]",
-                    "Option 4 reply text [Flirty Tease]",
-                    "Option 5 reply text [Intriguing Spark]",
-                    "Option 6 reply text [Intriguing Spark]",
-                    "Option 7 reply text [Smooth Vibe Setup]",
-                    "Option 8 reply text [Smooth Vibe Setup]",
-                    "Option 9 reply text [Cheeky Minimalist]",
-                    "Option 10 reply text [Cheeky Minimalist]"
+                    "Option 1 reply text [Playful Tease]",
+                    "Option 2 reply text [Playful Tease]",
+                    "Option 3 reply text [Subtle Tension]",
+                    "Option 4 reply text [Subtle Tension]",
+                    "Option 5 reply text [Charming Challenge]",
+                    "Option 6 reply text [Charming Challenge]",
+                    "Option 7 reply text [Flirty Pivot]",
+                    "Option 8 reply text [Flirty Pivot]",
+                    "Option 9 reply text [Smooth Minimalist]",
+                    "Option 10 reply text [Smooth Minimalist]"
                 ],
-                bucketDefinitions: `• Options 1-2 [Playful Charm]: Smooth, flattering tease or charming comment.
-• Options 3-4 [Flirty Tease]: Building tension, playful challenge, or light teasing.
-• Options 5-6 [Intriguing Spark]: Question designed to flirt and tease her personality.
-• Options 7-8 [Smooth Vibe Setup]: Subtle setup toward hanging out or getting her number.
-• Options 9-10 [Cheeky Minimalist]: 2-to-4 word cheeky flirty text.`
+                bucketDefinitions: `• Options 1-2 [Playful Tease]: Lighthearted teasing that creates immediate spark without being crude.
+• Options 3-4 [Subtle Tension]: Smooth implication of chemistry or mutual interest.
+• Options 5-6 [Charming Challenge]: Playful qualification challenge (e.g. testing if she can keep up).
+• Options 7-8 [Flirty Pivot]: Seamless redirect to a more fun, intriguing vibe.
+• Options 9-10 [Smooth Minimalist]: 3-to-5 word magnetic, confident reply.`
             };
-        } else if (cleanToneKey === 'bold' || cleanToneKey === 'direct' || cleanToneKey === 'closer') {
+        } else if (cleanToneKey === "casual" || cleanToneKey === "chill") {
+            modeConfig = {
+                name: "CASUAL",
+                description: "Low-pressure, authentic, grounded human texting flow.",
+                buckets: [
+                    "Option 1 reply text [Low-Key Question]",
+                    "Option 2 reply text [Low-Key Question]",
+                    "Option 3 reply text [Relatable Comment]",
+                    "Option 4 reply text [Relatable Comment]",
+                    "Option 5 reply text [Easy Banter]",
+                    "Option 6 reply text [Easy Banter]",
+                    "Option 7 reply text [Natural Pivot]",
+                    "Option 8 reply text [Natural Pivot]",
+                    "Option 9 reply text [Relaxed Minimalist]",
+                    "Option 10 reply text [Relaxed Minimalist]"
+                ],
+                bucketDefinitions: `• Options 1-2 [Low-Key Question]: Casual, effortless conversation starter with zero pressure.
+• Options 3-4 [Relatable Comment]: Grounded, funny observation about everyday life or habits.
+• Options 5-6 [Easy Banter]: Friendly back-and-forth that feels like texting an old friend.
+• Options 7-8 [Natural Pivot]: Organic transition to weekend plans, food, music, or stories.
+• Options 9-10 [Relaxed Minimalist]: Short, ultra-natural 2-4 word relaxed response.`
+            };
+        } else if (cleanToneKey === "bold" || cleanToneKey === "closer" || cleanToneKey === "direct") {
             modeConfig = {
                 name: "BOLD / CLOSER",
-                description: "Direct, confident, high-energy moves. Unapologetic charm and clear intent.",
+                description: "Direct intent, confident moves, playful challenges, and date transitions.",
                 buckets: [
-                    "Option 1 reply text [Direct Callout]",
-                    "Option 2 reply text [Direct Callout]",
+                    "Option 1 reply text [Direct Intent]",
+                    "Option 2 reply text [Direct Intent]",
                     "Option 3 reply text [Bold Challenge]",
                     "Option 4 reply text [Bold Challenge]",
                     "Option 5 reply text [Direct Plan Move]",
@@ -1216,7 +1237,7 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
                     "Option 9 reply text [Power Minimalist]",
                     "Option 10 reply text [Power Minimalist]"
                 ],
-                bucketDefinitions: `• Options 1-2 [Direct Callout]: Unapologetic, confident statement that takes control of the chat.
+                bucketDefinitions: `• Options 1-2 [Direct Intent]: Unapologetic clarity about what you find attractive or want to do.
 • Options 3-4 [Bold Challenge]: Playful challenge or direct callout that commands respect.
 • Options 5-6 [Direct Plan Move]: Bold suggestion to grab drinks, coffee, or switch to IG/WhatsApp.
 • Options 7-8 [High-Energy Hook]: Intriguing, confident question with strong presence.
@@ -1356,6 +1377,8 @@ ${formattingRule}`;
             throw new Error("Analysis failed: AI provider generated empty or malformed output.");
         }
 
+        await settleCreditsDB(req, reqId);
+
         res.json({
             success: true,
             options: optionsList,
@@ -1366,32 +1389,34 @@ ${formattingRule}`;
         console.error("Pipeline breakdown:", error.message);
         let currentBal = deduction ? deduction.remainingCredits : 0;
         if (deduction && deduction.success && !deduction.duplicate) {
-            try {
-                const refundRes = await refundCreditsDB(req, 10, 'analyze', reqId, error.message);
-                if (refundRes && typeof refundRes.remainingCredits === 'number') {
-                    currentBal = refundRes.remainingCredits;
-                }
-            } catch (rfErr) {
-                console.error('[Analyze Refund Error]:', rfErr.message);
+            const relRes = await releaseCreditsDB(req, reqId, error.message);
+            if (relRes && typeof relRes.remainingCredits === 'number') {
+                currentBal = relRes.remainingCredits;
             }
         }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
-                error: "Analysis timed out. Your credits have been automatically refunded.",
+                error: "Analysis timed out. You have not been charged credits.",
                 credits: currentBal
             });
         }
         res.status(500).json({
             success: false,
-            error: "AI analysis failed. Your credits have been automatically refunded.",
+            error: "AI analysis failed. You have not been charged credits.",
             credits: currentBal
         });
+    } finally {
+        releaseUserConcurrencyLock(uid);
     }
 });
 
 // 2. ICEBREAKER GENERATOR (Direct qwen3-235b-a22b-2507)
 app.post('/api/icebreaker', requireSupabaseAuth, apiLimiter, async (req, res) => {
+    const uid = getUserIdFromReq(req);
+    if (!acquireUserConcurrencyLock(uid)) {
+        return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
+    }
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('ice_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
@@ -1539,6 +1564,9 @@ GENERAL ICEBREAKER LAWS:
         }
 
         const formattedText = cleanedOptions.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
+
+        await settleCreditsDB(req, reqId);
+
         res.json({
             success: true,
             text: formattedText,
@@ -1549,27 +1577,25 @@ GENERAL ICEBREAKER LAWS:
         console.error("Icebreaker breakdown:", error.message);
         let currentBal = deduction ? deduction.remainingCredits : 0;
         if (deduction && deduction.success && !deduction.duplicate) {
-            try {
-                const refundRes = await refundCreditsDB(req, 10, 'icebreaker', reqId, error.message);
-                if (refundRes && typeof refundRes.remainingCredits === 'number') {
-                    currentBal = refundRes.remainingCredits;
-                }
-            } catch (rfErr) {
-                console.error('[Icebreaker Refund Error]:', rfErr.message);
+            const relRes = await releaseCreditsDB(req, reqId, error.message);
+            if (relRes && typeof relRes.remainingCredits === 'number') {
+                currentBal = relRes.remainingCredits;
             }
         }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
-                error: "Icebreaker generation timed out. Your credits have been automatically refunded.",
+                error: "Icebreaker generation timed out. You have not been charged credits.",
                 credits: currentBal
             });
         }
         res.status(500).json({
             success: false,
-            error: "Icebreaker generation failed. Your credits have been automatically refunded.",
+            error: "Icebreaker generation failed. You have not been charged credits.",
             credits: currentBal
         });
+    } finally {
+        releaseUserConcurrencyLock(uid);
     }
 });
 
@@ -1663,6 +1689,10 @@ function formatBioLineBreaks(biosArray) {
 
 // 3. PROFILE BIO OPTIMIZER (/api/optimize & /api/bio-optimizer)
 app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, apiLimiter, async (req, res) => {
+    const uid = getUserIdFromReq(req);
+    if (!acquireUserConcurrencyLock(uid)) {
+        return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
+    }
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('opt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
@@ -1902,6 +1932,8 @@ FORMATTING: Use ${casingInstruction}.`;
             throw new Error("Bio optimization failed: AI provider returned empty options.");
         }
 
+        await settleCreditsDB(req, reqId);
+
         res.json({
             success: true,
             options: optionsList,
@@ -1912,27 +1944,25 @@ FORMATTING: Use ${casingInstruction}.`;
         console.error("Bio optimizer breakdown:", error.message);
         let currentBal = deduction ? deduction.remainingCredits : 0;
         if (deduction && deduction.success && !deduction.duplicate) {
-            try {
-                const refundRes = await refundCreditsDB(req, 10, 'optimize', reqId, error.message);
-                if (refundRes && typeof refundRes.remainingCredits === 'number') {
-                    currentBal = refundRes.remainingCredits;
-                }
-            } catch (rfErr) {
-                console.error('[Optimize Refund Error]:', rfErr.message);
+            const relRes = await releaseCreditsDB(req, reqId, error.message);
+            if (relRes && typeof relRes.remainingCredits === 'number') {
+                currentBal = relRes.remainingCredits;
             }
         }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
-                error: "Bio optimization timed out. Your credits have been automatically refunded.",
+                error: "Bio optimization timed out. You have not been charged credits.",
                 credits: currentBal
             });
         }
         res.status(500).json({
             success: false,
-            error: "Bio optimization failed. Your credits have been automatically refunded.",
+            error: "Bio optimization failed. You have not been charged credits.",
             credits: currentBal
         });
+    } finally {
+        releaseUserConcurrencyLock(uid);
     }
 });
 
@@ -2237,60 +2267,61 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
         const isDryOrNonsense = isNonsense || isDryResponse;
         const attractionScore = Math.max(10, Math.min(100, score));
         const attractionChange = isDryOrNonsense ? -15 : (score >= 80 ? 5 : (score < 45 ? -10 : -2));
-        const mood = isDryOrNonsense ? "Bored 🥱" : (score >= 80 ? "Flirty 😏" : (score >= 50 ? "Playful ✨" : "Hesitant 🤨"));
-        const isCheckpoint = status !== "PASSED" || isDryOrNonsense;
-        const checkpoint = isCheckpoint ? {
-            type: (isNonsense || isDryResponse) ? "ATTRACTION_DROP" : (status === "FAILED" ? "ATTRACTION_DROP" : "MISSED_FLIRT"),
-            title: isDryOrNonsense ? "📉 Major Attraction Drop (-15%)" : (status === "FAILED" ? "⚠️ Low Attraction Turn" : "💡 Coaching Moment"),
-            explanation: isDryOrNonsense ? "Dry 1-word responses ('hi', 'ok', 'nothing') kill attraction and force the match to carry 100% of the conversational weight." : critique,
-            pro_tip: alternative ? `Try this line instead: "${alternative}"` : "Keep your confidence high and suggest a specific time/place!"
-        } : null;
+        replyText = sanitizeTrailingConjunctions(replyText);
+
+        await settleCreditsDB(req, reqId);
 
         res.json({
             success: true,
             reply: replyText,
             roleplay_response: replyText,
-            attraction_score: attractionScore,
-            attraction_change: attractionChange,
-            character_mood: mood,
-            trigger_checkpoint: isCheckpoint,
-            checkpoint_data: checkpoint,
-            credits: deduction.remainingCredits,
-            evaluation: {
-                score: score,
-                status: status,
-                critique: critique,
-                alternative: alternative
-            }
+            credits: deduction.remainingCredits
         });
     } catch (error) {
         console.error("Maeve AI Chat Pipeline Error:", error.stack || error.message || error);
         let currentBal = deduction ? deduction.remainingCredits : 0;
         if (deduction && deduction.success && !deduction.duplicate) {
-            try {
-                const refundRes = await refundCreditsDB(req, 2, 'chat', reqId, error.message);
-                if (refundRes && typeof refundRes.remainingCredits === 'number') {
-                    currentBal = refundRes.remainingCredits;
-                }
-            } catch (rfErr) {
-                console.error('[Chat Refund Error]:', rfErr.message);
+            const relRes = await releaseCreditsDB(req, reqId, error.message);
+            if (relRes && typeof relRes.remainingCredits === 'number') {
+                currentBal = relRes.remainingCredits;
             }
         }
         res.status(500).json({
             success: false,
-            error: "Maeve AI Coach failed to respond. Your credits have been automatically refunded.",
+            error: "Maeve AI Coach failed to respond. You have not been charged credits.",
             credits: currentBal
         });
+    } finally {
+        releaseUserConcurrencyLock(uid);
     }
 });
 
 // 4C. DATING FLIGHT SIMULATOR REVIEW API ENGINE (`/api/simulator/review`)
-app.post('/api/simulator/review', apiLimiter, async (req, res) => {
-    try {
-        const { sessionHistory } = req.body;
-        const historyArray = Array.isArray(sessionHistory) ? sessionHistory.filter(h => h.role !== 'system') : [];
+app.post('/api/simulator/review', requireSupabaseAuth, apiLimiter, async (req, res) => {
+    const uid = getUserIdFromReq(req);
+    if (!acquireUserConcurrencyLock(uid)) {
+        return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
+    }
+    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('rev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    let deduction = null;
 
-        // Fallback for empty or 1-message chats
+    try {
+        const { sessionHistory } = req.body || {};
+        let historyArray = Array.isArray(sessionHistory) ? sessionHistory.filter(h => h && h.role !== 'system') : [];
+
+        if (historyArray.length > 50) {
+            historyArray = historyArray.slice(-50);
+        }
+
+        for (const m of historyArray) {
+            if (!m || typeof m !== 'object') {
+                return res.status(400).json({ success: false, error: "Invalid message format in session history." });
+            }
+            if (typeof (m.text || m.content) === 'string' && (m.text || m.content).length > 5000) {
+                return res.status(400).json({ success: false, error: "Message exceeds 5,000 character limit." });
+            }
+        }
+
         if (!sessionHistory || historyArray.length < 2) {
             return res.json({
                 overall_score: 75,
@@ -2301,8 +2332,17 @@ app.post('/api/simulator/review', apiLimiter, async (req, res) => {
                 performance_summary: "The session was too short to perform a deep tactical evaluation. Try having a longer conversation to unlock full insights.",
                 biggest_strength: "Initiated the conversation.",
                 biggest_mistake: "Ended the practice session prematurely.",
-                priority_focus: "Aim for at least 4-6 back-and-forth messages to test your conversational flow."
+                priority_focus: "Aim for at least 4-6 back-and-forth messages to test your conversational flow.",
+                priority_tip: "Aim for at least 4-6 back-and-forth messages to test your conversational flow."
             });
+        }
+
+        deduction = await verifyAndDeductCreditsDB(req, 2, 'simulator_review', reqId);
+        if (!deduction.success) {
+            if (deduction.unauthenticated) {
+                return res.status(401).json({ success: false, error: deduction.error || "Authentication required to use this feature." });
+            }
+            return res.status(402).json({ success: false, error: "Insufficient credits for simulation review.", credits: deduction.currentCredits });
         }
 
         const formattedTranscript = historyArray
@@ -2339,7 +2379,6 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
 
         let rawContent = await queryOpenRouter("qwen3-235b-a22b-2507", payload, 0.3, 400);
 
-        // Clean potential markdown fencing from LLM
         const cleanedContent = (rawContent || "")
             .replace(/```json/gi, '')
             .replace(/```/g, '')
@@ -2363,6 +2402,8 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
             };
         }
 
+        await settleCreditsDB(req, reqId);
+
         res.json({
             overall_score: Number(reviewJson.overall_score) || 78,
             status_text: reviewJson.status_text || "STATUS: GOOD",
@@ -2373,12 +2414,15 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
             biggest_strength: reviewJson.biggest_strength || "Kept responses engaged and on topic.",
             biggest_mistake: reviewJson.biggest_mistake || "Could take more playful risks to build stronger attraction.",
             priority_focus: reviewJson.priority_focus || reviewJson.priority_tip || "Focus on driving towards a concrete date offer earlier.",
-            priority_tip: reviewJson.priority_focus || reviewJson.priority_tip || "Focus on driving towards a concrete date offer earlier."
+            priority_tip: reviewJson.priority_focus || reviewJson.priority_tip || "Focus on driving towards a concrete date offer earlier.",
+            credits: deduction.remainingCredits
         });
 
     } catch (error) {
         console.error("Qwen Review API Error:", error);
-        // Safe fallback payload to guarantee modal never freezes
+        if (deduction && deduction.success && !deduction.duplicate) {
+            await releaseCreditsDB(req, reqId, error.message);
+        }
         res.json({
             overall_score: 78,
             status_text: "STATUS: GOOD",
@@ -2391,6 +2435,8 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
             priority_focus: "Focus on driving towards a concrete date offer earlier.",
             priority_tip: "Focus on driving towards a concrete date offer earlier."
         });
+    } finally {
+        releaseUserConcurrencyLock(uid);
     }
 });
 
@@ -2539,33 +2585,12 @@ app.post('/api/payments/verify', requireSupabaseAuth, apiLimiter, async (req, re
     }
 });
 
-// VULN-06 FIX: Credit purchase requires authentication and rate limiting to prevent abuse
-app.post('/api/credits/purchase', requireSupabaseAuth, apiLimiter, async (req, res) => {
-    try {
-        const uid = getUserIdFromReq(req);
-        if (!uid || uid === 'guest_user') {
-            return res.status(401).json({ success: false, error: "Please sign in to purchase credits." });
-        }
-        const { amount, credits, tier, paymentId } = req.body;
-        const addAmount = amount ? Number(amount) : (credits ? Number(credits) / 10 : 0);
-        if (isNaN(addAmount) || addAmount <= 0 || addAmount > 1000) {
-            return res.status(400).json({ success: false, error: "Invalid credit top-up amount." });
-        }
-        const newCredInr = await addUserCreditsDB(req, addAmount, tier || 'credit_topup', paymentId || null);
-        const creditCount = Math.round(newCredInr * 10);
-        res.json({
-            success: true,
-            credits: creditCount,
-            newBalance: creditCount,
-            creditsAdded: Math.round(addAmount * 10),
-            data: {
-                credits_inr: newCredInr
-            }
-        });
-    } catch (err) {
-        console.error('[Credit Purchase ERROR]:', err.message);
-        res.status(500).json({ success: false, error: "Failed to process credit purchase." });
-    }
+// VULN-06 FIX: Credit purchase is disabled until Razorpay production integration is verified
+app.post('/api/credits/purchase', requireSupabaseAuth, apiLimiter, (req, res) => {
+    return res.status(503).json({
+        success: false,
+        error: "Direct credit purchasing is currently unavailable. Payment gateway integration is deferred."
+    });
 });
 
 // VULN-11 & Hardening FIX: Account deletion permanently removes authenticated user's data from Supabase Postgres & Auth
@@ -2576,34 +2601,49 @@ app.post('/api/user/delete-account', requireSupabaseAuth, apiLimiter, async (req
             return res.status(401).json({ success: false, error: 'Unauthorized: valid authentication token required.' });
         }
 
-        // 1. Delete user-created dating content from Supabase Postgres tables
-        try {
-            await supabaseAdmin.from('saved_bios').delete().eq('user_id', uid);
-        } catch (e) {}
-        try {
-            await supabaseAdmin.from('saved_chat_analyses').delete().eq('user_id', uid);
-        } catch (e) {}
-        try {
-            await supabaseAdmin.from('saved_chat_histories').delete().eq('user_id', uid);
-        } catch (e) {}
+        if (!supabaseAdmin || !supabaseAdmin.auth || !supabaseAdmin.auth.admin || typeof supabaseAdmin.auth.admin.deleteUser !== 'function') {
+            if (IS_PROD) {
+                return res.status(500).json({ success: false, error: 'Server authentication admin service is unavailable.' });
+            }
+        }
+
+        // 1. Delete user-created dating content from Supabase Postgres tables if they exist
+        for (const table of ['saved_bios', 'saved_chat_analyses', 'saved_chat_histories']) {
+            try {
+                const { error: tblErr } = await supabaseAdmin.from(table).delete().eq('user_id', uid);
+                if (tblErr && tblErr.code !== '42P01' && tblErr.code !== 'PGRST116') {
+                    console.warn(`[delete-account ${table} notice]:`, tblErr.message);
+                }
+            } catch (e) {}
+        }
 
         // 2. Clean user credit transactions ledger
         try {
-            await supabaseAdmin.from('credit_transactions').delete().eq('user_id', uid);
+            const { error: txErr } = await supabaseAdmin.from('credit_transactions').delete().eq('user_id', uid);
+            if (txErr && txErr.code !== '42P01' && txErr.code !== 'PGRST116') {
+                console.error('[delete-account credit_transactions error]:', txErr.message);
+                return res.status(500).json({ success: false, error: 'Failed to purge credit transaction history.' });
+            }
         } catch (e) {}
 
         // 3. Delete user profile
         try {
-            await supabaseAdmin.from('profiles').delete().eq('id', uid);
+            const { error: profErr } = await supabaseAdmin.from('profiles').delete().eq('id', uid);
+            if (profErr && profErr.code !== '42P01' && profErr.code !== 'PGRST116') {
+                console.error('[delete-account profiles error]:', profErr.message);
+                return res.status(500).json({ success: false, error: 'Failed to purge user profile.' });
+            }
         } catch (e) {}
 
-        // 4. Delete Supabase Auth User via Supabase Admin SDK
-        if (supabaseAdmin && supabaseAdmin.auth && supabaseAdmin.auth.admin && typeof supabaseAdmin.auth.admin.deleteUser === 'function') {
+        // 4. Permanently Delete Supabase Auth User via Supabase Admin SDK
+        if (supabaseAdmin && supabaseAdmin.auth && supabaseAdmin.auth.admin) {
             const { error: authDelErr } = await supabaseAdmin.auth.admin.deleteUser(uid);
             if (authDelErr) {
                 console.error('[delete-account Auth delete error]:', authDelErr.message);
-                return res.status(500).json({ success: false, error: 'Failed to delete authentication account. Please try again.' });
+                return res.status(500).json({ success: false, error: 'Failed to delete authentication account: ' + authDelErr.message });
             }
+        } else if (IS_PROD) {
+            return res.status(500).json({ success: false, error: 'Failed to access authentication admin service.' });
         }
 
         // 5. Purge local SQLite user rows if local dev DB attached
@@ -2636,16 +2676,39 @@ app.get('/api/config', (req, res) => {
     });
 });
 
-// PRIVACY-SAFE ANALYTICS FOUNDATION (Metadata-only funnel tracking; zero personal content stored)
+// PRIVACY-SAFE ANALYTICS FOUNDATION (Strict metadata allowlist; zero personal content stored)
+const ALLOWED_ANALYTICS_EVENTS = new Set([
+    'signup_completed',
+    'generation_started',
+    'generation_succeeded',
+    'generation_failed',
+    'reply_copied',
+    'reply_marked_useful',
+    'credits_exhausted',
+    'checkout_started',
+    'checkout_completed'
+]);
+const ALLOWED_ANALYTICS_META_KEYS = new Set([
+    'endpoint',
+    'feature',
+    'tier',
+    'status',
+    'remainingCredits',
+    'currentCredits',
+    'optionIndex',
+    'timestamp'
+]);
+
 app.post('/api/analytics/event', (req, res) => {
     try {
         const { event, meta } = req.body || {};
-        if (!event || typeof event !== 'string' || event.length > 50) {
-            return res.status(400).json({ success: false, error: 'Invalid event name' });
+        if (!event || typeof event !== 'string' || !ALLOWED_ANALYTICS_EVENTS.has(event)) {
+            return res.status(400).json({ success: false, error: 'Invalid or disallowed event name.' });
         }
         const safeMeta = {};
         if (meta && typeof meta === 'object') {
             for (const [k, v] of Object.entries(meta)) {
+                if (!ALLOWED_ANALYTICS_META_KEYS.has(k)) continue;
                 if (typeof v === 'string' && v.length <= 80 && !v.startsWith('data:')) {
                     safeMeta[k] = v;
                 } else if (typeof v === 'number' || typeof v === 'boolean') {

@@ -5,8 +5,9 @@
  * Validates incoming screenshot payloads for the /api/analyze endpoint:
  * 1. Verifies images is an array with 1 to 5 images max.
  * 2. Checks base64 formatting and MIME types (JPEG, PNG, WEBP, GIF, HEIC).
- * 3. Enforces strict per-image size limit (<= 5 MB per image).
- * 4. Enforces strict total payload size limit (<= 20 MB total for all images).
+ * 3. Rejects arbitrary remote HTTP/HTTPS URLs (SSRF and MIME bypass prevention).
+ * 4. Enforces strict per-image size limit (<= 5 MB per image).
+ * 5. Enforces strict total payload size limit (<= 25 MB total for all images).
  * =========================================================================================
  */
 
@@ -44,9 +45,19 @@ function validateImagePayload(req, res, next) {
             return res.status(400).json({ success: false, error: `Invalid image string at index ${i}.` });
         }
 
+        const trimmed = imgStr.trim();
+
+        // Reject arbitrary remote HTTP/HTTPS URLs to prevent SSRF and MIME bypass
+        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+            return res.status(400).json({
+                success: false,
+                error: 'Remote image URLs are not supported. Please upload chat screenshots directly as image files.'
+            });
+        }
+
         // Validate MIME type prefix if data URI present
-        if (imgStr.startsWith('data:')) {
-            if (!ALLOWED_MIME_REGEX.test(imgStr)) {
+        if (trimmed.startsWith('data:')) {
+            if (!ALLOWED_MIME_REGEX.test(trimmed)) {
                 return res.status(400).json({
                     success: false,
                     error: 'This image format is not supported.'
@@ -55,9 +66,9 @@ function validateImagePayload(req, res, next) {
         }
 
         // Estimate decoded base64 byte size
-        const base64Data = imgStr.includes(',') ? imgStr.split(',')[1].trim() : imgStr.trim();
+        const base64Data = trimmed.includes(',') ? trimmed.split(',')[1].trim() : trimmed;
         const base64Clean = base64Data.replace(/[\r\n\s]+/g, '');
-        if (!imgStr.startsWith('http://') && !imgStr.startsWith('https://') && !/^[A-Za-z0-9+/=]+$/.test(base64Clean)) {
+        if (!/^[A-Za-z0-9+/=]+$/.test(base64Clean)) {
             return res.status(400).json({
                 success: false,
                 error: `Invalid or malformed base64 image data at index ${i}.`

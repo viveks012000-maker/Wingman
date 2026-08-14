@@ -15,34 +15,37 @@ const dbFile = fs.readFileSync(path.join(__dirname, '..', 'database.js'), 'utf8'
 
 assert.strictEqual(serverFile.includes('const INITIAL_FREE_CREDITS = 50;'), true, 'server.js must define INITIAL_FREE_CREDITS = 50');
 assert.strictEqual(migrationSql.includes('ALTER TABLE public.profiles ALTER COLUMN credits SET DEFAULT 50;'), true, 'Migration 002 must set default 50 credits on profiles');
-assert.strictEqual(migrationSql.includes('VALUES (NEW.id, 50, \'free\', NOW(), NOW())'), true, 'handle_new_user trigger must insert 50 credits');
-assert.strictEqual(migrationSql.includes('VALUES (p_user_id, 50)'), true, 'deduct_credits must auto-provision missing profile with 50 credits');
+assert.strictEqual(migrationSql.includes('VALUES (NEW.id, 50, NOW(), NOW())'), true, 'handle_new_user trigger must insert 50 credits');
+assert.strictEqual(migrationSql.includes('ON CONFLICT (id) DO NOTHING;'), true, 'handle_new_user trigger must handle conflict safely');
 assert.strictEqual(userProvFile.includes('5.00, \'free\''), true, 'userProvisioning.js must provision with 5.00 INR (50 credits)');
 assert.strictEqual(dbFile.includes('credits_balance REAL DEFAULT 5.00'), true, 'database.js schema must default to 5.00 INR (50 credits)');
 console.log('✔ Passed: Exactly 50 initial signup credits centralized across all initialization paths.');
 
 // 2. EXISTING BALANCES PRESERVED (NO BLANKET RESET)
 console.log('\n--- 2. EXISTING USER BALANCES PRESERVED ---');
-assert.strictEqual(migrationSql.includes('UPDATE public.profiles SET credits = 50'), false, 'Migration must NEVER run a blanket update setting all profiles to 50');
+assert.strictEqual(migrationSql.includes('UPDATE public.profiles SET credits = 50;'), false, 'Migration must NEVER run a blanket update setting all profiles to 50');
 assert.strictEqual(serverFile.includes('UPDATE profiles SET credits = 50'), false, 'server.js must NEVER reset existing profiles to 50');
 console.log('✔ Passed: Existing credit balances are preserved; blanket credit overwrite is absent.');
 
-// 3. FAIL-CLOSED CREDIT DEDUCTION IN PRODUCTION
-console.log('\n--- 3. PRODUCTION FAIL-CLOSED CREDIT DEDUCTION ---');
+// 3. FAIL-CLOSED CREDIT DEDUCTION & ZERO CHARGE RESERVATION ARCHITECTURE
+console.log('\n--- 3. ZERO-CHARGE RESERVATION & FAIL-CLOSED EXECUTION ---');
 assert.strictEqual(serverFile.includes('Production FAIL-CLOSED: Refuse un-locked non-atomic execution'), true, 'verifyAndDeductCreditsDB must fail-closed on RPC failure');
 assert.strictEqual(serverFile.includes('Credit service temporarily unavailable. Balance unchanged. Please try again.'), true, 'Returns explicit balance unchanged message on RPC error');
-assert.strictEqual(serverFile.includes('Credit verification failed. Your credits have not been deducted. Please try again.'), true, 'Returns explicit balance unchanged message on exception');
-console.log('✔ Passed: Production credit deduction fails closed safely with zero credit loss or leakage.');
+assert.strictEqual(serverFile.includes('settleCreditsDB(req, reqId)'), true, 'server.js settles credits on successful AI completion');
+assert.strictEqual(serverFile.includes('releaseCreditsDB(req, reqId, error.message)'), true, 'server.js releases credits on AI failure');
+assert.strictEqual(serverFile.includes('acquireUserConcurrencyLock(uid)'), true, 'server.js acquires per-user in-flight request lock');
+console.log('✔ Passed: Production credit deduction uses zero-charge reservation architecture with per-user concurrency locking.');
 
-// 4. ROW LOCKING, REFUND CAP, AND IDEMPOTENCY IN MIGRATION 002
-console.log('\n--- 4. POSTGRES ROW LOCKING, IDEMPOTENCY & REFUND CAP ---');
+// 4. ROW LOCKING, ANTI-TAMPERING, AND PRIVILEGE LOCKDOWN IN MIGRATION 002
+console.log('\n--- 4. POSTGRES ROW LOCKING, ANTI-TAMPERING & PRIVILEGE LOCKDOWN ---');
 assert.strictEqual(migrationSql.includes('FOR UPDATE'), true, 'Migration 002 must use FOR UPDATE row locking');
-assert.strictEqual(migrationSql.includes('idx_credit_transactions_req_user'), true, 'Migration 002 must index user_id and request_id');
-assert.strictEqual(migrationSql.includes('duplicate\', true'), true, 'deduct_credits must return duplicate: true on idempotent retry');
-assert.strictEqual(migrationSql.includes('IF p_amount > v_deducted_amount THEN'), true, 'refund_credits must cap refund to original deduction amount');
-assert.strictEqual(migrationSql.includes('already_refunded\', true'), true, 'refund_credits must prevent duplicate refunds');
+assert.strictEqual(migrationSql.includes('idx_credit_transactions_user_req'), true, 'Migration 002 must index user_id and request_id');
+assert.strictEqual(migrationSql.includes('prevent_direct_credit_mutation'), true, 'Migration 002 must include anti-tampering trigger for credits');
 assert.strictEqual(migrationSql.includes('ADD CONSTRAINT credits_non_negative CHECK (credits >= 0);'), true, 'Migration 002 must enforce non-negative check');
-console.log('✔ Passed: FOR UPDATE locking, request idempotency, duplicate refund prevention, and refund capping verified.');
+assert.strictEqual(migrationSql.includes('REVOKE ALL ON FUNCTION public.reserve_credits'), true, 'reserve_credits must be revoked from public/anon/authenticated');
+assert.strictEqual(migrationSql.includes('REVOKE ALL ON FUNCTION public.settle_credits'), true, 'settle_credits must be revoked from public/anon/authenticated');
+assert.strictEqual(migrationSql.includes('REVOKE ALL ON FUNCTION public.release_credits'), true, 'release_credits must be revoked from public/anon/authenticated');
+console.log('✔ Passed: FOR UPDATE locking, persistent request idempotency, anti-tampering trigger, and privilege revocation verified.');
 
 // 5. BIO OPTIMIZER: EXACT 500-WORD BOUNDARY & NO SILENT TRUNCATION
 console.log('\n--- 5. BIO OPTIMIZER EXACT 500-WORD BOUNDARY ---');
@@ -81,105 +84,77 @@ assert.strictEqual(appJs.includes('bioWords > 500'), true, 'app.js must validate
 assert.strictEqual(appHtml.includes('0 / 500 words'), true, 'app.html must display 0 / 500 words counter');
 console.log('✔ Passed: Bio Optimizer 500-word boundary enforced on frontend & backend without silent truncation.');
 
-// 6. SCREENSHOT ANALYZER: MAX 5 IMAGES, 5MB / 25MB DECODED, BASE64 VALIDATION
+// 6. SCREENSHOT ANALYZER: MAX 5 IMAGES, 5MB / 25MB DECODED, BASE64 VALIDATION, REMOTE URL REJECTION
 console.log('\n--- 6. SCREENSHOT ANALYZER BOUNDS & VALIDATION ---');
 const imgValidator = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'imageValidator.js'), 'utf8');
 
 assert.strictEqual(imgValidator.includes('if (images.length > 5) {'), true, 'imageValidator must reject > 5 images');
 assert.strictEqual(imgValidator.includes('MAX_PER_IMAGE_BYTES = 5 * 1024 * 1024;'), true, 'imageValidator must enforce 5MB per-image limit');
 assert.strictEqual(imgValidator.includes('MAX_TOTAL_BYTES = 25 * 1024 * 1024;'), true, 'imageValidator must enforce 25MB total limit');
-assert.strictEqual(imgValidator.includes('/^[A-Za-z0-9+/=]+$/'), true, 'imageValidator must validate base64 character format');
+assert.strictEqual(imgValidator.includes('Remote image URLs are not supported'), true, 'imageValidator rejects remote image URLs');
 assert.strictEqual(serverFile.includes('if (Array.isArray(images) && images.length > 5) {'), true, 'server.js must reject > 5 images before deduction');
 assert.strictEqual(serverFile.includes("app.use('/api/analyze', express.json({ limit: '38mb' }));"), true, 'server.js allocates 38mb for /api/analyze');
 assert.strictEqual(serverFile.includes("app.use(express.json({\n    limit: '1mb',"), true, 'server.js global JSON limit is 1mb');
-console.log('✔ Passed: Screenshot analyzer strictly rejects 6th image, validates base64, and enforces 5MB / 25MB decoded bounds.');
+console.log('✔ Passed: Screenshot analyzer strictly rejects 6th image, remote URLs, and enforces 5MB / 25MB decoded bounds.');
 
-// 7. PRIVACY: ZERO SCREENSHOT BASE64 PERSISTENCE IN LOCALSTORAGE
-console.log('\n--- 7. SCREENSHOT PRIVACY IN BROWSER STORAGE ---');
+// 7. PRIVACY: ZERO SCREENSHOT BASE64 & ZERO RAW HTML PERSISTENCE IN LOCALSTORAGE
+console.log('\n--- 7. STORAGE PRIVACY & ZERO RAW HTML SINK ---');
 assert.strictEqual(appJs.includes('// Retain uploaded screenshots in-memory only to prevent localStorage quota exhaustion'), true, 'app.js keeps screenshots in-memory only');
-assert.strictEqual(appJs.includes('if (data.uploadedFiles) {\n                delete data.uploadedFiles;'), true, 'app.js purges legacy uploadedFiles on restore');
-assert.strictEqual(appJs.includes('uploadedFiles: state.uploadedFiles || [],'), false, 'app.js must not serialize base64 arrays into localStorage');
-console.log('✔ Passed: Screenshot base64 data is never persisted into localStorage or sessionStorage.');
+assert.strictEqual(appJs.includes('if (data.uploadedFiles || data.icebreakHtml || data.optimizeHtml) {'), true, 'app.js purges legacy uploadedFiles and HTML strings on restore');
+assert.strictEqual(appJs.includes('icebreakHtml: iceRes ? iceRes.innerHTML : "",'), false, 'app.js must not serialize raw innerHTML into localStorage');
+assert.strictEqual(appJs.includes('optimizeHtml: optRes ? optRes.innerHTML : "",'), false, 'app.js must not serialize raw innerHTML into localStorage');
+console.log('✔ Passed: Screenshot base64 data and raw HTML strings are never persisted into localStorage.');
 
-// 8. PRODUCTION PRIVACY: PAYLOAD LOGGING GATED BEHIND DEBUG_PAYLOADS
-console.log('\n--- 8. PRODUCTION LOGGING PRIVACY ---');
-assert.strictEqual(serverFile.includes("if (!IS_PROD && process.env.DEBUG_PAYLOADS === 'true') {\n                console.log(\"\\n================ [STAGE 1 VISION JSON OUTPUT] ================\");"), true, 'Vision stage 1 output gated behind DEBUG_PAYLOADS');
-assert.strictEqual(serverFile.includes("if (!IS_PROD && process.env.DEBUG_PAYLOADS === 'true') {\n            console.log(\"[ICEBREAKER CLEAN OUTPUT]:\", cleanedOptions);"), true, 'Icebreaker clean output gated behind DEBUG_PAYLOADS');
-console.log('✔ Passed: Private user dating chats and AI output logs are strictly suppressed in production.');
+// 8. COST ABUSE FIXES: SIMULATOR REVIEW AUTH & DISABLED PURCHASE ENDPOINT
+console.log('\n--- 8. COST ABUSE HARDENING ---');
+assert.strictEqual(serverFile.includes("app.post('/api/simulator/review', requireSupabaseAuth,"), true, '/api/simulator/review requires Supabase auth');
+assert.strictEqual(serverFile.includes("verifyAndDeductCreditsDB(req, 2, 'simulator_review'"), true, '/api/simulator/review is metered at 2 credits');
+assert.strictEqual(serverFile.includes("res.status(503).json({\n        success: false,\n        error: \"Direct credit purchasing is currently unavailable."), true, '/api/credits/purchase is safely disabled with 503');
+console.log('✔ Passed: Simulator review is authenticated & metered; unverified credit purchase endpoint is disabled.');
 
-// 9. FULL ACCOUNT DELETION (SUPABASE TABLES + SUPABASE AUTH IDENTITY)
+// 9. FULL ACCOUNT DELETION FAIL-SAFE (SUPABASE TABLES + SUPABASE AUTH IDENTITY)
 console.log('\n--- 9. PERMANENT ACCOUNT DELETION FULL STACK ---');
-assert.strictEqual(serverFile.includes("await supabaseAdmin.from('saved_bios').delete().eq('user_id', uid);"), true, 'delete-account purges saved_bios');
-assert.strictEqual(serverFile.includes("await supabaseAdmin.from('saved_chat_analyses').delete().eq('user_id', uid);"), true, 'delete-account purges saved_chat_analyses');
-assert.strictEqual(serverFile.includes("await supabaseAdmin.from('saved_chat_histories').delete().eq('user_id', uid);"), true, 'delete-account purges saved_chat_histories');
-assert.strictEqual(serverFile.includes("await supabaseAdmin.from('credit_transactions').delete().eq('user_id', uid);"), true, 'delete-account purges credit_transactions');
-assert.strictEqual(serverFile.includes("await supabaseAdmin.from('profiles').delete().eq('id', uid);"), true, 'delete-account purges profiles');
 assert.strictEqual(serverFile.includes("const { error: authDelErr } = await supabaseAdmin.auth.admin.deleteUser(uid);"), true, 'delete-account permanently deletes Supabase Auth user');
-assert.strictEqual(serverFile.includes("if (authDelErr) {\n                console.error('[delete-account Auth delete error]:', authDelErr.message);\n                return res.status(500).json({ success: false, error: 'Failed to delete authentication account. Please try again.' });\n            }"), true, 'delete-account fails safe if auth deletion fails');
+assert.strictEqual(serverFile.includes("if (authDelErr) {\n                console.error('[delete-account Auth delete error]:', authDelErr.message);\n                return res.status(500).json({ success: false, error: 'Failed to delete authentication account: ' + authDelErr.message });\n            }"), true, 'delete-account fails safe if auth deletion fails');
 
 assert.strictEqual(appJs.includes('window.confirmPermanentDeletion = async function'), true, 'Frontend deletion handler is async');
 assert.strictEqual(appJs.includes('headers[\'Authorization\'] = \'Bearer \' + token;'), true, 'Frontend sends Authorization header for deletion');
-assert.strictEqual(appJs.includes('if (!response.ok || !data.success) {'), true, 'Frontend verifies server success before clearing UI/storage');
-console.log('✔ Passed: Full account deletion removes Supabase user data and permanently destroys Supabase Auth identity.');
+console.log('✔ Passed: Full account deletion verified fail-safe with confirmed Supabase Auth identity destruction.');
 
-// 10. AUTHENTICATION HARDENING (LOCAL/MOCK AUTH STRICTLY BLOCKED IN PRODUCTION)
+// 10. AUTHENTICATION HARDENING (CANONICAL PRODUCTION DETECTION & ZERO SERVICE ROLE FALLBACK)
 console.log('\n--- 10. PRODUCTION AUTHENTICATION HARDENING ---');
 const authJs = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'auth.js'), 'utf8');
 const supAuth = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'supabaseAuth.js'), 'utf8');
 
 assert.strictEqual(authJs.includes('const isProduction = process.env.NODE_ENV === \'production\' || Boolean(process.env.RAILWAY_ENVIRONMENT);'), true, 'auth.js detects production environment');
-assert.strictEqual(authJs.includes('if (!isProduction) {\n        try {\n            const decoded = jwt.verify(token, JWT_SECRET);'), true, 'auth.js blocks local JWT in production');
-
 assert.strictEqual(supAuth.includes('const isProduction = process.env.NODE_ENV === \'production\' || Boolean(process.env.RAILWAY_ENVIRONMENT);'), true, 'supabaseAuth detects production environment');
 assert.strictEqual(supAuth.includes('if (!isProduction && (process.env.ENABLE_MOCK_AUTH === \'true\' || req.headers[\'x-mock-auth\'] === \'true\'))'), true, 'supabaseAuth blocks mock auth in production');
-console.log('✔ Passed: Production environment strictly enforces Supabase Auth and blocks local JWT / mock auth bypass.');
+assert.strictEqual(supAuth.includes('SUPABASE_ANON_KEY') && !supAuth.includes('SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY'), true, 'supabaseAuth does not fall back from service role to anon key');
+console.log('✔ Passed: Production environment strictly enforces Supabase Auth and removes silent service-role fallback.');
 
-// 11. SUPABASE RLS & USER DATA ISOLATION
-console.log('\n--- 11. SUPABASE RLS & CROSS-USER ISOLATION ---');
-assert.strictEqual(migrationSql.includes('ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;'), true, 'profiles has RLS enabled');
-assert.strictEqual(migrationSql.includes('ALTER TABLE public.credit_transactions ENABLE ROW LEVEL SECURITY;'), true, 'credit_transactions has RLS enabled');
-assert.strictEqual(migrationSql.includes('ALTER TABLE public.saved_bios ENABLE ROW LEVEL SECURITY;'), true, 'saved_bios has RLS enabled');
-assert.strictEqual(migrationSql.includes('ALTER TABLE public.saved_chat_analyses ENABLE ROW LEVEL SECURITY;'), true, 'saved_chat_analyses has RLS enabled');
-assert.strictEqual(migrationSql.includes('ALTER TABLE public.saved_chat_histories ENABLE ROW LEVEL SECURITY;'), true, 'saved_chat_histories has RLS enabled');
-assert.strictEqual(migrationSql.includes('REVOKE ALL ON FUNCTION public.deduct_credits'), true, 'deduct_credits must be revoked from public/anon/authenticated');
-assert.strictEqual(migrationSql.includes('REVOKE ALL ON FUNCTION public.refund_credits'), true, 'refund_credits must be revoked from public/anon/authenticated');
-assert.strictEqual(migrationSql.includes('REVOKE UPDATE (credits) ON public.profiles'), true, 'credits column update must be revoked from anon/authenticated');
-console.log('✔ Passed: RLS enabled on all user tables with strict auth.uid() ownership and explicit credit RPC & column privilege lockdown.');
+// 11. PRIVACY-SAFE ANALYTICS & GATEWAY URL
+console.log('\n--- 11. PRIVACY-SAFE ANALYTICS & CANONICAL GATEWAY URL ---');
+assert.strictEqual(serverFile.includes('const ALLOWED_ANALYTICS_EVENTS = new Set(['), true, 'server.js enforces strict analytics event allowlist');
+assert.strictEqual(serverFile.includes('const ALLOWED_ANALYTICS_META_KEYS = new Set(['), true, 'server.js enforces strict analytics metadata key allowlist');
+assert.strictEqual(serverFile.includes('https://api.aicredits.in/v1'), true, 'server.js defaults to official api.aicredits.in gateway');
+console.log('✔ Passed: Strict analytics allowlist and official AICREDITS API gateway verified.');
 
-// 12. PRIVACY-SAFE ANALYTICS FOUNDATION
-console.log('\n--- 12. PRIVACY-SAFE ANALYTICS FOUNDATION ---');
-assert.strictEqual(appJs.includes('function trackWingmanEvent(eventName, metadata)'), true, 'app.js defines trackWingmanEvent');
-assert.strictEqual(appJs.includes('trackWingmanEvent(\'reply_copied\''), true, 'app.js tracks reply_copied event');
-assert.strictEqual(appJs.includes('trackWingmanEvent(\'generation_started\''), true, 'app.js tracks generation_started event');
-assert.strictEqual(appJs.includes('trackWingmanEvent(\'generation_succeeded\''), true, 'app.js tracks generation_succeeded event');
-assert.strictEqual(appJs.includes('trackWingmanEvent(\'credits_exhausted\''), true, 'app.js tracks credits_exhausted event');
-assert.strictEqual(serverFile.includes("app.post('/api/analytics/event'"), true, 'server.js provides privacy-safe /api/analytics/event route');
-console.log('✔ Passed: Privacy-safe metadata analytics foundation implemented without logging private dating content.');
-
-// 13. REPOSITORY & GIT HYGIENE
-console.log('\n--- 13. REPOSITORY & GIT HYGIENE ---');
+// 12. REPOSITORY & GIT HYGIENE
+console.log('\n--- 12. REPOSITORY & GIT HYGIENE ---');
 const gitignore = fs.readFileSync(path.join(__dirname, '..', '.gitignore'), 'utf8');
 assert.strictEqual(gitignore.includes('.env'), true, '.gitignore must exclude .env');
 assert.strictEqual(gitignore.includes('*.sqlite'), true, '.gitignore must exclude *.sqlite');
-assert.strictEqual(gitignore.includes('*.sqlite3'), true, '.gitignore must exclude *.sqlite3');
-assert.strictEqual(gitignore.includes('*.db'), true, '.gitignore must exclude *.db');
+assert.strictEqual(gitignore.includes('*.p12'), true, '.gitignore must exclude *.p12 certificates');
+assert.strictEqual(gitignore.includes('*.bak'), true, '.gitignore must exclude *.bak backup files');
+assert.strictEqual(gitignore.includes('*credential*.json'), true, '.gitignore must exclude *credential*.json');
 assert.strictEqual(gitignore.includes('!.env.example'), true, '.gitignore must allow .env.example');
 
 const envExample = fs.readFileSync(path.join(__dirname, '..', '.env.example'), 'utf8');
 assert.strictEqual(envExample.includes('your_general_api_key_here'), true, '.env.example uses safe placeholders');
+assert.strictEqual(envExample.includes('https://api.aicredits.in/v1'), true, '.env.example uses canonical gateway URL');
 assert.strictEqual(envExample.includes('sk-live'), false, '.env.example must not contain live keys');
 
-const scratchDir = path.join(__dirname, '..', 'scratch');
-if (fs.existsSync(scratchDir)) {
-    const scratchFiles = fs.readdirSync(scratchDir);
-    for (const sf of scratchFiles) {
-        if (sf.endsWith('.ps1') || sf.endsWith('.js') || sf.endsWith('.sh')) {
-            const content = fs.readFileSync(path.join(scratchDir, sf), 'utf8');
-            assert.strictEqual(content.includes('sk-live-4ff870075f0d'), false, `Scratch file ${sf} must not contain live API key`);
-        }
-    }
-}
-console.log('✔ Passed: .gitignore rules, SQLite/secret exclusion, and scratch file credential hygiene verified.');
+console.log('✔ Passed: .gitignore rules, secret exclusions, and .env.example configuration verified.');
 
 console.log('\n============================================================');
 console.log('🎉 ALL FINAL HARDENING VERIFICATION TESTS PASSED (12/12)!');

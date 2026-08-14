@@ -37,7 +37,7 @@ async function validateSupabaseToken(token) {
         const resp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
             method: 'GET',
             headers: {
-                apikey: SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY,
+                apikey: SUPABASE_ANON_KEY,
                 Authorization: `Bearer ${token}`
             }
         });
