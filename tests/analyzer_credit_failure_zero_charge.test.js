@@ -19,25 +19,29 @@ assert.strictEqual(
     'Migration 002 must define real UNIQUE constraint on (user_id, request_id)'
 );
 
-// Non-empty request ID check constraint
+// Non-empty request ID check constraint with length bounding
 assert.strictEqual(
-    migrationSql.includes('CHECK (request_id IS NULL OR length(trim(request_id)) > 0)'),
+    migrationSql.includes('chk_credit_transactions_request_id_not_empty'),
     true,
-    'Migration 002 must enforce non-empty request_id check constraint'
+    'Migration 002 must enforce chk_credit_transactions_request_id_not_empty check constraint'
 );
 
-// Hardened explicit search paths on all SECURITY DEFINER functions
+// Hardened empty search paths on all SECURITY DEFINER functions
 const secDefCount = (migrationSql.match(/SECURITY DEFINER/g) || []).length;
-const searchPathCount = (migrationSql.match(/SET search_path = public, pg_temp/g) || []).length;
-assert.strictEqual(searchPathCount >= secDefCount, true, 'Every SECURITY DEFINER function must specify SET search_path = public, pg_temp');
+const searchPathEmptyCount = (migrationSql.match(/SET search_path = ''/g) || []).length;
+assert.strictEqual(searchPathEmptyCount >= secDefCount, true, 'Every SECURITY DEFINER function must specify SET search_path = \'\'');
+
+// Transaction wrapping (BEGIN / COMMIT)
+assert.strictEqual(migrationSql.includes('BEGIN;'), true, 'Migration 002 must contain BEGIN;');
+assert.strictEqual(migrationSql.includes('COMMIT;'), true, 'Migration 002 must contain COMMIT;');
 
 // Visible permission failures (No EXCEPTION WHEN OTHERS THEN NULL)
 assert.strictEqual(
-    migrationSql.includes('WHEN OTHERS THEN\n        NULL;'),
+    migrationSql.includes('WHEN OTHERS THEN\n        NULL;') || migrationSql.includes('WHEN OTHERS THEN NULL;'),
     false,
     'Migration 002 must NOT swallow permission errors'
 );
-console.log('✔ Static Invariants Verified: UNIQUE constraint, search_path hardening, non-empty check, and error visibility.');
+console.log('✔ Static Invariants Verified: UNIQUE constraint, search_path = \'\' hardening, transaction block, and error visibility.');
 
 // 2. Behavioral Unit Ledger Simulation
 function createSimulatedPostgresCreditLedger(initialCredits = 50) {

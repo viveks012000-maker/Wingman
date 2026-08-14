@@ -3,12 +3,14 @@
 -- Authoritative Schema Migration for Supabase Postgres
 -- =========================================================================
 
--- 1. Safely add missing columns and constraints to public.credit_transactions
+BEGIN;
+
+-- 1. Safely add missing columns to public.credit_transactions
 ALTER TABLE public.credit_transactions ADD COLUMN IF NOT EXISTS feature TEXT;
 ALTER TABLE public.credit_transactions ADD COLUMN IF NOT EXISTS request_id TEXT;
 ALTER TABLE public.credit_transactions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'completed';
 
--- Enforce request_id not empty check constraint
+-- 2. Enforce request_id validation check constraint (Bounded length and non-empty for non-nulls)
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -16,11 +18,11 @@ BEGIN
     ) THEN
         ALTER TABLE public.credit_transactions 
         ADD CONSTRAINT chk_credit_transactions_request_id_not_empty 
-        CHECK (request_id IS NULL OR length(trim(request_id)) > 0);
+        CHECK (request_id IS NULL OR (pg_catalog.length(pg_catalog.trim(request_id)) > 0 AND pg_catalog.length(request_id) <= 128));
     END IF;
 END $$;
 
--- 2. Real Database Idempotency Guarantee: UNIQUE constraint and index on (user_id, request_id)
+-- 3. Real Database Idempotency Guarantee: UNIQUE constraint and index on (user_id, request_id)
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -34,7 +36,7 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_credit_transactions_user_req 
 ON public.credit_transactions (user_id, request_id);
 
--- 3. Profiles Credits: Default 50 for new rows, NOT NULL, Non-negative constraint (Preserves existing balances)
+-- 4. Profiles Credits: Default 50 for new rows, NOT NULL, Non-negative constraint (Preserves existing balances)
 ALTER TABLE public.profiles ALTER COLUMN credits SET DEFAULT 50;
 UPDATE public.profiles SET credits = 50 WHERE credits IS NULL;
 ALTER TABLE public.profiles ALTER COLUMN credits SET NOT NULL;
@@ -48,12 +50,12 @@ BEGIN
     END IF;
 END $$;
 
--- 4. New User Trigger: Awards exactly 50 credits ONCE upon Auth signup
+-- 5. New User Trigger: Awards exactly 50 credits ONCE upon Auth signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER 
+RETURNS trigger 
 LANGUAGE plpgsql 
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $$
 BEGIN
     INSERT INTO public.profiles (id, credits, created_at, updated_at)
@@ -74,15 +76,15 @@ BEGIN
     END IF;
 END $$;
 
--- 5. Anti-Tampering Trigger: Block direct browser modification of credits column
+-- 6. Anti-Tampering Trigger: Block direct browser modification of credits column
 CREATE OR REPLACE FUNCTION public.prevent_direct_credit_mutation()
-RETURNS TRIGGER 
+RETURNS trigger 
 LANGUAGE plpgsql 
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $$
 BEGIN
-    IF (current_user IN ('anon', 'authenticated') OR current_setting('request.jwt.claim.role', true) IN ('anon', 'authenticated')) THEN
+    IF (CURRENT_USER IN ('anon', 'authenticated') OR pg_catalog.current_setting('request.jwt.claim.role', true) IN ('anon', 'authenticated')) THEN
         IF (NEW.credits IS DISTINCT FROM OLD.credits) THEN
             RAISE EXCEPTION 'Direct modification of credit balance is forbidden.';
         END IF;
@@ -96,52 +98,65 @@ CREATE TRIGGER trg_prevent_direct_credit_mutation
     BEFORE UPDATE ON public.profiles
     FOR EACH ROW EXECUTE FUNCTION public.prevent_direct_credit_mutation();
 
--- 6. Atomic Reservation RPC: reserve_credits (Internal backend usage before calling AI)
+-- 7. Atomic Reservation RPC: reserve_credits (Internal backend usage before calling AI)
 CREATE OR REPLACE FUNCTION public.reserve_credits(
-    p_user_id UUID,
-    p_amount INTEGER,
-    p_feature TEXT,
-    p_request_id TEXT
+    p_user_id pg_catalog.uuid,
+    p_amount pg_catalog.int4,
+    p_feature pg_catalog.text,
+    p_request_id pg_catalog.text
 )
-RETURNS JSON
+RETURNS pg_catalog.json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $$
 DECLARE
-    v_current_credits INTEGER;
-    v_new_credits INTEGER;
-    v_clean_req_id TEXT;
+    v_current_credits pg_catalog.int4;
+    v_new_credits pg_catalog.int4;
+    v_clean_req_id pg_catalog.text;
+    v_clean_feature pg_catalog.text;
     v_existing_tx RECORD;
 BEGIN
-    -- 1. Validate amount
-    IF p_amount <= 0 THEN
-        RETURN json_build_object('success', false, 'error_message', 'Invalid credit deduction amount.');
+    -- 1. Validate User ID
+    IF p_user_id IS NULL THEN
+        RETURN pg_catalog.json_build_object('success', false, 'error_message', 'Invalid user ID.');
     END IF;
 
-    -- 2. Validate and sanitize request ID (Must not be null or whitespace)
-    v_clean_req_id := TRIM(COALESCE(p_request_id, ''));
-    IF v_clean_req_id = '' THEN
-        RETURN json_build_object('success', false, 'error_message', 'Invalid or missing idempotency request ID.');
+    -- 2. Validate Amount (Must be positive integer, max 100,000)
+    IF p_amount IS NULL OR p_amount <= 0 OR p_amount > 100000 THEN
+        RETURN pg_catalog.json_build_object('success', false, 'error_message', 'Invalid credit deduction amount.');
     END IF;
 
-    -- 3. Lock profile row FOR UPDATE first to guarantee serialized per-user execution
+    -- 3. Validate and sanitize Feature string
+    v_clean_feature := pg_catalog.trim(pg_catalog.coalesce(p_feature, ''));
+    IF v_clean_feature = '' OR pg_catalog.length(v_clean_feature) > 64 THEN
+        RETURN pg_catalog.json_build_object('success', false, 'error_message', 'Invalid feature identifier.');
+    END IF;
+
+    -- 4. Validate and sanitize Request ID (Must not be null, whitespace, or exceeding 128 chars)
+    v_clean_req_id := pg_catalog.trim(pg_catalog.coalesce(p_request_id, ''));
+    IF v_clean_req_id = '' OR pg_catalog.length(v_clean_req_id) > 128 THEN
+        RETURN pg_catalog.json_build_object('success', false, 'error_message', 'Invalid or missing idempotency request ID.');
+    END IF;
+
+    -- 5. Lock profile row FOR UPDATE first to guarantee serialized per-user execution
     SELECT credits INTO v_current_credits 
     FROM public.profiles 
     WHERE id = p_user_id 
     FOR UPDATE;
 
-    -- 4. Check if profile exists (NO auto-granting 50 credits to missing profiles)
+    -- 6. Check if profile exists (NO auto-granting 50 credits to missing profiles)
     IF v_current_credits IS NULL THEN
-        RETURN json_build_object(
+        RETURN pg_catalog.json_build_object(
             'success', false,
-            'error_message', 'User profile does not exist. Please authenticate or contact support.',
+            'error_message', 'PROFILE_MISSING',
+            'error', 'PROFILE_MISSING',
             'currentCredits', 0,
             'new_balance', 0
         );
     END IF;
 
-    -- 5. Atomic Idempotency Check while holding profile lock
+    -- 7. Atomic Idempotency Check while holding profile lock
     SELECT id, status, amount INTO v_existing_tx
     FROM public.credit_transactions
     WHERE user_id = p_user_id AND request_id = v_clean_req_id
@@ -149,7 +164,7 @@ BEGIN
 
     IF v_existing_tx.id IS NOT NULL THEN
         -- Request ID already exists: Return current balance as duplicate without double deduction
-        RETURN json_build_object(
+        RETURN pg_catalog.json_build_object(
             'success', true,
             'remainingCredits', v_current_credits,
             'new_balance', v_current_credits,
@@ -158,27 +173,28 @@ BEGIN
         );
     END IF;
 
-    -- 6. Validate balance sufficiency
+    -- 8. Validate balance sufficiency
     IF v_current_credits < p_amount THEN
-        RETURN json_build_object(
+        RETURN pg_catalog.json_build_object(
             'success', false,
             'error_message', 'Insufficient credit balance.',
+            'error', 'INSUFFICIENT_CREDITS',
             'currentCredits', v_current_credits,
             'new_balance', v_current_credits
         );
     END IF;
 
-    -- 7. Deduct from profile
+    -- 9. Deduct from profile
     v_new_credits := v_current_credits - p_amount;
     UPDATE public.profiles
-    SET credits = v_new_credits, updated_at = NOW()
+    SET credits = v_new_credits, updated_at = pg_catalog.now()
     WHERE id = p_user_id;
 
-    -- 8. Insert transaction record in 'pending' status
+    -- 10. Insert transaction record in 'pending' status
     INSERT INTO public.credit_transactions (id, user_id, amount, type, feature, request_id, status, created_at)
-    VALUES (gen_random_uuid(), p_user_id, -p_amount, 'feature_usage', p_feature, v_clean_req_id, 'pending', NOW());
+    VALUES (pg_catalog.gen_random_uuid(), p_user_id, -p_amount, 'feature_usage', v_clean_feature, v_clean_req_id, 'pending', pg_catalog.now());
 
-    RETURN json_build_object(
+    RETURN pg_catalog.json_build_object(
         'success', true,
         'remainingCredits', v_new_credits,
         'new_balance', v_new_credits,
@@ -187,23 +203,27 @@ BEGIN
 END;
 $$;
 
--- 7. Atomic Settlement RPC: settle_credits (Internal backend usage after successful AI generation)
+-- 8. Atomic Settlement RPC: settle_credits (Internal backend usage after successful AI generation)
 CREATE OR REPLACE FUNCTION public.settle_credits(
-    p_user_id UUID,
-    p_request_id TEXT
+    p_user_id pg_catalog.uuid,
+    p_request_id pg_catalog.text
 )
-RETURNS JSON
+RETURNS pg_catalog.json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $$
 DECLARE
-    v_clean_req_id TEXT;
-    v_updated_rows INTEGER;
+    v_clean_req_id pg_catalog.text;
+    v_updated_rows pg_catalog.int4;
 BEGIN
-    v_clean_req_id := TRIM(COALESCE(p_request_id, ''));
-    IF v_clean_req_id = '' THEN
-        RETURN json_build_object('success', false, 'error_message', 'Invalid request ID.');
+    IF p_user_id IS NULL THEN
+        RETURN pg_catalog.json_build_object('success', false, 'error_message', 'Invalid user ID.');
+    END IF;
+
+    v_clean_req_id := pg_catalog.trim(pg_catalog.coalesce(p_request_id, ''));
+    IF v_clean_req_id = '' OR pg_catalog.length(v_clean_req_id) > 128 THEN
+        RETURN pg_catalog.json_build_object('success', false, 'error_message', 'Invalid request ID.');
     END IF;
 
     UPDATE public.credit_transactions
@@ -212,30 +232,34 @@ BEGIN
 
     GET DIAGNOSTICS v_updated_rows = ROW_COUNT;
 
-    RETURN json_build_object('success', true, 'settled', v_updated_rows > 0);
+    RETURN pg_catalog.json_build_object('success', true, 'settled', v_updated_rows > 0);
 END;
 $$;
 
--- 8. Atomic Release RPC: release_credits (Internal backend usage on AI failure - Zero charge)
+-- 9. Atomic Release RPC: release_credits (Internal backend usage on AI failure - Zero charge)
 CREATE OR REPLACE FUNCTION public.release_credits(
-    p_user_id UUID,
-    p_request_id TEXT,
-    p_reason TEXT DEFAULT 'ai_failure'
+    p_user_id pg_catalog.uuid,
+    p_request_id pg_catalog.text,
+    p_reason pg_catalog.text DEFAULT 'ai_failure'
 )
-RETURNS JSON
+RETURNS pg_catalog.json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $$
 DECLARE
-    v_pending_amount INTEGER;
-    v_current_credits INTEGER;
-    v_new_credits INTEGER;
-    v_clean_req_id TEXT;
+    v_pending_amount pg_catalog.int4;
+    v_current_credits pg_catalog.int4;
+    v_new_credits pg_catalog.int4;
+    v_clean_req_id pg_catalog.text;
 BEGIN
-    v_clean_req_id := TRIM(COALESCE(p_request_id, ''));
-    IF v_clean_req_id = '' THEN
-        RETURN json_build_object('success', false, 'error_message', 'Invalid request ID.');
+    IF p_user_id IS NULL THEN
+        RETURN pg_catalog.json_build_object('success', false, 'error_message', 'Invalid user ID.');
+    END IF;
+
+    v_clean_req_id := pg_catalog.trim(pg_catalog.coalesce(p_request_id, ''));
+    IF v_clean_req_id = '' OR pg_catalog.length(v_clean_req_id) > 128 THEN
+        RETURN pg_catalog.json_build_object('success', false, 'error_message', 'Invalid request ID.');
     END IF;
 
     -- Lock profile row FOR UPDATE
@@ -252,26 +276,26 @@ BEGIN
 
     -- If no pending transaction found (already settled or already released), do not restore credits
     IF v_pending_amount IS NULL THEN
-        RETURN json_build_object(
+        RETURN pg_catalog.json_build_object(
             'success', true, 
-            'remainingCredits', COALESCE(v_current_credits, 0), 
-            'new_balance', COALESCE(v_current_credits, 0),
+            'remainingCredits', pg_catalog.coalesce(v_current_credits, 0), 
+            'new_balance', pg_catalog.coalesce(v_current_credits, 0),
             'already_settled_or_released', true
         );
     END IF;
 
     -- Restore reserved credits exactly once
-    v_new_credits := COALESCE(v_current_credits, 0) + ABS(v_pending_amount);
+    v_new_credits := pg_catalog.coalesce(v_current_credits, 0) + pg_catalog.abs(v_pending_amount);
 
     UPDATE public.profiles
-    SET credits = v_new_credits, updated_at = NOW()
+    SET credits = v_new_credits, updated_at = pg_catalog.now()
     WHERE id = p_user_id;
 
     UPDATE public.credit_transactions
     SET status = 'cancelled', type = 'cancelled_usage'
     WHERE user_id = p_user_id AND request_id = v_clean_req_id AND status = 'pending';
 
-    RETURN json_build_object(
+    RETURN pg_catalog.json_build_object(
         'success', true,
         'remainingCredits', v_new_credits,
         'new_balance', v_new_credits,
@@ -280,85 +304,67 @@ BEGIN
 END;
 $$;
 
--- 9. Atomic Add Credits RPC: add_credits (Internal backend usage for purchase top-ups)
+-- 10. Atomic Add Credits RPC: add_credits (Internal backend usage for purchase top-ups)
 CREATE OR REPLACE FUNCTION public.add_credits(
-    p_user_id UUID,
-    p_amount INTEGER,
-    p_tier TEXT DEFAULT 'starter',
-    p_payment_id TEXT DEFAULT NULL,
-    p_order_id TEXT DEFAULT NULL,
-    p_amount_inr NUMERIC DEFAULT 0,
-    p_signature TEXT DEFAULT NULL
+    p_user_id pg_catalog.uuid,
+    p_amount pg_catalog.int4,
+    p_tier pg_catalog.text DEFAULT 'starter',
+    p_payment_id pg_catalog.text DEFAULT NULL,
+    p_order_id pg_catalog.text DEFAULT NULL,
+    p_amount_inr pg_catalog.numeric DEFAULT 0,
+    p_signature pg_catalog.text DEFAULT NULL
 )
-RETURNS JSON
+RETURNS pg_catalog.json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $$
 DECLARE
-    v_current_credits INTEGER;
-    v_new_credits INTEGER;
-    v_tx_req_id TEXT;
+    v_current_credits pg_catalog.int4;
+    v_new_credits pg_catalog.int4;
+    v_tx_req_id pg_catalog.text;
 BEGIN
-    IF p_amount <= 0 THEN
-        RETURN json_build_object('success', false, 'error_message', 'Credit amount must be greater than zero.');
+    IF p_user_id IS NULL THEN
+        RETURN pg_catalog.json_build_object('success', false, 'error_message', 'Invalid user ID.');
     END IF;
 
-    v_tx_req_id := COALESCE(p_payment_id, p_order_id, 'purchase_' || gen_random_uuid()::TEXT);
+    IF p_amount IS NULL OR p_amount <= 0 THEN
+        RETURN pg_catalog.json_build_object('success', false, 'error_message', 'Credit amount must be greater than zero.');
+    END IF;
+
+    v_tx_req_id := pg_catalog.coalesce(p_payment_id, p_order_id, 'purchase_' || pg_catalog.gen_random_uuid()::pg_catalog.text);
 
     SELECT credits INTO v_current_credits FROM public.profiles WHERE id = p_user_id FOR UPDATE;
 
     IF v_current_credits IS NULL THEN
         INSERT INTO public.profiles (id, credits, created_at, updated_at)
-        VALUES (p_user_id, p_amount, NOW(), NOW())
-        ON CONFLICT (id) DO UPDATE SET credits = public.profiles.credits + p_amount, updated_at = NOW();
+        VALUES (p_user_id, p_amount, pg_catalog.now(), pg_catalog.now())
+        ON CONFLICT (id) DO UPDATE SET credits = public.profiles.credits + p_amount, updated_at = pg_catalog.now();
         
         SELECT credits INTO v_new_credits FROM public.profiles WHERE id = p_user_id;
     ELSE
         v_new_credits := v_current_credits + p_amount;
         UPDATE public.profiles
-        SET credits = v_new_credits, updated_at = NOW()
+        SET credits = v_new_credits, updated_at = pg_catalog.now()
         WHERE id = p_user_id;
     END IF;
 
     INSERT INTO public.credit_transactions (id, user_id, amount, type, feature, request_id, status, created_at)
     VALUES (
-        gen_random_uuid(), 
+        pg_catalog.gen_random_uuid(), 
         p_user_id, 
         p_amount, 
         'purchase', 
-        COALESCE(p_tier, 'starter'), 
+        pg_catalog.coalesce(p_tier, 'starter'), 
         v_tx_req_id, 
         'completed', 
-        NOW()
+        pg_catalog.now()
     );
 
-    RETURN json_build_object(
+    RETURN pg_catalog.json_build_object(
         'success', true,
         'remainingCredits', v_new_credits,
         'new_balance', v_new_credits
-    );
-END;
-$$;
-
--- 10. Deduct credits wrapper calling reserve_credits for compatibility
-CREATE OR REPLACE FUNCTION public.deduct_credits(
-    p_user_id UUID,
-    p_amount INTEGER,
-    p_feature TEXT,
-    p_request_id TEXT DEFAULT NULL
-)
-RETURNS JSON
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-BEGIN
-    RETURN public.reserve_credits(
-        p_user_id, 
-        p_amount, 
-        p_feature, 
-        COALESCE(p_request_id, 'ded_' || gen_random_uuid()::TEXT)
     );
 END;
 $$;
@@ -379,25 +385,39 @@ BEGIN
 END $$;
 
 -- 12. Privilege Lockdown (Revoke from client roles, grant only to backend service_role)
-REVOKE ALL ON FUNCTION public.reserve_credits(UUID, INTEGER, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.reserve_credits(UUID, INTEGER, TEXT, TEXT) TO service_role, postgres;
+REVOKE ALL ON FUNCTION public.reserve_credits(pg_catalog.uuid, pg_catalog.int4, pg_catalog.text, pg_catalog.text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.reserve_credits(pg_catalog.uuid, pg_catalog.int4, pg_catalog.text, pg_catalog.text) TO service_role, postgres;
 
-REVOKE ALL ON FUNCTION public.settle_credits(UUID, TEXT) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.settle_credits(UUID, TEXT) TO service_role, postgres;
+REVOKE ALL ON FUNCTION public.settle_credits(pg_catalog.uuid, pg_catalog.text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.settle_credits(pg_catalog.uuid, pg_catalog.text) TO service_role, postgres;
 
-REVOKE ALL ON FUNCTION public.release_credits(UUID, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.release_credits(UUID, TEXT, TEXT) TO service_role, postgres;
+REVOKE ALL ON FUNCTION public.release_credits(pg_catalog.uuid, pg_catalog.text, pg_catalog.text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.release_credits(pg_catalog.uuid, pg_catalog.text, pg_catalog.text) TO service_role, postgres;
 
-REVOKE ALL ON FUNCTION public.add_credits(UUID, INTEGER, TEXT, TEXT, TEXT, NUMERIC, TEXT) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.add_credits(UUID, INTEGER, TEXT, TEXT, TEXT, NUMERIC, TEXT) TO service_role, postgres;
+REVOKE ALL ON FUNCTION public.add_credits(pg_catalog.uuid, pg_catalog.int4, pg_catalog.text, pg_catalog.text, pg_catalog.text, pg_catalog.numeric, pg_catalog.text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.add_credits(pg_catalog.uuid, pg_catalog.int4, pg_catalog.text, pg_catalog.text, pg_catalog.text, pg_catalog.numeric, pg_catalog.text) TO service_role, postgres;
 
-REVOKE ALL ON FUNCTION public.deduct_credits(UUID, INTEGER, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.deduct_credits(UUID, INTEGER, TEXT, TEXT) TO service_role, postgres;
+-- If legacy deduct_credits function exists in live DB, revoke client execution without replacing its return type
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_proc p 
+        JOIN pg_namespace n ON p.pronamespace = n.oid 
+        WHERE n.nspname = 'public' AND p.proname = 'deduct_credits'
+    ) THEN
+        REVOKE ALL ON FUNCTION public.deduct_credits(pg_catalog.uuid, pg_catalog.int4, pg_catalog.text, pg_catalog.text) FROM PUBLIC, anon, authenticated;
+    END IF;
+END $$;
 
+-- Revoke all mutation and TRUNCATE privileges from client roles
+REVOKE ALL, TRUNCATE ON public.credit_transactions FROM PUBLIC, anon, authenticated;
 REVOKE INSERT, UPDATE, DELETE ON public.credit_transactions FROM anon, authenticated;
 GRANT SELECT ON public.credit_transactions TO authenticated;
 GRANT ALL ON public.credit_transactions TO service_role, postgres;
 
+REVOKE ALL, TRUNCATE ON public.profiles FROM PUBLIC, anon, authenticated;
 REVOKE INSERT, UPDATE, DELETE ON public.profiles FROM anon, authenticated;
 GRANT SELECT ON public.profiles TO authenticated;
 GRANT ALL ON public.profiles TO service_role, postgres;
+
+COMMIT;
