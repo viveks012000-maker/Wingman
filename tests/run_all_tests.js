@@ -18,7 +18,8 @@ const testSuites = [
     { name: '14. Security Hardening & Audit Verification', file: 'security_hardening_audit.test.js' },
     { name: '15. Runtime Cross-Feature Isolation & Button State', file: 'runtime_cross_feature_isolation.test.js' },
     { name: '16. Credit Balance & Authoritative Auth Runtime', file: 'credit_balance_auth_runtime.test.js' },
-    { name: '17. Migration 002 Safety & Security Audit', file: 'migration_002_safety_audit.test.js' }
+    { name: '17. Migration 002 Safety & Security Audit', file: 'migration_002_safety_audit.test.js' },
+    { name: '18. Migration 003 COALESCE Syntax Audit', file: 'migration_003_coalesce_audit.test.js' }
 ];
 
 console.log('========================================================================');
