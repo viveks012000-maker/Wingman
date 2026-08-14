@@ -1267,7 +1267,7 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
 
         let modeConfig = {
             name: "WITTY",
-            description: "Sharp observations, dry humor, clever callouts, and high-status banter.",
+            description: "Sharp observations, dry humor, sarcastic banter, and self-aware, high-status banter.",
             buckets: [
                 "Option 1 reply text [Sharp Observation]",
                 "Option 2 reply text [Sharp Observation]",
@@ -1284,60 +1284,60 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
 • Options 3-4 [Dry Banter]: Playful tease that holds frame and doesn't over-explain.
 • Options 5-6 [Clever Question]: Intriguing open question that makes answering effortless and fun.
 • Options 7-8 [Witty Topic Pivot]: Smooth, unforced shift into an engaging fresh conversation angle.
-• Options 9-10 [Snappy Minimalist]: Ultra-short (2-5 words), effortless high-status punchline.`
+• Options 9-10 [Snappy Minimalist]: Ultra-short (2-4 words), effortless high-status punchline.`
         };
 
         if (cleanToneKey === "flirty" || cleanToneKey === "flirt") {
             modeConfig = {
                 name: "FLIRTY",
-                description: "Charming banter, playful romantic tension, confident teasing, and subtle attraction.",
+                description: "Playful tension, charming banter, subtle romantic teasing, and mutual chemistry.",
                 buckets: [
-                    "Option 1 reply text [Playful Tease]",
-                    "Option 2 reply text [Playful Tease]",
-                    "Option 3 reply text [Subtle Tension]",
-                    "Option 4 reply text [Subtle Tension]",
-                    "Option 5 reply text [Charming Challenge]",
-                    "Option 6 reply text [Charming Challenge]",
-                    "Option 7 reply text [Flirty Pivot]",
-                    "Option 8 reply text [Flirty Pivot]",
-                    "Option 9 reply text [Smooth Minimalist]",
-                    "Option 10 reply text [Smooth Minimalist]"
+                    "Option 1 reply text [Playful Charm]",
+                    "Option 2 reply text [Playful Charm]",
+                    "Option 3 reply text [Flirty Tease]",
+                    "Option 4 reply text [Flirty Tease]",
+                    "Option 5 reply text [Intriguing Spark]",
+                    "Option 6 reply text [Intriguing Spark]",
+                    "Option 7 reply text [Smooth Vibe Setup]",
+                    "Option 8 reply text [Smooth Vibe Setup]",
+                    "Option 9 reply text [Cheeky Minimalist]",
+                    "Option 10 reply text [Cheeky Minimalist]"
                 ],
-                bucketDefinitions: `• Options 1-2 [Playful Tease]: Lighthearted teasing that creates immediate spark without being crude.
-• Options 3-4 [Subtle Tension]: Smooth implication of chemistry or mutual interest.
-• Options 5-6 [Charming Challenge]: Playful qualification challenge (e.g. testing if she can keep up).
-• Options 7-8 [Flirty Pivot]: Seamless redirect to a more fun, intriguing vibe.
-• Options 9-10 [Smooth Minimalist]: 3-to-5 word magnetic, confident reply.`
+                bucketDefinitions: `• Options 1-2 [Playful Charm]: Lighthearted charm that creates immediate spark without being crude.
+• Options 3-4 [Flirty Tease]: Playful romantic tease that builds mutual chemistry and tension.
+• Options 5-6 [Intriguing Spark]: Playful qualification challenge (e.g. testing if she can keep up).
+• Options 7-8 [Smooth Vibe Setup]: Seamless redirect to a more fun, intriguing romantic vibe.
+• Options 9-10 [Cheeky Minimalist]: 2-to-4 word magnetic, confident reply.`
             };
         } else if (cleanToneKey === "casual" || cleanToneKey === "chill") {
             modeConfig = {
                 name: "CASUAL",
-                description: "Low-pressure, authentic, grounded human texting flow.",
+                description: "Chill, relaxed, low-pressure, friend-vibe continuity and grounded human texting flow.",
                 buckets: [
-                    "Option 1 reply text [Low-Key Question]",
-                    "Option 2 reply text [Low-Key Question]",
-                    "Option 3 reply text [Relatable Comment]",
-                    "Option 4 reply text [Relatable Comment]",
-                    "Option 5 reply text [Easy Banter]",
-                    "Option 6 reply text [Easy Banter]",
-                    "Option 7 reply text [Natural Pivot]",
-                    "Option 8 reply text [Natural Pivot]",
-                    "Option 9 reply text [Relaxed Minimalist]",
-                    "Option 10 reply text [Relaxed Minimalist]"
+                    "Option 1 reply text [Easygoing Reaction]",
+                    "Option 2 reply text [Easygoing Reaction]",
+                    "Option 3 reply text [Low-Key Question]",
+                    "Option 4 reply text [Low-Key Question]",
+                    "Option 5 reply text [Relatable Take]",
+                    "Option 6 reply text [Relatable Take]",
+                    "Option 7 reply text [Casual Topic Shift]",
+                    "Option 8 reply text [Casual Topic Shift]",
+                    "Option 9 reply text [Short Chill Text]",
+                    "Option 10 reply text [Short Chill Text]"
                 ],
-                bucketDefinitions: `• Options 1-2 [Low-Key Question]: Casual, effortless conversation starter with zero pressure.
-• Options 3-4 [Relatable Comment]: Grounded, funny observation about everyday life or habits.
-• Options 5-6 [Easy Banter]: Friendly back-and-forth that feels like texting an old friend.
-• Options 7-8 [Natural Pivot]: Organic transition to weekend plans, food, music, or stories.
-• Options 9-10 [Relaxed Minimalist]: Short, ultra-natural 2-4 word relaxed response.`
+                bucketDefinitions: `• Options 1-2 [Easygoing Reaction]: Grounded, low-pressure reaction to her text with zero urgency.
+• Options 3-4 [Low-Key Question]: Casual, effortless conversation starter with zero pressure.
+• Options 5-6 [Relatable Take]: Funny, relatable observation about everyday life or habits.
+• Options 7-8 [Casual Topic Shift]: Organic transition to weekend plans, food, music, or stories.
+• Options 9-10 [Short Chill Text]: Short, ultra-natural 2-4 word relaxed response.`
             };
         } else if (cleanToneKey === "bold" || cleanToneKey === "closer" || cleanToneKey === "direct") {
             modeConfig = {
                 name: "BOLD / CLOSER",
-                description: "Direct intent, confident moves, playful challenges, and date transitions.",
+                description: "High energy, direct, confident, making direct moves/plans with unapologetic charm.",
                 buckets: [
-                    "Option 1 reply text [Direct Intent]",
-                    "Option 2 reply text [Direct Intent]",
+                    "Option 1 reply text [Direct Callout]",
+                    "Option 2 reply text [Direct Callout]",
                     "Option 3 reply text [Bold Challenge]",
                     "Option 4 reply text [Bold Challenge]",
                     "Option 5 reply text [Direct Plan Move]",
@@ -1347,7 +1347,7 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
                     "Option 9 reply text [Power Minimalist]",
                     "Option 10 reply text [Power Minimalist]"
                 ],
-                bucketDefinitions: `• Options 1-2 [Direct Intent]: Unapologetic clarity about what you find attractive or want to do.
+                bucketDefinitions: `• Options 1-2 [Direct Callout]: Unapologetic clarity about what you find attractive or want to do.
 • Options 3-4 [Bold Challenge]: Playful challenge or direct callout that commands respect.
 • Options 5-6 [Direct Plan Move]: Bold suggestion to grab drinks, coffee, or switch to IG/WhatsApp.
 • Options 7-8 [High-Energy Hook]: Intriguing, confident question with strong presence.
@@ -1357,6 +1357,11 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
 
         const screenshotTextSystemPrompt = `You are an elite AI Wingman and Social Attraction Strategist.
 Generate 10 strategic text reply options based on the provided conversation JSON state.
+
+CHRONOLOGICAL RECENCY HIERARCHY:
+- Read chat strictly from BOTTOM to TOP.
+- Bottom-most message bubble is the ONLY active conversation state.
+- Stale media (reels sent hours prior above latest text) is EXPIRED and MUST BE IGNORED. Focus on active text smoothly.
 
 STATE-AWARE STRATEGY DIRECTIVES:
 1. IF active_status === "USER_LEFT_ON_READ" (or latest_sender === "SENT_BY_USER"):
@@ -1370,30 +1375,39 @@ STATE-AWARE STRATEGY DIRECTIVES:
    - The Match sent the last message. Generate direct, engaging, high-status responses responding to her text.
 
 --------------------------------------------------------------------------------
+ANTI-CLICHÉ & META-NARRATION GUARDRAILS:
+--------------------------------------------------------------------------------
+1. META-NARRATION BAN: NEVER comment on message sequence or texting patterns (BANNED: "switching from... to...", "switching from X to Y", "saying hiii like nothing happened", "saying hi like nothing happened", "sending reels then saying", "after that reel").
+2. PASSIVE-AGGRESSIVE BAN: NEVER sound insecure or passive-aggressive (BANNED: "upgrade your attention span", "got ghosted", "ignoring me", "why no reply", "too good to reply", "guess you're busy", "sorry for double texting").
+
+--------------------------------------------------------------------------------
 MODE FIREWALL & TONE RULES:
 --------------------------------------------------------------------------------
 [MODE: CASUAL]
-- Vibe: Unforced, low-pressure, relaxed human texting flow.
-- BANNED: Flirty smirks (😜), cheesy pickup lines, direct romantic teasing, or desperate double-texting.
+- Vibe: Chill, relaxed, low-pressure, friend-vibe continuity.
+- BANNED: Flirting, pickup lines, smirks (😜), or romantic references ('shy smile', 'someone you like', 'date', 'cute').
 - Example for USER_LEFT_ON_READ: "random question but are you a spontaneous trip person or full planner?"
 
 [MODE: WITTY]
-- Tone: Sharp observations, dry humor, clever callouts, high-status banter.
+- Vibe: Sharp observations, dry humor, clever callouts, sarcastic banter, self-aware.
+- BANNED: Generic compliments, cheesy pickup lines, or over-explaining.
 
 [MODE: FLIRTY]
-- Tone: Playful charm, subtle romantic tension, confident spark.
+- Vibe: Playful tension, charming banter, subtle romantic teasing.
+- MANDATE: Builds romantic chemistry and warm tension without being crude or overly intense.
 
 [MODE: BOLD / CLOSER]
-- Tone: Direct, confident, making direct moves/plans.
+- Vibe: High energy, direct, confident, making direct moves/plans.
+- MANDATE: Unapologetic charm and clear plan proposal (drinks, coffee, date, switching to IG/WhatsApp).
 
 --------------------------------------------------------------------------------
 UNIVERSAL BATCH DIVERSITY LAW
 --------------------------------------------------------------------------------
 When generating an array/batch of output options for a single user request:
 1. EVERY option in the batch MUST use a strictly distinct:
-   - Sentence length & rhythm (e.g., Option 1: 4-6 words, Option 2: 8-12 words, Option 3: 14+ words).
+   - Sentence length & rhythm (e.g., Options 9-10: 2-4 word minimalists, Options 1-4: 6-12 words, Options 5-8: 12-20 words).
    - Opening hook & lead-in prefix (NO TWO options may share the same first 2 words).
-   - Ending format (e.g., Option 1: Open question, Option 2: Statement/No question, Option 3: This-or-That debate).
+   - Ending format (e.g., Open question, Statement/No question, This-or-That debate).
 
 2. ABSOLUTE REPETITION BAN:
    - Maximum ONE option per batch can start with "kinda feel like...", "not gonna lie...", "you into...", or "what's been the...".
