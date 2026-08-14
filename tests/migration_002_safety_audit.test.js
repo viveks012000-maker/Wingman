@@ -77,9 +77,9 @@ assert.strictEqual(
 console.log('✔ Blocker 3 Passed: Request ID non-empty check, length bounds, and UNIQUE (user_id, request_id) verified');
 
 // -----------------------------------------------------------------------------
-// BLOCKER 4: reserve_credits Input Validation
+// BLOCKER 4: reserve_credits Input Validation & btrim function resolution
 // -----------------------------------------------------------------------------
-console.log('\n▶ [BLOCKER 4] reserve_credits Input Validation');
+console.log('\n▶ [BLOCKER 4] reserve_credits Input Validation & btrim Resolution');
 assert.strictEqual(
     migrationSql.includes('p_user_id IS NULL'),
     true,
@@ -100,7 +100,18 @@ assert.strictEqual(
     true,
     'reserve_credits must reject empty/whitespace request_id'
 );
-console.log('✔ Blocker 4 Passed: Strict input validation on UID, amount, feature, and request ID enforced in SQL');
+assert.strictEqual(
+    migrationSql.includes('pg_catalog.trim('),
+    false,
+    'Migration 002 must NOT use pg_catalog.trim('
+);
+const btrimMatches = (migrationSql.match(/pg_catalog\.btrim\(/g) || []).length;
+assert.strictEqual(
+    btrimMatches,
+    5,
+    'Migration 002 must use pg_catalog.btrim( across all 5 whitespace sanitization locations'
+);
+console.log('✔ Blocker 4 Passed: Strict input validation on UID, amount, feature, and request ID enforced with pg_catalog.btrim');
 
 // -----------------------------------------------------------------------------
 // BLOCKER 5: Revoke Client TRUNCATE & Privilege Lockdown

@@ -18,7 +18,7 @@ BEGIN
     ) THEN
         ALTER TABLE public.credit_transactions 
         ADD CONSTRAINT chk_credit_transactions_request_id_not_empty 
-        CHECK (request_id IS NULL OR (pg_catalog.length(pg_catalog.trim(request_id)) > 0 AND pg_catalog.length(request_id) <= 128));
+        CHECK (request_id IS NULL OR (pg_catalog.length(pg_catalog.btrim(request_id)) > 0 AND pg_catalog.length(request_id) <= 128));
     END IF;
 END $$;
 
@@ -128,13 +128,13 @@ BEGIN
     END IF;
 
     -- 3. Validate and sanitize Feature string
-    v_clean_feature := pg_catalog.trim(pg_catalog.coalesce(p_feature, ''));
+    v_clean_feature := pg_catalog.btrim(pg_catalog.coalesce(p_feature, ''));
     IF v_clean_feature = '' OR pg_catalog.length(v_clean_feature) > 64 THEN
         RETURN pg_catalog.json_build_object('success', false, 'error_message', 'Invalid feature identifier.');
     END IF;
 
     -- 4. Validate and sanitize Request ID (Must not be null, whitespace, or exceeding 128 chars)
-    v_clean_req_id := pg_catalog.trim(pg_catalog.coalesce(p_request_id, ''));
+    v_clean_req_id := pg_catalog.btrim(pg_catalog.coalesce(p_request_id, ''));
     IF v_clean_req_id = '' OR pg_catalog.length(v_clean_req_id) > 128 THEN
         RETURN pg_catalog.json_build_object('success', false, 'error_message', 'Invalid or missing idempotency request ID.');
     END IF;
@@ -221,7 +221,7 @@ BEGIN
         RETURN pg_catalog.json_build_object('success', false, 'error_message', 'Invalid user ID.');
     END IF;
 
-    v_clean_req_id := pg_catalog.trim(pg_catalog.coalesce(p_request_id, ''));
+    v_clean_req_id := pg_catalog.btrim(pg_catalog.coalesce(p_request_id, ''));
     IF v_clean_req_id = '' OR pg_catalog.length(v_clean_req_id) > 128 THEN
         RETURN pg_catalog.json_build_object('success', false, 'error_message', 'Invalid request ID.');
     END IF;
@@ -257,7 +257,7 @@ BEGIN
         RETURN pg_catalog.json_build_object('success', false, 'error_message', 'Invalid user ID.');
     END IF;
 
-    v_clean_req_id := pg_catalog.trim(pg_catalog.coalesce(p_request_id, ''));
+    v_clean_req_id := pg_catalog.btrim(pg_catalog.coalesce(p_request_id, ''));
     IF v_clean_req_id = '' OR pg_catalog.length(v_clean_req_id) > 128 THEN
         RETURN pg_catalog.json_build_object('success', false, 'error_message', 'Invalid request ID.');
     END IF;
