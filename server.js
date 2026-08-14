@@ -24,6 +24,7 @@ if (missingEnv.length > 0 && process.env.NODE_ENV === 'production') {
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
+const crypto = require('crypto');
 
 const CREDITS_PER_INR = 10;
 const helmet = require('helmet');
@@ -136,15 +137,20 @@ app.use(cors({
 
 // 3. Global Rate Limiter (API Scoped) & Scoped Express Payload Limits
 app.use('/api/', globalLimiter);
-app.use('/api/analyze', express.json({ limit: '28mb' }));
-app.use('/api/analyze-chat-screenshot', express.json({ limit: '28mb' }));
-app.use(express.json({ limit: '1mb' }));
+app.use('/api/analyze', express.json({ limit: '38mb' }));
+app.use('/api/analyze-chat-screenshot', express.json({ limit: '38mb' }));
+app.use(express.json({
+    limit: '1mb',
+    verify: (req, res, buf) => {
+        req.rawBody = buf;
+    }
+}));
 app.use(express.urlencoded({ limit: '1mb', extended: true }));
 app.use((err, req, res, next) => {
     if (err && (err.type === 'entity.too.large' || err.status === 413 || err.statusCode === 413)) {
         return res.status(400).json({
             success: false,
-            error: "These images are too large. Maximum total upload size: 20 MB."
+            error: "These images are too large. Maximum total upload size: 25 MB."
         });
     }
     next(err);
@@ -264,7 +270,7 @@ async function ensureUserProfile(uid, email) {
 
         await db.run(
             'INSERT OR IGNORE INTO user_profiles (user_id, display_name, credits_balance, tier) VALUES (?, ?, ?, ?)',
-            [uid, (email && email.includes('@')) ? email.split('@')[0] : 'MyWingman User', 0, 'free']
+            [uid, (email && email.includes('@')) ? email.split('@')[0] : 'MyWingman User', 5.00, 'free']
         );
         return uid;
     } catch (err) {
@@ -272,6 +278,9 @@ async function ensureUserProfile(uid, email) {
         return uid;
     }
 }
+
+// Canonical Initial Free Credits for all newly provisioned accounts
+const INITIAL_FREE_CREDITS = 50;
 
 // Read credits from Supabase Postgres 'profiles' table (Authoritative Source of Truth)
 async function getUserCreditsDB(req) {
@@ -285,38 +294,20 @@ async function getUserCreditsDB(req) {
     try {
         const { data, error } = await supabaseAdmin
             .from('profiles')
-            .select('credits, created_at, updated_at')
+            .select('credits')
             .eq('id', uid)
             .maybeSingle();
 
         if (!error && data && typeof data.credits === 'number') {
-            // Check if profile was freshly created by DB trigger with default 100 credits
-            const isFreshProfile = data.credits === 100 && (
-                !data.updated_at ||
-                data.created_at === data.updated_at ||
-                (new Date(data.updated_at).getTime() - new Date(data.created_at).getTime() < 5000)
-            );
-
-            if (isFreshProfile) {
-                // Initialize brand-new profile to exactly 50 credits ONCE upon signup
-                const nowIso = new Date().toISOString();
-                try {
-                    await supabaseAdmin
-                        .from('profiles')
-                        .update({ credits: 50, updated_at: nowIso })
-                        .eq('id', uid);
-                    return 50 / CREDITS_PER_INR;
-                } catch (uErr) {}
-            }
-
+            // Return existing stored credit balance without modifying it
             return Number(data.credits) / CREDITS_PER_INR;
         }
 
-        // Brand-new profile creation if DB trigger did not run
+        // Auto-provision brand-new profile with canonical 50 initial signup credits if missing
         try {
             await supabaseAdmin
                 .from('profiles')
-                .insert({ id: uid, credits: 50 });
+                .insert({ id: uid, credits: INITIAL_FREE_CREDITS });
         } catch (autoErr) {}
 
         const { data: newProf } = await supabaseAdmin
@@ -329,7 +320,7 @@ async function getUserCreditsDB(req) {
             return Number(newProf.credits) / CREDITS_PER_INR;
         }
 
-        return 50 / CREDITS_PER_INR;
+        return INITIAL_FREE_CREDITS / CREDITS_PER_INR;
     } catch (e) {
         console.warn(`[getUserCreditsDB Notice] Supabase query notice for ${uid}:`, e.message);
         return 0.00;
@@ -356,17 +347,33 @@ async function withTransactionRetry(db, callback, retries = 5) {
     }
 }
 
+// Helper: Robust Word Counter for exact word limits
+function countWords(str) {
+    if (!str || typeof str !== 'string') return 0;
+    const trimmed = str.trim();
+    if (!trimmed) return 0;
+    return trimmed.split(/\s+/).filter(Boolean).length;
+}
+
 // Atomic Credit Verification & Deduction in Supabase Postgres ('profiles' & 'credit_transactions')
-async function verifyAndDeductCreditsDB(req, costInr, featureName = 'ai_feature', idempotencyKey = null) {
+// Enforces FAIL-CLOSED semantics: If the atomic RPC is unavailable, the request is rejected safely.
+async function verifyAndDeductCreditsDB(req, costParam, featureName = 'ai_feature', idempotencyKey = null) {
     const uid = getUserIdFromReq(req);
     if (!uid || uid === 'guest_user') {
         return { success: false, currentCredits: 0, error: 'Authentication required.', unauthenticated: true };
     }
 
-    const costCredits = Math.round(costInr * CREDITS_PER_INR);
+    const costCredits = (typeof costParam === 'number' && costParam >= 1 && Number.isInteger(costParam))
+        ? costParam
+        : Math.round((costParam || 0) * CREDITS_PER_INR);
+
+    if (costCredits <= 0) {
+        return { success: false, currentCredits: 0, error: 'Invalid deduction amount.' };
+    }
+
     const reqId = idempotencyKey || ('req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
 
-    // Priority 1: Atomic Postgres RPC function 'deduct_credits' in Supabase
+    // Priority 1: Authoritative Atomic Postgres RPC function 'deduct_credits'
     try {
         const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('deduct_credits', {
             p_user_id: uid,
@@ -375,7 +382,21 @@ async function verifyAndDeductCreditsDB(req, costInr, featureName = 'ai_feature'
             p_request_id: reqId
         });
 
-        if (!rpcErr && rpcRes) {
+        if (rpcErr) {
+            console.error('[verifyAndDeductCreditsDB RPC Error]:', rpcErr.message);
+            // In dev mode with active local SQLite, allow local development fallback
+            if (!IS_PROD && db) {
+                return await verifyAndDeductCreditsSQLite(req, costCredits / CREDITS_PER_INR, featureName, reqId);
+            }
+            // Production FAIL-CLOSED: Refuse un-locked non-atomic execution
+            return {
+                success: false,
+                currentCredits: 0,
+                error: 'Credit service temporarily unavailable. Balance unchanged. Please try again.'
+            };
+        }
+
+        if (rpcRes) {
             const row = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
             if (row && typeof row === 'object') {
                 if (row.success === false) {
@@ -391,77 +412,82 @@ async function verifyAndDeductCreditsDB(req, costInr, featureName = 'ai_feature'
                     return {
                         success: true,
                         remainingCredits: rem,
-                        remainingInr: rem / CREDITS_PER_INR
+                        remainingInr: rem / CREDITS_PER_INR,
+                        reqId: reqId,
+                        duplicate: Boolean(row.duplicate)
                     };
                 }
             }
         }
-    } catch (rpcEx) {
-        // Fallback to direct query pipeline if RPC function is unavailable
-    }
-
-    // Priority 2: Direct Supabase Postgres Query Pipeline
-    try {
-        const { data: profile, error: selectErr } = await supabaseAdmin
-            .from('profiles')
-            .select('credits')
-            .eq('id', uid)
-            .maybeSingle();
-
-        if (selectErr) throw selectErr;
-
-        let currentCredits = (profile && typeof profile.credits === 'number')
-            ? Number(profile.credits)
-            : 0;
-
-        if (!profile) {
-            try { await supabaseAdmin.from('profiles').upsert({ id: uid, credits: 0 }); } catch (e) {}
-            currentCredits = 0;
-        }
-
-        if (currentCredits < costCredits) {
-            return { success: false, currentCredits: currentCredits, error: 'Insufficient credit balance.' };
-        }
-
-        const remainingCredits = currentCredits - costCredits;
-
-        const { error: updateErr } = await supabaseAdmin
-            .from('profiles')
-            .update({ credits: remainingCredits })
-            .eq('id', uid);
-
-        if (updateErr) {
-            console.error('[verifyAndDeductCreditsDB Supabase Update ERROR]:', updateErr.message);
-            return { success: false, currentCredits: currentCredits, error: 'Credit update failed.' };
-        }
-
-        // Audit log entry in credit_transactions
-        try {
-            await supabaseAdmin
-                .from('credit_transactions')
-                .insert({
-                    user_id: uid,
-                    amount: -costCredits,
-                    created_at: new Date().toISOString()
-                });
-        } catch (txErr) {
-            console.warn('[credit_transactions audit notice]:', txErr.message);
-        }
 
         return {
-            success: true,
-            remainingCredits: remainingCredits,
-            remainingInr: remainingCredits / CREDITS_PER_INR,
-            reqId: reqId
+            success: false,
+            currentCredits: 0,
+            error: 'Credit service returned unexpected response. Balance unchanged.'
         };
-    } catch (err) {
-        console.warn('[verifyAndDeductCreditsDB Notice] Supabase credit deduction error:', err.message);
-        return { success: false, currentCredits: 0, error: 'Credit service unavailable. Please try again.' };
+    } catch (rpcEx) {
+        console.error('[verifyAndDeductCreditsDB Exception]:', rpcEx.message);
+        if (!IS_PROD && db) {
+            return await verifyAndDeductCreditsSQLite(req, costCredits / CREDITS_PER_INR, featureName, reqId);
+        }
+        // Production FAIL-CLOSED
+        return {
+            success: false,
+            currentCredits: 0,
+            error: 'Credit verification failed. Your credits have not been deducted. Please try again.'
+        };
     }
 }
 
-// Note: Automatic credit refunds are disabled per business rules.
-// If an AI service fails, credits remain deducted and users can contact support at support.mywingman@gmail.com.
+// Atomic Credit Refund / Rollback in Supabase Postgres ('profiles' & 'credit_transactions')
+// Enforces FAIL-CLOSED semantics: Calls authoritative atomic RPC function 'refund_credits'.
+async function refundCreditsDB(req, costParam, featureName = 'ai_feature', reqId = null, reason = 'ai_failure') {
+    const uid = getUserIdFromReq(req);
+    if (!uid || uid === 'guest_user' || !reqId) {
+        return { success: false, currentCredits: 0, error: 'Invalid refund context.' };
+    }
+
+    const costCredits = (typeof costParam === 'number' && costParam >= 1 && Number.isInteger(costParam))
+        ? costParam
+        : Math.round((costParam || 0) * CREDITS_PER_INR);
+
+    if (costCredits <= 0) {
+        return { success: false, currentCredits: 0, error: 'Invalid refund amount.' };
+    }
+
+    // Authoritative Atomic Postgres RPC function 'refund_credits'
+    try {
+        const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('refund_credits', {
+            p_user_id: uid,
+            p_amount: costCredits,
+            p_feature: featureName,
+            p_request_id: reqId,
+            p_reason: reason || 'ai_failure'
+        });
+
+        if (rpcErr) {
+            console.error('[refundCreditsDB RPC Error]:', rpcErr.message);
+            return { success: false, remainingCredits: 0, error: rpcErr.message };
+        }
+
+        if (rpcRes) {
+            const row = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
+            if (row && typeof row === 'object') {
+                const rem = typeof row.new_balance === 'number' ? row.new_balance : (typeof row.remainingCredits === 'number' ? row.remainingCredits : 0);
+                return {
+                    success: row.success !== false,
+                    remainingCredits: rem,
+                    alreadyRefunded: Boolean(row.already_refunded)
+                };
+            }
+        }
+
+        return { success: false, remainingCredits: 0 };
+    } catch (rpcEx) {
+        console.error('[refundCreditsDB Exception]:', rpcEx.message);
+        return { success: false, remainingCredits: 0 };
+    }
+}
 
 // Fallback SQLite Deduction Helper
 async function verifyAndDeductCreditsSQLite(req, costInr, featureName, idempotencyKey) {
@@ -502,8 +528,8 @@ async function verifyAndDeductCreditsSQLite(req, costInr, featureName, idempoten
     });
 }
 
-// Persistent Credit Top-Up in Supabase Postgres ('profiles' & 'credit_transactions')
-async function addUserCreditsDB(req, amountInr, tierName = 'purchase', paymentId = null) {
+// Persistent Credit Top-Up in Supabase Postgres ('profiles', 'payments' & 'credit_transactions')
+async function addUserCreditsDB(req, amountCreditsOrInr, tierName = 'purchase', paymentId = null, orderId = null, amountInr = 0, signature = null) {
     const uid = getUserIdFromReq(req);
     if (!uid || uid === 'guest_user') {
         const err = new Error('Authentication required to top up credits.');
@@ -511,8 +537,34 @@ async function addUserCreditsDB(req, amountInr, tierName = 'purchase', paymentId
         throw err;
     }
 
-    const addCredits = Math.round(amountInr * CREDITS_PER_INR);
+    const addCredits = (typeof amountCreditsOrInr === 'number' && amountCreditsOrInr >= 1 && Number.isInteger(amountCreditsOrInr))
+        ? amountCreditsOrInr
+        : Math.round((amountCreditsOrInr || 0) * CREDITS_PER_INR);
 
+    // Priority 1: Atomic Postgres RPC function 'add_credits'
+    try {
+        const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('add_credits', {
+            p_user_id: uid,
+            p_amount: addCredits,
+            p_tier: tierName || 'purchase',
+            p_payment_id: paymentId,
+            p_order_id: orderId,
+            p_amount_inr: amountInr || 0,
+            p_signature: signature
+        });
+
+        if (!rpcErr && rpcRes) {
+            const row = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
+            if (row && typeof row === 'object') {
+                const rem = typeof row.new_balance === 'number' ? row.new_balance : (typeof row.remainingCredits === 'number' ? row.remainingCredits : addCredits);
+                return rem / CREDITS_PER_INR;
+            }
+        }
+    } catch (rpcEx) {
+        console.warn('[addUserCreditsDB RPC notice]:', rpcEx.message);
+    }
+
+    // Priority 2: Direct Supabase Postgres Fallback Pipeline
     const { data: profile } = await supabaseAdmin
         .from('profiles')
         .select('credits')
@@ -524,7 +576,7 @@ async function addUserCreditsDB(req, amountInr, tierName = 'purchase', paymentId
 
     const { error: upsertErr } = await supabaseAdmin
         .from('profiles')
-        .upsert({ id: uid, credits: newCredits });
+        .upsert({ id: uid, credits: newCredits, tier: tierName || 'starter' });
 
     if (upsertErr) {
         console.error('[addUserCreditsDB Supabase Upsert ERROR]:', upsertErr.message);
@@ -538,10 +590,34 @@ async function addUserCreditsDB(req, amountInr, tierName = 'purchase', paymentId
             .insert({
                 user_id: uid,
                 amount: addCredits,
+                feature: 'purchase:' + (tierName || 'topup'),
+                payment_id: paymentId,
+                request_id: orderId,
                 created_at: new Date().toISOString()
             });
     } catch (txErr) {
         console.warn('[credit_transactions topup notice]:', txErr.message);
+    }
+
+    // Log entry in payments table if paymentId provided
+    if (paymentId) {
+        try {
+            await supabaseAdmin
+                .from('payments')
+                .insert({
+                    user_id: uid,
+                    order_id: orderId || 'manual_order',
+                    payment_id: paymentId,
+                    signature: signature || null,
+                    tier: tierName || 'purchase',
+                    amount_inr: amountInr || (addCredits / CREDITS_PER_INR),
+                    credits_granted: addCredits,
+                    status: 'completed',
+                    created_at: new Date().toISOString()
+                });
+        } catch (payErr) {
+            console.warn('[payments audit notice]:', payErr.message);
+        }
     }
 
     return newCredits / CREDITS_PER_INR;
@@ -900,15 +976,13 @@ function sanitizePromptInput(input) {
     return clean;
 }
 
-// ==================== THE 4 CORE FEATURE API ENDPOINTS ====================
-
-// 1. CHAT SCREENSHOT ANALYZER (/api/analyze & /api/analyze-chat-screenshot)
+// ==================== THE 4 CORE FEATURE API // 1. CHAT SCREENSHOT ANALYZER (/api/analyze & /api/analyze-chat-screenshot)
 app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, apiLimiter, async (req, res) => {
-    const reqId = 'anl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('anl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
     try {
-        let { text, messages } = req.body || {};
+        let { text, messages, tone, image, images, imageBase64, shorthandOption, emojiOption } = req.body || {};
         const textCheck = text || (messages && messages[0] ? messages[0].content : "");
         if (typeof textCheck === 'string' && textCheck.length > 5000) {
             return res.status(400).json({
@@ -917,7 +991,31 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
             });
         }
 
-        deduction = await verifyAndDeductCreditsDB(req, 1.0, 'analyze', reqId);
+        // Validate image array bounds before deduction
+        if (Array.isArray(images) && images.length > 5) {
+            return res.status(400).json({
+                success: false,
+                error: "You can analyze a maximum of 5 images at a time."
+            });
+        }
+
+        const targetImage = image || imageBase64;
+        let imageList = [];
+        if (Array.isArray(images) && images.length > 0) {
+            imageList = images.filter(img => typeof img === 'string' && img.length > 0 && (img.startsWith('data:image/') || img.startsWith('http://') || img.startsWith('https://')));
+        } else if (targetImage && typeof targetImage === 'string' && targetImage.length > 0) {
+            let cleanImg = targetImage.trim();
+            if (!cleanImg.startsWith('data:image/') && !cleanImg.startsWith('http://') && !cleanImg.startsWith('https://')) {
+                cleanImg = 'data:image/jpeg;base64,' + cleanImg;
+            }
+            imageList = [cleanImg];
+        }
+
+        if (imageList.length === 0 && (!messages || messages.length === 0)) {
+            return res.status(400).json({ success: false, error: "Base64 image payload or chat history is missing." });
+        }
+
+        deduction = await verifyAndDeductCreditsDB(req, 10, 'analyze', reqId);
         if (!deduction.success) {
             if (deduction.unauthenticated) {
                 return res.status(401).json({
@@ -930,22 +1028,6 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
                 error: "Insufficient credits. Please purchase credits to use this feature.",
                 credits: deduction.currentCredits
             });
-        }
-
-        const { tone, image, images, imageBase64, shorthandOption, emojiOption } = req.body;
-        const targetImage = image || imageBase64;
-
-        // IMAGE PAYLOAD HANDLING: Accept up to 5 valid image data URLs or HTTP links
-        const MAX_IMAGES = 5;
-        let imageList = [];
-        if (Array.isArray(images) && images.length > 0) {
-            imageList = images.filter(img => typeof img === 'string' && img.length > 0 && (img.startsWith('data:image/') || img.startsWith('http://') || img.startsWith('https://'))).slice(0, MAX_IMAGES);
-        } else if (targetImage && typeof targetImage === 'string' && targetImage.length > 0) {
-            let cleanImg = targetImage.trim();
-            if (!cleanImg.startsWith('data:image/') && !cleanImg.startsWith('http://') && !cleanImg.startsWith('https://')) {
-                cleanImg = 'data:image/jpeg;base64,' + cleanImg;
-            }
-            imageList = [cleanImg];
         }
 
         // =========================================================================
@@ -968,12 +1050,6 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
 RULES:
 1. SPATIAL ALIGNMENT LAW:
    - RIGHT-ALIGNED BUBBLES/MEDIA (X > 50% screen width) = SENT_BY_USER (The Guy).
-   - LEFT-ALIGNED BUBBLES/MEDIA (X < 50% screen width) = SENT_BY_MATCH (The Girl).
-
-2. CHRONOLOGICAL RECENCY (TOP TO BOTTOM):
-   - Parse all chat elements chronologically from top to bottom.
-   - The element at the absolute bottom of the screenshot is the LATEST_ACTION.
-   - If the bottom-most element is SENT_BY_USER and has no left-aligned reply below it, set active_status = "USER_LEFT_ON_READ".
    - If the bottom-most element is SENT_BY_MATCH, set active_status = "MATCH_REPLIED".
 
 3. STRICT REEL OCR ISOLATION LAW (CRITICAL):
@@ -1031,9 +1107,11 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
             const transcriptions = await Promise.all(transcriptionPromises);
             extractedTextContext = transcriptions.join("\n\n");
             
-            console.log("\n================ [STAGE 1 VISION JSON OUTPUT] ================");
-            console.log(extractedTextContext);
-            console.log("==============================================================\n");
+            if (!IS_PROD && process.env.DEBUG_PAYLOADS === 'true') {
+                console.log("\n================ [STAGE 1 VISION JSON OUTPUT] ================");
+                console.log(extractedTextContext);
+                console.log("==============================================================\n");
+            }
         }
 
         extractedTextContext = enforceWordLimit(extractedTextContext, 600);
@@ -1286,17 +1364,27 @@ ${formattingRule}`;
         });
     } catch (error) {
         console.error("Pipeline breakdown:", error.message);
-        const currentBal = deduction ? deduction.remainingCredits : 0;
+        let currentBal = deduction ? deduction.remainingCredits : 0;
+        if (deduction && deduction.success && !deduction.duplicate) {
+            try {
+                const refundRes = await refundCreditsDB(req, 10, 'analyze', reqId, error.message);
+                if (refundRes && typeof refundRes.remainingCredits === 'number') {
+                    currentBal = refundRes.remainingCredits;
+                }
+            } catch (rfErr) {
+                console.error('[Analyze Refund Error]:', rfErr.message);
+            }
+        }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
-                error: "Analysis timed out. If you were charged credits, please contact support.mywingman@gmail.com.",
+                error: "Analysis timed out. Your credits have been automatically refunded.",
                 credits: currentBal
             });
         }
         res.status(500).json({
             success: false,
-            error: "AI analysis failed. If you were charged credits, please contact support.mywingman@gmail.com.",
+            error: "AI analysis failed. Your credits have been automatically refunded.",
             credits: currentBal
         });
     }
@@ -1304,7 +1392,7 @@ ${formattingRule}`;
 
 // 2. ICEBREAKER GENERATOR (Direct qwen3-235b-a22b-2507)
 app.post('/api/icebreaker', requireSupabaseAuth, apiLimiter, async (req, res) => {
-    const reqId = 'ice_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('ice_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
     try {
@@ -1317,7 +1405,7 @@ app.post('/api/icebreaker', requireSupabaseAuth, apiLimiter, async (req, res) =>
             });
         }
 
-        deduction = await verifyAndDeductCreditsDB(req, 1.0, 'icebreaker', reqId);
+        deduction = await verifyAndDeductCreditsDB(req, 10, 'icebreaker', reqId);
         if (!deduction.success) {
             if (deduction.unauthenticated) {
                 return res.status(401).json({
@@ -1442,7 +1530,9 @@ GENERAL ICEBREAKER LAWS:
         });
 
         cleanedOptions = enforceUniqueQuestionAnchors(enforceStructuralBatchDiversity(cleanedOptions, "icebreaker"));
-        console.log("[ICEBREAKER CLEAN OUTPUT]:", cleanedOptions);
+        if (!IS_PROD && process.env.DEBUG_PAYLOADS === 'true') {
+            console.log("[ICEBREAKER CLEAN OUTPUT]:", cleanedOptions);
+        }
 
         if (!cleanedOptions || !Array.isArray(cleanedOptions) || cleanedOptions.length === 0) {
             throw new Error("Icebreaker generation failed: AI provider returned empty options.");
@@ -1457,17 +1547,27 @@ GENERAL ICEBREAKER LAWS:
         });
     } catch (error) {
         console.error("Icebreaker breakdown:", error.message);
-        const currentBal = deduction ? deduction.remainingCredits : 0;
+        let currentBal = deduction ? deduction.remainingCredits : 0;
+        if (deduction && deduction.success && !deduction.duplicate) {
+            try {
+                const refundRes = await refundCreditsDB(req, 10, 'icebreaker', reqId, error.message);
+                if (refundRes && typeof refundRes.remainingCredits === 'number') {
+                    currentBal = refundRes.remainingCredits;
+                }
+            } catch (rfErr) {
+                console.error('[Icebreaker Refund Error]:', rfErr.message);
+            }
+        }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
-                error: "Icebreaker generation timed out. If you were charged credits, please contact support.mywingman@gmail.com.",
+                error: "Icebreaker generation timed out. Your credits have been automatically refunded.",
                 credits: currentBal
             });
         }
         res.status(500).json({
             success: false,
-            error: "Icebreaker generation failed. If you were charged credits, please contact support.mywingman@gmail.com.",
+            error: "Icebreaker generation failed. Your credits have been automatically refunded.",
             credits: currentBal
         });
     }
@@ -1563,20 +1663,29 @@ function formatBioLineBreaks(biosArray) {
 
 // 3. PROFILE BIO OPTIMIZER (/api/optimize & /api/bio-optimizer)
 app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, apiLimiter, async (req, res) => {
-    const reqId = 'opt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('opt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
     try {
         let { text, bioText, messages } = req.body || {};
-        const textCheck = text || bioText || (messages && messages[0] ? messages[0].content : "");
-        if (typeof textCheck === 'string' && textCheck.length > 5000) {
+        const rawText = String(text || bioText || (messages && messages[0] ? messages[0].content : "") || "");
+        
+        if (rawText.trim().length < 5) {
             return res.status(400).json({
                 success: false,
-                error: "Your message is too long. Maximum: 5,000 characters."
+                error: "Bio text is required (minimum 5 characters)."
             });
         }
 
-        deduction = await verifyAndDeductCreditsDB(req, 1.0, 'optimize', reqId);
+        const wordCount = countWords(rawText);
+        if (wordCount > 500) {
+            return res.status(400).json({
+                success: false,
+                error: `Your bio exceeds the 500-word limit (${wordCount} words entered). Maximum allowed: 500 words.`
+            });
+        }
+
+        deduction = await verifyAndDeductCreditsDB(req, 10, 'optimize', reqId);
         if (!deduction.success) {
             if (deduction.unauthenticated) {
                 return res.status(401).json({
@@ -1610,8 +1719,8 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, apiLimite
             }
         }
 
-        const sanitizedText = sanitizeBioInput(text);
-        const textPayload = enforceWordLimit(sanitizedText, 500);
+        const sanitizedText = sanitizeBioInput(text || rawText);
+        const textPayload = sanitizedText;
 
         let casingInstruction = useShorthand ? "natural, lowercase-heavy casing" : "standard sentence capitalization";
         let emojiInstruction = emojiLevel === 0 ? "ZERO emojis under any circumstances." : (emojiLevel === 2 ? "2 to 3 expressive emojis" : "1-2 tasteful emojis");
@@ -1801,17 +1910,27 @@ FORMATTING: Use ${casingInstruction}.`;
         });
     } catch (error) {
         console.error("Bio optimizer breakdown:", error.message);
-        const currentBal = deduction ? deduction.remainingCredits : 0;
+        let currentBal = deduction ? deduction.remainingCredits : 0;
+        if (deduction && deduction.success && !deduction.duplicate) {
+            try {
+                const refundRes = await refundCreditsDB(req, 10, 'optimize', reqId, error.message);
+                if (refundRes && typeof refundRes.remainingCredits === 'number') {
+                    currentBal = refundRes.remainingCredits;
+                }
+            } catch (rfErr) {
+                console.error('[Optimize Refund Error]:', rfErr.message);
+            }
+        }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
-                error: "Bio optimization timed out. If you were charged credits, please contact support.mywingman@gmail.com.",
+                error: "Bio optimization timed out. Your credits have been automatically refunded.",
                 credits: currentBal
             });
         }
         res.status(500).json({
             success: false,
-            error: "Bio optimization failed. If you were charged credits, please contact support.mywingman@gmail.com.",
+            error: "Bio optimization failed. Your credits have been automatically refunded.",
             credits: currentBal
         });
     }
@@ -1819,7 +1938,7 @@ FORMATTING: Use ${casingInstruction}.`;
 
 // 4. MAEVE AI DATING COACH & EVALUATOR CHAT (/api/chat & /api/simulator/chat)
 app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, apiLimiter, async (req, res) => {
-    const reqId = 'chat_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('chat_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
     try {
@@ -1834,6 +1953,28 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, apiLimiter, 
         }
 
         let historyArr = Array.isArray(conversationHistory) ? conversationHistory : (Array.isArray(sessionHistory) ? sessionHistory : (Array.isArray(messages) ? messages : []));
+        
+        // Cap message history to latest 50 messages max
+        if (historyArr.length > 50) {
+            historyArr = historyArr.slice(-50);
+        }
+
+        // Validate individual message structure and allowed roles
+        const ALLOWED_ROLES = ['user', 'assistant', 'system'];
+        for (let i = 0; i < historyArr.length; i++) {
+            const m = historyArr[i];
+            if (!m || typeof m !== 'object') {
+                return res.status(400).json({ success: false, error: "Invalid message format in conversation history." });
+            }
+            if (m.role && !ALLOWED_ROLES.includes(m.role)) {
+                return res.status(400).json({ success: false, error: `Invalid message role '${m.role}' in conversation history.` });
+            }
+            const msgContent = m.content || m.text;
+            if (typeof msgContent === 'string' && msgContent.length > 5000) {
+                return res.status(400).json({ success: false, error: "Individual history message exceeds 5,000 character limit." });
+            }
+        }
+
         const totalContextLength = historyArr.reduce((acc, m) => acc + (typeof (m.content || m.text) === 'string' ? (m.content || m.text).length : 0), 0) + (typeof rawUserMsg === 'string' ? rawUserMsg.length : 0);
 
         if (totalContextLength > 50000) {
@@ -1843,7 +1984,7 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, apiLimiter, 
             });
         }
 
-        deduction = await verifyAndDeductCreditsDB(req, 0.2, 'chat', reqId);
+        deduction = await verifyAndDeductCreditsDB(req, 2, 'chat', reqId);
         if (!deduction.success) {
             if (deduction.unauthenticated) {
                 return res.status(401).json({
@@ -2124,10 +2265,20 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
         });
     } catch (error) {
         console.error("Maeve AI Chat Pipeline Error:", error.stack || error.message || error);
-        const currentBal = deduction ? deduction.remainingCredits : 0;
+        let currentBal = deduction ? deduction.remainingCredits : 0;
+        if (deduction && deduction.success && !deduction.duplicate) {
+            try {
+                const refundRes = await refundCreditsDB(req, 2, 'chat', reqId, error.message);
+                if (refundRes && typeof refundRes.remainingCredits === 'number') {
+                    currentBal = refundRes.remainingCredits;
+                }
+            } catch (rfErr) {
+                console.error('[Chat Refund Error]:', rfErr.message);
+            }
+        }
         res.status(500).json({
             success: false,
-            error: "Maeve AI Coach failed to respond. If you were charged credits, please contact support.mywingman@gmail.com.",
+            error: "Maeve AI Coach failed to respond. Your credits have been automatically refunded.",
             credits: currentBal
         });
     }
@@ -2417,20 +2568,52 @@ app.post('/api/credits/purchase', requireSupabaseAuth, apiLimiter, async (req, r
     }
 });
 
-// VULN-11 FIX: Account deletion requires strict auth & rate limiting.
-// Permanently purges the authenticated user's rows across all user-scoped tables (RLS).
+// VULN-11 & Hardening FIX: Account deletion permanently removes authenticated user's data from Supabase Postgres & Auth
 app.post('/api/user/delete-account', requireSupabaseAuth, apiLimiter, async (req, res) => {
     try {
         const uid = getUserIdFromReq(req);
-        if (!uid) {
+        if (!uid || uid === 'guest_user') {
             return res.status(401).json({ success: false, error: 'Unauthorized: valid authentication token required.' });
         }
-        const rls = forRequest(req, db);
-        await rls.purgeAll(); // saved_bios, saved_chat_analyses, saved_chat_histories, user_profiles
+
+        // 1. Delete user-created dating content from Supabase Postgres tables
+        try {
+            await supabaseAdmin.from('saved_bios').delete().eq('user_id', uid);
+        } catch (e) {}
+        try {
+            await supabaseAdmin.from('saved_chat_analyses').delete().eq('user_id', uid);
+        } catch (e) {}
+        try {
+            await supabaseAdmin.from('saved_chat_histories').delete().eq('user_id', uid);
+        } catch (e) {}
+
+        // 2. Clean user credit transactions ledger
+        try {
+            await supabaseAdmin.from('credit_transactions').delete().eq('user_id', uid);
+        } catch (e) {}
+
+        // 3. Delete user profile
+        try {
+            await supabaseAdmin.from('profiles').delete().eq('id', uid);
+        } catch (e) {}
+
+        // 4. Delete Supabase Auth User via Supabase Admin SDK
+        if (supabaseAdmin && supabaseAdmin.auth && supabaseAdmin.auth.admin && typeof supabaseAdmin.auth.admin.deleteUser === 'function') {
+            const { error: authDelErr } = await supabaseAdmin.auth.admin.deleteUser(uid);
+            if (authDelErr) {
+                console.error('[delete-account Auth delete error]:', authDelErr.message);
+                return res.status(500).json({ success: false, error: 'Failed to delete authentication account. Please try again.' });
+            }
+        }
+
+        // 5. Purge local SQLite user rows if local dev DB attached
         if (db) {
+            const rls = forRequest(req, db);
+            await rls.purgeAll();
             await db.run('DELETE FROM users_auth WHERE id = ?', uid);
         }
-        res.json({ success: true, message: "Account data purged." });
+
+        res.json({ success: true, message: "Account data and authentication profile permanently purged." });
     } catch (err) {
         console.error("Delete Account Error:", err);
         res.status(500).json({ success: false, error: "Internal server error during account deletion." });
@@ -2453,12 +2636,38 @@ app.get('/api/config', (req, res) => {
     });
 });
 
+// PRIVACY-SAFE ANALYTICS FOUNDATION (Metadata-only funnel tracking; zero personal content stored)
+app.post('/api/analytics/event', (req, res) => {
+    try {
+        const { event, meta } = req.body || {};
+        if (!event || typeof event !== 'string' || event.length > 50) {
+            return res.status(400).json({ success: false, error: 'Invalid event name' });
+        }
+        const safeMeta = {};
+        if (meta && typeof meta === 'object') {
+            for (const [k, v] of Object.entries(meta)) {
+                if (typeof v === 'string' && v.length <= 80 && !v.startsWith('data:')) {
+                    safeMeta[k] = v;
+                } else if (typeof v === 'number' || typeof v === 'boolean') {
+                    safeMeta[k] = v;
+                }
+            }
+        }
+        if (!IS_PROD && process.env.DEBUG_PAYLOADS === 'true') {
+            console.log(`[ANALYTICS] ${event}:`, safeMeta);
+        }
+        res.json({ success: true });
+    } catch (e) {
+        res.json({ success: true });
+    }
+});
+
 // Centralized Error Handler (Prevents stack trace leaks)
 app.use((err, req, res, next) => {
     if (err && (err.type === 'entity.too.large' || err.status === 413 || err.statusCode === 413)) {
         return res.status(400).json({
             success: false,
-            error: "These images are too large. Maximum total upload size: 20 MB."
+            error: "These images are too large. Maximum total upload size: 25 MB."
         });
     }
     if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {

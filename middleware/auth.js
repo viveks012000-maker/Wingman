@@ -69,14 +69,17 @@ async function deriveIdentity(token) {
         } catch (e) {}
     }
 
-    // 2) Local application JWT — cryptographically signed with our JWT_SECRET.
-    try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const id = decoded.userId || decoded.id || decoded.sub || null;
-        if (id) {
-            return { id: String(id), email: decoded.email || '', provider: 'app' };
-        }
-    } catch (e) {}
+    // 2) Local application JWT — cryptographically signed with our JWT_SECRET (DEV ONLY).
+    const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
+    if (!isProduction) {
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET);
+            const id = decoded.userId || decoded.id || decoded.sub || null;
+            if (id) {
+                return { id: String(id), email: decoded.email || '', provider: 'app' };
+            }
+        } catch (e) {}
+    }
 
     // 3) Supabase access token — validated against the Supabase Auth server.
     return validateSupabaseToken(token);

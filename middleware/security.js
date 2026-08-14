@@ -28,10 +28,10 @@ const authLimiter = rateLimit({
     legacyHeaders: false
 });
 
-// 3. Core AI Endpoints Rate Limiter: Max 60 requests / minute per User ID / IP (User-aware)
+// 3. Core AI Endpoints Rate Limiter: Max 30 requests / minute per User ID / IP (User-aware)
 const apiLimiter = rateLimit({
     windowMs: 60 * 1000,
-    max: 60,
+    max: 30,
     keyGenerator: (req) => {
         return (req.user && (req.user.id || req.user.sub)) ? String(req.user.id || req.user.sub) : (req.ip || '127.0.0.1');
     },

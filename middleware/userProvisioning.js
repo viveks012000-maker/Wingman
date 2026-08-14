@@ -53,7 +53,7 @@ function createUserProvisioningMiddleware(dbGetter) {
                         try {
                             await db.run(
                                 'INSERT OR IGNORE INTO user_profiles (user_id, display_name, credits_balance, tier) VALUES (?, ?, ?, ?)',
-                                [uid, (email && email.includes('@')) ? email.split('@')[0] : 'MyWingman User', 0, 'free']
+                                [uid, (email && email.includes('@')) ? email.split('@')[0] : 'MyWingman User', 5.00, 'free']
                             );
                         } catch (e) {}
                     }

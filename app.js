@@ -84,6 +84,55 @@
     }
     window.getApiBase = getApiBase;
 
+    function countWords(str) {
+        if (!str || typeof str !== 'string') return 0;
+        const trimmed = str.trim();
+        if (!trimmed) return 0;
+        return trimmed.split(/\s+/).filter(Boolean).length;
+    }
+    window.countWords = countWords;
+
+    // ============================================================
+    // PRIVACY-SAFE FUNNEL ANALYTICS FOUNDATION
+    // Never transmits screenshots, private chat texts, bios, or names.
+    // Transmits only anonymized operational metadata.
+    // ============================================================
+    function trackWingmanEvent(eventName, metadata) {
+        if (!eventName || typeof eventName !== 'string') return;
+        try {
+            const safeMeta = {};
+            if (metadata && typeof metadata === 'object') {
+                for (const [k, v] of Object.entries(metadata)) {
+                    if (typeof v === 'string' && (v.length > 80 || v.startsWith('data:') || k.toLowerCase().includes('text') || k.toLowerCase().includes('bio') || k.toLowerCase().includes('prompt') || k.toLowerCase().includes('message'))) {
+                        continue;
+                    }
+                    if (typeof v === 'number' || typeof v === 'boolean' || (typeof v === 'string' && v.length <= 80)) {
+                        safeMeta[k] = v;
+                    }
+                }
+            }
+            safeMeta.timestamp = new Date().toISOString();
+            
+            if (typeof window.dispatchEvent === 'function') {
+                window.dispatchEvent(new CustomEvent('wingman_analytics', { detail: { event: eventName, meta: safeMeta } }));
+            }
+            if (Array.isArray(window.dataLayer)) {
+                window.dataLayer.push({ event: eventName, ...safeMeta });
+            }
+            
+            const token = window.currentSupabaseUser ? (window.currentSupabaseSession && window.currentSupabaseSession.access_token) : null;
+            fetch((window.getApiBase ? window.getApiBase() : '') + '/api/analytics/event', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+                },
+                body: JSON.stringify({ event: eventName, meta: safeMeta })
+            }).catch(() => {});
+        } catch (_) {}
+    }
+    window.trackWingmanEvent = trackWingmanEvent;
+
     // ============================================================
     // GLOBAL STATE & LIFECYCLE
     // ============================================================
@@ -1311,12 +1360,13 @@ STRICT LAWS:
             const btn3 = $("runAuditBtn");
             const auditCounter = $("auditBioCharCounter");
             if (ai && auditCounter) {
-                const len = ai.value.length;
-                auditCounter.textContent = `${len.toLocaleString()} / 5,000`;
-                auditCounter.style.color = len > 5000 ? '#ef4444' : (len > 4500 ? '#f59e0b' : 'rgba(148, 163, 184, 0.6)');
+                const words = countWords(ai.value);
+                auditCounter.textContent = `${words} / 500 words`;
+                auditCounter.style.color = words > 500 ? '#ef4444' : (words > 450 ? '#f59e0b' : 'rgba(148, 163, 184, 0.6)');
             }
             if (btn3) {
-                const isAuditValid = ai && ai.value.trim().length >= 5 && ai.value.length <= 5000;
+                const words = ai ? countWords(ai.value) : 0;
+                const isAuditValid = ai && ai.value.trim().length >= 5 && words <= 500;
                 const isBtn3Disabled = isLocked || !isAuditValid || isLoading;
                 btn3.disabled = isBtn3Disabled;
                 btn3.classList.toggle("opacity-40", isLocked || !isAuditValid);
@@ -2319,8 +2369,8 @@ STRICT LAWS:
         }
     };
 
-    window.confirmPermanentDeletion = function (e) {
-        if (e) e.preventDefault();
+    window.confirmPermanentDeletion = async function (e) {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
         const btn = $("confirmDeleteAccountBtn");
         if (btn) {
             btn.disabled = true;
@@ -2329,15 +2379,39 @@ STRICT LAWS:
 
         try {
             const apiBase = getApiBase();
-            fetch(apiBase + '/api/user/delete-account', { method: 'POST', credentials: 'include' }).catch(function () {});
-        } catch (err) {}
+            const headers = { 'Content-Type': 'application/json' };
+            const token = window.getSupabaseAccessToken ? window.getSupabaseAccessToken() : null;
+            if (token) {
+                headers['Authorization'] = 'Bearer ' + token;
+            }
 
-        setTimeout(function () {
+            const response = await fetch(apiBase + '/api/user/delete-account', {
+                method: 'POST',
+                headers: headers,
+                credentials: 'include'
+            });
+
+            const data = await response.json().catch(function () { return {}; });
+
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Account deletion failed on server.');
+            }
+
             try { safeStorage.clear(); } catch (err) {}
+            if (window.supabase) {
+                try { await window.supabase.auth.signOut(); } catch (sErr) {}
+            }
             window.closeDeleteAccountModal();
-            window.showToast("Account profile & data mapping permanently purged.", "warning");
+            window.showToast("Account profile & data permanently purged.", "warning");
             setTimeout(function () { window.location.href = "index.html"; }, 800);
-        }, 1200);
+        } catch (err) {
+            console.error('[Delete Account Error]:', err);
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="material-symbols-outlined text-[16px]">delete_forever</span><span>Delete Permanently</span>';
+            }
+            window.showToast(err.message || "Failed to delete account. Please try again.", "error");
+        }
     };
 
     // ============================================================
@@ -2399,8 +2473,8 @@ STRICT LAWS:
             const iceRes = $("icebreakResultsState");
             const optRes = $("optimizer-results-container") ? $("optimizeResultsState") : null;
 
+            // Retain uploaded screenshots in-memory only to prevent localStorage quota exhaustion
             const payload = {
-                uploadedFiles: state.uploadedFiles || [],
                 lifecycle: state.lifecycle || "EMPTY",
                 activeTab: state.activeTab || "analyzeSection",
                 activeTone: state.activeTone || "Witty",
@@ -2427,12 +2501,15 @@ STRICT LAWS:
             const data = JSON.parse(raw);
             if (!data) return;
 
-            if (data.activeTranscriptCache) state.activeTranscriptCache = data.activeTranscriptCache;
-
-            if (Array.isArray(data.uploadedFiles) && data.uploadedFiles.length > 0) {
-                state.uploadedFiles = data.uploadedFiles;
-                renderThumbnailGrid();
+            // Security & Storage hygiene: ignore and purge any legacy persisted screenshot base64 strings
+            if (data.uploadedFiles) {
+                delete data.uploadedFiles;
+                try {
+                    safeStorage.set(SESSION_KEY, JSON.stringify(data));
+                } catch (e) {}
             }
+
+            if (data.activeTranscriptCache) state.activeTranscriptCache = data.activeTranscriptCache;
 
             if (data.activeTone) {
                 state.activeTone = data.activeTone;
@@ -2582,6 +2659,10 @@ STRICT LAWS:
             return null;
         }
 
+        const idempotencyKey = (payload && payload.idempotencyKey) || ('cli_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8));
+        if (payload) payload.idempotencyKey = idempotencyKey;
+
+        trackWingmanEvent('generation_started', { endpoint: endpoint });
         const maxRetries = 2;
         let attempt = 0;
 
@@ -2599,6 +2680,7 @@ STRICT LAWS:
                     'Content-Type': 'application/json',
                     'X-User-Id': userHeaderId,
                     'X-User-Email': userHeaderEmail,
+                    'X-Idempotency-Key': idempotencyKey,
                     ...authHeaders
                 };
 
@@ -2622,6 +2704,7 @@ STRICT LAWS:
                     }
 
                     if (response.status === 402) {
+                        trackWingmanEvent('credits_exhausted', { endpoint: endpoint, currentCredits: state.credits || 0 });
                         await window.checkCreditBalance();
                         if (typeof window.showToast === 'function') {
                             window.showToast(errJson.error || ("Insufficient credits. Current balance: " + (state.credits || 0) + " credits. Please top up."), "warning");
@@ -2633,6 +2716,7 @@ STRICT LAWS:
                     if (typeof errJson.credits === "number") {
                         window.updateUICredits(errJson.credits);
                     }
+                    trackWingmanEvent('generation_failed', { endpoint: endpoint, status: response.status });
                     const err = new Error(errJson.error || "Generation request failed. If you were charged credits, please contact support.mywingman@gmail.com.");
                     err.status = response.status;
                     err.credits = errJson.credits;
@@ -2644,11 +2728,13 @@ STRICT LAWS:
                     state.credits = data.credits;
                     syncCredits();
                 }
+                trackWingmanEvent('generation_succeeded', { endpoint: endpoint, remainingCredits: data.credits });
                 return data.options || data.text || data.reply || (data.choices && data.choices[0] && (data.choices[0].message ? data.choices[0].message.content : data.choices[0].message)) || "";
             } catch (err) {
                 attempt++;
                 console.warn(`API attempt ${attempt} failed:`, err.message);
                 if (attempt > maxRetries) {
+                    trackWingmanEvent('generation_failed', { endpoint: endpoint, status: err.status || 500 });
                     window.showToast("Strategic generation failed. (Credit preserved)", "warning");
                     setTimeout(function() {
                         window.showToast("🛡️ Credit Shield Active: Your credits are completely safe.", "shield", true);
@@ -2787,6 +2873,7 @@ STRICT LAWS:
 
             copyBtn.addEventListener('click', () => {
                 navigator.clipboard.writeText(cardText).then(() => {
+                    trackWingmanEvent('reply_copied', { feature: containerId, optionIndex: index + 1 });
                     copyLabel.textContent = 'Copied!';
                     copyIcon.textContent = 'check';
                     copyBtn.classList.add('text-emerald-400');
@@ -3025,11 +3112,12 @@ STRICT LAWS:
         const ai = $("auditBioInput");
         let raw = ai ? ai.value.trim() : "";
         if (raw.length < 5) {
-            window.showNotification("Input Required", "You must enter a valid text input of at least 5 characters first.", "error");
+            window.showNotification("Input Required", "You must enter a valid bio of at least 5 characters first.", "error");
             return;
         }
-        if (raw.length > 5000) {
-            window.showNotification("Length Limit Exceeded", "Your message is too long. Maximum: 5,000 characters.", "error");
+        const bioWords = countWords(raw);
+        if (bioWords > 500) {
+            window.showNotification("Word Limit Exceeded", `Your bio exceeds the 500-word limit (${bioWords} words entered). Maximum allowed: 500 words.`, "error");
             return;
         }
         raw = enforceWordLimitClient(raw, 500);
@@ -3292,10 +3380,10 @@ STRICT LAWS:
         html += '<button type="button" onclick="window.retryLastTurn()" style="background: rgba(168, 85, 247, 0.2); border: 1px solid rgba(168, 85, 247, 0.4); color: #c084fc; font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">↺ Retry Turn</button>';
         html += '</div>';
 
-        html += '<div style="color: #cbd5e1; font-size: 12px; margin-bottom: 4px;"><strong>Feedback:</strong> ' + (evalData.critique || '') + '</div>';
+        html += '<div style="color: #cbd5e1; font-size: 12px; margin-bottom: 4px;"><strong>Feedback:</strong> ' + esc(evalData.critique || '') + '</div>';
 
         if (evalData.alternative) {
-            html += '<div style="color: #a855f7; font-size: 11.5px; background: rgba(168, 85, 247, 0.1); padding: 6px 10px; border-radius: 8px; border: 1px dashed rgba(168, 85, 247, 0.3); margin-top: 4px;"><strong>Suggested High-Status Line:</strong> "' + (evalData.alternative || '') + '"</div>';
+            html += '<div style="color: #a855f7; font-size: 11.5px; background: rgba(168, 85, 247, 0.1); padding: 6px 10px; border-radius: 8px; border: 1px dashed rgba(168, 85, 247, 0.3); margin-top: 4px;"><strong>Suggested High-Status Line:</strong> "' + esc(evalData.alternative || '') + '"</div>';
         }
 
         card.innerHTML = html;
@@ -3490,6 +3578,11 @@ STRICT LAWS:
         safeStorage.set('wingman_terms_accepted', 'true');
         const modal = document.getElementById('interstitialModal');
         if (modal) modal.classList.add('hidden');
+    };
+
+    window.showUnreadableErrorModal = function() {
+        const modal = document.getElementById('unreadableErrorModal');
+        if (modal) modal.classList.remove('hidden');
     };
 
     window.closeUnreadableErrorModal = function(e) {

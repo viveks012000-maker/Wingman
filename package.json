@@ -9,7 +9,7 @@
     "backend": "node --watch server.js",
     "build:css": "npx @tailwindcss/cli -i ./input.css -o ./output.css --minify",
     "watch:css": "npx @tailwindcss/cli -i ./input.css -o ./output.css --watch",
-    "test": "jest --detectOpenHandles --forceExit"
+    "test": "node tests/run_all_tests.js"
   },
   "keywords": [],
   "author": "",

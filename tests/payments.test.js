@@ -26,10 +26,10 @@ async function runPaymentTests() {
         await autoProvisionUser(mockReq, {}, () => {});
 
         const profile = await db.get('SELECT * FROM user_profiles WHERE user_id = ?', [testUserId]);
-        if (!profile || profile.credits_balance !== 0) {
-            throw new Error(`Expected initial balance 0, got ${profile ? profile.credits_balance : 'null'}`);
+        if (!profile || profile.credits_balance !== 5.00) {
+            throw new Error(`Expected initial balance 5.00 (50 credits), got ${profile ? profile.credits_balance : 'null'}`);
         }
-        console.log("✅ TEST 1 PASSED: Payment test user auto-provisioned with 0 initial credits.");
+        console.log("✅ TEST 1 PASSED: Payment test user auto-provisioned with 50 initial credits (5.00 INR).");
         passed++;
     } catch (err) {
         console.error("❌ TEST 1 FAILED:", err.message);

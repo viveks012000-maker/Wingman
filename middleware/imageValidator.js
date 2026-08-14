@@ -11,7 +11,11 @@
  */
 
 function validateImagePayload(req, res, next) {
-    if (req.path !== '/api/analyze' || req.method !== 'POST') {
+    const isAnalyzeRoute = req.path === '/api/analyze' || 
+                           req.path === '/api/analyze-chat-screenshot' || 
+                           req.originalUrl.startsWith('/api/analyze');
+                           
+    if (!isAnalyzeRoute || req.method !== 'POST') {
         return next();
     }
 
@@ -29,8 +33,8 @@ function validateImagePayload(req, res, next) {
     }
 
     const ALLOWED_MIME_REGEX = /^data:image\/(jpeg|jpg|png|webp|gif|heic|heif);base64,/i;
-    const MAX_PER_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
-    const MAX_TOTAL_BYTES = 20 * 1024 * 1024; // 20 MB
+    const MAX_PER_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB per image
+    const MAX_TOTAL_BYTES = 25 * 1024 * 1024; // 25 MB total for up to 5 images
 
     let totalDecodedBytes = 0;
 
@@ -51,8 +55,16 @@ function validateImagePayload(req, res, next) {
         }
 
         // Estimate decoded base64 byte size
-        const base64Data = imgStr.includes(',') ? imgStr.split(',')[1] : imgStr;
-        const estimatedBytes = Math.ceil((base64Data.length * 3) / 4);
+        const base64Data = imgStr.includes(',') ? imgStr.split(',')[1].trim() : imgStr.trim();
+        const base64Clean = base64Data.replace(/[\r\n\s]+/g, '');
+        if (!imgStr.startsWith('http://') && !imgStr.startsWith('https://') && !/^[A-Za-z0-9+/=]+$/.test(base64Clean)) {
+            return res.status(400).json({
+                success: false,
+                error: `Invalid or malformed base64 image data at index ${i}.`
+            });
+        }
+
+        const estimatedBytes = Math.ceil((base64Clean.length * 3) / 4);
 
         if (estimatedBytes > MAX_PER_IMAGE_BYTES) {
             return res.status(400).json({
@@ -67,7 +79,7 @@ function validateImagePayload(req, res, next) {
     if (totalDecodedBytes > MAX_TOTAL_BYTES) {
         return res.status(400).json({
             success: false,
-            error: 'These images are too large. Maximum total upload size: 20 MB.'
+            error: 'These images are too large. Maximum total upload size: 25 MB.'
         });
     }
 

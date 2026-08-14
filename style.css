@@ -48,3 +48,17 @@ button, a, .tone-chip, .vibe-chip, .bio-style-chip, .nav-tab-mobile, .nav-tab-de
     border-color: rgba(239, 68, 68, 0.8) !important;
     box-shadow: 0 0 15px rgba(239, 68, 68, 0.4) !important;
 }
+
+/* Mobile Safe Area & Dynamic Viewport Height Support */
+:root {
+    --app-height: 100vh;
+}
+@supports (height: 100dvh) {
+    :root {
+        --app-height: 100dvh;
+    }
+}
+.mobile-safe-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
+}
+

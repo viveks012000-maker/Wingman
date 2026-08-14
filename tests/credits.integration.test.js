@@ -37,10 +37,10 @@ async function runEndToEndTests() {
         if (!profile || profile.user_id !== testUid) {
             throw new Error("Failed to auto-provision user profile row.");
         }
-        if (profile.credits_balance !== 0) {
-            throw new Error(`Expected 0 initial balance, got ${profile.credits_balance}`);
+        if (profile.credits_balance !== 5.00) {
+            throw new Error(`Expected 5.00 (50 credits) initial balance, got ${profile.credits_balance}`);
         }
-        console.log("✅ TEST 1 PASSED: Zero-touch user auto-provisioning initialized profile with 0 credits.");
+        console.log("✅ TEST 1 PASSED: Zero-touch user auto-provisioning initialized profile with 50 credits (5.00 INR).");
         passed++;
     } catch (err) {
         console.error("❌ TEST 1 FAILED:", err.message);

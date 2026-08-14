@@ -1583,10 +1583,10 @@
                     <div class="flex flex-col gap-2">
                         <div class="flex items-center justify-between">
                             <label class="font-label text-xs uppercase tracking-wider text-slate-400" for="auditBioInput">Your Current Profile Bio</label>
-                            <span id="auditBioCharCounter" class="text-[11px] font-mono text-slate-500">0 / 5,000</span>
+                            <span id="auditBioCharCounter" class="text-[11px] font-mono text-slate-500">0 / 500 words</span>
                         </div>
                         <div class="rounded-2xl p-1 bg-black/40 backdrop-blur-md border border-white/10">
-                            <textarea id="auditBioInput" class="bio-input-field w-full bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-3.5 text-white focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all resize-none font-body text-sm min-h-[185px] placeholder:text-slate-500" placeholder="Paste your current profile bio (min 5 chars)..." spellcheck="false" oninput="window.updateButtonStates()"></textarea>
+                            <textarea id="auditBioInput" class="bio-input-field w-full bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-3.5 text-white focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all resize-none font-body text-sm min-h-[185px] placeholder:text-slate-500" placeholder="Paste your current profile bio (max 500 words)..." spellcheck="false" oninput="window.updateButtonStates()"></textarea>
                         </div>
                     </div>
 
@@ -2263,9 +2263,7 @@
         </div>
     </div>
 
-    <!-- Supabase JS Client & Main Application Bundles -->
-    <script src="vendor/supabase.min.js"></script>
-    <script src="supabaseClient.js"></script>
+    <!-- Main Application Bundle -->
     <script src="app.js"></script>
 </body>
 </html>

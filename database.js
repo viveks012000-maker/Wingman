@@ -58,7 +58,7 @@ async function initializeDatabase() {
             user_id TEXT PRIMARY KEY,
             display_name TEXT,
             avatar_url TEXT,
-            credits_balance REAL DEFAULT 0,
+            credits_balance REAL DEFAULT 5.00,
             tier TEXT DEFAULT 'free',
             FOREIGN KEY (user_id) REFERENCES users_auth(id) ON DELETE CASCADE
         )
