@@ -836,70 +836,87 @@ function applyFormattingRules(text, shorthandOption, emojiOption) {
 }
 
 async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArray, temperature, maxTokens, timeoutMs, topP) {
-    let targetModel = modelIdentifier;
-    if (!targetModel.includes("/")) {
-        targetModel = "qwen/" + targetModel;
+    const rawBaseUrl = process.env.AICREDITS_BASE_URL || "https://api.aicredits.in/v1";
+    const baseUrl = rawBaseUrl.replace(/\/+$/, '');
+
+    // Support both raw model identifier and prefixed model identifier
+    let candidateModels = [modelIdentifier];
+    if (!modelIdentifier.includes("/")) {
+        candidateModels.push("qwen/" + modelIdentifier);
+    } else {
+        candidateModels.push(modelIdentifier.replace(/^qwen\//, ''));
     }
+    candidateModels = [...new Set(candidateModels)];
 
-    const payload = {
-        model: targetModel,
-        messages: messagesArray,
-        temperature: temperature
-    };
-    if (maxTokens) {
-        payload.max_tokens = maxTokens;
-    }
-    if (topP !== null && topP !== undefined) {
-        payload.top_p = topP;
-    }
+    let lastErr = null;
+    for (const targetModel of candidateModels) {
+        const payload = {
+            model: targetModel,
+            messages: messagesArray,
+            temperature: temperature
+        };
+        if (maxTokens) {
+            payload.max_tokens = maxTokens;
+        }
+        if (topP !== null && topP !== undefined) {
+            payload.top_p = topP;
+        }
 
-    const baseUrl = process.env.AICREDITS_BASE_URL || "https://api.aicredits.in/v1";
+        const fetchOptions = {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://localhost:3000",
+                "X-Title": "My Wingman App"
+            },
+            body: JSON.stringify(payload)
+        };
 
-    const fetchOptions = {
-        method: "POST",
-        headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:3000",
-            "X-Title": "My Wingman App"
-        },
-        body: JSON.stringify(payload)
-    };
+        let timer = null;
+        if (timeoutMs) {
+            const controller = new AbortController();
+            fetchOptions.signal = controller.signal;
+            timer = setTimeout(() => controller.abort(), timeoutMs);
+        }
 
-    let timer = null;
-    if (timeoutMs) {
-        const controller = new AbortController();
-        fetchOptions.signal = controller.signal;
-        timer = setTimeout(() => controller.abort(), timeoutMs);
-    }
+        try {
+            const response = await fetch(baseUrl + "/chat/completions", fetchOptions);
+            if (timer) clearTimeout(timer);
 
-    try {
-        const response = await fetch(baseUrl + "/chat/completions", fetchOptions);
-        if (timer) clearTimeout(timer);
-
-        if (!response.ok) {
-            const errText = await response.text();
-            const err = new Error(`OpenRouter API Failure [${targetModel}]: ${response.status} - ${errText}`);
-            err.statusCode = response.status;
+            if (!response.ok) {
+                const errText = await response.text();
+                const err = new Error(`AI API Failure [${targetModel}]: ${response.status} - ${errText}`);
+                err.statusCode = response.status;
+                lastErr = err;
+                if (response.status === 400 || response.status === 404) {
+                    continue;
+                }
+                throw err;
+            }
+            const data = await response.json();
+            if (data.error) {
+                throw new Error(`AI API Error: ${data.error.message || JSON.stringify(data.error)}`);
+            }
+            if (!data.choices || data.choices.length === 0) {
+                throw new Error(`AI API returned no choices. Response: ${JSON.stringify(data)}`);
+            }
+            return data.choices[0].message.content;
+        } catch (err) {
+            if (timer) clearTimeout(timer);
+            if (err.name === 'AbortError') {
+                const timeoutErr = new Error("Analysis timed out. Please try again.");
+                timeoutErr.isTimeout = true;
+                throw timeoutErr;
+            }
+            lastErr = err;
+            if (err.statusCode === 400 || err.statusCode === 404) {
+                continue;
+            }
             throw err;
         }
-        const data = await response.json();
-        if (data.error) {
-            throw new Error(`OpenRouter API Error: ${data.error.message || JSON.stringify(data.error)}`);
-        }
-        if (!data.choices || data.choices.length === 0) {
-            throw new Error(`OpenRouter API returned no choices. Response: ${JSON.stringify(data)}`);
-        }
-        return data.choices[0].message.content;
-    } catch (err) {
-        if (timer) clearTimeout(timer);
-        if (err.name === 'AbortError') {
-            const timeoutErr = new Error("Analysis timed out. Please try again.");
-            timeoutErr.isTimeout = true;
-            throw timeoutErr;
-        }
-        throw err;
     }
+    throw lastErr || new Error(`AI API call failed for model ${modelIdentifier}`);
 }
 
 // Helper function to query OpenRouter dynamically with automatic key failover
@@ -1053,8 +1070,8 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
 
         // =========================================================================
         // DUAL-MODEL VISION & CHAT STATE PIPELINE
-        // STAGE 1: Vision Extraction & Spatial Parsing via google/gemini-2.5-flash
-        // STAGE 2: State-Aware Strategy & Reply Generation via qwen/qwen2.5-vl-72b-instruct
+        // STAGE 1: Vision Extraction & Spatial Parsing via qwen3.5-flash-02-23
+        // STAGE 2: State-Aware Strategy & Reply Generation via qwen3-235b-a22b-2507
         // =========================================================================
 
         let extractedTextContext = "";
@@ -1071,9 +1088,11 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
 RULES:
 1. SPATIAL ALIGNMENT LAW:
    - RIGHT-ALIGNED BUBBLES/MEDIA (X > 50% screen width) = SENT_BY_USER (The Guy).
+   - LEFT-ALIGNED BUBBLES/MEDIA (X <= 50% screen width) = SENT_BY_MATCH (The Girl).
    - If the bottom-most element is SENT_BY_MATCH, set active_status = "MATCH_REPLIED".
+   - If the bottom-most element is SENT_BY_USER, set active_status = "USER_LEFT_ON_READ".
 
-3. STRICT REEL OCR ISOLATION LAW (CRITICAL):
+2. STRICT REEL OCR ISOLATION LAW (CRITICAL):
    - ABSOLUTE BAN ON REEL THUMBNAIL OCR: Shared Reels/Videos are visual media cards. You are STRICTLY FORBIDDEN from reading, OCR-ing, transcribing, or extracting text overlay, captions, creator handles, or video title text inside video reel frames or thumbnail cards (FORBIDDEN: "Nvidia", "Nemotron", "Ultra", video titles, creator overlays).
    - Shared Reels MUST ONLY be represented in JSON as type: "SHARED_REEL" and text: "[Video Reel]".
    - ONLY extract text from actual chat text speech bubbles.
@@ -1089,7 +1108,7 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
   "match_has_replied": false
 }`;
 
-            console.log(`Executing Stage 1: Optical Vision & Spatial Parsing for ${imageList.length} screenshot(s) using google/gemini-2.5-flash...`);
+            console.log(`Executing Stage 1: Optical Vision & Spatial Parsing for ${imageList.length} screenshot(s) using qwen3.5-flash-02-23...`);
             const transcriptionPromises = imageList.map(async (imgUrl, i) => {
                 try {
                     const cleanImgUrl = typeof imgUrl === 'string' ? imgUrl.trim().replace(/[\r\n]+/g, '') : imgUrl;
@@ -1106,21 +1125,10 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
                             ]
                         }
                     ];
-                    let singleTranscript = "";
-                    try {
-                        singleTranscript = await queryOpenRouter("google/gemini-2.5-flash", visionMessages, 0.1, 400, 25000);
-                    } catch(vPrimaryErr) {
-                        console.warn(`Primary vision model (google/gemini-2.5-flash) failed for screenshot ${i + 1}, trying fallback:`, vPrimaryErr.message);
-                        try {
-                            singleTranscript = await queryOpenRouter("qwen/qwen2.5-vl-72b-instruct", visionMessages, 0.1, 400, 25000);
-                        } catch(vFallbackErr) {
-                            console.warn(`Secondary vision model failed for screenshot ${i + 1}, trying tertiary fallback:`, vFallbackErr.message);
-                            singleTranscript = await queryOpenRouter("google/gemini-2.5-flash", visionMessages, 0.1, 400, 25000);
-                        }
-                    }
+                    const singleTranscript = await queryOpenRouter("qwen3.5-flash-02-23", visionMessages, 0.1, 400, 25000);
                     return `--- ${positionTag} ---\n${singleTranscript}`;
                 } catch (vErr) {
-                    console.warn(`Vision extraction fallback triggered for screenshot ${i + 1}:`, vErr.message);
+                    console.warn(`Vision extraction error for screenshot ${i + 1}:`, vErr.message);
                     return `{"chat_history":[{"sender":"SENT_BY_USER","type":"SHARED_REEL","text":"[Video Reel]"},{"sender":"SENT_BY_USER","type":"TEXT","text":"Hiii"}],"latest_sender":"SENT_BY_USER","active_status":"USER_LEFT_ON_READ","match_has_replied":false}`;
                 }
             });
@@ -1308,14 +1316,9 @@ ${formattingRule}`;
             { role: "user", content: `Here is the parsed conversation JSON state from Stage 1:\n"${extractedTextContext}"\n\nActive Response Mode: ${modeConfig.name}. Return the JSON object with 10 state-aware options matching this mode now.` }
         ];
 
-        console.log(`Executing Stage 2: Generating 10 strategic response cards for mode ${modeConfig.name} using qwen/qwen2.5-vl-72b-instruct...`);
+        console.log(`Executing Stage 2: Generating 10 strategic response cards for mode ${modeConfig.name} using qwen3-235b-a22b-2507...`);
         let finalCardsOutput = "";
-        try {
-            finalCardsOutput = await queryOpenRouter("qwen/qwen2.5-vl-72b-instruct", generationMessages, 0.20, 800, 25000);
-        } catch(gErr) {
-            console.warn("Primary generation model (qwen/qwen2.5-vl-72b-instruct) fallback triggered:", gErr.message);
-            finalCardsOutput = await queryOpenRouter("qwen3-235b-a22b-2507", generationMessages, 0.20, 800, 25000);
-        }
+        finalCardsOutput = await queryOpenRouter("qwen3-235b-a22b-2507", generationMessages, 0.20, 800, 25000);
 
         let optionsList = [];
         try {
