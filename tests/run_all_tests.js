@@ -16,7 +16,8 @@ const testSuites = [
     { name: '12. Screenshot Analyzer Full End-to-End Integration', file: 'analyzer_full_e2e_integration.test.js' },
     { name: '13. Public SEO Files (robots.txt & sitemap.xml)', file: 'seo_files.test.js' },
     { name: '14. Security Hardening & Audit Verification', file: 'security_hardening_audit.test.js' },
-    { name: '15. Runtime Cross-Feature Isolation & Button State', file: 'runtime_cross_feature_isolation.test.js' }
+    { name: '15. Runtime Cross-Feature Isolation & Button State', file: 'runtime_cross_feature_isolation.test.js' },
+    { name: '16. Credit Balance & Authoritative Auth Runtime', file: 'credit_balance_auth_runtime.test.js' }
 ];
 
 console.log('========================================================================');

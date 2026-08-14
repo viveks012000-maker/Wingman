@@ -101,10 +101,10 @@
                 const resp = await fetch((apiBase || '') + '/api/credits', { headers: headers });
                 if (resp.ok) {
                     const creditData = await resp.json();
-                    if (creditData && creditData.data && typeof creditData.data.credits_inr === 'number') {
-                        return Math.round(creditData.data.credits_inr * 10);
-                    } else if (creditData && typeof creditData.credits === 'number') {
+                    if (creditData && typeof creditData.credits === 'number') {
                         return creditData.credits;
+                    } else if (creditData && creditData.data && typeof creditData.data.credits_inr === 'number') {
+                        return Math.round(creditData.data.credits_inr * 10);
                     }
                 }
             }

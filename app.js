@@ -147,7 +147,8 @@
     let activeSimulatorThread = [];
 
     const state = {
-        credits: 0,
+        credits: null,
+        creditsStatus: "idle",
         activeTab: "analyzeSection",
         activeTone: "Witty",
         selectedTone: "Witty",
@@ -282,78 +283,138 @@ STRICT LAWS:
 
     function saveCredits(val) {
         try {
-            const key = window.getUserKey("wingman_credits");
-            safeStorage.set(key, val);
+            if (typeof val === 'number') {
+                const key = window.getUserKey("wingman_credits");
+                safeStorage.set(key, val);
+            }
         } catch (e) {}
     }
 
     window.loadUserCreditState = function(user) {
         try {
-            const isAuth = safeStorage.get("wingman_authenticated") === "true" || (user && user.id);
-            if (!isAuth) {
-                window.updateUICredits(0);
-                return;
+            if (user && user.id) {
+                window.checkCreditBalance();
             }
-            window.checkCreditBalance();
         } catch (e) {}
     };
 
     function syncCredits() {
-        saveCredits(state.credits);
-        const label = state.credits + " Credit" + (state.credits === 1 ? "" : "s");
-        const desk = $("desktopCreditCount");
-        if (desk) desk.textContent = label;
-        const mob = $("mobileCreditCount");
-        if (mob) mob.textContent = label;
-        const hud = $("hudScoreBadge");
-        if (hud) hud.textContent = state.credits + " Credits";
+        if (typeof state.credits === 'number') {
+            saveCredits(state.credits);
+            const label = state.credits + " Credit" + (state.credits === 1 ? "" : "s");
+            const desk = $("desktopCreditCount");
+            if (desk) desk.textContent = label;
+            const mob = $("mobileCreditCount");
+            if (mob) mob.textContent = label;
+            const hud = $("hudScoreBadge");
+            if (hud) hud.textContent = state.credits + " Credits";
+        }
     }
 
     window.updateUICredits = function (amount) {
-        state.credits = typeof amount === 'number' ? amount : 0;
-        syncCredits();
+        if (typeof amount === 'number') {
+            state.credits = amount;
+            state.creditsStatus = "loaded";
+            syncCredits();
+        } else if (amount === null) {
+            state.credits = null;
+            state.creditsStatus = "loading";
+        }
     };
 
     // Supabase Postgres Direct Profile Credit Sync – Reads 'profiles' table directly
     window.checkCreditBalance = async function () {
+        state.creditsStatus = "loading";
         try {
-            const user = window.currentSupabaseUser;
+            // Authoritative session retrieval via Supabase auth.getSession()
+            let session = null;
+            if (window.supabaseClient && window.supabaseClient.auth && typeof window.supabaseClient.auth.getSession === 'function') {
+                try {
+                    const { data, error } = await window.supabaseClient.auth.getSession();
+                    if (!error && data && data.session) {
+                        session = data.session;
+                        window.currentSupabaseSession = session;
+                        window.currentSupabaseUser = session.user;
+                    }
+                } catch (sessErr) {
+                    console.warn('[CreditSync] Notice querying Supabase session:', sessErr);
+                }
+            }
+            if (!session) {
+                session = window.currentSupabaseSession;
+            }
+
+            const user = session ? session.user : window.currentSupabaseUser;
             const userId = user ? (user.id || user.email) : null;
             if (!userId) {
-                window.updateUICredits(0);
-                return 0;
+                // Session is still restoring or user is not logged in.
+                // DO NOT set credits to 0!
+                state.creditsStatus = "idle";
+                return { success: false, status: "unauthenticated", credits: state.credits };
             }
 
+            // 1. Direct Supabase 'profiles' table query
+            if (window.supabaseClient && typeof window.supabaseClient.from === 'function') {
+                try {
+                    const { data, error } = await window.supabaseClient
+                        .from('profiles')
+                        .select('credits')
+                        .eq('id', user.id || userId)
+                        .maybeSingle();
+
+                    if (!error && data && typeof data.credits === 'number') {
+                        window.updateUICredits(data.credits);
+                        return { success: true, status: "loaded", credits: data.credits };
+                    }
+                } catch (dbErr) {
+                    console.warn('[CreditSync] Supabase direct profiles query notice:', dbErr);
+                }
+            }
+
+            // 2. Fetch via fetchProfileCredits
             if (typeof window.fetchProfileCredits === 'function') {
-                const credits = await window.fetchProfileCredits(userId);
-                if (typeof credits === 'number') {
-                    window.updateUICredits(credits);
-                    return credits;
+                try {
+                    const credits = await window.fetchProfileCredits(user.id || userId);
+                    if (typeof credits === 'number') {
+                        window.updateUICredits(credits);
+                        return { success: true, status: "loaded", credits: credits };
+                    }
+                } catch (fErr) {
+                    console.warn('[CreditSync] fetchProfileCredits notice:', fErr);
                 }
             }
 
-            if (window.supabaseClient) {
-                const { data, error } = await window.supabaseClient
-                    .from('profiles')
-                    .select('credits')
-                    .eq('id', userId)
-                    .maybeSingle();
-                if (!error && data && typeof data.credits === 'number') {
-                    window.updateUICredits(data.credits);
-                    return data.credits;
+            // 3. Fallback: Authenticated query to /api/credits
+            const apiBase = typeof window.getApiBase === 'function' ? window.getApiBase() : '';
+            const authHeaders = typeof window.getSupabaseAuthHeaders === 'function' ? await window.getSupabaseAuthHeaders() : {};
+            if (authHeaders && authHeaders.Authorization) {
+                const resp = await fetch((apiBase || '') + '/api/credits', { headers: authHeaders });
+                if (resp.ok) {
+                    const resJson = await resp.json();
+                    if (resJson && typeof resJson.credits === 'number') {
+                        window.updateUICredits(resJson.credits);
+                        return { success: true, status: "loaded", credits: resJson.credits };
+                    } else if (resJson && resJson.data && typeof resJson.data.credits_inr === 'number') {
+                        const count = Math.round(resJson.data.credits_inr * 10);
+                        window.updateUICredits(count);
+                        return { success: true, status: "loaded", credits: count };
+                    }
                 }
             }
+
+            // If balance cannot be verified, record error state without setting credits to 0
+            state.creditsStatus = "error";
+            return { success: false, status: "error", credits: state.credits };
         } catch (e) {
             console.warn('[CreditSync] Error syncing credits from Supabase profiles:', e);
+            state.creditsStatus = "error";
+            return { success: false, status: "error", credits: state.credits, error: e };
         }
-        return state.credits;
     };
     window.fetchAndSyncUserCredits = window.checkCreditBalance;
 
     // DEPRECATED: no local deduction; kept as no‑op for backward compatibility
     window.deductUserCreditBalance = async function (cost) {
-        // Credit deduction is now fully server‑side.
-        // This function only syncs the balance from the server.
         try {
             await window.checkCreditBalance();
         } catch (e) {
@@ -361,19 +422,28 @@ STRICT LAWS:
         }
     };
 
-    // Checks local balance after syncing with server
-    function isUserAuthenticated() {
-        return safeStorage.get("wingman_authenticated") === "true" ||
-               safeStorage.get("wingman_user_authenticated") === "true" ||
-               sessionStorage.getItem("wingman_authenticated") === "true" ||
-               localStorage.getItem("wingman_user_authenticated") === "true" ||
-               Boolean(window.currentSupabaseUser) ||
-               Boolean(window.currentSupabaseSession);
+    // Authoritative Authentication Check using real Supabase session
+    async function isUserAuthenticated() {
+        if (window.supabaseClient && window.supabaseClient.auth && typeof window.supabaseClient.auth.getSession === 'function') {
+            try {
+                const { data, error } = await window.supabaseClient.auth.getSession();
+                if (!error && data && data.session && data.session.user && data.session.access_token) {
+                    window.currentSupabaseSession = data.session;
+                    window.currentSupabaseUser = data.session.user;
+                    return true;
+                }
+            } catch (e) {}
+        }
+        if (window.currentSupabaseSession && window.currentSupabaseSession.access_token && window.currentSupabaseUser) {
+            return true;
+        }
+        return false;
     }
+    window.isUserAuthenticated = isUserAuthenticated;
 
     async function hasSufficientCredits(cost) {
         cost = cost || 10;
-        const isAuth = isUserAuthenticated();
+        const isAuth = await isUserAuthenticated();
         if (!isAuth) {
             if (typeof window.showToast === 'function') {
                 window.showToast("Authentication required to use AI features. Please sign in.", "warning");
@@ -384,22 +454,36 @@ STRICT LAWS:
             return false;
         }
 
-        try {
+        // If credits unknown or loading, fetch now
+        if (state.credits === null || state.creditsStatus === 'loading' || state.creditsStatus === 'idle') {
             await window.checkCreditBalance();
-        } catch (e) {
-            console.warn("Credit sync failed, using cached balance:", e);
         }
+
+        // If credits still unknown or in error state after check
+        if (state.credits === null || state.creditsStatus === 'error') {
+            const syncResult = await window.checkCreditBalance();
+            if (!syncResult || !syncResult.success || typeof state.credits !== 'number') {
+                if (typeof window.showToast === 'function') {
+                    window.showToast("Unable to verify credit balance. Please check your connection and try again.", "warning");
+                }
+                return false;
+            }
+        }
+
+        // Authoritative numeric balance is confirmed
         if (state.credits < cost) {
             if (typeof window.showToast === 'function') {
-                window.showToast("Insufficient credits. Current balance: " + (state.credits || 0) + " credits. Please top up.", "warning");
+                window.showToast("Insufficient credits. Current balance: " + state.credits + " credits. Please top up.", "warning");
             }
             if (typeof window.openPurchaseModal === 'function') {
                 window.openPurchaseModal();
             }
             return false;
         }
+
         return true;
     }
+    window.hasSufficientCredits = hasSufficientCredits;
 
     // ============================================================
     // UI HELPERS
@@ -1942,7 +2026,7 @@ STRICT LAWS:
     window.simulateDemoPurchase = async function (creditAmount, btnEl) {
         creditAmount = creditAmount || (state.selectedTier && state.selectedTier.credits) || 600;
 
-        const isAuth = isUserAuthenticated();
+        const isAuth = await isUserAuthenticated();
         if (!isAuth) {
             if (typeof window.showToast === 'function') {
                 window.showToast("Please sign in to purchase credits.", "warning");
@@ -2698,7 +2782,7 @@ STRICT LAWS:
     // API HELPER – handles 402 with credit sync
     // ============================================================
     window.generateWingmanResponse = async function (endpoint, payload) {
-        const isAuth = isUserAuthenticated();
+        const isAuth = await isUserAuthenticated();
         if (!isAuth) {
             if (typeof window.showToast === 'function') window.showToast("Authentication required to use AI features. Please sign in.", "warning");
             if (typeof window.openAuthRequiredModal === 'function') window.openAuthRequiredModal();
