@@ -311,12 +311,17 @@ async function getUserCreditsDB(req) {
             return Number(data.credits) / CREDITS_PER_INR;
         }
 
-        // Profile does NOT exist: Return 0 credits and do NOT auto-grant 50 credits (Rule 16 / Exactly-once design)
-        return 0.00;
+        // Profile does NOT exist in Supabase: Explicit PROFILE_MISSING condition (Do NOT auto-grant 50 credits)
+        const missingErr = new Error("PROFILE_MISSING");
+        missingErr.statusCode = 404;
+        missingErr.code = "PROFILE_MISSING";
+        throw missingErr;
     } catch (e) {
         if (e.statusCode) throw e;
         console.warn(`[getUserCreditsDB Notice] Supabase query notice for ${uid}:`, e.message);
-        return 0.00;
+        const err = new Error("Failed to fetch user profile credits.");
+        err.statusCode = 503;
+        throw err;
     }
 }
 
@@ -2581,6 +2586,9 @@ app.get(['/api/credits', '/api/user/credits', '/api/credits/sync'], requireSupab
         if (err.statusCode === 401) {
             return res.status(401).json({ success: false, error: err.message || "Authentication required." });
         }
+        if (err.statusCode === 404 || err.code === 'PROFILE_MISSING' || err.message === 'PROFILE_MISSING') {
+            return res.status(404).json({ success: false, error: "PROFILE_MISSING", code: "PROFILE_MISSING" });
+        }
         res.status(500).json({ success: false, error: "Failed to fetch credit balance." });
     }
 });
@@ -2599,6 +2607,9 @@ app.all('/api/credits/verify', requireSupabaseAuth, async (req, res) => {
     } catch (err) {
         if (err.statusCode === 401) {
             return res.status(401).json({ success: false, error: err.message || "Authentication required." });
+        }
+        if (err.statusCode === 404 || err.code === 'PROFILE_MISSING' || err.message === 'PROFILE_MISSING') {
+            return res.status(404).json({ success: false, error: "PROFILE_MISSING", code: "PROFILE_MISSING" });
         }
         res.status(500).json({ success: false, error: "Failed to verify credit balance." });
     }

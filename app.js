@@ -366,6 +366,12 @@ STRICT LAWS:
                         window.updateUICredits(data.credits);
                         return { success: true, status: "loaded", credits: data.credits };
                     }
+                    if (!error && !data) {
+                        // Profile row missing in Supabase
+                        state.credits = null;
+                        state.creditsStatus = "missing_profile";
+                        return { success: false, status: "missing_profile", code: "PROFILE_MISSING" };
+                    }
                 } catch (dbErr) {
                     console.warn('[CreditSync] Supabase direct profiles query notice:', dbErr);
                 }
@@ -374,10 +380,14 @@ STRICT LAWS:
             // 2. Fetch via fetchProfileCredits
             if (typeof window.fetchProfileCredits === 'function') {
                 try {
-                    const credits = await window.fetchProfileCredits(user.id || userId);
-                    if (typeof credits === 'number') {
-                        window.updateUICredits(credits);
-                        return { success: true, status: "loaded", credits: credits };
+                    const creditsRes = await window.fetchProfileCredits(user.id || userId);
+                    if (typeof creditsRes === 'number') {
+                        window.updateUICredits(creditsRes);
+                        return { success: true, status: "loaded", credits: creditsRes };
+                    } else if (creditsRes && creditsRes.profileMissing) {
+                        state.credits = null;
+                        state.creditsStatus = "missing_profile";
+                        return { success: false, status: "missing_profile", code: "PROFILE_MISSING" };
                     }
                 } catch (fErr) {
                     console.warn('[CreditSync] fetchProfileCredits notice:', fErr);
@@ -389,6 +399,14 @@ STRICT LAWS:
             const authHeaders = typeof window.getSupabaseAuthHeaders === 'function' ? await window.getSupabaseAuthHeaders() : {};
             if (authHeaders && authHeaders.Authorization) {
                 const resp = await fetch((apiBase || '') + '/api/credits', { headers: authHeaders });
+                if (resp.status === 404) {
+                    const errData = await resp.json().catch(() => ({}));
+                    if (errData && (errData.error === 'PROFILE_MISSING' || errData.code === 'PROFILE_MISSING')) {
+                        state.credits = null;
+                        state.creditsStatus = "missing_profile";
+                        return { success: false, status: "missing_profile", code: "PROFILE_MISSING" };
+                    }
+                }
                 if (resp.ok) {
                     const resJson = await resp.json();
                     if (resJson && typeof resJson.credits === 'number') {
@@ -459,9 +477,23 @@ STRICT LAWS:
             await window.checkCreditBalance();
         }
 
+        // If profile is missing
+        if (state.creditsStatus === "missing_profile") {
+            if (typeof window.showToast === 'function') {
+                window.showToast("Your account profile could not be loaded. Please contact support or try again later.", "warning");
+            }
+            return false;
+        }
+
         // If credits still unknown or in error state after check
         if (state.credits === null || state.creditsStatus === 'error') {
             const syncResult = await window.checkCreditBalance();
+            if (syncResult && syncResult.status === "missing_profile") {
+                if (typeof window.showToast === 'function') {
+                    window.showToast("Your account profile could not be loaded. Please contact support or try again later.", "warning");
+                }
+                return false;
+            }
             if (!syncResult || !syncResult.success || typeof state.credits !== 'number') {
                 if (typeof window.showToast === 'function') {
                     window.showToast("Unable to verify credit balance. Please check your connection and try again.", "warning");

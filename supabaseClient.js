@@ -95,10 +95,16 @@
                 return data.credits;
             }
             if (!error && !data) {
-                // Profile row missing in Supabase. Query trusted backend to safely auto-provision profile (0 initial credits)
+                // Profile row missing in Supabase. Query trusted backend
                 const apiBase = typeof window.getApiBase === 'function' ? window.getApiBase() : '';
                 const headers = typeof window.getSupabaseAuthHeaders === 'function' ? await window.getSupabaseAuthHeaders() : {};
                 const resp = await fetch((apiBase || '') + '/api/credits', { headers: headers });
+                if (resp.status === 404) {
+                    const errData = await resp.json().catch(() => ({}));
+                    if (errData && (errData.error === 'PROFILE_MISSING' || errData.code === 'PROFILE_MISSING')) {
+                        return { profileMissing: true };
+                    }
+                }
                 if (resp.ok) {
                     const creditData = await resp.json();
                     if (creditData && typeof creditData.credits === 'number') {

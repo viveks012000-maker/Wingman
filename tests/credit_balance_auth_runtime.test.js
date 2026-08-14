@@ -120,6 +120,9 @@ function setupRuntimeEnvironment(options = {}) {
                         if (options.dbProfileError) {
                             return { data: null, error: new Error('DB connection failed') };
                         }
+                        if (options.dbProfileMissing) {
+                            return { data: null, error: null };
+                        }
                         if (options.dbCredits !== undefined) {
                             return { data: { credits: options.dbCredits }, error: null };
                         }
@@ -407,6 +410,57 @@ function setupRuntimeEnvironment(options = {}) {
     assert.strictEqual(envUnauth.windowMock.purchaseModalOpenCount, 0, 'Unauthenticated user MUST NOT see purchase modal');
     assert.strictEqual(envUnauth.windowMock.authModalOpenCount, 1, 'Unauthenticated user MUST see auth modal');
     console.log('✔ Test 7 Passed: Persisted flags alone do not authenticate; auth modal opens, purchase modal does not');
+
+    // -------------------------------------------------------------------------
+    // TEST 8: Auth User Exists, Profile Missing -> Explicit PROFILE_MISSING
+    // -------------------------------------------------------------------------
+    console.log('\n▶ [TEST 8] Existing Auth User with Missing Profile');
+    const envMissing = setupRuntimeEnvironment({
+        dbProfileMissing: true
+    });
+    // Configure fetch fallback for /api/credits to return 404 PROFILE_MISSING
+    envMissing.setFetch(async (url) => {
+        if (typeof url === 'string' && url.includes('/api/credits')) {
+            return {
+                ok: false,
+                status: 404,
+                json: async () => ({ success: false, error: 'PROFILE_MISSING', code: 'PROFILE_MISSING' })
+            };
+        }
+        return { ok: true, json: async () => ({}) };
+    });
+
+    const missingResult = await envMissing.sandbox.window.checkCreditBalance();
+    assert.strictEqual(missingResult.success, false);
+    assert.strictEqual(missingResult.status, 'missing_profile');
+    assert.strictEqual(missingResult.code, 'PROFILE_MISSING');
+    assert.strictEqual(envMissing.sandbox.window.state.credits, null, 'state.credits must NOT become confirmed zero');
+    assert.strictEqual(envMissing.sandbox.window.state.creditsStatus, 'missing_profile');
+
+    const missingPreCheck = await envMissing.sandbox.window.hasSufficientCredits(10);
+    assert.strictEqual(missingPreCheck, false, 'Pre-check must fail for missing profile');
+    assert.strictEqual(envMissing.windowMock.purchaseModalOpenCount, 0, 'Purchase modal MUST NOT open for missing profile');
+
+    const missingToast = envMissing.windowMock._toasts[envMissing.windowMock._toasts.length - 1];
+    assert.strictEqual(missingToast && missingToast.msg.includes('account profile could not be loaded'), true, 'Must show account profile load error toast');
+    console.log('✔ Test 8 Passed: Missing profile produces PROFILE_MISSING, state.credits remains null, zero purchase modals');
+
+    // -------------------------------------------------------------------------
+    // TEST 9: Error State Distinctions
+    // -------------------------------------------------------------------------
+    console.log('\n▶ [TEST 9] Clear Distinction Across All Error States');
+    // 1. Session unauthenticated/loading -> status 'unauthenticated' / 'idle', credits null
+    assert.strictEqual(envUnauth.sandbox.window.state.credits, null);
+    // 2. Network/query error -> status 'error', credits null
+    assert.strictEqual(env3.sandbox.window.state.creditsStatus, 'error');
+    assert.strictEqual(env3.sandbox.window.state.credits, null);
+    // 3. Genuine zero -> status 'loaded', credits 0
+    assert.strictEqual(env4.sandbox.window.state.creditsStatus, 'loaded');
+    assert.strictEqual(env4.sandbox.window.state.credits, 0);
+    // 4. Missing profile -> status 'missing_profile', credits null
+    assert.strictEqual(envMissing.sandbox.window.state.creditsStatus, 'missing_profile');
+    assert.strictEqual(envMissing.sandbox.window.state.credits, null);
+    console.log('✔ Test 9 Passed: Session loading, network error, genuine zero, and missing profile are strictly distinguished');
 
     console.log('\n🎉 ALL CREDIT BALANCE & AUTH RUNTIME TESTS PASSED!\n');
 })();
