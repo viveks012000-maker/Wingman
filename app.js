@@ -637,21 +637,21 @@ STRICT LAWS:
             const totalFilesToProcess = validFiles.length;
             const isSingleNewUpload = (totalFilesToProcess === 1 && state.uploadedFiles.length === 0);
 
-            if (isSingleNewUpload) {
-                const processedFirst = await convertHeicIfNeeded(validFiles[0]);
-                const firstDataUrl = await processImageToJpegDataUrl(processedFirst);
-                state.rawImageFile = processedFirst;
-                window.openCropModalWithDataUrl(firstDataUrl, null);
-            } else {
-                for (let i = 0; i < validFiles.length; i++) {
-                    if (state.uploadedFiles.length < 5) {
-                        const procFile = await convertHeicIfNeeded(validFiles[i]);
-                        const dUrl = await processImageToJpegDataUrl(procFile);
-                        state.uploadedFiles.push(dUrl);
-                    }
+            for (let i = 0; i < validFiles.length; i++) {
+                if (state.uploadedFiles.length < 5) {
+                    const procFile = await convertHeicIfNeeded(validFiles[i]);
+                    const dUrl = await processImageToJpegDataUrl(procFile);
+                    state.uploadedFiles.push(dUrl);
                 }
-                renderThumbnailGrid();
-                window.setLifecycleState("SELECTED");
+            }
+            renderThumbnailGrid();
+            window.setLifecycleState("SELECTED");
+            window.updateButtonStates();
+
+            if (isSingleNewUpload) {
+                state.rawImageFile = validFiles[0];
+                window.openCropModalWithDataUrl(state.uploadedFiles[0], 0);
+            } else {
                 window.showToast(validFiles.length + " screenshot(s) loaded! Click any image to edit or crop.", "success");
             }
         } catch (err) {
@@ -1147,6 +1147,7 @@ STRICT LAWS:
                 }
                 renderThumbnailGrid();
                 window.setLifecycleState("SELECTED");
+                window.updateButtonStates();
                 if (typeof window.showToast === 'function') {
                     window.showToast("Screenshot saved and added to analysis queue!", "success");
                 }
@@ -1263,9 +1264,6 @@ STRICT LAWS:
             if (res) res.classList.add("hidden");
             if (dzContainer) dzContainer.classList.remove("pointer-events-none", "opacity-60");
             if (si && state.isTermsAccepted) si.disabled = false;
-            if (btn && state.isTermsAccepted && state.uploadedFiles.length > 0 && state.uploadedFiles.length <= 5) {
-                btn.classList.remove("opacity-40", "cursor-not-allowed");
-            }
         } else if (phase === "ANALYZING") {
             toggleLaserScanner(true);
             if (scannerContainer) scannerContainer.classList.add("is-analyzing");
@@ -1302,6 +1300,7 @@ STRICT LAWS:
             }
             animateRadialScoreCounter();
         }
+        window.updateButtonStates();
         saveSessionState();
     };
 
@@ -1354,6 +1353,7 @@ STRICT LAWS:
                 btn2.classList.toggle("opacity-40", isLocked || !isBioValid);
                 btn2.classList.toggle("opacity-70", isLoading);
                 btn2.classList.toggle("cursor-not-allowed", isBtn2Disabled);
+                btn2.classList.toggle("cursor-pointer", !isBtn2Disabled);
             }
 
             const ai = $("auditBioInput");
@@ -1372,6 +1372,7 @@ STRICT LAWS:
                 btn3.classList.toggle("opacity-40", isLocked || !isAuditValid);
                 btn3.classList.toggle("opacity-70", isLoading);
                 btn3.classList.toggle("cursor-not-allowed", isBtn3Disabled);
+                btn3.classList.toggle("cursor-pointer", !isBtn3Disabled);
             }
 
             const ci = $("simulator-chat-input");
@@ -1384,12 +1385,13 @@ STRICT LAWS:
 
             const btn1 = $("runAnalysisBtn");
             if (btn1) {
-                const hasFiles = state.uploadedFiles.length > 0 || state.activeTranscriptCache;
+                const hasFiles = (state.uploadedFiles && state.uploadedFiles.length > 0) || Boolean(state.activeTranscriptCache);
                 const isBtn1Disabled = isLocked || !hasFiles || isLoading;
                 btn1.disabled = isBtn1Disabled;
                 btn1.classList.toggle("opacity-40", isLocked || !hasFiles);
                 btn1.classList.toggle("opacity-70", isLoading);
                 btn1.classList.toggle("cursor-not-allowed", isBtn1Disabled);
+                btn1.classList.toggle("cursor-pointer", !isBtn1Disabled);
             }
         } catch (e) {}
     };
