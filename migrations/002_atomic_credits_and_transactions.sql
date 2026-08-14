@@ -410,12 +410,12 @@ BEGIN
 END $$;
 
 -- Revoke all mutation and TRUNCATE privileges from client roles
-REVOKE ALL, TRUNCATE ON public.credit_transactions FROM PUBLIC, anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.credit_transactions FROM PUBLIC, anon, authenticated;
 REVOKE INSERT, UPDATE, DELETE ON public.credit_transactions FROM anon, authenticated;
 GRANT SELECT ON public.credit_transactions TO authenticated;
 GRANT ALL ON public.credit_transactions TO service_role, postgres;
 
-REVOKE ALL, TRUNCATE ON public.profiles FROM PUBLIC, anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.profiles FROM PUBLIC, anon, authenticated;
 REVOKE INSERT, UPDATE, DELETE ON public.profiles FROM anon, authenticated;
 GRANT SELECT ON public.profiles TO authenticated;
 GRANT ALL ON public.profiles TO service_role, postgres;

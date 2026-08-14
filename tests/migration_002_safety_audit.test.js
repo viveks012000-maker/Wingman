@@ -107,14 +107,19 @@ console.log('✔ Blocker 4 Passed: Strict input validation on UID, amount, featu
 // -----------------------------------------------------------------------------
 console.log('\n▶ [BLOCKER 5] Client TRUNCATE & Privilege Lockdown');
 assert.strictEqual(
-    migrationSql.includes('REVOKE ALL, TRUNCATE ON public.credit_transactions FROM PUBLIC, anon, authenticated;'),
-    true,
-    'Must revoke ALL, TRUNCATE on credit_transactions from PUBLIC, anon, authenticated'
+    migrationSql.includes('REVOKE ALL, TRUNCATE'),
+    false,
+    'Migration 002 must NOT contain invalid REVOKE ALL, TRUNCATE syntax'
 );
 assert.strictEqual(
-    migrationSql.includes('REVOKE ALL, TRUNCATE ON public.profiles FROM PUBLIC, anon, authenticated;'),
+    migrationSql.includes('REVOKE ALL PRIVILEGES ON TABLE public.credit_transactions FROM PUBLIC, anon, authenticated;'),
     true,
-    'Must revoke ALL, TRUNCATE on profiles from PUBLIC, anon, authenticated'
+    'Must revoke ALL PRIVILEGES ON TABLE on credit_transactions from PUBLIC, anon, authenticated'
+);
+assert.strictEqual(
+    migrationSql.includes('REVOKE ALL PRIVILEGES ON TABLE public.profiles FROM PUBLIC, anon, authenticated;'),
+    true,
+    'Must revoke ALL PRIVILEGES ON TABLE on profiles from PUBLIC, anon, authenticated'
 );
 assert.strictEqual(
     migrationSql.includes('REVOKE ALL ON FUNCTION public.reserve_credits'),
