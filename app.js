@@ -1389,13 +1389,17 @@ STRICT LAWS:
 
             const btn1 = $("runAnalysisBtn");
             if (btn1) {
-                const hasFiles = (state.uploadedFiles && state.uploadedFiles.length > 0) || Boolean(state.activeTranscriptCache);
-                const isBtn1Disabled = isLocked || !hasFiles || isLoading;
-                btn1.disabled = isBtn1Disabled;
-                btn1.classList.toggle("opacity-40", isLocked || !hasFiles);
-                btn1.classList.toggle("opacity-70", isLoading);
-                btn1.classList.toggle("cursor-not-allowed", isBtn1Disabled);
-                btn1.classList.toggle("cursor-pointer", !isBtn1Disabled);
+                const count = Array.isArray(state.uploadedFiles) ? state.uploadedFiles.length : 0;
+                const hasScreenshot = count >= 1 || Boolean(state.activeTranscriptCache);
+                const withinLimit = count <= 5;
+                const notLoading = !state.isLoading;
+
+                const enabled = hasScreenshot && withinLimit && notLoading;
+                btn1.disabled = !enabled;
+                btn1.classList.toggle("opacity-40", !hasScreenshot || !withinLimit);
+                btn1.classList.toggle("opacity-70", Boolean(state.isLoading));
+                btn1.classList.toggle("cursor-not-allowed", !enabled);
+                btn1.classList.toggle("cursor-pointer", enabled);
             }
         } catch (e) {}
     };

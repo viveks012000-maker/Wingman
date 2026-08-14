@@ -1,113 +1,205 @@
 /**
- * Tests: Screenshot Analyzer Credit Reservation & Zero-Charge Failure Recovery
+ * Tests: Screenshot Analyzer Credit State Machine, Idempotency & Concurrency
  */
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 
 console.log('\n============================================================');
-console.log('🧪 RUNNING SCREENSHOT ANALYZER ZERO-CHARGE FAILURE RECOVERY TESTS');
+console.log('🧪 RUNNING SCREENSHOT ANALYZER STATE MACHINE & IDEMPOTENCY TESTS');
 console.log('============================================================\n');
 
-// In-Memory Simulated Ledger to test exact state transitions (reserve -> release -> settle)
-function createSimulatedCreditLedger(initialCredits = 50) {
+// 1. Static Invariant Verification
+const migrationSql = fs.readFileSync(path.join(__dirname, '../migrations/002_atomic_credits_and_transactions.sql'), 'utf8');
+
+// Real UNIQUE constraint
+assert.strictEqual(
+    migrationSql.includes('ADD CONSTRAINT uq_credit_transactions_user_request_id UNIQUE (user_id, request_id);'),
+    true,
+    'Migration 002 must define real UNIQUE constraint on (user_id, request_id)'
+);
+
+// Non-empty request ID check constraint
+assert.strictEqual(
+    migrationSql.includes('CHECK (request_id IS NULL OR length(trim(request_id)) > 0)'),
+    true,
+    'Migration 002 must enforce non-empty request_id check constraint'
+);
+
+// Hardened explicit search paths on all SECURITY DEFINER functions
+const secDefCount = (migrationSql.match(/SECURITY DEFINER/g) || []).length;
+const searchPathCount = (migrationSql.match(/SET search_path = public, pg_temp/g) || []).length;
+assert.strictEqual(searchPathCount >= secDefCount, true, 'Every SECURITY DEFINER function must specify SET search_path = public, pg_temp');
+
+// Visible permission failures (No EXCEPTION WHEN OTHERS THEN NULL)
+assert.strictEqual(
+    migrationSql.includes('WHEN OTHERS THEN\n        NULL;'),
+    false,
+    'Migration 002 must NOT swallow permission errors'
+);
+console.log('✔ Static Invariants Verified: UNIQUE constraint, search_path hardening, non-empty check, and error visibility.');
+
+// 2. Behavioral Unit Ledger Simulation
+function createSimulatedPostgresCreditLedger(initialCredits = 50) {
     let balance = initialCredits;
-    const transactions = [];
+    const transactions = new Map(); // key: `${userId}:${requestId}`
 
     function reserveCredits(userId, amount, feature, requestId) {
-        if (!requestId || !requestId.trim()) {
-            return { success: false, error_message: 'Invalid request ID' };
+        if (!requestId || typeof requestId !== 'string' || !requestId.trim()) {
+            return { success: false, error_message: 'Invalid or missing idempotency request ID.' };
         }
+        const cleanReqId = requestId.trim();
+        const txKey = `${userId}:${cleanReqId}`;
+
         // Idempotency check
-        const existing = transactions.find(t => t.userId === userId && t.requestId === requestId);
-        if (existing) {
-            if (existing.status === 'completed' || existing.status === 'pending') {
-                return { success: true, remainingCredits: balance, duplicate: true };
-            }
+        if (transactions.has(txKey)) {
+            const existing = transactions.get(txKey);
+            return {
+                success: true,
+                remainingCredits: balance,
+                new_balance: balance,
+                duplicate: true,
+                status: existing.status
+            };
         }
+
         if (balance < amount) {
-            return { success: false, error_message: 'Insufficient credits', currentCredits: balance };
+            return {
+                success: false,
+                error_message: 'Insufficient credit balance.',
+                currentCredits: balance,
+                new_balance: balance
+            };
         }
+
         balance -= amount;
-        transactions.push({
-            id: 'tx_' + Math.random().toString(36).substr(2, 6),
+        transactions.set(txKey, {
+            id: 'tx_' + Math.random().toString(36).substring(2, 7),
             userId,
             amount: -amount,
             feature,
-            requestId,
+            requestId: cleanReqId,
             status: 'pending'
         });
-        return { success: true, remainingCredits: balance, duplicate: false };
+
+        return {
+            success: true,
+            remainingCredits: balance,
+            new_balance: balance,
+            duplicate: false
+        };
     }
 
     function settleCredits(userId, requestId) {
-        const tx = transactions.find(t => t.userId === userId && t.requestId === requestId && t.status === 'pending');
-        if (tx) {
-            tx.status = 'completed';
+        if (!requestId || typeof requestId !== 'string' || !requestId.trim()) {
+            return { success: false, error_message: 'Invalid request ID.' };
         }
-        return { success: true };
+        const txKey = `${userId}:${requestId.trim()}`;
+        if (!transactions.has(txKey)) {
+            return { success: false, error_message: 'Transaction not found.' };
+        }
+        const tx = transactions.get(txKey);
+        if (tx.status === 'pending') {
+            tx.status = 'completed';
+            return { success: true, settled: true };
+        }
+        return { success: true, settled: false, status: tx.status };
     }
 
     function releaseCredits(userId, requestId, reason = 'ai_failure') {
-        const tx = transactions.find(t => t.userId === userId && t.requestId === requestId && t.status === 'pending');
-        if (!tx) {
-            return { success: true, remainingCredits: balance, alreadyReleased: true };
+        if (!requestId || typeof requestId !== 'string' || !requestId.trim()) {
+            return { success: false, error_message: 'Invalid request ID.' };
         }
-        balance += Math.abs(tx.amount);
-        tx.status = 'cancelled';
-        tx.reason = reason;
-        return { success: true, remainingCredits: balance, released: true };
+        const txKey = `${userId}:${requestId.trim()}`;
+        if (!transactions.has(txKey)) {
+            return { success: true, remainingCredits: balance, new_balance: balance, already_settled_or_released: true };
+        }
+        const tx = transactions.get(txKey);
+        if (tx.status === 'pending') {
+            balance += Math.abs(tx.amount);
+            tx.status = 'cancelled';
+            tx.reason = reason;
+            return { success: true, remainingCredits: balance, new_balance: balance, released: true };
+        }
+        return { success: true, remainingCredits: balance, new_balance: balance, already_settled_or_released: true };
     }
 
     return {
         getBalance: () => balance,
-        getTransactions: () => transactions,
+        getTransactions: () => Array.from(transactions.values()),
         reserveCredits,
         settleCredits,
         releaseCredits
     };
 }
 
-// Test 1: Successful Flow (Reserve 10 -> Settle -> Final Cost = 10)
-const ledger1 = createSimulatedCreditLedger(50);
-const reqId1 = 'req_success_001';
-const res1 = ledger1.reserveCredits('user_123', 10, 'analyze', reqId1);
+// Test 1: Successful Analyzer Lifecycle (Initial 50 -> Reserve 10 -> Settle -> Final 40)
+const ledger1 = createSimulatedPostgresCreditLedger(50);
+const req1 = 'req_success_001';
+const res1 = ledger1.reserveCredits('user_1', 10, 'analyze', req1);
 assert.strictEqual(res1.success, true);
 assert.strictEqual(res1.remainingCredits, 40);
-assert.strictEqual(ledger1.getBalance(), 40);
+assert.strictEqual(res1.duplicate, false);
 
-ledger1.settleCredits('user_123', reqId1);
+const set1 = ledger1.settleCredits('user_1', req1);
+assert.strictEqual(set1.success, true);
+assert.strictEqual(set1.settled, true);
 assert.strictEqual(ledger1.getBalance(), 40);
-const tx1 = ledger1.getTransactions().find(t => t.requestId === reqId1);
-assert.strictEqual(tx1.status, 'completed');
-console.log('✔ Test 1 Passed: Successful analysis charges exactly 10 credits (50 -> 40, status = completed)');
+console.log('✔ Test 1 Passed: Successful Analyzer charges exactly 10 credits (50 -> 40, status = completed)');
 
-// Test 2: AI Failure Recovery (Reserve 10 -> AI Fails -> Release -> Final Cost = 0)
-const ledger2 = createSimulatedCreditLedger(50);
-const reqId2 = 'req_fail_002';
-const res2 = ledger2.reserveCredits('user_123', 10, 'analyze', reqId2);
+// Test 2: Failed Analyzer Lifecycle (Initial 50 -> Reserve 10 -> AI Fails -> Release -> Final 50)
+const ledger2 = createSimulatedPostgresCreditLedger(50);
+const req2 = 'req_fail_002';
+const res2 = ledger2.reserveCredits('user_2', 10, 'analyze', req2);
 assert.strictEqual(res2.success, true);
 assert.strictEqual(res2.remainingCredits, 40);
 
-// Simulate AI pipeline failure / timeout
-const relRes = ledger2.releaseCredits('user_123', reqId2, 'AICREDITS timeout 504');
-assert.strictEqual(relRes.success, true);
-assert.strictEqual(relRes.remainingCredits, 50);
-assert.strictEqual(ledger2.getBalance(), 50, 'Final user balance must be restored to 50');
+const rel2 = ledger2.releaseCredits('user_2', req2, 'AICREDITS timeout 504');
+assert.strictEqual(rel2.success, true);
+assert.strictEqual(rel2.released, true);
+assert.strictEqual(ledger2.getBalance(), 50, 'Balance must be restored to 50 on failure');
+console.log('✔ Test 2 Passed: Failed Analyzer releases reservation with 0 final cost (50 -> 40 -> 50)');
 
-const tx2 = ledger2.getTransactions().find(t => t.requestId === reqId2);
-assert.strictEqual(tx2.status, 'cancelled');
-console.log('✔ Test 2 Passed: AI failure restores reservation completely (Final Cost = 0 credits, balance = 50)');
+// Test 3: Duplicate Settle (Idempotent Settle)
+const setDup = ledger1.settleCredits('user_1', req1);
+assert.strictEqual(setDup.success, true);
+assert.strictEqual(setDup.settled, false, 'Duplicate settle must not re-settle');
+assert.strictEqual(ledger1.getBalance(), 40, 'Balance unchanged on duplicate settle');
+console.log('✔ Test 3 Passed: Repeated settle is idempotent and does not alter balance');
 
-// Test 3: Duplicate Request / Idempotency
-const dupRes = ledger1.reserveCredits('user_123', 10, 'analyze', reqId1);
-assert.strictEqual(dupRes.duplicate, true, 'Duplicate completed request must not charge again');
-console.log('✔ Test 3 Passed: Idempotent repeat request recognized without duplicate deduction');
+// Test 4: Duplicate Release Cannot Mint Credits
+const relDup = ledger2.releaseCredits('user_2', req2);
+assert.strictEqual(relDup.success, true);
+assert.strictEqual(relDup.already_settled_or_released, true);
+assert.strictEqual(ledger2.getBalance(), 50, 'Balance must remain 50 and NEVER become 60');
+console.log('✔ Test 4 Passed: Duplicate release cannot mint credits (balance stays 50, never 60)');
 
-// Test 4: Insufficient Balance Check
-const ledger4 = createSimulatedCreditLedger(5); // Only 5 credits
-const res4 = ledger4.reserveCredits('user_123', 10, 'analyze', 'req_low_004');
-assert.strictEqual(res4.success, false);
-assert.strictEqual(res4.currentCredits, 5);
-assert.strictEqual(ledger4.getBalance(), 5, 'Balance remains untouched when insufficient');
-console.log('✔ Test 4 Passed: Insufficient balance rejected before AI pipeline with 0 deduction');
+// Test 5: Settle/Release Race (Completed transaction cannot be released)
+const relOnCompleted = ledger1.releaseCredits('user_1', req1);
+assert.strictEqual(relOnCompleted.success, true);
+assert.strictEqual(relOnCompleted.already_settled_or_released, true);
+assert.strictEqual(ledger1.getBalance(), 40, 'Completed transaction cannot be refunded via release');
+console.log('✔ Test 5 Passed: Completed transaction cannot be released');
 
-console.log('\n🎉 ALL ZERO-CHARGE FAILURE RECOVERY & LEDGER TESTS PASSED!\n');
+// Test 6: Idempotent Repeat Request (Same request ID sequentially)
+const dupSeq = ledger1.reserveCredits('user_1', 10, 'analyze', req1);
+assert.strictEqual(dupSeq.success, true);
+assert.strictEqual(dupSeq.duplicate, true);
+assert.strictEqual(ledger1.getBalance(), 40, 'Sequential repeat reservation does not deduct again');
+console.log('✔ Test 6 Passed: Same request ID sequentially returns duplicate: true without re-deduction');
+
+// Test 7: Invalid Request IDs (NULL, empty, whitespace) Rejected
+assert.strictEqual(ledger1.reserveCredits('user_1', 10, 'analyze', null).success, false);
+assert.strictEqual(ledger1.reserveCredits('user_1', 10, 'analyze', '').success, false);
+assert.strictEqual(ledger1.reserveCredits('user_1', 10, 'analyze', '   ').success, false);
+console.log('✔ Test 7 Passed: NULL, empty, and whitespace request IDs rejected');
+
+// Test 8: Different Request IDs Treated Independently
+const req3 = 'req_independent_003';
+const res3 = ledger1.reserveCredits('user_1', 10, 'analyze', req3);
+assert.strictEqual(res3.success, true);
+assert.strictEqual(res3.remainingCredits, 30);
+assert.strictEqual(res3.duplicate, false);
+console.log('✔ Test 8 Passed: Different request IDs treated independently (40 -> 30)');
+
+console.log('\n🎉 ALL STATE MACHINE & IDEMPOTENCY TESTS PASSED!\n');

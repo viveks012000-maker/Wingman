@@ -19,15 +19,15 @@ assert.strictEqual(appHtml.includes('onclick="window.runAnalysis(event)"'), true
 
 // Ensure updateButtonStates checks uploadedFiles and sets disabled property
 assert.strictEqual(appJs.includes('const btn1 = $("runAnalysisBtn");'), true, 'updateButtonStates must manage runAnalysisBtn');
-assert.strictEqual(appJs.includes('const hasFiles = (state.uploadedFiles && state.uploadedFiles.length > 0)'), true, 'updateButtonStates checks state.uploadedFiles.length > 0');
-assert.strictEqual(appJs.includes('btn1.disabled = isBtn1Disabled;'), true, 'updateButtonStates sets native disabled property on runAnalysisBtn');
+assert.strictEqual(appJs.includes('const hasScreenshot = count >= 1 || Boolean(state.activeTranscriptCache);'), true, 'updateButtonStates checks state.uploadedFiles count');
+assert.strictEqual(appJs.includes('btn1.disabled = !enabled;'), true, 'updateButtonStates sets native disabled property on runAnalysisBtn');
 
-// 2. In-Memory Simulated State Machine Test
+// 2. Behavioral DOM Simulation Test
 function createMockAppEnvironment() {
     const state = {
         uploadedFiles: [],
         activeTranscriptCache: null,
-        isTermsAccepted: true,
+        isTermsAccepted: false, // Initially false to verify async independence
         isLoading: false,
         lifecycle: 'EMPTY'
     };
@@ -47,16 +47,17 @@ function createMockAppEnvironment() {
     };
 
     function updateButtonStates() {
-        const isLocked = !state.isTermsAccepted;
-        const isLoading = !!state.isLoading;
-        const hasFiles = (state.uploadedFiles && state.uploadedFiles.length > 0) || Boolean(state.activeTranscriptCache);
-        const isBtn1Disabled = isLocked || !hasFiles || isLoading;
+        const count = Array.isArray(state.uploadedFiles) ? state.uploadedFiles.length : 0;
+        const hasScreenshot = count >= 1 || Boolean(state.activeTranscriptCache);
+        const withinLimit = count <= 5;
+        const notLoading = !state.isLoading;
 
-        mockBtn.disabled = isBtn1Disabled;
-        mockBtn.classList.toggle("opacity-40", isLocked || !hasFiles);
-        mockBtn.classList.toggle("opacity-70", isLoading);
-        mockBtn.classList.toggle("cursor-not-allowed", isBtn1Disabled);
-        mockBtn.classList.toggle("cursor-pointer", !isBtn1Disabled);
+        const enabled = hasScreenshot && withinLimit && notLoading;
+        mockBtn.disabled = !enabled;
+        mockBtn.classList.toggle("opacity-40", !hasScreenshot || !withinLimit);
+        mockBtn.classList.toggle("opacity-70", Boolean(state.isLoading));
+        mockBtn.classList.toggle("cursor-not-allowed", !enabled);
+        mockBtn.classList.toggle("cursor-pointer", enabled);
     }
 
     return { state, mockBtn, updateButtonStates };
@@ -88,29 +89,35 @@ env.updateButtonStates();
 assert.strictEqual(env.mockBtn.disabled, false, '5 screenshots: Button must be enabled');
 console.log('✔ Test 3 Passed: 5 screenshots loaded -> Button natively enabled');
 
-// Test Case 4: Remove All Screenshots -> Button Disabled
+// Test Case 4: Asynchronous auth / terms / credit refresh occurs -> Button STILL Enabled
+env.state.isTermsAccepted = true; // Async session resolves
+env.updateButtonStates();
+assert.strictEqual(env.mockBtn.disabled, false, 'Async session update: Button must remain enabled');
+console.log('✔ Test 4 Passed: Asynchronous session/auth refresh preserves enabled button state');
+
+// Test Case 5: Remove All Screenshots -> Button Disabled
 env.state.uploadedFiles = [];
 env.updateButtonStates();
 assert.strictEqual(env.mockBtn.disabled, true, 'Removed all screenshots: Button must be disabled');
-console.log('✔ Test 4 Passed: Remove all screenshots -> Button disabled');
+console.log('✔ Test 5 Passed: Remove all screenshots -> Button disabled');
 
-// Test Case 5: Add Image After Deletion -> Button Enabled
+// Test Case 6: Add Image After Deletion -> Button Enabled
 env.state.uploadedFiles.push('data:image/jpeg;base64,/9j/4AAQSkZJRg==');
 env.updateButtonStates();
 assert.strictEqual(env.mockBtn.disabled, false, 'Re-added screenshot: Button must be enabled');
-console.log('✔ Test 5 Passed: Add screenshot after deletion -> Button re-enabled');
+console.log('✔ Test 6 Passed: Add screenshot after deletion -> Button re-enabled');
 
-// Test Case 6: Generating / Loading -> Button Temporarily Disabled
+// Test Case 7: Generating / Loading -> Button Temporarily Disabled
 env.state.isLoading = true;
 env.updateButtonStates();
 assert.strictEqual(env.mockBtn.disabled, true, 'While generating: Button must be disabled');
 assert.strictEqual(env.mockBtn.classList.contains('opacity-70'), true, 'While generating: opacity-70 must be present');
-console.log('✔ Test 6 Passed: Generating / Loading -> Button temporarily disabled with loading opacity');
+console.log('✔ Test 7 Passed: Generating / Loading -> Button temporarily disabled with loading opacity');
 
-// Test Case 7: Generation Completes / Fails -> Button Restores to Enabled
+// Test Case 8: Generation Completes / Fails with Image Retained -> Button Restores to Enabled
 env.state.isLoading = false;
 env.updateButtonStates();
 assert.strictEqual(env.mockBtn.disabled, false, 'After generation finishes: Button restores to enabled');
-console.log('✔ Test 7 Passed: After generation finishes -> Button restores to enabled state');
+console.log('✔ Test 8 Passed: After generation failure with retained image -> Button restores to enabled state');
 
 console.log('\n🎉 ALL SCREENSHOT ANALYZER BUTTON STATE TESTS PASSED!\n');

@@ -298,30 +298,22 @@ async function getUserCreditsDB(req) {
             .eq('id', uid)
             .maybeSingle();
 
-        if (!error && data && typeof data.credits === 'number') {
+        if (error) {
+            console.error(`[getUserCreditsDB Error] Failed to fetch profile for ${uid}:`, error.message);
+            const err = new Error("Failed to fetch user profile credits.");
+            err.statusCode = 503;
+            throw err;
+        }
+
+        if (data && typeof data.credits === 'number') {
             // Return existing stored credit balance without modifying it
             return Number(data.credits) / CREDITS_PER_INR;
         }
 
-        // Auto-provision brand-new profile with canonical 50 initial signup credits if missing
-        try {
-            await supabaseAdmin
-                .from('profiles')
-                .insert({ id: uid, credits: INITIAL_FREE_CREDITS });
-        } catch (autoErr) {}
-
-        const { data: newProf } = await supabaseAdmin
-            .from('profiles')
-            .select('credits')
-            .eq('id', uid)
-            .maybeSingle();
-
-        if (newProf && typeof newProf.credits === 'number') {
-            return Number(newProf.credits) / CREDITS_PER_INR;
-        }
-
-        return INITIAL_FREE_CREDITS / CREDITS_PER_INR;
+        // Profile does NOT exist: Return 0 credits and do NOT auto-grant 50 credits (Rule 16 / Exactly-once design)
+        return 0.00;
     } catch (e) {
+        if (e.statusCode) throw e;
         console.warn(`[getUserCreditsDB Notice] Supabase query notice for ${uid}:`, e.message);
         return 0.00;
     }
@@ -366,17 +358,23 @@ function acquireUserConcurrencyLock(userId) {
     return true;
 }
 function releaseUserConcurrencyLock(userId) {
-    if (userId && userId !== 'guest_user') {
+    if (userId && activeUserAiRequests.has(userId)) {
         activeUserAiRequests.delete(userId);
     }
 }
 
-// Atomic Credit Verification & Reservation in Supabase Postgres ('profiles' & 'credit_transactions')
-// Enforces FAIL-CLOSED semantics: If the atomic RPC is unavailable, the request is rejected safely.
+// =========================================================================================
+// UNIFIED ATOMIC SUPABASE POSTGRES CREDIT DEDUCTION & RESERVATION (Zero-Charge Law)
+// =========================================================================================
 async function verifyAndDeductCreditsDB(req, costParam, featureName = 'ai_feature', idempotencyKey = null) {
     const uid = getUserIdFromReq(req);
     if (!uid || uid === 'guest_user') {
-        return { success: false, currentCredits: 0, error: 'Authentication required.', unauthenticated: true };
+        return {
+            success: false,
+            currentCredits: 0,
+            unauthenticated: true,
+            error: 'Authentication required. Please sign in to use this feature.'
+        };
     }
 
     const costCredits = (typeof costParam === 'number' && costParam >= 1 && Number.isInteger(costParam))
@@ -389,7 +387,7 @@ async function verifyAndDeductCreditsDB(req, costParam, featureName = 'ai_featur
 
     const reqId = idempotencyKey || ('req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
 
-    // Priority 1: Authoritative Atomic Postgres RPC function 'reserve_credits' (or 'deduct_credits')
+    // Priority 1: Authoritative Atomic Postgres RPC function 'reserve_credits'
     try {
         if (!supabaseAdmin || !supabaseAdmin.rpc) {
             if (!IS_PROD && db && (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)) {
@@ -403,29 +401,12 @@ async function verifyAndDeductCreditsDB(req, costParam, featureName = 'ai_featur
             };
         }
 
-        let rpcRes = null;
-        let rpcErr = null;
-
-        const res1 = await supabaseAdmin.rpc('reserve_credits', {
+        const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('reserve_credits', {
             p_user_id: uid,
             p_amount: costCredits,
             p_feature: featureName,
             p_request_id: reqId
         });
-        rpcRes = res1.data;
-        rpcErr = res1.error;
-
-        // If reserve_credits RPC is not yet in live schema cache, fallback to live deduct_credits RPC
-        if (rpcErr && (rpcErr.message.includes('reserve_credits') || rpcErr.code === 'PGRST202')) {
-            const res2 = await supabaseAdmin.rpc('deduct_credits', {
-                p_user_id: uid,
-                p_amount: costCredits,
-                p_feature: featureName,
-                p_request_id: reqId
-            });
-            rpcRes = res2.data;
-            rpcErr = res2.error;
-        }
 
         if (rpcErr) {
             console.error('[verifyAndDeductCreditsDB RPC Error]:', rpcErr.message);
@@ -492,13 +473,19 @@ async function settleCreditsDB(req, reqId) {
     if (!uid || uid === 'guest_user' || !reqId) return { success: true };
     try {
         if (supabaseAdmin && supabaseAdmin.rpc) {
-            await supabaseAdmin.rpc('settle_credits', {
+            const { data, error } = await supabaseAdmin.rpc('settle_credits', {
                 p_user_id: uid,
                 p_request_id: reqId
             });
+            if (error) {
+                console.error('[settleCreditsDB RPC Error]:', error.message);
+                return { success: false, error: error.message };
+            }
+            return { success: true, data };
         }
     } catch (e) {
         console.warn('[settleCreditsDB Exception]:', e.message);
+        return { success: false, error: e.message };
     }
     return { success: true };
 }

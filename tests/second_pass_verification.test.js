@@ -41,7 +41,7 @@ console.log('✔ Test 2 Passed: Mock auth bypass strictly blocked in production'
 const serverFile = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
 assert.strictEqual(serverFile.includes('const INITIAL_FREE_CREDITS = 50;'), true, 'server.js must define INITIAL_FREE_CREDITS = 50');
-assert.strictEqual(serverFile.includes('insert({ id: uid, credits: INITIAL_FREE_CREDITS });'), true, 'getUserCreditsDB must initialize missing profile with 50 credits');
+assert.strictEqual(serverFile.includes('insert({ id: uid, credits: INITIAL_FREE_CREDITS });'), false, 'getUserCreditsDB must NOT recreate missing profile with 50 credits (Rule 16)');
 
 // Verify Fail-Closed semantics: No direct unsafe fallback on RPC failure in production
 assert.strictEqual(serverFile.includes('Production FAIL-CLOSED: Refuse un-locked non-atomic execution'), true, 'verifyAndDeductCreditsDB must fail-closed on RPC error');

@@ -3,20 +3,38 @@
 -- Authoritative Schema Migration for Supabase Postgres
 -- =========================================================================
 
--- 1. Safely add missing columns to public.credit_transactions
+-- 1. Safely add missing columns and constraints to public.credit_transactions
 ALTER TABLE public.credit_transactions ADD COLUMN IF NOT EXISTS feature TEXT;
 ALTER TABLE public.credit_transactions ADD COLUMN IF NOT EXISTS request_id TEXT;
 ALTER TABLE public.credit_transactions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'completed';
 
--- 2. Real Database Idempotency Guarantee: UNIQUE Index on (user_id, request_id)
-CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_transactions_user_req 
-ON public.credit_transactions (user_id, request_id) 
-WHERE request_id IS NOT NULL;
+-- Enforce request_id not empty check constraint
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'chk_credit_transactions_request_id_not_empty'
+    ) THEN
+        ALTER TABLE public.credit_transactions 
+        ADD CONSTRAINT chk_credit_transactions_request_id_not_empty 
+        CHECK (request_id IS NULL OR length(trim(request_id)) > 0);
+    END IF;
+END $$;
+
+-- 2. Real Database Idempotency Guarantee: UNIQUE constraint and index on (user_id, request_id)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'uq_credit_transactions_user_request_id'
+    ) THEN
+        ALTER TABLE public.credit_transactions
+        ADD CONSTRAINT uq_credit_transactions_user_request_id UNIQUE (user_id, request_id);
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_credit_transactions_user_req 
 ON public.credit_transactions (user_id, request_id);
 
--- 3. Profiles Credits: Default 50, NOT NULL, Non-negative constraint
+-- 3. Profiles Credits: Default 50 for new rows, NOT NULL, Non-negative constraint (Preserves existing balances)
 ALTER TABLE public.profiles ALTER COLUMN credits SET DEFAULT 50;
 UPDATE public.profiles SET credits = 50 WHERE credits IS NULL;
 ALTER TABLE public.profiles ALTER COLUMN credits SET NOT NULL;
@@ -93,51 +111,27 @@ AS $$
 DECLARE
     v_current_credits INTEGER;
     v_new_credits INTEGER;
-    v_existing_status TEXT;
     v_clean_req_id TEXT;
+    v_existing_tx RECORD;
 BEGIN
-    -- Validate amount
+    -- 1. Validate amount
     IF p_amount <= 0 THEN
         RETURN json_build_object('success', false, 'error_message', 'Invalid credit deduction amount.');
     END IF;
 
-    -- Validate and sanitize request ID (Must not be null or whitespace)
+    -- 2. Validate and sanitize request ID (Must not be null or whitespace)
     v_clean_req_id := TRIM(COALESCE(p_request_id, ''));
     IF v_clean_req_id = '' THEN
         RETURN json_build_object('success', false, 'error_message', 'Invalid or missing idempotency request ID.');
     END IF;
 
-    -- Idempotency check: if already completed for this request_id, return current balance without re-deduction
-    SELECT status INTO v_existing_status
-    FROM public.credit_transactions
-    WHERE user_id = p_user_id AND request_id = v_clean_req_id
-    ORDER BY created_at DESC
-    LIMIT 1;
+    -- 3. Lock profile row FOR UPDATE first to guarantee serialized per-user execution
+    SELECT credits INTO v_current_credits 
+    FROM public.profiles 
+    WHERE id = p_user_id 
+    FOR UPDATE;
 
-    IF v_existing_status = 'completed' THEN
-        SELECT credits INTO v_current_credits FROM public.profiles WHERE id = p_user_id;
-        RETURN json_build_object(
-            'success', true,
-            'remainingCredits', COALESCE(v_current_credits, 0),
-            'new_balance', COALESCE(v_current_credits, 0),
-            'duplicate', true
-        );
-    END IF;
-
-    IF v_existing_status = 'pending' THEN
-        SELECT credits INTO v_current_credits FROM public.profiles WHERE id = p_user_id;
-        RETURN json_build_object(
-            'success', true,
-            'remainingCredits', COALESCE(v_current_credits, 0),
-            'new_balance', COALESCE(v_current_credits, 0),
-            'duplicate', true
-        );
-    END IF;
-
-    -- Lock profile row for update to prevent concurrent race conditions
-    SELECT credits INTO v_current_credits FROM public.profiles WHERE id = p_user_id FOR UPDATE;
-
-    -- Strict Law: Do NOT auto-grant 50 credits to missing profiles (Rule 16)
+    -- 4. Check if profile exists (NO auto-granting 50 credits to missing profiles)
     IF v_current_credits IS NULL THEN
         RETURN json_build_object(
             'success', false,
@@ -147,7 +141,24 @@ BEGIN
         );
     END IF;
 
-    -- Insufficient balance check
+    -- 5. Atomic Idempotency Check while holding profile lock
+    SELECT id, status, amount INTO v_existing_tx
+    FROM public.credit_transactions
+    WHERE user_id = p_user_id AND request_id = v_clean_req_id
+    LIMIT 1;
+
+    IF v_existing_tx.id IS NOT NULL THEN
+        -- Request ID already exists: Return current balance as duplicate without double deduction
+        RETURN json_build_object(
+            'success', true,
+            'remainingCredits', v_current_credits,
+            'new_balance', v_current_credits,
+            'duplicate', true,
+            'status', v_existing_tx.status
+        );
+    END IF;
+
+    -- 6. Validate balance sufficiency
     IF v_current_credits < p_amount THEN
         RETURN json_build_object(
             'success', false,
@@ -157,12 +168,13 @@ BEGIN
         );
     END IF;
 
+    -- 7. Deduct from profile
     v_new_credits := v_current_credits - p_amount;
-
     UPDATE public.profiles
     SET credits = v_new_credits, updated_at = NOW()
     WHERE id = p_user_id;
 
+    -- 8. Insert transaction record in 'pending' status
     INSERT INTO public.credit_transactions (id, user_id, amount, type, feature, request_id, status, created_at)
     VALUES (gen_random_uuid(), p_user_id, -p_amount, 'feature_usage', p_feature, v_clean_req_id, 'pending', NOW());
 
@@ -185,12 +197,22 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
+DECLARE
+    v_clean_req_id TEXT;
+    v_updated_rows INTEGER;
 BEGIN
+    v_clean_req_id := TRIM(COALESCE(p_request_id, ''));
+    IF v_clean_req_id = '' THEN
+        RETURN json_build_object('success', false, 'error_message', 'Invalid request ID.');
+    END IF;
+
     UPDATE public.credit_transactions
     SET status = 'completed'
-    WHERE user_id = p_user_id AND request_id = TRIM(COALESCE(p_request_id, '')) AND status = 'pending';
+    WHERE user_id = p_user_id AND request_id = v_clean_req_id AND status = 'pending';
 
-    RETURN json_build_object('success', true);
+    GET DIAGNOSTICS v_updated_rows = ROW_COUNT;
+
+    RETURN json_build_object('success', true, 'settled', v_updated_rows > 0);
 END;
 $$;
 
@@ -212,18 +234,33 @@ DECLARE
     v_clean_req_id TEXT;
 BEGIN
     v_clean_req_id := TRIM(COALESCE(p_request_id, ''));
+    IF v_clean_req_id = '' THEN
+        RETURN json_build_object('success', false, 'error_message', 'Invalid request ID.');
+    END IF;
 
+    -- Lock profile row FOR UPDATE
+    SELECT credits INTO v_current_credits 
+    FROM public.profiles 
+    WHERE id = p_user_id 
+    FOR UPDATE;
+
+    -- Find pending transaction FOR UPDATE
     SELECT amount INTO v_pending_amount
     FROM public.credit_transactions
     WHERE user_id = p_user_id AND request_id = v_clean_req_id AND status = 'pending'
     FOR UPDATE;
 
+    -- If no pending transaction found (already settled or already released), do not restore credits
     IF v_pending_amount IS NULL THEN
-        SELECT credits INTO v_current_credits FROM public.profiles WHERE id = p_user_id;
-        RETURN json_build_object('success', true, 'remainingCredits', COALESCE(v_current_credits, 0), 'already_settled_or_released', true);
+        RETURN json_build_object(
+            'success', true, 
+            'remainingCredits', COALESCE(v_current_credits, 0), 
+            'new_balance', COALESCE(v_current_credits, 0),
+            'already_settled_or_released', true
+        );
     END IF;
 
-    SELECT credits INTO v_current_credits FROM public.profiles WHERE id = p_user_id FOR UPDATE;
+    -- Restore reserved credits exactly once
     v_new_credits := COALESCE(v_current_credits, 0) + ABS(v_pending_amount);
 
     UPDATE public.profiles
@@ -261,10 +298,13 @@ AS $$
 DECLARE
     v_current_credits INTEGER;
     v_new_credits INTEGER;
+    v_tx_req_id TEXT;
 BEGIN
     IF p_amount <= 0 THEN
         RETURN json_build_object('success', false, 'error_message', 'Credit amount must be greater than zero.');
     END IF;
+
+    v_tx_req_id := COALESCE(p_payment_id, p_order_id, 'purchase_' || gen_random_uuid()::TEXT);
 
     SELECT credits INTO v_current_credits FROM public.profiles WHERE id = p_user_id FOR UPDATE;
 
@@ -288,7 +328,7 @@ BEGIN
         p_amount, 
         'purchase', 
         COALESCE(p_tier, 'starter'), 
-        COALESCE(p_payment_id, p_order_id, 'purchase_' || NOW()::TEXT), 
+        v_tx_req_id, 
         'completed', 
         NOW()
     );
@@ -339,31 +379,25 @@ BEGIN
 END $$;
 
 -- 12. Privilege Lockdown (Revoke from client roles, grant only to backend service_role)
-DO $$
-BEGIN
-    REVOKE ALL ON FUNCTION public.reserve_credits(UUID, INTEGER, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
-    GRANT EXECUTE ON FUNCTION public.reserve_credits(UUID, INTEGER, TEXT, TEXT) TO service_role, postgres;
+REVOKE ALL ON FUNCTION public.reserve_credits(UUID, INTEGER, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.reserve_credits(UUID, INTEGER, TEXT, TEXT) TO service_role, postgres;
 
-    REVOKE ALL ON FUNCTION public.settle_credits(UUID, TEXT) FROM PUBLIC, anon, authenticated;
-    GRANT EXECUTE ON FUNCTION public.settle_credits(UUID, TEXT) TO service_role, postgres;
+REVOKE ALL ON FUNCTION public.settle_credits(UUID, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.settle_credits(UUID, TEXT) TO service_role, postgres;
 
-    REVOKE ALL ON FUNCTION public.release_credits(UUID, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
-    GRANT EXECUTE ON FUNCTION public.release_credits(UUID, TEXT, TEXT) TO service_role, postgres;
+REVOKE ALL ON FUNCTION public.release_credits(UUID, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.release_credits(UUID, TEXT, TEXT) TO service_role, postgres;
 
-    REVOKE ALL ON FUNCTION public.add_credits(UUID, INTEGER, TEXT, TEXT, TEXT, NUMERIC, TEXT) FROM PUBLIC, anon, authenticated;
-    GRANT EXECUTE ON FUNCTION public.add_credits(UUID, INTEGER, TEXT, TEXT, TEXT, NUMERIC, TEXT) TO service_role, postgres;
+REVOKE ALL ON FUNCTION public.add_credits(UUID, INTEGER, TEXT, TEXT, TEXT, NUMERIC, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.add_credits(UUID, INTEGER, TEXT, TEXT, TEXT, NUMERIC, TEXT) TO service_role, postgres;
 
-    REVOKE ALL ON FUNCTION public.deduct_credits(UUID, INTEGER, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
-    GRANT EXECUTE ON FUNCTION public.deduct_credits(UUID, INTEGER, TEXT, TEXT) TO service_role, postgres;
+REVOKE ALL ON FUNCTION public.deduct_credits(UUID, INTEGER, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.deduct_credits(UUID, INTEGER, TEXT, TEXT) TO service_role, postgres;
 
-    REVOKE INSERT, UPDATE, DELETE ON public.credit_transactions FROM anon, authenticated;
-    GRANT SELECT ON public.credit_transactions TO authenticated;
-    GRANT ALL ON public.credit_transactions TO service_role, postgres;
+REVOKE INSERT, UPDATE, DELETE ON public.credit_transactions FROM anon, authenticated;
+GRANT SELECT ON public.credit_transactions TO authenticated;
+GRANT ALL ON public.credit_transactions TO service_role, postgres;
 
-    REVOKE INSERT, UPDATE, DELETE ON public.profiles FROM anon, authenticated;
-    GRANT SELECT ON public.profiles TO authenticated;
-    GRANT ALL ON public.profiles TO service_role, postgres;
-EXCEPTION
-    WHEN OTHERS THEN
-        NULL;
-END $$;
+REVOKE INSERT, UPDATE, DELETE ON public.profiles FROM anon, authenticated;
+GRANT SELECT ON public.profiles TO authenticated;
+GRANT ALL ON public.profiles TO service_role, postgres;
