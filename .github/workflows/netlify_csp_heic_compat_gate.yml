@@ -1,0 +1,230 @@
+name: Netlify scoped CSP HEIC compatibility gate
+on:
+  push:
+    branches: [fix/netlify-csp-heic-compat]
+    paths: [.github/workflows/netlify_csp_heic_compat_gate.yml]
+permissions:
+  contents: write
+jobs:
+  verify-and-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/netlify-csp-heic-compat
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Apply guarded scoped-CSP repair
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          # 1) Landing page does not need eval; keep dashboard allowance because
+          # vendored heic2any currently requires it for iPhone/HEIC conversion.
+          index_path = Path('index.html')
+          index = index_path.read_text(encoding='utf-8')
+          old_index = "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.supabase.co;"
+          new_index = "script-src 'self' 'unsafe-inline' https://*.supabase.co;"
+          if index.count(old_index) != 1:
+              raise SystemExit(f'index CSP marker count={index.count(old_index)}')
+          index_path.write_text(index.replace(old_index, new_index, 1), encoding='utf-8')
+
+          # 2) Replace global CSP generation with document-scoped CSP.
+          build_path = Path('scripts/build-netlify-dist.js')
+          build = build_path.read_text(encoding='utf-8')
+          start = build.index('function writeSecurityFiles() {')
+          end = build.index('\nfunction verifyNoForbiddenFiles() {', start)
+          new_fn = r'''function writeSecurityFiles() {
+  const railway = 'https://wingman-production-c6ce.up.railway.app';
+
+  // heic2any.min.js currently performs runtime code generation. Keep unsafe-eval
+  // scoped to the dashboard document only so HEIC/iPhone screenshot conversion
+  // continues to work without weakening the landing or legal pages.
+  function cspFor(allowEval = false) {
+    const evalSource = allowEval ? " 'unsafe-eval'" : '';
+    return [
+      "default-src 'self' https://*.supabase.co",
+      `script-src 'self' 'unsafe-inline'${evalSource} https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co`,
+      "script-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co",
+      "script-src-attr 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "img-src 'self' data: blob: https:",
+      `connect-src 'self' https://*.supabase.co wss://*.supabase.co ${railway} https://aicredits.in`,
+      "worker-src 'self' blob:",
+      "frame-ancestors 'none'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'"
+    ].join('; ') + ';';
+  }
+
+  const strictCsp = cspFor(false);
+  const appCsp = cspFor(true);
+  const security = [
+    '/*',
+    '  X-Frame-Options: DENY',
+    '  X-Content-Type-Options: nosniff',
+    '  Referrer-Policy: strict-origin-when-cross-origin',
+    '  Permissions-Policy: camera=(), microphone=(), geolocation=()',
+    '',
+    '/',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/index.html',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/app',
+    `  Content-Security-Policy: ${appCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/app.html',
+    `  Content-Security-Policy: ${appCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/terms.html',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/privacy.html',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/refund.html',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/app.js',
+    '  Cache-Control: no-cache, must-revalidate',
+    '/config.js',
+    '  Cache-Control: no-cache, must-revalidate',
+    '/supabaseClient.js',
+    '  Cache-Control: no-cache, must-revalidate',
+    '/output.css',
+    '  Cache-Control: no-cache, must-revalidate',
+    '/style.css',
+    '  Cache-Control: no-cache, must-revalidate',
+    ''
+  ].join('\n');
+  fs.writeFileSync(path.join(OUT, '_headers'), security, 'utf8');
+
+  fs.writeFileSync(path.join(OUT, '_redirects'), '/app /app.html 200\n', 'utf8');
+}
+'''
+          build = build[:start] + new_fn + build[end:]
+
+          # Strengthen the build's own runtime verification.
+          old_verify = "  if (!headers.includes(railway)) fail('_headers CSP does not include Railway backend');\n"
+          new_verify = old_verify + "  const unsafeEvalHeaderCount = (headers.match(/'unsafe-eval'/g) || []).length;\n  if (unsafeEvalHeaderCount !== 2) fail(`unsafe-eval must appear only on /app and /app.html CSP blocks; found ${unsafeEvalHeaderCount}`);\n  if (!appHtml.includes(\"'unsafe-eval'\") || !appHtml.includes('vendor/heic2any.min.js')) fail('Dashboard HEIC runtime/CSP compatibility contract is missing');\n"
+          if build.count(old_verify) != 1:
+              raise SystemExit(f'build verify marker count={build.count(old_verify)}')
+          build = build.replace(old_verify, new_verify, 1)
+          build_path.write_text(build, encoding='utf-8')
+
+          # 3) Update permanent runtime CSP regression: Railway remains eval-free;
+          # build may contain exactly one unsafe-eval literal for scoped app generation.
+          runtime_path = Path('tests/runtime_startup_csp_hardening.test.js')
+          runtime = runtime_path.read_text(encoding='utf-8')
+          import_anchor = "const envExample = fs.readFileSync(path.join(root, '.env.example'), 'utf8');\n"
+          import_add = import_anchor + "const indexHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');\nconst appHtml = fs.readFileSync(path.join(root, 'app.html'), 'utf8');\n"
+          if runtime.count(import_anchor) != 1:
+              raise SystemExit('runtime import anchor mismatch')
+          runtime = runtime.replace(import_anchor, import_add, 1)
+          old_assert = "assert.ok(!buildSource.includes(\"'unsafe-eval'\"), 'Netlify generated CSP must not allow unsafe-eval');\n"
+          new_assert = "assert.strictEqual((buildSource.match(/'unsafe-eval'/g) || []).length, 1, 'Netlify build source may mention unsafe-eval only once for the scoped dashboard CSP');\nassert.ok(buildSource.includes('const appCsp = cspFor(true);'), 'Netlify dashboard CSP must be generated explicitly and separately');\nassert.ok(!indexHtml.includes(\"'unsafe-eval'\"), 'Landing-page meta CSP must remain eval-free');\nassert.ok(appHtml.includes(\"'unsafe-eval'\") && appHtml.includes('vendor/heic2any.min.js'), 'Dashboard may retain unsafe-eval only for the vendored HEIC converter compatibility contract');\n"
+          if runtime.count(old_assert) != 1:
+              raise SystemExit('runtime old build CSP assertion mismatch')
+          runtime = runtime.replace(old_assert, new_assert, 1)
+          runtime_path.write_text(runtime, encoding='utf-8')
+
+          # 4) Strengthen artifact regression by parsing exact _headers route blocks.
+          deploy_path = Path('tests/netlify_deploy_safety.test.js')
+          deploy = deploy_path.read_text(encoding='utf-8')
+          headers_anchor = "  const headers = fs.readFileSync(path.join(OUT, '_headers'), 'utf8');\n"
+          headers_add = headers_anchor + "\n  const headerBlock = (route) => {\n    const lines = headers.split(/\\r?\\n/);\n    const start = lines.indexOf(route);\n    assert.ok(start >= 0, `Missing _headers route block: ${route}`);\n    const body = [];\n    for (let i = start + 1; i < lines.length && /^\\s/.test(lines[i]); i++) body.push(lines[i].trim());\n    return body.join('\\n');\n  };\n"
+          if deploy.count(headers_anchor) != 1:
+              raise SystemExit('deploy headers anchor mismatch')
+          deploy = deploy.replace(headers_anchor, headers_add, 1)
+          assertion_anchor = "  assert.ok(headers.includes(railway), 'HTTP CSP must permit Railway');\n"
+          assertions = assertion_anchor + "  assert.ok(!headerBlock('/').includes(\"'unsafe-eval'\"), 'Root landing CSP must not allow unsafe-eval');\n  assert.ok(!headerBlock('/index.html').includes(\"'unsafe-eval'\"), 'index.html CSP must not allow unsafe-eval');\n  assert.ok(headerBlock('/app').includes(\"'unsafe-eval'\"), '/app rewrite CSP must allow HEIC converter runtime code generation');\n  assert.ok(headerBlock('/app.html').includes(\"'unsafe-eval'\"), 'app.html CSP must allow HEIC converter runtime code generation');\n  for (const route of ['/terms.html', '/privacy.html', '/refund.html']) assert.ok(!headerBlock(route).includes(\"'unsafe-eval'\"), `${route} CSP must remain eval-free`);\n  assert.strictEqual((headers.match(/'unsafe-eval'/g) || []).length, 2, 'unsafe-eval must be scoped only to /app and /app.html');\n"
+          if deploy.count(assertion_anchor) != 1:
+              raise SystemExit('deploy assertion anchor mismatch')
+          deploy = deploy.replace(assertion_anchor, assertions, 1)
+          deploy_path.write_text(deploy, encoding='utf-8')
+
+          print('Scoped Netlify CSP repair applied.')
+          PY
+      - name: Full regression and dependency gate
+        run: |
+          node -c scripts/build-netlify-dist.js
+          node tests/runtime_startup_csp_hardening.test.js
+          node tests/netlify_deploy_safety.test.js
+          npm test
+          npm audit --omit=dev --audit-level=high
+          npm run build:netlify
+      - name: Browser verify generated Netlify CSP headers
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const { chromium } = require('playwright');
+          const http = require('http');
+          const fs = require('fs');
+          const path = require('path');
+          const root = path.join(process.cwd(), 'netlify-dist');
+          const headersText = fs.readFileSync(path.join(root, '_headers'), 'utf8');
+          function block(route) {
+            const lines=headersText.split(/\r?\n/); const start=lines.indexOf(route); if(start<0) throw new Error('missing header block '+route);
+            const out={};
+            for(let i=start+1;i<lines.length && /^\s/.test(lines[i]);i++){const line=lines[i].trim();const j=line.indexOf(':');if(j>0)out[line.slice(0,j)]=line.slice(j+1).trim();}
+            return out;
+          }
+          const mime={'.html':'text/html','.js':'application/javascript','.css':'text/css','.json':'application/json','.png':'image/png','.jpg':'image/jpeg','.svg':'image/svg+xml'};
+          const server=http.createServer((req,res)=>{
+            let p=(req.url.split('?')[0]||'/');
+            let filePath=p;
+            let route=p;
+            if(p==='/') filePath='/index.html';
+            if(p==='/app') filePath='/app.html';
+            const fp=path.join(root,filePath.replace(/^\//,''));
+            if(!fp.startsWith(root)||!fs.existsSync(fp)||fs.statSync(fp).isDirectory()){res.statusCode=404;return res.end('not found');}
+            const shared=block('/*'); const scoped=block(route==='/'?'/':route);
+            for(const [k,v] of Object.entries({...shared,...scoped})) res.setHeader(k,v);
+            res.setHeader('Content-Type',mime[path.extname(fp)]||'application/octet-stream'); fs.createReadStream(fp).pipe(res);
+          });
+          (async()=>{
+            await new Promise(r=>server.listen(4195,'127.0.0.1',r));
+            const browser=await chromium.launch({channel:'chrome',headless:true});
+            const results=[];
+            for(const route of ['/', '/index.html', '/app.html', '/app']){
+              const page=await browser.newPage();
+              const errors=[];
+              page.on('pageerror',e=>errors.push(String(e)));
+              await page.goto('http://127.0.0.1:4195'+route,{waitUntil:'domcontentloaded'});
+              await page.waitForTimeout(1300);
+              const csp=await page.evaluate(()=>document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content||'');
+              results.push({route,errors,cspHasUnsafeEval:csp.includes("'unsafe-eval'")});
+              if(errors.length) throw new Error(route+' page errors: '+errors.join(' | '));
+              await page.close();
+            }
+            console.log(JSON.stringify(results,null,2));
+            const rootResult=results.find(x=>x.route==='/');
+            const indexResult=results.find(x=>x.route==='/index.html');
+            const appResult=results.find(x=>x.route==='/app.html');
+            if(rootResult.cspHasUnsafeEval || indexResult.cspHasUnsafeEval) throw new Error('landing meta CSP still allows eval');
+            if(!appResult.cspHasUnsafeEval) throw new Error('dashboard meta CSP lost HEIC compatibility allowance');
+            await browser.close(); server.close();
+          })().catch(e=>{console.error(e);server.close();process.exit(1);});
+          NODE
+      - name: Commit verified permanent files only
+        shell: bash
+        run: |
+          git config user.name 'viveks012000-maker'
+          git config user.email 'viveks012000@gmail.com'
+          git add index.html scripts/build-netlify-dist.js tests/runtime_startup_csp_hardening.test.js tests/netlify_deploy_safety.test.js
+          git diff --cached --check
+          changed=$(git diff --cached --name-only | sort)
+          expected=$'index.html\nscripts/build-netlify-dist.js\ntests/netlify_deploy_safety.test.js\ntests/runtime_startup_csp_hardening.test.js'
+          test "$changed" = "$expected"
+          git commit -m 'security: scope Netlify unsafe-eval to HEIC dashboard only'
+          git push origin HEAD:fix/netlify-csp-heic-compat
