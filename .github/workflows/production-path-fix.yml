@@ -1,0 +1,150 @@
+name: One-shot production path and mobile repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/production-path-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply guarded source repairs
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          railway = 'https://wingman-production-c6ce.up.railway.app'
+          netlify = 'https://chimerical-granita-c68c5a.netlify.app'
+
+          # ------------------------------------------------------------------
+          # app.html: allow the actual Railway API from the Netlify-hosted app,
+          # stop rendering unknown credits as a real zero, and let the mobile
+          # stylesheet own the chat height/overflow instead of inline !important.
+          # ------------------------------------------------------------------
+          app_path = Path('app.html')
+          app = app_path.read_text(encoding='utf-8')
+
+          old_csp = "connect-src 'self' https://*.supabase.co wss://*.supabase.co http://localhost:* ws://localhost:* https://aicredits.in;"
+          new_csp = "connect-src 'self' https://*.supabase.co wss://*.supabase.co http://localhost:* ws://localhost:* https://aicredits.in " + railway + ";"
+          if old_csp not in app and new_csp not in app:
+              raise SystemExit('Guard failed: expected app.html connect-src CSP was not found')
+          app = app.replace(old_csp, new_csp)
+
+          app = app.replace('id="desktopCreditCount">0 Credits</span>', 'id="desktopCreditCount">Credits —</span>')
+          app = app.replace('id="mobileCreditCount">0 Credits</span>', 'id="mobileCreditCount">Credits —</span>')
+
+          chat_min_old = 'flex-grow: 1 !important; min-height: calc(100vh - 210px) !important; display: flex !important;'
+          chat_min_new = 'flex-grow: 1 !important; min-height: calc(100vh - 210px); display: flex !important;'
+          if chat_min_old in app:
+              app = app.replace(chat_min_old, chat_min_new, 1)
+          elif chat_min_new not in app:
+              raise SystemExit('Guard failed: expected chatbox inline min-height was not found')
+
+          chat_overflow_old = 'border-radius: 20px; overflow: visible !important; box-shadow:'
+          chat_overflow_new = 'border-radius: 20px; overflow: visible; box-shadow:'
+          if chat_overflow_old in app:
+              app = app.replace(chat_overflow_old, chat_overflow_new, 1)
+          elif chat_overflow_new not in app:
+              raise SystemExit('Guard failed: expected chatbox inline overflow was not found')
+
+          app_path.write_text(app, encoding='utf-8')
+
+          # ------------------------------------------------------------------
+          # app.js: source-level version of the composer and mobile tab fixes.
+          # Typing is allowed while auth/consent/credits are unresolved; the
+          # existing submit path still performs authoritative gating.
+          # ------------------------------------------------------------------
+          js_path = Path('app.js')
+          js = js_path.read_text(encoding='utf-8')
+
+          old_chat_disabled = 'const isChatDisabled = isLocked || isLoading || isCreditsBlocked2;'
+          new_chat_disabled = "const isChatDisabled = isLoading || !(ci && ci.value.trim().length > 0);"
+          if old_chat_disabled in js:
+              js = js.replace(old_chat_disabled, new_chat_disabled, 1)
+          elif new_chat_disabled not in js:
+              raise SystemExit('Guard failed: chat send-state expression was not found')
+
+          old_input_disabled = 'ci.disabled = isLocked || isLoading || isCreditsBlocked2;'
+          new_input_disabled = 'ci.disabled = isLoading;'
+          if old_input_disabled in js:
+              js = js.replace(old_input_disabled, new_input_disabled, 1)
+          elif new_input_disabled not in js:
+              raise SystemExit('Guard failed: chat input disable expression was not found')
+
+          old_tab_tail = '''            state.activeTab = tabId;\n            saveSessionState();'''
+          new_tab_tail = '''            state.activeTab = tabId;\n            saveSessionState();\n\n            // Mobile tabs must open at their own top; retaining the previous tab's\n            // scroll offset hides section headers and makes the workspace look incomplete.\n            if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) {\n                requestAnimationFrame(function () {\n                    const mainCanvas = document.getElementById('mainContentCanvas') || document.querySelector('main');\n                    try {\n                        if (mainCanvas && typeof mainCanvas.scrollTo === 'function') {\n                            mainCanvas.scrollTo({ top: 0, left: 0, behavior: 'auto' });\n                        }\n                    } catch (e) {}\n                    try { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); } catch (e) { window.scrollTo(0, 0); }\n                });\n            }'''
+          if old_tab_tail in js:
+              js = js.replace(old_tab_tail, new_tab_tail, 1)
+          elif 'Mobile tabs must open at their own top' not in js:
+              raise SystemExit('Guard failed: switchTab tail was not found')
+
+          old_plexus_head = '''    function initAmbientPlexusCanvas() {\n        const canvas = document.getElementById("ambient-plexus-canvas");'''
+          new_plexus_head = '''    function initAmbientPlexusCanvas() {\n        // The animated high-DPI plexus is decorative and disproportionately expensive on phones.\n        if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) {\n            const mobileCanvas = document.getElementById("ambient-plexus-canvas");\n            if (mobileCanvas) mobileCanvas.style.display = 'none';\n            return;\n        }\n        const canvas = document.getElementById("ambient-plexus-canvas");'''
+          if old_plexus_head in js:
+              js = js.replace(old_plexus_head, new_plexus_head, 1)
+          elif 'disproportionately expensive on phones' not in js:
+              raise SystemExit('Guard failed: plexus initializer was not found')
+
+          old_clear = '''        state.lastResults = null;\n        state.credits = 0;\n\n        const desk = $("desktopCreditCount");\n        if (desk) desk.textContent = "0 Credits";\n        const mob = $("mobileCreditCount");\n        if (mob) mob.textContent = "0 Credits";'''
+          new_clear = '''        state.lastResults = null;\n        state.credits = null;\n        state.creditsStatus = "idle";\n\n        const desk = $("desktopCreditCount");\n        if (desk) desk.textContent = "Credits —";\n        const mob = $("mobileCreditCount");\n        if (mob) mob.textContent = "Credits —";'''
+          if old_clear in js:
+              js = js.replace(old_clear, new_clear, 1)
+          elif 'state.creditsStatus = "idle";' not in js or 'desk.textContent = "Credits —"' not in js:
+              raise SystemExit('Guard failed: sign-out credit reset block was not found')
+
+          js_path.write_text(js, encoding='utf-8')
+
+          # ------------------------------------------------------------------
+          # server.js: environment ALLOWED_ORIGINS must augment, not replace,
+          # the known first-party production origins. This guarantees the actual
+          # Netlify deployment is accepted even when Railway has an env override.
+          # ------------------------------------------------------------------
+          server_path = Path('server.js')
+          server = server_path.read_text(encoding='utf-8')
+          old_origins = '''const allowedOrigins = process.env.ALLOWED_ORIGINS\n    ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())\n    : ['https://mywingman.com', 'https://*.pages.dev', 'http://localhost:3000', 'http://localhost:10000', 'http://127.0.0.1:3000', 'http://127.0.0.1:10000'];'''
+          new_origins = '''const defaultAllowedOrigins = [\n    'https://mywingman.com',\n    'https://*.pages.dev',\n    'https://chimerical-granita-c68c5a.netlify.app',\n    'http://localhost:3000',\n    'http://localhost:10000',\n    'http://127.0.0.1:3000',\n    'http://127.0.0.1:10000'\n];\nconst configuredAllowedOrigins = process.env.ALLOWED_ORIGINS\n    ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)\n    : [];\nconst allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...configuredAllowedOrigins]));'''
+          if old_origins in server:
+              server = server.replace(old_origins, new_origins, 1)
+          elif netlify not in server or 'configuredAllowedOrigins' not in server:
+              raise SystemExit('Guard failed: server CORS origin block was not found')
+
+          server_path.write_text(server, encoding='utf-8')
+
+          # Verification invariants before commit.
+          assert railway in app
+          assert netlify in server
+          assert 'ci.disabled = isLoading;' in js
+          assert 'const isChatDisabled = isLoading || !(ci && ci.value.trim().length > 0);' in js
+          assert 'Mobile tabs must open at their own top' in js
+          print('Guarded production/mobile patches applied successfully.')
+          PY
+
+      - name: Syntax checks
+        run: |
+          node --check app.js
+          node --check server.js
+          node --check config.js
+
+      - name: Commit repaired production sources
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No source changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app.html app.js server.js
+          git commit -m 'fix(prod): reconnect Netlify API path and repair mobile chat'
+          git push origin HEAD:main
