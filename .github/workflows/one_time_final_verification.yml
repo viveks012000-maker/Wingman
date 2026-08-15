@@ -30,6 +30,7 @@ jobs:
           node --check tests/run_all_tests.js
           node --check tests/analyzer_full_e2e_integration.test.js
           node --check tests/analyzer_image_validation.test.js
+          node --check tests/seo_files.test.js
 
       - name: Run complete bounded test suite
         run: npm test
