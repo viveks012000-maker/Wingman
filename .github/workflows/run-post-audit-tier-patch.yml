@@ -1,0 +1,45 @@
+name: Run tier correctness patch
+
+on:
+  push:
+    branches:
+      - fix/post-audit-correctness
+    paths:
+      - .github/workflows/run-post-audit-tier-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/post-audit-correctness
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply patch
+        run: node scripts/post-audit-tier-patch.js
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Full test gate
+        run: npm test
+      - name: Syntax gate
+        run: node --check app.js && node --check tests/credit_purchase_modal_regression.test.js
+      - name: Commit verified product changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "OpenAI Audit Bot"
+          git config user.email "audit-bot@users.noreply.github.com"
+          git add app.js tests/credit_purchase_modal_regression.test.js
+          git diff --cached --check
+          git commit -m "fix(ui): never claim credits were added when payments are unavailable"
+          git push origin HEAD:fix/post-audit-correctness
