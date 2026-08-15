@@ -3211,30 +3211,31 @@ app.all('/api/credits/verify', requireSupabaseAuth, async (req, res) => {
     }
 });
 
-// System Health Check Endpoint
+// System Health Check Endpoint — availability only; never expose user/business-volume data.
 app.get('/api/health', async (req, res) => {
+    const timestamp = new Date().toISOString();
     try {
-        let userCount = 0;
-        let dbStatus = 'disconnected';
         if (db) {
-            dbStatus = 'sqlite_active';
-            const countRow = await db.get('SELECT COUNT(*) as count FROM user_profiles');
-            userCount = countRow ? countRow.count : 0;
-        } else if (supabaseAdmin) {
-            dbStatus = 'supabase_active';
-            try {
-                const { count } = await supabaseAdmin.from('profiles').select('id', { count: 'exact', head: true });
-                userCount = count || 0;
-            } catch (sErr) {}
+            await db.get('SELECT 1 AS ok');
+            return res.json({ status: 'ok', database: 'sqlite_active', timestamp });
         }
-        res.json({
-            status: 'ok',
-            database: dbStatus,
-            userCount: userCount,
-            timestamp: new Date().toISOString()
-        });
+
+        if (supabaseAdmin) {
+            const { error } = await supabaseAdmin
+                .from('profiles')
+                .select('id')
+                .limit(1);
+            if (error) {
+                console.error('[Health Check] Supabase probe failed:', error.message);
+                return res.status(503).json({ status: 'degraded', database: 'supabase_unavailable', timestamp });
+            }
+            return res.json({ status: 'ok', database: 'supabase_active', timestamp });
+        }
+
+        return res.status(503).json({ status: 'degraded', database: 'unavailable', timestamp });
     } catch (err) {
-        res.status(500).json({ status: 'error', database: 'error', error: err.message });
+        console.error('[Health Check] Database probe failed:', err && err.message ? err.message : err);
+        return res.status(503).json({ status: 'degraded', database: 'unavailable', timestamp });
     }
 });
 
