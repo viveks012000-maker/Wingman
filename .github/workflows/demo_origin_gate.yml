@@ -1,0 +1,62 @@
+name: Demo Origin Gate
+on:
+  push:
+    branches:
+      - fix/maeve-runtime-send
+    paths:
+      - .github/workflows/demo_origin_gate.yml
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/maeve-runtime-send
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Add exact demo origin and regression assertion
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('server.js')
+          s=p.read_text(encoding='utf-8')
+          old="const productionAllowedOrigins = [\n    'https://mywingman.com',\n    'https://chimerical-granita-c68c5a.netlify.app'\n];"
+          new="const productionAllowedOrigins = [\n    'https://mywingman.com',\n    'https://chimerical-granita-c68c5a.netlify.app',\n    'https://wondrous-arithmetic-0ece9d.netlify.app'\n];"
+          if old not in s:
+              raise SystemExit('Production origin block does not match audited source')
+          p.write_text(s.replace(old,new,1),encoding='utf-8')
+
+          t=Path('tests/cors_production_policy.test.js')
+          x=t.read_text(encoding='utf-8')
+          marker="assert.ok(server.includes(\"'https://chimerical-granita-c68c5a.netlify.app'\"), 'Netlify production origin must remain allowed');\n"
+          addition=marker + "assert.ok(server.includes(\"'https://wondrous-arithmetic-0ece9d.netlify.app'\"), 'Current Netlify demo origin must be explicitly allowed');\n"
+          if marker not in x:
+              raise SystemExit('CORS test marker missing')
+          t.write_text(x.replace(marker,addition,1),encoding='utf-8')
+          PY
+      - name: Full verification
+        run: |
+          node -c server.js
+          node tests/cors_production_policy.test.js
+          node tests/run_all_tests.js
+          npm audit --omit=dev --audit-level=high
+      - name: Commit verified exact-origin change
+        shell: bash
+        run: |
+          git config user.name 'viveks012000-maker'
+          git config user.email 'viveks012000@gmail.com'
+          git add server.js tests/cors_production_policy.test.js
+          git diff --cached --check
+          changed=$(git diff --cached --name-only | sort)
+          test "$changed" = $'server.js\ntests/cors_production_policy.test.js'
+          git commit -m 'fix: allow current Netlify demo origin'
+          git push origin HEAD:fix/maeve-runtime-send
