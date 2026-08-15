@@ -1,0 +1,75 @@
+name: One-shot server-authoritative credit gate
+
+on:
+  push:
+    branches:
+      - fix/server-authoritative-credit-gate
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout guarded branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/server-authoritative-credit-gate
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Capture immutable feature/backend hashes
+        run: |
+          sha256sum server.js > /tmp/server.before
+          sha256sum config/promptSystem.js > /tmp/prompts.before
+
+      - name: Apply credit-gate-only patch
+        run: python .github/server_authoritative_credit_gate.py
+
+      - name: Prove backend and prompts are byte-for-byte unchanged
+        run: |
+          sha256sum -c /tmp/server.before
+          sha256sum -c /tmp/prompts.before
+
+      - name: Verify changed-file allowlist
+        run: |
+          changed="$(git diff --name-only)"
+          echo "$changed"
+          bad="$(echo "$changed" | grep -Ev '^(app\.js|tests/run_all_tests\.js|tests/server_authoritative_credit_gate\.test\.js)$' || true)"
+          if [ -n "$bad" ]; then
+            echo "Unexpected files modified:" >&2
+            echo "$bad" >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium for browser QA
+        run: npx playwright install --with-deps chromium
+
+      - name: Syntax checks
+        run: |
+          node -c app.js
+          node -c server.js
+          node -c tests/server_authoritative_credit_gate.test.js
+
+      - name: Run complete 24-suite test gate
+        run: npm test
+
+      - name: Commit only verified credit plumbing changes
+        run: |
+          rm -f .github/workflows/one-shot-server-credit-gate.yml .github/server_authoritative_credit_gate.py
+          git config user.name "OpenAI Release Auditor"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(credits): make server the sole feature-spend authority"
+          git push origin HEAD:fix/server-authoritative-credit-gate
