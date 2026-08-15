@@ -51,9 +51,24 @@ try {
   const configJs = fs.readFileSync(path.join(OUT, 'config.js'), 'utf8');
   const headers = fs.readFileSync(path.join(OUT, '_headers'), 'utf8');
 
+  const headerBlock = (route) => {
+    const lines = headers.split(/\r?\n/);
+    const start = lines.indexOf(route);
+    assert.ok(start >= 0, `Missing _headers route block: ${route}`);
+    const body = [];
+    for (let i = start + 1; i < lines.length && /^\s/.test(lines[i]); i++) body.push(lines[i].trim());
+    return body.join('\n');
+  };
+
   assert.ok(appHtml.includes(railway), 'app.html CSP must permit Railway');
   assert.ok(configJs.includes(`API_BASE_URL: "${railway}"`), 'config.js must target Railway');
   assert.ok(headers.includes(railway), 'HTTP CSP must permit Railway');
+  assert.ok(!headerBlock('/').includes("'unsafe-eval'"), 'Root landing CSP must not allow unsafe-eval');
+  assert.ok(!headerBlock('/index.html').includes("'unsafe-eval'"), 'index.html CSP must not allow unsafe-eval');
+  assert.ok(headerBlock('/app').includes("'unsafe-eval'"), '/app rewrite CSP must allow HEIC converter runtime code generation');
+  assert.ok(headerBlock('/app.html').includes("'unsafe-eval'"), 'app.html CSP must allow HEIC converter runtime code generation');
+  for (const route of ['/terms.html', '/privacy.html', '/refund.html']) assert.ok(!headerBlock(route).includes("'unsafe-eval'"), `${route} CSP must remain eval-free`);
+  assert.strictEqual((headers.match(/'unsafe-eval'/g) || []).length, 2, 'unsafe-eval must be scoped only to /app and /app.html');
   assert.ok(!appJs.includes("if (response.status === 401) {\n                        window.updateUICredits(0);"), '401 must never become fake zero credits');
   assert.ok(appJs.includes('const freshCreditCheck = await window.checkCreditBalance();'), 'low client balance must be freshly rechecked');
   assert.ok(appJs.includes('const authoritativeBalanceCheck = await window.checkCreditBalance();'), 'HTTP 402 must recheck authoritative wallet');
