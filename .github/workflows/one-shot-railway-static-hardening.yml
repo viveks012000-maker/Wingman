@@ -1,0 +1,134 @@
+name: One-shot Railway static exposure hardening
+
+on:
+  push:
+    branches: [fix/railway-static-hardening]
+    paths: ['.github/workflows/one-shot-railway-static-hardening.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  harden-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/railway-static-hardening
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Capture protected runtime hashes
+        shell: bash
+        run: |
+          sha256sum server.js app.js app.html config.js supabaseClient.js config/promptSystem.js > /tmp/protected.before
+
+      - name: Apply exact static denylist hardening and behavioral test
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p=Path('middleware/security.js')
+          s=p.read_text(encoding='utf-8')
+          old='''    /^\\/utilities\\//i,\n    /^\\/data\\//i,\n    /^\\/node_modules\\//i,'''
+          new='''    /^\\/utilities\\//i,\n    /^\\/data\\//i,\n    /^\\/migrations\\//i,\n    /^\\/scripts\\//i,\n    /^\\/node_modules\\//i,'''
+          if s.count(old) != 1:
+              raise SystemExit(f'directory denylist marker mismatch: {s.count(old)}')
+          s=s.replace(old,new,1)
+
+          old='''    /^\\/package-lock\\.json$/i,\n    /^\\/PROMPT_SYSTEM_MEMORY\\.json$/i,'''
+          new='''    /^\\/package-lock\\.json$/i,\n    /^\\/netlify\\.toml$/i,\n    /^\\/PROMPT_SYSTEM_MEMORY\\.json$/i,'''
+          if s.count(old) != 1:
+              raise SystemExit(f'netlify denylist marker mismatch: {s.count(old)}')
+          s=s.replace(old,new,1)
+
+          old='''    /^\\/.*\\.sqlite$/i,\n    /^\\/.*\\.db$/i,'''
+          new='''    /^\\/.*\\.sqlite$/i,\n    /^\\/.*\\.db$/i,\n    /^\\/.*\\.sql$/i,'''
+          if s.count(old) != 1:
+              raise SystemExit(f'sql denylist marker mismatch: {s.count(old)}')
+          s=s.replace(old,new,1)
+          p.write_text(s, encoding='utf-8')
+
+          test=Path('tests/static_internal_exposure.test.js')
+          test.write_text(r'''const assert = require('assert');
+          const { blockSensitiveFiles } = require('../middleware/security');
+
+          function invoke(path) {
+            let statusCode = null;
+            let body = null;
+            let nextCalled = false;
+            const req = { path };
+            const res = {
+              status(code) { statusCode = code; return this; },
+              json(value) { body = value; return this; }
+            };
+            blockSensitiveFiles(req, res, () => { nextCalled = true; });
+            return { statusCode, body, nextCalled };
+          }
+
+          const blocked = [
+            '/server.js',
+            '/package.json',
+            '/PROMPT_SYSTEM_MEMORY.json',
+            '/tests/production_readiness_regression.test.js',
+            '/middleware/security.js',
+            '/migrations/004_cleanup_credit_security_and_rls.sql',
+            '/migrations/005_user_consent_and_age_verification.sql',
+            '/migrations/nested/anything.sql',
+            '/scripts/build-netlify-dist.js',
+            '/netlify.toml',
+            '/whatever/private_dump.sql'
+          ];
+          for (const path of blocked) {
+            const r = invoke(path);
+            assert.strictEqual(r.statusCode, 403, `${path} must be denied`);
+            assert.strictEqual(r.nextCalled, false, `${path} must not reach express.static`);
+          }
+
+          for (const path of ['/app.js','/config.js','/supabaseClient.js','/app.html','/style.css','/vendor/supabase.min.js']) {
+            const r = invoke(path);
+            assert.strictEqual(r.nextCalled, true, `${path} must remain public`);
+            assert.strictEqual(r.statusCode, null, `${path} must not be denied`);
+          }
+          console.log('✔ Static internal-file denylist behavioral test passed.');
+          ''', encoding='utf-8')
+
+          runner=Path('tests/run_all_tests.js')
+          r=runner.read_text(encoding='utf-8')
+          marker="    { name: '23. Mobile Responsiveness & Viewport Audit', file: 'viewport_overflow_qa.test.js' },\n    { name: '24. Headless Browser Live Viewport Overflow QA', file: 'browser_viewport_live_qa.js' }"
+          replacement="    { name: '23. Railway Static Internal-File Denylist', file: 'static_internal_exposure.test.js' },\n    { name: '24. Mobile Responsiveness & Viewport Audit', file: 'viewport_overflow_qa.test.js' },\n    { name: '25. Headless Browser Live Viewport Overflow QA', file: 'browser_viewport_live_qa.js' }"
+          if r.count(marker) != 1:
+              raise SystemExit(f'runner marker mismatch: {r.count(marker)}')
+          runner.write_text(r.replace(marker,replacement,1), encoding='utf-8')
+
+      - name: Prove feature/runtime files are byte-for-byte unchanged
+        shell: bash
+        run: |
+          sha256sum server.js app.js app.html config.js supabaseClient.js config/promptSystem.js > /tmp/protected.after
+          diff -u /tmp/protected.before /tmp/protected.after
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Syntax
+        run: |
+          node --check middleware/security.js
+          node --check tests/static_internal_exposure.test.js
+      - name: Complete 25-suite regression gate
+        run: npm test
+
+      - name: Commit only after every gate passes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/one-shot-railway-static-hardening.yml
+          git config user.name 'OpenAI Release Auditor'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add middleware/security.js tests/static_internal_exposure.test.js tests/run_all_tests.js .github/workflows/one-shot-railway-static-hardening.yml
+          git diff --cached --check
+          git commit -m 'fix(security): block internal deployment files on Railway'
+          git push origin HEAD:fix/railway-static-hardening
