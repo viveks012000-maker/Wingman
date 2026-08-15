@@ -1,0 +1,23 @@
+name: Trace server import contracts
+on:
+  push:
+    branches: [audit/post-netlify-deploy-20260815]
+    paths: ['.github/workflows/trace-server-imports.yml']
+permissions:
+  contents: read
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Find server imports and exported members
+        shell: bash
+        run: |
+          echo '=== imports of server module ==='
+          grep -RInE "require\(['\"]\.\.?/.*server['\"]\)|require\(['\"]\.\.?/server['\"]\)" --exclude-dir=node_modules --exclude-dir=.git . || true
+          echo '=== server destructuring/use references in tests ==='
+          grep -RInE "\{[[:space:]]*(app|server|db|startWingmanServer)|\.startWingmanServer|\.server\b|\.db\b" tests scripts .github --exclude-dir=node_modules 2>/dev/null || true
+          echo '=== current module exports ==='
+          grep -nE 'module\.exports|startWingmanServer\(' server.js || true
