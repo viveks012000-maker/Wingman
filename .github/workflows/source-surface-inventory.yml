@@ -1,0 +1,71 @@
+name: Source surface inventory
+
+on:
+  push:
+    branches: [audit/post-netlify-deploy-20260815]
+    paths: ['.github/workflows/source-surface-inventory.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Route inventory
+        shell: bash
+        run: |
+          echo '=== EXPRESS ROUTES ==='
+          grep -nE "app\.(get|post|put|patch|delete)\(" server.js || true
+          echo '=== API PATH LITERALS ==='
+          grep -nE "['\"](/api/[^'\"]+)" server.js app.js supabaseClient.js config.js || true
+      - name: Consent and credit invocation inventory
+        shell: bash
+        run: |
+          echo '=== CONSENT STATUS REFERENCES ==='
+          grep -n 'checkServerConsentStatus' app.js supabaseClient.js || true
+          echo '=== CREDIT BALANCE REFERENCES ==='
+          grep -nE 'checkCreditBalance|hasSufficientCredits|verifyAndDeductCreditsDB|settleCreditsDB|releaseCreditsDB' app.js server.js supabaseClient.js || true
+      - name: Browser network and storage inventory
+        shell: bash
+        run: |
+          echo '=== FETCH CALLS ==='
+          grep -nE '\bfetch\s*\(' app.js supabaseClient.js config.js index.html app.html || true
+          echo '=== STORAGE ==='
+          grep -nE 'localStorage|sessionStorage' app.js supabaseClient.js config.js index.html app.html || true
+      - name: Dangerous DOM and execution sinks
+        shell: bash
+        run: |
+          grep -nE 'innerHTML|outerHTML|insertAdjacentHTML|document\.write|\.srcdoc|\beval\s*\(|new Function\s*\(' app.js supabaseClient.js config.js index.html app.html privacy.html terms.html refund.html || true
+      - name: Secret-like literal scanner without printing values
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess, math
+          files=subprocess.check_output(['git','ls-files'],text=True).splitlines()
+          rx_names=re.compile(r'(?i)(service.?role|aicredits|secret|private.?key|password|bearer|api.?key)')
+          quoted=re.compile(r'''["']([^"'\n]{20,})["']''')
+          allow=('SUPABASE_ANON_KEY','AICREDITS_API_KEY','SUPABASE_SERVICE_ROLE_KEY','SUPABASE_URL','password')
+          def entropy(s):
+            from collections import Counter
+            c=Counter(s); n=len(s)
+            return -sum((v/n)*math.log2(v/n) for v in c.values())
+          findings=[]
+          for f in files:
+            p=Path(f)
+            if p.suffix.lower() not in {'.js','.json','.html','.md','.toml','.yml','.yaml','.sql','.example'} and p.name!='.env.example': continue
+            try: lines=p.read_text(errors='strict').splitlines()
+            except Exception: continue
+            for i,line in enumerate(lines,1):
+              if rx_names.search(line):
+                for m in quoted.finditer(line):
+                  v=m.group(1)
+                  if any(a in v for a in allow): continue
+                  if len(v)>=28 and entropy(v)>3.7:
+                    findings.append((f,i,'high-entropy quoted literal near secret keyword',len(v)))
+          for x in findings: print('SECRET_LIKE_LOCATION file=%s line=%s reason=%s length=%s'%x)
+          print('SECRET_LIKE_COUNT='+str(len(findings)))
+          PY
