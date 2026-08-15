@@ -118,9 +118,13 @@ function currentGitSha() {
 
 function writeSecurityFiles() {
   const railway = 'https://wingman-production-c6ce.up.railway.app';
-  const csp = [
+  // heic2any.min.js currently performs runtime code generation. Keep unsafe-eval
+  // scoped to the dashboard document only so HEIC/iPhone screenshot conversion works.
+  function cspFor(allowEval = false) {
+    const evalSource = allowEval ? " 'unsafe-eval'" : '';
+    return [
     "default-src 'self' https://*.supabase.co",
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co",
+      `script-src 'self' 'unsafe-inline'${evalSource} https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co`,
     "script-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co",
     "script-src-attr 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com",
@@ -132,25 +136,38 @@ function writeSecurityFiles() {
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'"
-  ].join('; ') + ';';
+    ].join('; ') + ';';
+  }
 
+  const strictCsp = cspFor(false);
+  const appCsp = cspFor(true);
   const security = [
     '/*',
-    `  Content-Security-Policy: ${csp}`,
     '  X-Frame-Options: DENY',
     '  X-Content-Type-Options: nosniff',
     '  Referrer-Policy: strict-origin-when-cross-origin',
     '  Permissions-Policy: camera=(), microphone=(), geolocation=()',
     '',
+    '/',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
     '/index.html',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/app',
+    `  Content-Security-Policy: ${appCsp}`,
     '  Cache-Control: no-cache, no-store, must-revalidate',
     '/app.html',
+    `  Content-Security-Policy: ${appCsp}`,
     '  Cache-Control: no-cache, no-store, must-revalidate',
     '/terms.html',
+    `  Content-Security-Policy: ${strictCsp}`,
     '  Cache-Control: no-cache, no-store, must-revalidate',
     '/privacy.html',
+    `  Content-Security-Policy: ${strictCsp}`,
     '  Cache-Control: no-cache, no-store, must-revalidate',
     '/refund.html',
+    `  Content-Security-Policy: ${strictCsp}`,
     '  Cache-Control: no-cache, no-store, must-revalidate',
     '/app.js',
     '  Cache-Control: no-cache, must-revalidate',
@@ -189,6 +206,9 @@ function verifyCriticalRuntimeContent() {
   if (!appHtml.includes(railway)) fail('app.html CSP does not include Railway backend');
   if (!config.includes(`API_BASE_URL: "${railway}"`)) fail('config.js does not point to Railway backend');
   if (!headers.includes(railway)) fail('_headers CSP does not include Railway backend');
+  const unsafeEvalHeaderCount = (headers.match(/'unsafe-eval'/g) || []).length;
+  if (unsafeEvalHeaderCount !== 2) fail(`unsafe-eval must appear only on /app and /app.html CSP blocks; found ${unsafeEvalHeaderCount}`);
+  if (!appHtml.includes("'unsafe-eval'") || !appHtml.includes('vendor/heic2any.min.js')) fail('Dashboard HEIC runtime/CSP compatibility contract is missing');
 
   // Prevent the known stale-production regression from ever entering a new artifact.
   if (appJs.includes("if (response.status === 401) {\n                        window.updateUICredits(0);")) {
