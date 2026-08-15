@@ -46,3 +46,29 @@ jobs:
           grep -n -E 'function hasSufficientCredits|checkCreditBalance|openPurchaseModal|creditsStatus|updateUICredits\(0\)|status === 402|state\.credits <|isCreditsBlocked' /tmp/live/app.js || true
           echo '=== LIVE CSP ==='
           grep -n 'Content-Security-Policy' /tmp/live/app.html || true
+
+      - name: Prove deployment artifact versus CDN cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://chimerical-granita-c68c5a.netlify.app'
+          for f in app.html app.js config.js supabaseClient.js style.css; do
+            echo "=== $f normal headers ==="
+            curl --fail --silent --show-error --location -D "/tmp/${f}.normal.headers" "$BASE/$f" -o "/tmp/${f}.normal"
+            grep -iE '^(age|cache-control|etag|last-modified|server|x-nf-|date):' "/tmp/${f}.normal.headers" || true
+            echo "normal_sha=$(sha256sum "/tmp/${f}.normal" | awk '{print $1}')"
+
+            stamp="$(date +%s%N)"
+            echo "=== $f cache-busted headers ==="
+            curl --fail --silent --show-error --location \
+              -H 'Cache-Control: no-cache, no-store, max-age=0' \
+              -H 'Pragma: no-cache' \
+              -D "/tmp/${f}.bust.headers" "$BASE/$f?wingman_audit=$stamp" -o "/tmp/${f}.bust"
+            grep -iE '^(age|cache-control|etag|last-modified|server|x-nf-|date):' "/tmp/${f}.bust.headers" || true
+            echo "bust_sha=$(sha256sum "/tmp/${f}.bust" | awk '{print $1}')"
+            if cmp -s "/tmp/${f}.normal" "/tmp/${f}.bust"; then
+              echo "CACHE_BUST_CHANGED $f=false"
+            else
+              echo "CACHE_BUST_CHANGED $f=true"
+            fi
+          done
