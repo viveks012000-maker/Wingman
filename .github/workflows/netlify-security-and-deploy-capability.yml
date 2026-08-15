@@ -1,0 +1,67 @@
+name: Netlify security and deploy capability audit
+
+on:
+  push:
+    branches: [audit/full-production-forensics]
+    paths: ['.github/workflows/netlify-security-and-deploy-capability.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Netlify deployment secrets presence without revealing values
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        shell: bash
+        run: |
+          if [ -n "${NETLIFY_AUTH_TOKEN:-}" ]; then echo 'HAS_NETLIFY_AUTH_TOKEN=true'; else echo 'HAS_NETLIFY_AUTH_TOKEN=false'; fi
+          if [ -n "${NETLIFY_SITE_ID:-}" ]; then echo 'HAS_NETLIFY_SITE_ID=true'; else echo 'HAS_NETLIFY_SITE_ID=false'; fi
+
+      - name: Probe public exposure of backend and internal files
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://chimerical-granita-c68c5a.netlify.app'
+          paths=(
+            'server.js'
+            'database.js'
+            'package.json'
+            'package-lock.json'
+            'PROMPT_SYSTEM_MEMORY.json'
+            'PROJECT_MASTER_SPECIFICATION.md'
+            'API_DOCUMENTATION.md'
+            'migrations/004_cleanup_credit_security_and_rls.sql'
+            'migrations/005_user_consent_and_age_verification.sql'
+            'middleware/supabaseAuth.js'
+            'middleware/security.js'
+            'config/promptSystem.js'
+            'tests/production_readiness_regression.test.js'
+            '.env'
+            '.git/config'
+          )
+          exposed=0
+          for p in "${paths[@]}"; do
+            code=$(curl --silent --show-error --location -o /tmp/probe -w '%{http_code}' "$BASE/$p" || true)
+            size=$(wc -c </tmp/probe 2>/dev/null || echo 0)
+            ctype=$(curl --silent --show-error --head "$BASE/$p" | tr -d '\r' | awk -F': ' 'tolower($1)=="content-type" {print $2; exit}')
+            echo "PROBE path=$p status=$code bytes=$size content_type=${ctype:-unknown}"
+            if [ "$code" = '200' ]; then
+              # Netlify SPA fallback can return index.html with 200; only count as exposed if content contains file-specific markers.
+              case "$p" in
+                server.js) grep -q "require('dotenv').config" /tmp/probe && exposed=$((exposed+1)) && echo 'EXPOSED server.js=true' || true ;;
+                database.js) grep -q 'sqlite' /tmp/probe && exposed=$((exposed+1)) && echo 'EXPOSED database.js=true' || true ;;
+                package.json) grep -q '"dependencies"' /tmp/probe && exposed=$((exposed+1)) && echo 'EXPOSED package.json=true' || true ;;
+                PROMPT_SYSTEM_MEMORY.json) grep -q 'prompt' /tmp/probe && exposed=$((exposed+1)) && echo 'EXPOSED PROMPT_SYSTEM_MEMORY.json=true' || true ;;
+                *.sql) grep -Eqi 'create|alter|grant|revoke|policy|function' /tmp/probe && exposed=$((exposed+1)) && echo "EXPOSED $p=true" || true ;;
+                middleware/*.js|config/*.js|tests/*.js) grep -Eqi 'module\.exports|require\(|assert\.' /tmp/probe && exposed=$((exposed+1)) && echo "EXPOSED $p=true" || true ;;
+                .env) grep -Eqi 'SUPABASE|AICREDITS|SECRET|KEY=' /tmp/probe && exposed=$((exposed+1)) && echo 'EXPOSED .env=true' || true ;;
+                *) : ;;
+              esac
+            fi
+          done
+          echo "CONFIRMED_SENSITIVE_FILES_EXPOSED=$exposed"
