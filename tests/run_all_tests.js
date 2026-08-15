@@ -30,7 +30,8 @@ const testSuites = [
     { name: '24. Mobile Responsiveness & Viewport Audit', file: 'viewport_overflow_qa.test.js' },
     { name: '25. Headless Browser Live Viewport Overflow QA', file: 'browser_viewport_live_qa.js' },
     { name: '26. Post-Audit Correctness & DOM Sink Guard', file: 'post_audit_correctness.test.js' },
-    { name: '27. Production CORS Least-Privilege Guard', file: 'cors_production_policy.test.js' }
+    { name: '27. Production CORS Least-Privilege Guard', file: 'cors_production_policy.test.js' },
+    { name: '28. Runtime Startup & CSP Unsafe-Eval Guard', file: 'runtime_startup_csp_hardening.test.js' }
 ];
 
 console.log('========================================================================');
