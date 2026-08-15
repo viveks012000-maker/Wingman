@@ -1369,6 +1369,20 @@ STRICT LAWS:
 
             state.activeTab = tabId;
             saveSessionState();
+
+            // Mobile tabs must open at their own top; retaining the previous tab's
+            // scroll offset hides section headers and makes the workspace look incomplete.
+            if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) {
+                requestAnimationFrame(function () {
+                    const mainCanvas = document.getElementById('mainContentCanvas') || document.querySelector('main');
+                    try {
+                        if (mainCanvas && typeof mainCanvas.scrollTo === 'function') {
+                            mainCanvas.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+                        }
+                    } catch (e) {}
+                    try { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); } catch (e) { window.scrollTo(0, 0); }
+                });
+            }
         } catch (e) {}
     };
 
@@ -1561,14 +1575,14 @@ STRICT LAWS:
 
             const chatSendBtn = $("chatbox-send-btn");
             if (chatSendBtn) {
-                const isChatDisabled = isLocked || isLoading || isCreditsBlocked2;
+                const isChatDisabled = isLoading || !(ci && ci.value.trim().length > 0);
                 chatSendBtn.disabled = isChatDisabled;
                 chatSendBtn.classList.toggle("opacity-40", isChatDisabled);
                 chatSendBtn.classList.toggle("cursor-not-allowed", isChatDisabled);
                 chatSendBtn.classList.toggle("cursor-pointer", !isChatDisabled);
             }
             if (ci) {
-                ci.disabled = isLocked || isLoading || isCreditsBlocked2;
+                ci.disabled = isLoading;
             }
 
             const btn1 = $("runAnalysisBtn");
@@ -1987,12 +2001,13 @@ STRICT LAWS:
         state.uploadedFiles = [];
         state.croppedWebpDataUrl = null;
         state.lastResults = null;
-        state.credits = 0;
+        state.credits = null;
+        state.creditsStatus = "idle";
 
         const desk = $("desktopCreditCount");
-        if (desk) desk.textContent = "0 Credits";
+        if (desk) desk.textContent = "Credits —";
         const mob = $("mobileCreditCount");
-        if (mob) mob.textContent = "0 Credits";
+        if (mob) mob.textContent = "Credits —";
 
         const analyzeCards = $("analyzeResultsCards");
         if (analyzeCards) analyzeCards.innerHTML = "";
@@ -2251,6 +2266,12 @@ STRICT LAWS:
     // STAR PLEXUS CANVAS ANIMATION SYSTEM (HIGH-DPI & HIGH-CONTRAST)
     // ============================================================
     function initAmbientPlexusCanvas() {
+        // The animated high-DPI plexus is decorative and disproportionately expensive on phones.
+        if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) {
+            const mobileCanvas = document.getElementById("ambient-plexus-canvas");
+            if (mobileCanvas) mobileCanvas.style.display = 'none';
+            return;
+        }
         const canvas = document.getElementById("ambient-plexus-canvas");
         if (!canvas) return;
         const ctx = canvas.getContext("2d");

@@ -94,9 +94,19 @@ app.use((req, res, next) => {
 });
 
 // 2. Configure Locked CORS Policy
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
-    : ['https://mywingman.com', 'https://*.pages.dev', 'http://localhost:3000', 'http://localhost:10000', 'http://127.0.0.1:3000', 'http://127.0.0.1:10000'];
+const defaultAllowedOrigins = [
+    'https://mywingman.com',
+    'https://*.pages.dev',
+    'https://chimerical-granita-c68c5a.netlify.app',
+    'http://localhost:3000',
+    'http://localhost:10000',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:10000'
+];
+const configuredAllowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+    : [];
+const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...configuredAllowedOrigins]));
 
 function isOriginAllowed(origin, allowedList) {
     if (!origin || origin === 'null') return true;
