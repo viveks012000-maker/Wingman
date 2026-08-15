@@ -1,0 +1,235 @@
+name: Full production forensic audit
+
+on:
+  push:
+    branches:
+      - audit/full-production-forensics
+    paths:
+      - '.github/workflows/full-production-forensics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  forensic-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact audit source
+        uses: actions/checkout@v4
+        with:
+          ref: audit/full-production-forensics
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Inventory and read every first-party text source
+        shell: python
+        run: |
+          from pathlib import Path
+          import hashlib
+
+          binary_ext = {'.png','.jpg','.jpeg','.gif','.webp','.ico','.woff','.woff2','.ttf','.eot'}
+          generated_or_vendor_prefixes = ('vendor/', 'node_modules/')
+          generated_exact = {'output.css', 'package-lock.json'}
+          rows=[]
+          total_lines=0
+          for p in sorted(Path('.').rglob('*')):
+              if not p.is_file():
+                  continue
+              rel=p.as_posix()
+              if rel.startswith('.git/') or rel.startswith(generated_or_vendor_prefixes):
+                  continue
+              if p.suffix.lower() in binary_ext or rel in generated_exact:
+                  continue
+              try:
+                  raw=p.read_bytes()
+                  text=raw.decode('utf-8')
+              except Exception:
+                  continue
+              lines=text.splitlines()
+              total_lines += len(lines)
+              digest=hashlib.sha256(raw).hexdigest()
+              rows.append((rel,len(lines),len(raw),digest))
+              # Force a complete sequential read of every line and reject NUL/control corruption.
+              for lineno,line in enumerate(lines,1):
+                  if '\x00' in line:
+                      raise SystemExit(f'NUL byte in first-party text source: {rel}:{lineno}')
+          print('=== FIRST-PARTY TEXT SOURCE INVENTORY ===')
+          for rel,lines,size,digest in rows:
+              print(f'{rel}\tlines={lines}\tbytes={size}\tsha256={digest}')
+          print(f'TOTAL_FIRST_PARTY_FILES={len(rows)}')
+          print(f'TOTAL_FIRST_PARTY_LINES_READ={total_lines}')
+
+      - name: Parse every first-party JavaScript file
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' f; do
+            case "$f" in
+              ./vendor/*|./node_modules/*) continue ;;
+            esac
+            echo "node --check $f"
+            node --check "$f"
+          done < <(find . -type f -name '*.js' -print0)
+
+      - name: Static credit auth consent and purchase-path forensic report
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          targets=['app.js','app.html','config.js','supabaseClient.js','server.js','middleware/auth.js','middleware/supabaseAuth.js','middleware/security.js','middleware/userProvisioning.js']
+          patterns=[
+            r'openPurchaseModal', r'creditsStatus', r'state\.credits\s*=', r'updateUICredits',
+            r'hasSufficientCredits', r'checkCreditBalance', r'credits_inr', r'CREDITS_PER_INR',
+            r'reserve_credits', r'settle_credits', r'release_credits', r'status\(402\)',
+            r'INSUFFICIENT_CREDITS', r'PROFILE_MISSING', r'getApiBase', r'WINGMAN_CONFIG',
+            r'ALLOWED_ORIGINS', r'Content-Security-Policy', r'validateCsrfToken', r'Authorization'
+          ]
+          print('=== CREDIT/AUTH/PURCHASE CALL-SITE REPORT ===')
+          for fn in targets:
+              p=Path(fn)
+              if not p.exists(): continue
+              lines=p.read_text(encoding='utf-8').splitlines()
+              print(f'--- {fn} ---')
+              for i,line in enumerate(lines,1):
+                  if any(re.search(pat,line) for pat in patterns):
+                      print(f'{i}: {line[:500]}')
+
+          app=Path('app.js').read_text(encoding='utf-8')
+          html=Path('app.html').read_text(encoding='utf-8')
+          config=Path('config.js').read_text(encoding='utf-8')
+          server=Path('server.js').read_text(encoding='utf-8')
+          assertions={
+            'app_has_railway_api_selector': 'WINGMAN_CONFIG.API_BASE_URL' in app,
+            'config_points_to_railway': 'https://wingman-production-c6ce.up.railway.app' in config,
+            'html_csp_allows_railway': 'connect-src' in html and 'https://wingman-production-c6ce.up.railway.app' in html,
+            'server_allows_netlify': 'https://chimerical-granita-c68c5a.netlify.app' in server,
+            'analyzer_10': "verifyAndDeductCreditsDB(req, 10, 'analyze'" in server,
+            'icebreaker_10': "verifyAndDeductCreditsDB(req, 10, 'icebreaker'" in server,
+            'bio_10': "verifyAndDeductCreditsDB(req, 10, 'optimize'" in server,
+            'chat_2': "verifyAndDeductCreditsDB(req, 2, 'chat'" in server,
+            'sim_review_2': "verifyAndDeductCreditsDB(req, 2, 'simulator_review'" in server,
+          }
+          for k,v in assertions.items(): print(f'ASSERT {k}={v}')
+          if not all(assertions.values()):
+              raise SystemExit('One or more production path invariants are absent in repository source')
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Dependency security audit
+        run: npm audit --audit-level=high
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Compare live Netlify assets with repository source
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://chimerical-granita-c68c5a.netlify.app'
+          mkdir -p /tmp/live
+          for f in app.html app.js config.js supabaseClient.js style.css; do
+            echo "=== FETCH LIVE $f ==="
+            curl --fail --silent --show-error --location --retry 2 --connect-timeout 10 --max-time 30 "$BASE/$f" -o "/tmp/live/$f"
+            echo "repo: $(sha256sum "$f" | awk '{print $1}')"
+            echo "live: $(sha256sum "/tmp/live/$f" | awk '{print $1}')"
+            if cmp -s "$f" "/tmp/live/$f"; then
+              echo "LIVE_MATCH $f=true"
+            else
+              echo "LIVE_MATCH $f=false"
+              echo "--- first diff lines ---"
+              diff -u "$f" "/tmp/live/$f" | head -120 || true
+            fi
+          done
+          echo '=== LIVE APP CSP / API MARKERS ==='
+          grep -n -E 'Content-Security-Policy|wingman-production-c6ce|config.js|supabaseClient.js|app.js' /tmp/live/app.html || true
+          grep -n -E 'API_BASE_URL|wingman-production-c6ce' /tmp/live/config.js || true
+
+      - name: Probe Railway health and Netlify-origin CORS
+        shell: bash
+        run: |
+          set -euo pipefail
+          API='https://wingman-production-c6ce.up.railway.app'
+          ORIGIN='https://chimerical-granita-c68c5a.netlify.app'
+          echo '=== HEALTH ==='
+          curl --fail --silent --show-error --location -D /tmp/health.h -H "Origin: $ORIGIN" "$API/api/health" -o /tmp/health.body
+          sed -n '1,80p' /tmp/health.h
+          cat /tmp/health.body
+          echo
+          echo '=== CONFIG ==='
+          curl --fail --silent --show-error --location -D /tmp/config.h -H "Origin: $ORIGIN" "$API/api/config" -o /tmp/config.body
+          sed -n '1,80p' /tmp/config.h
+          cat /tmp/config.body
+          echo
+          echo '=== UNAUTHENTICATED CREDITS (transport/CORS probe; 401 expected) ==='
+          code=$(curl --silent --show-error --location -D /tmp/credits.h -H "Origin: $ORIGIN" -o /tmp/credits.body -w '%{http_code}' "$API/api/credits")
+          echo "HTTP_CODE=$code"
+          sed -n '1,80p' /tmp/credits.h
+          cat /tmp/credits.body
+          echo
+          if [ "$code" != '401' ]; then echo 'Expected authenticated endpoint to return 401 without token' >&2; exit 1; fi
+          grep -i "access-control-allow-origin: $ORIGIN" /tmp/credits.h
+          echo '=== ANALYZER PREFLIGHT ==='
+          code=$(curl --silent --show-error --location -X OPTIONS -D /tmp/preflight.h -o /tmp/preflight.body -w '%{http_code}' \
+            -H "Origin: $ORIGIN" \
+            -H 'Access-Control-Request-Method: POST' \
+            -H 'Access-Control-Request-Headers: authorization,content-type,x-idempotency-key' \
+            "$API/api/analyze")
+          echo "HTTP_CODE=$code"
+          sed -n '1,100p' /tmp/preflight.h
+          cat /tmp/preflight.body || true
+          echo
+          grep -i "access-control-allow-origin: $ORIGIN" /tmp/preflight.h
+          grep -i 'access-control-allow-headers:.*authorization' /tmp/preflight.h
+
+      - name: Real browser transport test from live Netlify page to Railway
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch({headless:true});
+            const page = await browser.newPage();
+            const errors=[];
+            const failed=[];
+            page.on('pageerror', e => errors.push('pageerror:'+e.message));
+            page.on('console', msg => { if (msg.type()==='error') errors.push('console:'+msg.text()); });
+            page.on('requestfailed', req => failed.push(req.url()+' :: '+(req.failure()?.errorText||'')));
+            await page.goto('https://chimerical-granita-c68c5a.netlify.app/app.html', {waitUntil:'networkidle', timeout:60000});
+            await page.waitForTimeout(1500);
+            const state = await page.evaluate(async () => {
+              const apiBase = typeof window.getApiBase === 'function' ? window.getApiBase() : null;
+              let health={}; let credits={};
+              try { const r=await fetch(apiBase+'/api/health'); health={status:r.status, body:await r.text()}; } catch(e) { health={error:String(e)}; }
+              try { const r=await fetch(apiBase+'/api/credits'); credits={status:r.status, body:await r.text()}; } catch(e) { credits={error:String(e)}; }
+              return {
+                href: location.href,
+                apiBase,
+                hasSupabaseClient: !!window.supabaseClient,
+                hasCheckCreditBalance: typeof window.checkCreditBalance === 'function',
+                hasGenerateWingmanResponse: typeof window.generateWingmanResponse === 'function',
+                creditState: window.state ? {credits:window.state.credits, status:window.state.creditsStatus} : null,
+                health, credits
+              };
+            });
+            console.log('BROWSER_STATE='+JSON.stringify(state));
+            console.log('BROWSER_ERRORS='+JSON.stringify(errors));
+            console.log('REQUEST_FAILED='+JSON.stringify(failed));
+            if (state.apiBase !== 'https://wingman-production-c6ce.up.railway.app') throw new Error('Live frontend is not targeting Railway');
+            if (state.health.status !== 200) throw new Error('Live browser cannot reach Railway health: '+JSON.stringify(state.health));
+            if (state.credits.status !== 401) throw new Error('Unauthenticated credits transport probe should reach Railway and get 401: '+JSON.stringify(state.credits));
+            if (errors.some(e => /Content Security Policy|CORS|Refused to connect/i.test(e))) throw new Error('Live browser emitted CSP/CORS error: '+errors.join('\n'));
+            await browser.close();
+          })().catch(e => { console.error(e); process.exit(1); });
+          NODE
+
+      - name: Run complete repository test suite
+        run: npm test
