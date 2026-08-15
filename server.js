@@ -67,7 +67,7 @@ app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'", "https://*.supabase.co", "http://localhost:*", "ws://localhost:*"],
-            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.supabase.co"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.supabase.co"],
             scriptSrcElem: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.supabase.co"],
             scriptSrcAttr: ["'unsafe-inline'"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
@@ -3443,11 +3443,17 @@ async function startWingmanServer() {
         });
         server.keepAliveTimeout = 120000;
         server.headersTimeout = 125000;
-        module.exports = { app, server, db, supabaseAdmin };
+        return server;
     } catch (err) {
         console.error("Fatal Server Startup Error:", err);
-        process.exit(1);
+        throw err;
     }
 }
 
-startWingmanServer();
+// Importing the application must not open a network listener. Runtime entry points call
+// startWingmanServer explicitly; tests and tooling can safely import the Express app.
+module.exports = { app, startWingmanServer, supabaseAdmin };
+
+if (require.main === module) {
+    startWingmanServer().catch(() => process.exit(1));
+}

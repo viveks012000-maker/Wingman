@@ -111,7 +111,7 @@ function writeSecurityFiles() {
   const railway = 'https://wingman-production-c6ce.up.railway.app';
   const csp = [
     "default-src 'self' https://*.supabase.co",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co",
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co",
     "script-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co",
     "script-src-attr 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com",
