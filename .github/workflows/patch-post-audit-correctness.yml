@@ -1,0 +1,79 @@
+name: Patch post-audit correctness issues
+
+on:
+  push:
+    branches: [fix/post-audit-correctness]
+    paths: ['.github/workflows/patch-post-audit-correctness.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/post-audit-correctness
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Patch misleading tier activation path and regression test
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('app.js')
+          s = p.read_text()
+          pattern = re.compile(r'''            if \(creditMap\[tier\]\) \{\n.*?\n            \}\n        \} catch \(e\) \{''', re.S)
+          replacement = '''            if (creditMap[tier]) {
+                // Payment processing is intentionally fail-closed. A tier query parameter
+                // must never imply that credits were purchased or minted.
+                window.simulateDemoPurchase(creditMap[tier]);
+
+                // Remove the stale checkout parameter so refresh/back navigation cannot
+                // repeatedly trigger purchase messaging.
+                const cleanUrl = new URL(window.location.href);
+                cleanUrl.searchParams.delete("tier");
+                window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+            }
+        } catch (e) {'''
+          s2, n = pattern.subn(replacement, s, count=1)
+          if n != 1:
+              raise SystemExit(f'Expected exactly one tier activation block, replaced {n}')
+          if 'title.textContent = creditMap[tier] + " Credits Added"' in s2:
+              raise SystemExit('Misleading Credits Added path still present')
+          p.write_text(s2)
+
+          t = Path('tests/credit_purchase_modal_regression.test.js')
+          ts = t.read_text()
+          anchor = "assert.ok(app.includes('currentBatchBytes > 25 * 1024 * 1024'), 'client screenshot total limit must match 25 MB invariant');\n"
+          addition = "assert.ok(!app.includes('title.textContent = creditMap[tier] + \\\" Credits Added\\\"'), 'tier URL must never falsely claim that credits were added while payments are fail-closed');\nassert.ok(app.includes('cleanUrl.searchParams.delete(\\\"tier\\\")'), 'tier URL must be cleared after the unavailable-purchase notice');\n"
+          if anchor not in ts:
+              raise SystemExit('Regression-test anchor not found')
+          if 'tier URL must never falsely claim' not in ts:
+              ts = ts.replace(anchor, anchor + addition)
+          t.write_text(ts)
+          PY
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Full test gate
+        run: npm test
+      - name: Syntax gate
+        run: node --check app.js && node --check tests/credit_purchase_modal_regression.test.js
+      - name: Commit verified patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'OpenAI Audit Bot'
+          git config user.email 'audit-bot@users.noreply.github.com'
+          git add app.js tests/credit_purchase_modal_regression.test.js
+          git diff --cached --check
+          git commit -m 'fix(ui): never claim credits were added when payments are unavailable'
+          git push origin HEAD:fix/post-audit-correctness
