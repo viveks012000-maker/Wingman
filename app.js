@@ -517,7 +517,7 @@ STRICT LAWS:
                     window.showToast("Insufficient credits. Current balance: " + state.credits + " credits. Please top up.", "warning");
                 }
                 if (typeof window.openPurchaseModal === 'function') {
-                    window.openPurchaseModal();
+                    window.openPurchaseModal(cost);
                 }
                 return false;
             }
@@ -2092,9 +2092,28 @@ STRICT LAWS:
     // ============================================================
     // PURCHASE MODAL – Server‑only credit updates
     // ============================================================
-    window.openPurchaseModal = function () {
+    window.openPurchaseModal = function (requiredCredits) {
         const m = $("purchaseModal"), c = $("modalCard"), pt = $("pricingTiers");
         if (!m || !c) return;
+        // When the popup is opened by an authoritative insufficient-credit gate,
+        // explain the exact shortage inside the popup itself. Manual pricing opens
+        // remain generic and never invent a balance or required cost.
+        const contextEl = $("purchaseCreditContext");
+        const currentBalance = (typeof state.credits === "number" && Number.isFinite(state.credits)) ? state.credits : null;
+        const required = Number(requiredCredits);
+        const hasShortageContext = Number.isFinite(required) && required > 0 && currentBalance !== null && currentBalance < required;
+        if (contextEl) {
+            if (hasShortageContext) {
+                const shortfall = required - currentBalance;
+                const creditWord = (n) => n === 1 ? "credit" : "credits";
+                contextEl.textContent = "Insufficient credits: you have " + currentBalance + " " + creditWord(currentBalance) + ". This action requires " + required + " " + creditWord(required) + ". You need " + shortfall + " more " + creditWord(shortfall) + ".";
+                contextEl.classList.remove("hidden");
+            } else {
+                contextEl.textContent = "";
+                contextEl.classList.add("hidden");
+            }
+        }
+
         document.body.style.overflow = "hidden";
         m.style.display = "flex";
         m.classList.remove("opacity-0", "pointer-events-none", "hidden");
@@ -2927,7 +2946,7 @@ STRICT LAWS:
                         if (typeof window.showToast === 'function') {
                             window.showToast(errJson.error || ("Insufficient credits. Current balance: " + state.credits + " credits. Please top up."), "warning");
                         }
-                        if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal();
+                        if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal(requiredCreditCost);
                         return null;
                     }
 
@@ -3872,7 +3891,7 @@ STRICT LAWS:
                     window.renderChatboxBubble("Your wallet has enough credits, but this message was rejected by the credit service. Please refresh or sign in again; no purchase is required.", "assistant");
                 } else {
                     window.renderChatboxBubble(errJson.error || "⚠️ Insufficient credits. Please top up credits to continue practicing.", "assistant");
-                    if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal();
+                    if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal(2);
                 }
             } else {
                 const errJson = await chatResp.json().catch(() => ({}));
