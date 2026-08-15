@@ -502,15 +502,25 @@ STRICT LAWS:
             }
         }
 
-        // Authoritative numeric balance is confirmed
+        // Never trust a previously cached low numeric balance as sufficient evidence to sell credits.
+        // A fresh authoritative balance check is mandatory immediately before opening the purchase UI.
         if (state.credits < cost) {
-            if (typeof window.showToast === 'function') {
-                window.showToast("Insufficient credits. Current balance: " + state.credits + " credits. Please top up.", "warning");
+            const freshCreditCheck = await window.checkCreditBalance();
+            if (!freshCreditCheck || !freshCreditCheck.success || typeof state.credits !== 'number') {
+                if (typeof window.showToast === 'function') {
+                    window.showToast("Unable to verify your current credit balance. Please retry after your account syncs.", "warning");
+                }
+                return false;
             }
-            if (typeof window.openPurchaseModal === 'function') {
-                window.openPurchaseModal();
+            if (state.credits < cost) {
+                if (typeof window.showToast === 'function') {
+                    window.showToast("Insufficient credits. Current balance: " + state.credits + " credits. Please top up.", "warning");
+                }
+                if (typeof window.openPurchaseModal === 'function') {
+                    window.openPurchaseModal();
+                }
+                return false;
             }
-            return false;
         }
 
         return true;
@@ -745,8 +755,8 @@ STRICT LAWS:
             currentBatchBytes += validFiles[s].size;
         }
 
-        if (currentBatchBytes > 20 * 1024 * 1024) {
-            window.showToast("These images are too large. Maximum total upload size: 20 MB.", "warning");
+        if (currentBatchBytes > 25 * 1024 * 1024) {
+            window.showToast("These images are too large. Maximum total upload size: 25 MB.", "warning");
             return;
         }
 
@@ -2870,7 +2880,10 @@ STRICT LAWS:
                     const errJson = await response.json().catch(function() { return {}; });
 
                     if (response.status === 401) {
-                        window.updateUICredits(0);
+                        // Authentication failure does NOT mean the user's real wallet balance is zero.
+                        state.credits = null;
+                        state.creditsStatus = "idle";
+                        if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
                         if (typeof window.showToast === 'function') window.showToast("Authentication required. Please sign in.", "warning");
                         if (typeof window.openAuthRequiredModal === 'function') window.openAuthRequiredModal();
                         return null;
@@ -2878,9 +2891,22 @@ STRICT LAWS:
 
                     if (response.status === 402) {
                         trackWingmanEvent('credits_exhausted', { endpoint: endpoint, currentCredits: state.credits || 0 });
-                        await window.checkCreditBalance();
+                        const requiredCreditCost = (endpoint === '/api/chat' || endpoint === '/api/simulator/chat' || endpoint === '/api/simulator/review') ? 2 : 10;
+                        const authoritativeBalanceCheck = await window.checkCreditBalance();
+                        if (!authoritativeBalanceCheck || !authoritativeBalanceCheck.success || typeof state.credits !== 'number') {
+                            if (typeof window.showToast === 'function') {
+                                window.showToast("The server rejected this request for credits, but your current wallet balance could not be verified. Please refresh or sign in again.", "warning");
+                            }
+                            return null;
+                        }
+                        if (state.credits >= requiredCreditCost) {
+                            if (typeof window.showToast === 'function') {
+                                window.showToast("Your wallet has enough credits, but this request was rejected by the credit service. Please refresh or sign in again; no purchase is required.", "warning");
+                            }
+                            return null;
+                        }
                         if (typeof window.showToast === 'function') {
-                            window.showToast(errJson.error || ("Insufficient credits. Current balance: " + (state.credits || 0) + " credits. Please top up."), "warning");
+                            window.showToast(errJson.error || ("Insufficient credits. Current balance: " + state.credits + " credits. Please top up."), "warning");
                         }
                         if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal();
                         return null;
@@ -3813,8 +3839,16 @@ STRICT LAWS:
                     window.renderChatboxBubble(errJson.error || "Credit service is temporarily unavailable. Please try again later.", "assistant");
                 }
             } else if (chatResp.status === 402) {
-                window.renderChatboxBubble("⚠️ Insufficient credits. Please top up credits to continue practicing.", "assistant");
-                if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal();
+                const errJson = await chatResp.json().catch(() => ({}));
+                const authoritativeChatBalance = await window.checkCreditBalance();
+                if (!authoritativeChatBalance || !authoritativeChatBalance.success || typeof state.credits !== 'number') {
+                    window.renderChatboxBubble("The credit service rejected this message, but your wallet could not be verified. Please refresh or sign in again.", "assistant");
+                } else if (state.credits >= 2) {
+                    window.renderChatboxBubble("Your wallet has enough credits, but this message was rejected by the credit service. Please refresh or sign in again; no purchase is required.", "assistant");
+                } else {
+                    window.renderChatboxBubble(errJson.error || "⚠️ Insufficient credits. Please top up credits to continue practicing.", "assistant");
+                    if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal();
+                }
             } else {
                 const errJson = await chatResp.json().catch(() => ({}));
                 if (typeof errJson.credits === 'number') {

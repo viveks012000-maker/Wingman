@@ -575,7 +575,11 @@ async function settleCreditsDB(req, reqId) {
                 console.error('[settleCreditsDB RPC Error]:', error.message);
                 return { success: false, error: error.message };
             }
-            return { success: true, data };
+            const row = Array.isArray(data) ? data[0] : data;
+            if (!row || row.success !== true || row.settled !== true) {
+                return { success: false, error: (row && row.error_message) || 'Credit settlement did not complete a pending transaction.' };
+            }
+            return { success: true, data: row };
         }
     } catch (e) {
         console.warn('[settleCreditsDB Exception]:', e.message);
@@ -595,16 +599,24 @@ async function releaseCreditsDB(req, reqId, reason = 'ai_failure') {
                 p_request_id: reqId,
                 p_reason: reason || 'ai_failure'
             });
-            if (!rpcErr && rpcRes) {
+            if (rpcErr) {
+                console.error('[releaseCreditsDB RPC Error]:', rpcErr.message);
+                return { success: false, remainingCredits: 0, error: rpcErr.message };
+            }
+            if (rpcRes) {
                 const row = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
+                if (!row || row.success !== true) {
+                    return { success: false, remainingCredits: 0, error: (row && row.error_message) || 'Credit release was rejected.' };
+                }
                 const rem = typeof row.new_balance === 'number' ? row.new_balance : (typeof row.remainingCredits === 'number' ? row.remainingCredits : 0);
                 return { success: true, remainingCredits: rem };
             }
         }
     } catch (e) {
         console.error('[releaseCreditsDB Exception]:', e.message);
+        return { success: false, remainingCredits: 0, error: e.message };
     }
-    return { success: false, remainingCredits: 0 };
+    return { success: false, remainingCredits: 0, error: 'Credit release service returned no response.' };
 }
 
 // Fallback SQLite Deduction Helper
@@ -3133,6 +3145,9 @@ app.get(['/api/credits', '/api/user/credits', '/api/credits/sync'], requireSupab
         if (err.statusCode === 404 || err.code === 'PROFILE_MISSING' || err.message === 'PROFILE_MISSING') {
             return res.status(404).json({ success: false, error: "PROFILE_MISSING", code: "PROFILE_MISSING" });
         }
+        if (err.statusCode === 503) {
+            return res.status(503).json({ success: false, error: "Credit service temporarily unavailable." });
+        }
         res.status(500).json({ success: false, error: "Failed to fetch credit balance." });
     }
 });
@@ -3154,6 +3169,9 @@ app.all('/api/credits/verify', requireSupabaseAuth, async (req, res) => {
         }
         if (err.statusCode === 404 || err.code === 'PROFILE_MISSING' || err.message === 'PROFILE_MISSING') {
             return res.status(404).json({ success: false, error: "PROFILE_MISSING", code: "PROFILE_MISSING" });
+        }
+        if (err.statusCode === 503) {
+            return res.status(503).json({ success: false, error: "Credit service temporarily unavailable." });
         }
         res.status(500).json({ success: false, error: "Failed to verify credit balance." });
     }
