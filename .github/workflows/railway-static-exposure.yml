@@ -13,7 +13,7 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe sensitive and internal paths
+      - name: Verify sensitive and internal paths are denied
         shell: bash
         run: |
           set -euo pipefail
@@ -29,9 +29,14 @@ jobs:
             'scripts/build-netlify-dist.js'
             'netlify.toml'
           )
+          failed=0
           for p in "${paths[@]}"; do
             code=$(curl --silent --show-error --location -o /tmp/body -w '%{http_code}' "$BASE/$p" || true)
             bytes=$(wc -c </tmp/body 2>/dev/null || echo 0)
             echo "RAILWAY_PROBE path=$p status=$code bytes=$bytes"
-            if [ "$code" = '200' ]; then head -c 120 /tmp/body | tr '\n' ' '; echo; fi
+            if [ "$code" != '403' ]; then
+              echo "Expected 403 for $p, got $code" >&2
+              failed=1
+            fi
           done
+          exit "$failed"
