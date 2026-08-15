@@ -159,3 +159,144 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         else repairMobileChatGeometry();
     }, { passive: true });
 })();
+
+/*
+ * Account plan badge.
+ * "Free Plan" means the account has only ever received the canonical 50 signup credits.
+ * "Paid Plan" means the account has ever had credits beyond that signup grant. This is derived
+ * from the authenticated user's RLS-protected profile/ledger and remains Paid after credits are spent.
+ */
+(function () {
+    'use strict';
+
+    var INITIAL_FREE_CREDITS = 50;
+    var refreshTimer = null;
+    var authListenerAttached = false;
+    var updateCreditsPatched = false;
+
+    function getPlanBadge() {
+        var emailBadge = document.getElementById('userEmailBadge');
+        if (!emailBadge) return null;
+        var candidate = emailBadge.nextElementSibling;
+        return candidate && candidate.tagName === 'P' ? candidate : null;
+    }
+
+    function setPlanBadge(text) {
+        var badge = getPlanBadge();
+        if (badge) badge.textContent = text;
+    }
+
+    async function getAuthenticatedUser() {
+        if (!window.supabaseClient || !window.supabaseClient.auth || typeof window.supabaseClient.auth.getSession !== 'function') {
+            return null;
+        }
+        var result = await window.supabaseClient.auth.getSession();
+        if (result && result.error) throw result.error;
+        return result && result.data && result.data.session ? result.data.session.user : null;
+    }
+
+    async function determinePlan(userId) {
+        var profileResult = await window.supabaseClient
+            .from('profiles')
+            .select('credits')
+            .eq('id', userId)
+            .maybeSingle();
+
+        if (profileResult.error) throw profileResult.error;
+        if (!profileResult.data || typeof profileResult.data.credits !== 'number') return 'unavailable';
+
+        var currentCredits = Number(profileResult.data.credits);
+
+        // Fast path: a balance above the 50-credit signup grant can only be a non-free account.
+        if (currentCredits > INITIAL_FREE_CREDITS) return 'paid';
+
+        // Canonical future path: successful add_credits() calls create completed positive purchase rows.
+        var purchaseResult = await window.supabaseClient
+            .from('credit_transactions')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('status', 'completed')
+            .eq('type', 'purchase')
+            .gt('amount', 0)
+            .limit(1);
+
+        if (purchaseResult.error) throw purchaseResult.error;
+        if (purchaseResult.data && purchaseResult.data.length > 0) return 'paid';
+
+        // Legacy-safe path: some older top-ups were not written as purchase rows.
+        // current balance + all successfully consumed credits reconstructs lifetime granted credits.
+        var usageResult = await window.supabaseClient
+            .from('credit_transactions')
+            .select('amount')
+            .eq('user_id', userId)
+            .eq('status', 'completed')
+            .lt('amount', 0);
+
+        if (usageResult.error) throw usageResult.error;
+
+        var consumedCredits = (usageResult.data || []).reduce(function (sum, row) {
+            var amount = Number(row && row.amount);
+            return Number.isFinite(amount) && amount < 0 ? sum + Math.abs(amount) : sum;
+        }, 0);
+
+        return (currentCredits + consumedCredits) > INITIAL_FREE_CREDITS ? 'paid' : 'free';
+    }
+
+    async function refreshPlanBadge() {
+        try {
+            var user = await getAuthenticatedUser();
+            if (!user || !user.id) {
+                setPlanBadge('Free Plan');
+                return;
+            }
+
+            setPlanBadge('Plan —');
+            var plan = await determinePlan(user.id);
+            if (plan === 'paid') setPlanBadge('Paid Plan');
+            else if (plan === 'free') setPlanBadge('Free Plan');
+            else setPlanBadge('Plan —');
+        } catch (err) {
+            console.warn('[PlanBadge] Unable to determine account plan:', err && err.message ? err.message : err);
+            setPlanBadge('Plan —');
+        }
+    }
+
+    function schedulePlanRefresh() {
+        if (refreshTimer) clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(function () {
+            refreshTimer = null;
+            refreshPlanBadge();
+        }, 120);
+    }
+
+    function attachPlanRuntime() {
+        schedulePlanRefresh();
+
+        if (!authListenerAttached && window.supabaseClient && window.supabaseClient.auth && typeof window.supabaseClient.auth.onAuthStateChange === 'function') {
+            authListenerAttached = true;
+            window.supabaseClient.auth.onAuthStateChange(function () {
+                schedulePlanRefresh();
+            });
+        }
+
+        if (!updateCreditsPatched && typeof window.updateUICredits === 'function') {
+            updateCreditsPatched = true;
+            var originalUpdateUICredits = window.updateUICredits;
+            window.updateUICredits = function () {
+                var result = originalUpdateUICredits.apply(this, arguments);
+                schedulePlanRefresh();
+                return result;
+            };
+        }
+    }
+
+    window.refreshUserPlanBadge = refreshPlanBadge;
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', attachPlanRuntime, { once: true });
+    } else {
+        attachPlanRuntime();
+    }
+
+    window.addEventListener('load', attachPlanRuntime, { once: true });
+})();
