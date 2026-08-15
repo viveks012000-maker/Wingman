@@ -1,0 +1,63 @@
+name: Final edge forensics
+
+on:
+  push:
+    branches: [audit/post-netlify-deploy-20260815]
+    paths: ['.github/workflows/final-edge-forensics.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  edge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Import side effect probe
+        shell: bash
+        env:
+          NODE_ENV: production
+          AICREDITS_API_KEY: dummy_test_key
+          AICREDITS_API_KEY_VISION: dummy_test_key_vision
+          SUPABASE_URL: https://example.supabase.co
+          SUPABASE_ANON_KEY: dummy_anon
+          SUPABASE_SERVICE_ROLE_KEY: dummy_service
+        run: |
+          set +e
+          timeout 3s node -e "require('./server'); console.log('REQUIRE_RETURNED')" > /tmp/import.log 2>&1
+          rc=$?
+          cat /tmp/import.log
+          echo "IMPORT_EXIT_CODE=$rc"
+          if [ "$rc" = 124 ]; then echo 'IMPORT_SIDE_EFFECT=listener_kept_process_alive'; else echo 'IMPORT_SIDE_EFFECT=no_hang'; fi
+          exit 0
+      - name: Malformed request path probe
+        shell: bash
+        env:
+          NODE_ENV: production
+          AICREDITS_API_KEY: dummy_test_key
+          AICREDITS_API_KEY_VISION: dummy_test_key_vision
+          SUPABASE_URL: https://example.supabase.co
+          SUPABASE_ANON_KEY: dummy_anon
+          SUPABASE_SERVICE_ROLE_KEY: dummy_service
+        run: |
+          node <<'NODE'
+          const http=require('http');
+          const {app}=require('./server');
+          const s=http.createServer(app);
+          function q(path){return new Promise((resolve,reject)=>{const r=http.request({host:'127.0.0.1',port:s.address().port,path},res=>{let b='';res.on('data',c=>b+=c);res.on('end',()=>resolve({path,status:res.statusCode,body:b.slice(0,160)}));});r.setTimeout(3000,()=>r.destroy(new Error('timeout')));r.on('error',reject);r.end();});}
+          (async()=>{await new Promise(r=>s.listen(0,'127.0.0.1',r)); for(const p of ['/%','/%E0%A4%A','/%ZZ','/%2','/middleware/%E0%A4%Asecurity.js']){try{console.log('MALFORMED',JSON.stringify(await q(p)));}catch(e){console.log('MALFORMED_ERR',JSON.stringify({path:p,error:e.message}));}} await new Promise(r=>s.close(r)); process.exit(0);})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+      - name: Search actual eval requirements in browser/runtime assets
+        shell: bash
+        run: |
+          echo '=== FIRST PARTY EVAL/FUNCTION CONSTRUCTORS ==='
+          grep -RInE '\beval\s*\(|new[[:space:]]+Function\s*\(' -- app.js config.js supabaseClient.js index.html app.html terms.html privacy.html refund.html scripts server.js middleware config 2>/dev/null || true
+          echo '=== PUBLIC VENDOR EVAL/FUNCTION CONSTRUCTORS ==='
+          grep -RInE '\beval\s*\(|new[[:space:]]+Function\s*\(' vendor 2>/dev/null | head -100 || true
