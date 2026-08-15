@@ -1,0 +1,60 @@
+name: Verify Railway merged release
+
+on:
+  push:
+    branches: [release/netlify-6bbcdb9c]
+    paths: ['.github/workflows/verify-railway-merged-release.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/netlify-6bbcdb9c
+          fetch-depth: 0
+      - name: Compare Railway public root to merged main index
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show 6bbcdb9c7a9e5bf8775dd376fde51f870611d15e:index.html > /tmp/main-index.html
+          curl --fail --silent --show-error --location -H 'Cache-Control: no-cache, no-store' 'https://wingman-production-c6ce.up.railway.app/?audit=6bbcdb9c' -o /tmp/railway-index.html
+          repo=$(sha256sum /tmp/main-index.html | awk '{print $1}')
+          live=$(sha256sum /tmp/railway-index.html | awk '{print $1}')
+          echo "RAILWAY_ROOT_REPO_SHA256=$repo"
+          echo "RAILWAY_ROOT_LIVE_SHA256=$live"
+          if [ "$repo" = "$live" ]; then echo 'RAILWAY_SERVES_MERGED_INDEX=true'; else echo 'RAILWAY_SERVES_MERGED_INDEX=false'; exit 1; fi
+      - name: Health CORS and sensitive-file checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          API='https://wingman-production-c6ce.up.railway.app'
+          ORIGIN='https://chimerical-granita-c68c5a.netlify.app'
+          code=$(curl --silent --show-error -o /tmp/h -w '%{http_code}' "$API/api/health")
+          echo "HEALTH_STATUS=$code BODY=$(cat /tmp/h)"; test "$code" = 200
+          code=$(curl --silent --show-error -o /tmp/c -w '%{http_code}' -H "Origin: $ORIGIN" "$API/api/credits")
+          echo "UNAUTH_CREDITS_STATUS=$code BODY=$(cat /tmp/c)"; test "$code" = 401
+          code=$(curl --silent --show-error -o /tmp/p -w '%{http_code}' -X OPTIONS "$API/api/analyze" -H "Origin: $ORIGIN" -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: authorization,content-type')
+          echo "ANALYZER_PREFLIGHT_STATUS=$code"; test "$code" = 204
+          for p in server.js database.js package.json migrations/005_user_consent_and_age_verification.sql middleware/supabaseAuth.js config/promptSystem.js tests/production_readiness_regression.test.js scripts/build-netlify-dist.js netlify.toml; do
+            code=$(curl --silent --show-error -o /tmp/x -w '%{http_code}' "$API/$p")
+            echo "SENSITIVE_PROBE path=$p status=$code"; test "$code" = 403
+          done
+      - name: Verify CSRF issuer stability
+        shell: bash
+        run: |
+          set -euo pipefail
+          API='https://wingman-production-c6ce.up.railway.app'
+          curl --fail --silent --show-error -c /tmp/cookies "$API/api/csrf-token" -o /tmp/csrf1.json
+          curl --fail --silent --show-error -b /tmp/cookies "$API/api/csrf-token" -o /tmp/csrf2.json
+          node - <<'NODE'
+          const fs=require('fs');
+          const a=JSON.parse(fs.readFileSync('/tmp/csrf1.json','utf8'));
+          const b=JSON.parse(fs.readFileSync('/tmp/csrf2.json','utf8'));
+          if(!a.success||!b.success||!a.csrfToken||a.csrfToken!==b.csrfToken) throw new Error('CSRF token was not stably reused');
+          console.log('CSRF_COOKIE_TOKEN_REUSED=true');
+          NODE
