@@ -1,0 +1,53 @@
+name: Final live production probe
+on:
+  push:
+    branches: [audit/post-netlify-deploy-20260815]
+    paths: ['.github/workflows/final-live-production-probe.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Railway production probe
+        shell: bash
+        run: |
+          set -u
+          api='https://wingman-production-c6ce.up.railway.app'
+          echo '=== RAILWAY HEALTH ==='
+          curl -sS -D /tmp/h -o /tmp/b --max-time 20 "$api/api/health"
+          tr -d '\r' < /tmp/h | grep -iE '^(HTTP/|content-security-policy:|access-control-allow-origin:|x-content-type-options:|strict-transport-security:)' || true
+          echo "BODY=$(tr '\n' ' ' < /tmp/b)"
+          if grep -q 'userCount' /tmp/b; then echo 'HEALTH_USERCOUNT_DISCLOSURE=true'; else echo 'HEALTH_USERCOUNT_DISCLOSURE=false'; fi
+          if grep -q 'unsafe-eval' /tmp/h; then echo 'RAILWAY_CSP_UNSAFE_EVAL=true'; else echo 'RAILWAY_CSP_UNSAFE_EVAL=false'; fi
+          echo '=== RAILWAY CORS ==='
+          for origin in 'https://chimerical-granita-c68c5a.netlify.app' 'https://evil.example' 'null' 'https://foo.pages.dev' 'http://localhost:3000'; do
+            code=$(curl -sS -D /tmp/ch -o /tmp/cb --max-time 20 -H "Origin: $origin" "$api/api/health" -w '%{http_code}' || echo ERR)
+            acao=$(tr -d '\r' < /tmp/ch | awk 'BEGIN{IGNORECASE=1}/^access-control-allow-origin:/{sub(/^[^:]+:[ ]*/,"");print;exit}')
+            echo "CORS origin=$origin status=$code acao=${acao:-NONE}"
+          done
+          echo '=== RAILWAY INTERNAL FILES ==='
+          for p in '/server.js' '/package.json' '/middleware/security.js' '/migrations/007_harden_add_credits_profile_missing.sql' '/tests/run_all_tests.js'; do
+            code=$(curl --path-as-is -sS -o /tmp/rb --max-time 20 -w '%{http_code}' "$api$p" || echo ERR)
+            echo "RAILWAY path=$p status=$code bytes=$(wc -c < /tmp/rb 2>/dev/null || echo 0)"
+          done
+          echo '=== RAILWAY AUTH BOUNDARIES ==='
+          for p in '/api/credits' '/api/consent/status' '/api/user/bios' '/api/user/chat-analyses'; do
+            code=$(curl -sS -o /tmp/ab --max-time 20 -w '%{http_code}' -H 'Origin: https://chimerical-granita-c68c5a.netlify.app' "$api$p" || echo ERR)
+            echo "AUTH path=$p status=$code body=$(tr '\n' ' ' < /tmp/ab | head -c 180)"
+          done
+      - name: Netlify production probe
+        shell: bash
+        run: |
+          set -u
+          base='https://chimerical-granita-c68c5a.netlify.app'
+          echo '=== NETLIFY RELEASE ==='
+          code=$(curl -sS -L --max-time 20 -o /tmp/release -w '%{http_code}' "$base/release.json?audit=$(date +%s)" || echo ERR)
+          echo "NETLIFY release.json status=$code body=$(tr '\n' ' ' < /tmp/release | head -c 500)"
+          echo '=== NETLIFY INTERNAL EXPOSURE ==='
+          for p in '/server.js' '/package.json' '/middleware/security.js' '/migrations/007_harden_add_credits_profile_missing.sql' '/tests/run_all_tests.js'; do
+            code=$(curl -sS -L --max-time 20 -o /tmp/nb -w '%{http_code}' "$base$p?audit=$(date +%s%N)" || echo ERR)
+            echo "NETLIFY path=$p status=$code bytes=$(wc -c < /tmp/nb 2>/dev/null || echo 0)"
+          done
+          echo '=== NETLIFY CSP ==='
+          curl -sSI --max-time 20 "$base/app.html?audit=$(date +%s)" | tr -d '\r' | grep -iE '^(HTTP/|content-security-policy:|cache-control:|etag:|last-modified:)' || true
