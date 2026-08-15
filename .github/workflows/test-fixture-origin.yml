@@ -1,0 +1,24 @@
+name: Trace production test fixtures
+
+on:
+  push:
+    branches: [audit/post-netlify-deploy-20260815]
+    paths: ['.github/workflows/test-fixture-origin.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Search test account patterns and live Supabase references
+        shell: bash
+        run: |
+          echo '=== TEST EMAIL PATTERNS ==='
+          grep -RInE 'wingmantest|mywingmantest|@.*test\.(local|com)|user_test_' --exclude-dir=node_modules --exclude-dir=.git . || true
+          echo '=== LIVE SUPABASE URL / keys in tests and workflows ==='
+          grep -RInE 'gstnghuhhrxtwjdafufd|SUPABASE_(URL|SERVICE_ROLE_KEY|ANON_KEY)' tests .github scripts package.json .env.example 2>/dev/null || true
+          echo '=== AUTH ADMIN CREATION/DELETION ==='
+          grep -RInE 'auth\.admin|createUser\(|deleteUser\(|signUp\(' tests .github scripts 2>/dev/null || true
