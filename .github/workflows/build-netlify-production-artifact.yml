@@ -2,27 +2,69 @@ name: Build verified Netlify production artifact
 
 on:
   push:
-    branches: [fix/netlify-safe-production-deploy]
+    branches: [main]
     paths:
+      - 'index.html'
+      - 'app.html'
+      - 'app.js'
+      - 'config.js'
+      - 'supabaseClient.js'
+      - 'style.css'
+      - 'output.css'
+      - 'privacy.html'
+      - 'terms.html'
+      - 'refund.html'
+      - 'robots.txt'
+      - 'sitemap.xml'
+      - 'logo.png'
+      - 'maeve.jpg'
+      - 'vendor/**'
       - 'scripts/build-netlify-dist.js'
       - 'netlify.toml'
       - 'package.json'
-      - 'tests/netlify_deploy_safety.test.js'
-      - 'tests/run_all_tests.js'
+      - 'package-lock.json'
+      - 'tests/**'
+      - '.github/workflows/build-netlify-production-artifact.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'app.html'
+      - 'app.js'
+      - 'config.js'
+      - 'supabaseClient.js'
+      - 'style.css'
+      - 'output.css'
+      - 'privacy.html'
+      - 'terms.html'
+      - 'refund.html'
+      - 'robots.txt'
+      - 'sitemap.xml'
+      - 'logo.png'
+      - 'maeve.jpg'
+      - 'vendor/**'
+      - 'scripts/build-netlify-dist.js'
+      - 'netlify.toml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tests/**'
       - '.github/workflows/build-netlify-production-artifact.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: netlify-artifact-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: fix/netlify-safe-production-deploy
           fetch-depth: 0
 
       - uses: actions/setup-node@v4
@@ -30,39 +72,48 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-
-      - name: Prove AI/backend source is unchanged from production main base
+      - name: Require production manual builds to target main
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
-          BASE='039fe6066c4fe37493cfc895182d4da462bbd66d'
-          for f in server.js app.js app.html config.js supabaseClient.js config/promptSystem.js middleware/supabaseAuth.js; do
-            current=$(git hash-object "$f")
-            base=$(git rev-parse "$BASE:$f")
-            echo "$f current=$current base=$base"
-            if [ "$current" != "$base" ]; then
-              echo "Protected runtime file changed unexpectedly: $f" >&2
-              exit 1
-            fi
-          done
+          test "$GITHUB_REF" = 'refs/heads/main'
 
-      - name: Full test suite
-        run: npm test
+      - name: Verify checkout matches triggering SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          echo "checkout=$actual event_sha=$GITHUB_SHA"
+          test "$actual" = "$GITHUB_SHA"
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Full regression and production dependency gate
+        run: |
+          npm test
+          npm audit --omit=dev --audit-level=high
 
       - name: Build strict public artifact
         run: npm run build:netlify
 
-      - name: Verify artifact cannot expose repository internals
+      - name: Verify release truth, API path and public allowlist
         shell: bash
         run: |
           set -euo pipefail
+          test -f netlify-dist/index.html
           test -f netlify-dist/app.html
           test -f netlify-dist/app.js
           test -f netlify-dist/config.js
+          test -f netlify-dist/supabaseClient.js
           test -f netlify-dist/_headers
+          test -f netlify-dist/_redirects
           test -f netlify-dist/release.json
+          test "$(jq -r .sourceCommit netlify-dist/release.json)" = "$GITHUB_SHA"
+          grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/app.html
+          grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/_headers
+          grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/config.js
           for forbidden in server.js database.js package.json package-lock.json PROMPT_SYSTEM_MEMORY.json PROJECT_MASTER_SPECIFICATION.md API_DOCUMENTATION.md; do
             if [ -e "netlify-dist/$forbidden" ]; then echo "FORBIDDEN $forbidden" >&2; exit 1; fi
           done
@@ -70,21 +121,21 @@ jobs:
             if [ -e "netlify-dist/$forbidden_dir" ]; then echo "FORBIDDEN $forbidden_dir" >&2; exit 1; fi
           done
           ! find netlify-dist -type f | grep -E '\.(sql|sqlite|db|md|ps1|bat|vbs)$'
-          grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/app.html
-          grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/_headers
-          grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/config.js
+          echo "PUBLIC_FILE_COUNT=$(find netlify-dist -type f | wc -l)"
 
-      - name: Create drag-and-drop deployment ZIP
+      - name: Create exact drag-and-drop deployment ZIP
         shell: bash
         run: |
           set -euo pipefail
           rm -f wingman-netlify-production.zip
           (cd netlify-dist && zip -qr ../wingman-netlify-production.zip .)
           unzip -l wingman-netlify-production.zip
+          sha256sum wingman-netlify-production.zip
 
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
-          name: wingman-netlify-production
+          name: wingman-netlify-production-${{ github.sha }}
           path: wingman-netlify-production.zip
           if-no-files-found: error
           retention-days: 7
