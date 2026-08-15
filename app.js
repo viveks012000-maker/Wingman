@@ -2800,27 +2800,15 @@ STRICT LAWS:
             const nameMap = { starter: "Starter Pack", pro: "Pro Pack", elite: "Elite Pack" };
 
             if (creditMap[tier]) {
-                window.simulateDemoPurchase(creditMap[tier]).then(function() {
-                    const badge = $("activationBadge");
-                    const title = $("activationTitle");
-                    const desc = $("activationDesc");
+                // Payment processing is intentionally fail-closed. A tier query parameter
+                // must never imply that credits were purchased or minted.
+                window.simulateDemoPurchase(creditMap[tier]);
 
-                    if (badge) badge.textContent = nameMap[tier] + " Activated";
-                    if (title) title.textContent = creditMap[tier] + " Credits Added";
-                    if (desc) desc.textContent = "Your " + creditMap[tier] + " credits are active! Upload your chat screenshots on the left to generate tailored replies.";
-
-                    const am = $("activationModal"), ac = $("activationCard");
-                    if (am && ac) {
-                        am.classList.remove("opacity-0", "pointer-events-none");
-                        am.classList.add("opacity-100", "pointer-events-auto");
-                        ac.classList.remove("scale-95");
-                        ac.classList.add("scale-100");
-                    }
-                });
-
-                try {
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                } catch (e2) {}
+                // Remove the stale checkout parameter so refresh/back navigation cannot
+                // repeatedly trigger purchase messaging.
+                const cleanUrl = new URL(window.location.href);
+                cleanUrl.searchParams.delete("tier");
+                window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
             }
         } catch (e) {}
     }

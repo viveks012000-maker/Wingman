@@ -15,5 +15,7 @@ assert.ok(server.includes("row.success !== true || row.settled !== true"), 'sett
 assert.ok(server.includes("if (!row || row.success !== true)"), 'release helper must reject semantic RPC failures');
 assert.ok((server.match(/err\.statusCode === 503/g) || []).length >= 2, 'credit balance endpoints must preserve HTTP 503 service-unavailable semantics');
 assert.ok(app.includes('currentBatchBytes > 25 * 1024 * 1024'), 'client screenshot total limit must match 25 MB invariant');
+assert.ok(!app.includes('title.textContent = creditMap[tier] + \" Credits Added\"'), 'tier URL must never falsely claim that credits were added while payments are fail-closed');
+assert.ok(app.includes('cleanUrl.searchParams.delete(\"tier\")'), 'tier URL must be cleared after the unavailable-purchase notice');
 
 console.log('✔ Credit purchase-modal regression guard passed.');

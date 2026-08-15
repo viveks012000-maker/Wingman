@@ -3348,13 +3348,6 @@ app.post('/api/user/delete-account', requireSupabaseAuth, apiLimiter, async (req
     }
 });
 
-// PUBLIC ENDPOINT FOR CSRF SECURITY TOKEN ISSUANCE
-app.get('/api/csrf-token', (req, res) => {
-    const token = generateCsrfToken();
-    setHttpOnlyCookie(res, 'wingman_csrf', token, 3600);
-    res.json({ success: true, csrfToken: token });
-});
-
 // PUBLIC ENDPOINT FOR SUPABASE AUTHENTICATION CONFIGURATION
 app.get('/api/config', (req, res) => {
     res.json({
