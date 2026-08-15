@@ -1280,7 +1280,7 @@
                 <div
                     class="inline-flex items-center gap-1.5 bg-violet-500/15 border border-violet-500/30 px-3 py-1 rounded-full text-violet-300 font-mono text-[11px] font-semibold tracking-wide mb-1">
                     <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                    <span>100% Encrypted Workspace</span>
+                    <span>Private AI Workspace</span>
                 </div>
                 <h3 class="font-headline text-2xl text-white font-extrabold tracking-tight">Unlock Your AI Wingman 🚀
                 </h3>
@@ -1504,9 +1504,20 @@
         window.handleEnterDashboard = function (e) {
             if (e) e.preventDefault();
             var cb = $("interstitialCheckbox");
-            if (cb) cb.checked = true;
+            if (!cb || !cb.checked) {
+                var container = $("termsCheckboxContainer");
+                if (container) {
+                    container.classList.add("ring-2", "ring-rose-500");
+                    setTimeout(function() { container.classList.remove("ring-2", "ring-rose-500"); }, 1500);
+                }
+                if (typeof window.showToast === "function") {
+                    window.showToast("Please check the box to confirm you are 18+ and agree to the Terms of Service & Privacy Policy.", "warning");
+                }
+                return;
+            }
             sessionStorage.setItem("wingman_login_agreed", "true");
             localStorage.setItem("wingman_terms_accepted", "true");
+            localStorage.setItem("wingman_consent_version", "2026.1");
 
             if (typeof window.closeInterstitialModal === "function") window.closeInterstitialModal();
 
@@ -2117,6 +2128,37 @@
             }
         };
 
+        window.showToast = function (msg, type, append) {
+            try {
+                var container = document.getElementById("toastContainer");
+                if (!container) {
+                    container = document.createElement("div");
+                    container.id = "toastContainer";
+                    container.className = "fixed top-5 right-5 z-[200] flex flex-col gap-3 pointer-events-none max-w-sm w-full px-4 sm:px-0";
+                    document.body.appendChild(container);
+                }
+                if (!append) container.innerHTML = "";
+
+                var toast = document.createElement("div");
+                var cls = type === "success" ? "bg-[#062419] border-emerald-500/60 text-emerald-200"
+                    : type === "warning" ? "bg-[#291b05] border-amber-500/60 text-amber-200"
+                    : type === "error" ? "bg-[#290910] border-rose-500/60 text-rose-200"
+                    : "bg-[#131124] border-violet-500/50 text-white";
+
+                var icon = type === "success" ? "check_circle" : type === "warning" ? "warning" : type === "error" ? "error" : "info";
+                toast.className = "toast-enter flex items-start gap-2.5 px-4 py-3 rounded-xl shadow-2xl border text-xs font-medium max-w-[340px] pointer-events-auto transition-all cursor-pointer " + cls;
+                toast.innerHTML = '<span class="material-symbols-outlined text-[18px] shrink-0">' + icon + '</span><span class="leading-snug">' + msg + '</span>';
+                toast.onclick = function() { try { toast.remove(); } catch(e) {} };
+                container.appendChild(toast);
+                setTimeout(function () {
+                    try {
+                        toast.classList.add("opacity-0", "translate-y-[-10px]");
+                        setTimeout(function () { try { toast.remove(); } catch (e) {} }, 300);
+                    } catch (e) {}
+                }, 5000);
+            } catch (e) {}
+        };
+
         document.addEventListener("DOMContentLoaded", async function () {
             if (!window.supabaseClient && typeof initSupabase === "function") {
                 try { await initSupabase(); } catch (e) { }
@@ -2136,6 +2178,9 @@
             }
         });
     </script>
+
+    <!-- Unified Static Toast Container -->
+    <div id="toastContainer" class="fixed top-5 right-5 z-[200] flex flex-col gap-3 pointer-events-none max-w-sm w-full px-4 sm:px-0"></div>
 </body>
 
 </html>

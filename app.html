@@ -2,7 +2,7 @@
 <html class="dark" lang="en">
 <head>
     <meta charset="utf-8"/>
-    <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
+    <meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
     <meta name="apple-mobile-web-app-capable" content="yes"/>
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
     <meta name="theme-color" content="#000000"/>
@@ -2202,10 +2202,10 @@
             <!-- Compact Bottom Action Bar -->
             <div class="p-3.5 border-t border-white/10 bg-[#06040d] mt-auto shrink-0 z-10 flex flex-col items-center justify-between gap-2 text-center">
                 <p class="font-mono text-[10px] text-slate-400 flex items-center justify-center gap-1">
-                    <span class="material-symbols-outlined text-[14px] text-emerald-400">verified_user</span> 100% Secure Checkout • Credits Never Expire
+                    <span class="material-symbols-outlined text-[14px] text-violet-400">info</span> Purchases currently paused during system upgrade
                 </p>
-                <button type="button" id="confirmPurchaseBtn" class="w-full primary-btn bg-violet-600 hover:bg-violet-500 text-white font-label text-xs py-2.5 px-6 rounded-full border border-violet-400 transition-all duration-300 ease-out hover:-translate-y-0.5 hover:shadow-[0_0_20px_rgba(139,92,246,0.4)] flex items-center justify-center gap-2 active:scale-95 font-bold cursor-pointer shrink-0" onclick="window.confirmPurchase(event)">
-                    <span id="purchaseBtnText">Secure Discount Now - $19.99</span>
+                <button type="button" id="confirmPurchaseBtn" class="w-full primary-btn bg-neutral-800 hover:bg-neutral-700 text-slate-300 font-label text-xs py-2.5 px-6 rounded-full border border-white/10 transition-all flex items-center justify-center gap-2 font-bold cursor-pointer shrink-0" onclick="window.confirmPurchase(event)">
+                    <span id="purchaseBtnText">Purchases Temporarily Unavailable</span>
                 </button>
             </div>
         </div>
@@ -2223,7 +2223,7 @@
             <div class="text-center space-y-1.5 pt-1">
                 <div class="inline-flex items-center gap-1.5 bg-violet-500/15 border border-violet-500/30 px-3 py-1 rounded-full text-violet-300 font-mono text-[11px] font-semibold tracking-wide mb-1">
                     <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                    <span>100% Encrypted Workspace</span>
+                    <span>Private AI Workspace</span>
                 </div>
                 <h3 class="font-headline text-2xl text-white font-extrabold tracking-tight">Unlock Your AI Wingman 🚀</h3>
                 <p class="text-xs text-slate-300 leading-relaxed font-body">Generate high-status replies, optimize profile bios &amp; practice with your 24/7 AI Coach.</p>
@@ -2262,6 +2262,9 @@
             </button>
         </div>
     </div>
+
+    <!-- Unified Static Toast Container -->
+    <div id="toastContainer" class="fixed top-5 right-5 z-[200] flex flex-col gap-3 pointer-events-none max-w-sm w-full px-4 sm:px-0"></div>
 
     <!-- Main Application Bundle -->
     <script src="app.js"></script>

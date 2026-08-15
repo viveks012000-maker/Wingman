@@ -277,12 +277,7 @@
 
         if (isUserLoggedIn) {
             safeSet('wingman_authenticated', 'true');
-            safeSet('wingman_login_agreed', 'true');
             safeSet('wingman_user_authenticated', 'true');
-            safeSet('wingman_terms_accepted', 'true');
-            if (typeof window.state === 'object' && window.state) {
-                window.state.isTermsAccepted = true;
-            }
 
             // Only auto-redirect to app.html on OAuth callback (access_token in hash)
             if (window.location.hash && window.location.hash.includes('access_token') && !window.location.pathname.includes('app.html') && !window.location.pathname.includes('terms.html') && !window.location.pathname.includes('privacy.html') && !window.location.pathname.includes('refund.html')) {
@@ -290,10 +285,7 @@
                 return;
             }
 
-            // Automatically dismiss/hide Interstitial Age Gate & Auth Modals when active session exists
-            if (typeof window.closeInterstitialModal === 'function') {
-                window.closeInterstitialModal();
-            }
+            // Dismiss Auth Modal when active session exists
             if (typeof window.closeAuthRequiredModal === 'function') {
                 window.closeAuthRequiredModal();
             }

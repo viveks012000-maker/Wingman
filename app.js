@@ -158,7 +158,7 @@
         rawImageFile: null,
         croppedWebpDataUrl: null,
         isLoading: false,
-        isTermsAccepted: true,
+        isTermsAccepted: false,
         lifecycle: "EMPTY",
         selectedTier: { value: "elite", credits: 3000, price: 19.99 },
         activeTranscriptCache: null,
@@ -1434,16 +1434,16 @@ STRICT LAWS:
     window.updateTermsLockState = function () {
         try {
             const cb = $("privacyConsent");
-            const isAuth = safeStorage.get("wingman_authenticated") === "true" || safeStorage.get("wingman_user_authenticated") === "true" || sessionStorage.getItem("wingman_authenticated") === "true" || localStorage.getItem("wingman_user_authenticated") === "true" || (typeof window.currentSupabaseUser === 'object' && window.currentSupabaseUser);
-            const savedTerms = safeStorage.get("wingman_terms_accepted") === "true" || localStorage.getItem("wingman_terms_accepted") === "true";
+            const isExplicitlyAccepted = (safeStorage.get("wingman_terms_accepted") === "true" || localStorage.getItem("wingman_terms_accepted") === "true") && (safeStorage.get("wingman_consent_version") === "2026.1" || localStorage.getItem("wingman_consent_version") === "2026.1");
 
-            if (savedTerms || isAuth) {
+            if (cb && cb.checked) {
+                state.isTermsAccepted = true;
+            } else if (isExplicitlyAccepted) {
                 state.isTermsAccepted = true;
                 if (cb) cb.checked = true;
-            } else if (cb) {
-                state.isTermsAccepted = cb.checked;
             } else {
-                state.isTermsAccepted = true;
+                state.isTermsAccepted = false;
+                if (cb) cb.checked = false;
             }
             const isLocked = !state.isTermsAccepted;
 
@@ -1464,6 +1464,7 @@ STRICT LAWS:
         try {
             const isLocked = !state.isTermsAccepted;
             const isLoading = !!state.isLoading;
+            const isAuth = safeStorage.get("wingman_authenticated") === "true" || safeStorage.get("wingman_user_authenticated") === "true" || (typeof window.currentSupabaseUser === 'object' && window.currentSupabaseUser);
 
             const bi = $("bioInput");
             const btn2 = $("generateIcebreakerBtn");
@@ -1481,6 +1482,27 @@ STRICT LAWS:
                 btn2.classList.toggle("opacity-70", isLoading);
                 btn2.classList.toggle("cursor-not-allowed", isBtn2Disabled);
                 btn2.classList.toggle("cursor-pointer", !isBtn2Disabled);
+
+                const btn2Span = btn2.querySelector("span:not(.material-symbols-outlined)");
+                if (btn2Span && !isLoading) {
+                    if (!state.isTermsAccepted) {
+                        btn2Span.textContent = "Generate Icebreaker — 10 Credits";
+                    } else if (!isAuth) {
+                        btn2Span.textContent = "Sign in to generate";
+                    } else if (state.creditsStatus === "loading" || state.credits === null) {
+                        btn2Span.textContent = "Checking credits…";
+                    } else if (state.creditsStatus === "missing_profile") {
+                        btn2Span.textContent = "Profile missing — Contact support";
+                    } else if (state.creditsStatus === "error") {
+                        btn2Span.textContent = "Credit service unavailable — Retry";
+                    } else if (typeof state.credits === 'number' && state.credits < 10) {
+                        btn2Span.textContent = `Add credits to generate (${state.credits}/10)`;
+                    } else if (!isBioValid) {
+                        btn2Span.textContent = "Enter match bio to generate";
+                    } else {
+                        btn2Span.textContent = "Generate Icebreaker — 10 Credits";
+                    }
+                }
             }
 
             const ai = $("auditBioInput");
@@ -1500,6 +1522,27 @@ STRICT LAWS:
                 btn3.classList.toggle("opacity-70", isLoading);
                 btn3.classList.toggle("cursor-not-allowed", isBtn3Disabled);
                 btn3.classList.toggle("cursor-pointer", !isBtn3Disabled);
+
+                const btn3Span = btn3.querySelector("span:not(.material-symbols-outlined)");
+                if (btn3Span && !isLoading) {
+                    if (!state.isTermsAccepted) {
+                        btn3Span.textContent = "Optimize My Bio — 10 Credits";
+                    } else if (!isAuth) {
+                        btn3Span.textContent = "Sign in to generate";
+                    } else if (state.creditsStatus === "loading" || state.credits === null) {
+                        btn3Span.textContent = "Checking credits…";
+                    } else if (state.creditsStatus === "missing_profile") {
+                        btn3Span.textContent = "Profile missing — Contact support";
+                    } else if (state.creditsStatus === "error") {
+                        btn3Span.textContent = "Credit service unavailable — Retry";
+                    } else if (typeof state.credits === 'number' && state.credits < 10) {
+                        btn3Span.textContent = `Add credits to generate (${state.credits}/10)`;
+                    } else if (!isAuditValid) {
+                        btn3Span.textContent = words > 500 ? "Bio exceeds 500 words" : "Enter your bio to optimize";
+                    } else {
+                        btn3Span.textContent = "Optimize My Bio — 10 Credits";
+                    }
+                }
             }
 
             const ci = $("simulator-chat-input");
@@ -1523,6 +1566,27 @@ STRICT LAWS:
                 btn1.classList.toggle("opacity-70", Boolean(state.isLoading));
                 btn1.classList.toggle("cursor-not-allowed", !enabled);
                 btn1.classList.toggle("cursor-pointer", enabled);
+
+                const btn1Span = btn1.querySelector("span:not(.material-symbols-outlined)");
+                if (btn1Span && !state.isLoading) {
+                    if (!state.isTermsAccepted) {
+                        btn1Span.textContent = "Generate Perfect Replies — 10 Credits";
+                    } else if (!isAuth) {
+                        btn1Span.textContent = "Sign in to generate";
+                    } else if (state.creditsStatus === "loading" || state.credits === null) {
+                        btn1Span.textContent = "Checking credits…";
+                    } else if (state.creditsStatus === "missing_profile") {
+                        btn1Span.textContent = "Profile missing — Contact support";
+                    } else if (state.creditsStatus === "error") {
+                        btn1Span.textContent = "Credit service unavailable — Retry";
+                    } else if (typeof state.credits === 'number' && state.credits < 10) {
+                        btn1Span.textContent = `Add credits to generate (${state.credits}/10)`;
+                    } else if (!hasScreenshot) {
+                        btn1Span.textContent = "Upload screenshot to generate";
+                    } else {
+                        btn1Span.textContent = "Generate Perfect Replies — 10 Credits";
+                    }
+                }
             }
         } catch (e) {}
     };
@@ -1629,8 +1693,6 @@ STRICT LAWS:
             m.classList.add("opacity-0", "pointer-events-none", "hidden");
             m.style.display = "none";
         }
-        state.isTermsAccepted = true;
-        try { localStorage.setItem("wingman_terms_accepted", "true"); } catch (err) {}
         if (typeof window.updateTermsLockState === "function") window.updateTermsLockState();
     };
 
@@ -2056,89 +2118,16 @@ STRICT LAWS:
 
     // PURCHASE HANDLER WITH STRICT AUTH & SERVER TRUTH
     window.simulateDemoPurchase = async function (creditAmount, btnEl) {
-        creditAmount = creditAmount || (state.selectedTier && state.selectedTier.credits) || 600;
-
-        const isAuth = await isUserAuthenticated();
-        if (!isAuth) {
-            if (typeof window.showToast === 'function') {
-                window.showToast("Please sign in to purchase credits.", "warning");
-            }
-            if (typeof window.openAuthRequiredModal === 'function') {
-                window.openAuthRequiredModal();
-            }
-            return;
-        }
-
-        if (btnEl) {
-            btnEl.disabled = true;
-            btnEl.classList.add("opacity-50", "pointer-events-none");
-        }
-
-        try {
-            const apiBase = getApiBase();
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-            const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
-            const reqHeaders = {
-                'Content-Type': 'application/json',
-                ...authHeaders
-            };
-
-            const selectedTierVal = (state.selectedTier && state.selectedTier.value) || 'pro';
-            const payId = 'sim_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-
-            const response = await fetch(apiBase + '/api/payments/verify', {
-                method: 'POST',
-                headers: reqHeaders,
-                credentials: 'include',
-                signal: controller.signal,
-                body: JSON.stringify({
-                    paymentId: payId,
-                    credits: creditAmount,
-                    tier: selectedTierVal,
-                    sandbox: true,
-                    idempotencyKey: payId
-                })
-            });
-            clearTimeout(timeoutId);
-
-            if (response.status === 401) {
-                if (typeof window.showToast === 'function') window.showToast("Session expired or authentication required. Please sign in again.", "warning");
-                if (typeof window.openAuthRequiredModal === 'function') window.openAuthRequiredModal();
-                return;
-            }
-
-            if (response.ok) {
-                const data = await response.json();
-                if (data && data.success) {
-                    await window.checkCreditBalance();
-                    const added = data.creditsAdded || creditAmount;
-                    if (typeof window.updateHUDScoreBadge === 'function') window.updateHUDScoreBadge();
-                    if (typeof window.showToast === 'function') window.showToast("Purchase Successful! Added " + added + " credits to your account.", "success");
-                    if (typeof window.closePurchaseModal === 'function') window.closePurchaseModal();
-                    return;
-                }
-            }
-
-            const errData = await response.json().catch(function() { return {}; });
-            if (typeof window.showToast === 'function') window.showToast(errData.error || "Purchase processing failed. Please try again.", "warning");
-        } catch (err) {
-            console.error("[Purchase Error]:", err.message);
-            if (typeof window.showToast === 'function') window.showToast("Unable to process purchase. Please check network connection.", "warning");
-        } finally {
-            if (btnEl) {
-                btnEl.disabled = false;
-                btnEl.classList.remove("opacity-50", "pointer-events-none");
-            }
+        if (typeof window.showToast === 'function') {
+            window.showToast("Credit purchasing is currently unavailable while payment gateway upgrades are underway. Please enjoy your free starting credits!", "warning");
         }
     };
 
     window.confirmPurchase = async function (e) {
-        if (e) e.preventDefault();
-        const targetBtn = e ? e.currentTarget || e.target : null;
-        const credits = (state.selectedTier && state.selectedTier.credits) || 3000;
-        await window.simulateDemoPurchase(credits, targetBtn);
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        if (typeof window.showToast === 'function') {
+            window.showToast("Credit purchasing is currently unavailable while payment gateway upgrades are underway. Please enjoy your free starting credits!", "warning");
+        }
     };
 
     // ============================================================
@@ -2577,8 +2566,13 @@ STRICT LAWS:
     // ============================================================
     window.showToast = function (msg, type, append) {
         try {
-            const container = $("toastContainer");
-            if (!container) return;
+            let container = $("toastContainer");
+            if (!container) {
+                container = document.createElement("div");
+                container.id = "toastContainer";
+                container.className = "fixed top-5 right-5 z-[200] flex flex-col gap-3 pointer-events-none max-w-sm w-full px-4 sm:px-0";
+                document.body.appendChild(container);
+            }
 
             if (!append) container.innerHTML = "";
 
@@ -2590,7 +2584,7 @@ STRICT LAWS:
                 : "bg-[#131124] border-violet-500/50 text-white";
 
             const icon = type === "success" ? "check_circle" : type === "warning" ? "warning" : type === "error" ? "error" : type === "shield" ? "verified_user" : "info";
-            toast.className = "toast-enter flex items-start gap-2.5 px-4 py-3 rounded-xl shadow-2xl border text-xs font-medium max-w-[340px] pointer-events-auto transition-all " + cls;
+            toast.className = "toast-enter flex items-start gap-2.5 px-4 py-3 rounded-xl shadow-2xl border text-xs font-medium max-w-[340px] pointer-events-auto transition-all cursor-pointer " + cls;
 
             if (type === "shield") {
                 toast.style.cssText = "border: 1px solid rgba(34, 197, 94, 0.6) !important; background: #062419 !important; opacity: 1 !important; color: #a7f3d0 !important;";
@@ -2605,6 +2599,10 @@ STRICT LAWS:
             } else {
                 toast.innerHTML = '<span class="material-symbols-outlined text-[18px] shrink-0">' + icon + '</span><span class="leading-snug">' + esc(msg) + '</span>';
             }
+
+            toast.onclick = function() {
+                try { toast.remove(); } catch (e) {}
+            };
 
             container.appendChild(toast);
             setTimeout(function () {
@@ -3193,6 +3191,9 @@ STRICT LAWS:
         } catch (err) {
             console.error("Screenshot Analysis Error:", err);
             window.setLifecycleState(state.uploadedFiles.length > 0 ? "SELECTED" : "EMPTY");
+            if (typeof window.showToast === 'function') {
+                window.showToast(err.message || "Screenshot analysis failed. Your credits were preserved.", "error");
+            }
         } finally {
             stopTelemetryTracker("analyze", "analyze-telemetry-status", "analyze-telemetry-pct", "analyze-telemetry-bar", "ANALYSIS COMPLETE");
             state.isLoading = false;
@@ -3275,8 +3276,12 @@ STRICT LAWS:
                 if (skel) skel.classList.add("hidden");
             }
         } catch (err) {
+            console.error("Icebreaker Error:", err);
             if (emp) emp.classList.remove("hidden");
             if (skel) skel.classList.add("hidden");
+            if (typeof window.showToast === 'function') {
+                window.showToast(err.message || "Icebreaker generation failed. Your credits were preserved.", "error");
+            }
         } finally {
             stopTelemetryTracker("icebreaker", "icebreak-telemetry-status", "icebreak-telemetry-pct", "icebreak-telemetry-bar", "OPENERS CRAFTED");
             state.isLoading = false;
@@ -3359,8 +3364,12 @@ STRICT LAWS:
                 if (skel) skel.classList.add("hidden");
             }
         } catch (err) {
+            console.error("Bio Optimizer Error:", err);
             if (emp) emp.classList.remove("hidden");
             if (skel) skel.classList.add("hidden");
+            if (typeof window.showToast === 'function') {
+                window.showToast(err.message || "Bio optimization failed. Your credits were preserved.", "error");
+            }
         } finally {
             stopTelemetryTracker("optimize", "optimize-telemetry-status", "optimize-telemetry-pct", "optimize-telemetry-bar", "BIO OPTIMIZED");
             state.isLoading = false;
@@ -3756,10 +3765,42 @@ STRICT LAWS:
         }
     };
 
-    window.acceptInterstitialTerms = function() {
+    window.acceptInterstitialTerms = async function() {
+        const chk = document.getElementById('interstitialAgreementCheck');
+        if (!chk || !chk.checked) {
+            if (typeof window.showToast === 'function') {
+                window.showToast("Please check the box to confirm you are 18+ and agree to the Terms of Service & Privacy Policy.", "warning");
+            }
+            return;
+        }
         safeStorage.set('wingman_terms_accepted', 'true');
+        safeStorage.set('wingman_consent_version', '2026.1');
+        safeStorage.set('wingman_consent_accepted_at', new Date().toISOString());
+        state.isTermsAccepted = true;
+
         const modal = document.getElementById('interstitialModal');
-        if (modal) modal.classList.add('hidden');
+        if (modal) {
+            modal.classList.add('hidden', 'opacity-0', 'pointer-events-none');
+            modal.classList.remove('opacity-100', 'pointer-events-auto');
+            modal.style.display = 'none';
+        }
+        if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+        if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
+
+        try {
+            const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
+            if (authHeaders && authHeaders.Authorization) {
+                fetch((window.getApiBase ? window.getApiBase() : '') + '/api/consent', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...authHeaders },
+                    body: JSON.stringify({ termsVersion: '2026.1', privacyVersion: '2026.1', age18Plus: true, aiProcessingConsent: true })
+                }).catch(() => {});
+            }
+        } catch (_) {}
+
+        if (typeof window.showToast === 'function') {
+            window.showToast("Legal terms and 18+ age verification confirmed.", "success");
+        }
     };
 
     window.showUnreadableErrorModal = function() {

@@ -2510,17 +2510,9 @@ app.post('/api/simulator/review', requireSupabaseAuth, apiLimiter, async (req, r
         }
 
         if (!sessionHistory || historyArray.length < 2) {
-            return res.json({
-                overall_score: 75,
-                status_text: "STATUS: OK",
-                wit_score: "70%",
-                text_economy: "80%",
-                confidence_score: "70%",
-                performance_summary: "The session was too short to perform a deep tactical evaluation. Try having a longer conversation to unlock full insights.",
-                biggest_strength: "Initiated the conversation.",
-                biggest_mistake: "Ended the practice session prematurely.",
-                priority_focus: "Aim for at least 4-6 back-and-forth messages to test your conversational flow.",
-                priority_tip: "Aim for at least 4-6 back-and-forth messages to test your conversational flow."
+            return res.status(400).json({
+                success: false,
+                error: "At least 2 messages are required to evaluate your conversation."
             });
         }
 
@@ -2585,54 +2577,116 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
             reviewJson = JSON.parse(cleanedContent);
         } catch (parseError) {
             console.error("JSON Parsing Error from Review LLM:", parseError);
-            reviewJson = {
-                overall_score: 78,
-                status_text: "STATUS: GOOD",
-                wit_score: "75%",
-                text_economy: "85%",
-                confidence_score: "70%",
-                performance_summary: "Maintained steady conversation flow throughout the session.",
-                biggest_strength: "Kept responses engaged and on topic.",
-                biggest_mistake: "Could take more playful risks to build stronger attraction.",
-                priority_focus: "Focus on driving towards a concrete date offer earlier."
-            };
+            throw new Error("Failed to parse simulation review output from AI model.");
+        }
+
+        if (!reviewJson || typeof reviewJson !== 'object' || !reviewJson.performance_summary) {
+            throw new Error("Simulation review output is incomplete or malformed.");
         }
 
         await settleCreditsDB(req, reqId);
 
         res.json({
-            overall_score: Number(reviewJson.overall_score) || 78,
-            status_text: reviewJson.status_text || "STATUS: GOOD",
-            wit_score: reviewJson.wit_score || "75%",
-            text_economy: reviewJson.text_economy || "85%",
+            success: true,
+            overall_score: Number(reviewJson.overall_score) || 70,
+            status_text: reviewJson.status_text || "STATUS: OK",
+            wit_score: reviewJson.wit_score || "70%",
+            text_economy: reviewJson.text_economy || "80%",
             confidence_score: reviewJson.confidence_score || "70%",
-            performance_summary: reviewJson.performance_summary || "Maintained steady conversation flow throughout the session.",
-            biggest_strength: reviewJson.biggest_strength || "Kept responses engaged and on topic.",
-            biggest_mistake: reviewJson.biggest_mistake || "Could take more playful risks to build stronger attraction.",
-            priority_focus: reviewJson.priority_focus || reviewJson.priority_tip || "Focus on driving towards a concrete date offer earlier.",
-            priority_tip: reviewJson.priority_focus || reviewJson.priority_tip || "Focus on driving towards a concrete date offer earlier.",
+            performance_summary: reviewJson.performance_summary,
+            biggest_strength: reviewJson.biggest_strength || "Engaged with the scenario.",
+            biggest_mistake: reviewJson.biggest_mistake || "Opportunity to take stronger conversational initiative.",
+            priority_focus: reviewJson.priority_focus || reviewJson.priority_tip || "Aim for clear forward momentum in future rounds.",
+            priority_tip: reviewJson.priority_focus || reviewJson.priority_tip || "Aim for clear forward momentum in future rounds.",
             credits: deduction.remainingCredits
         });
 
     } catch (error) {
-        console.error("Qwen Review API Error:", error);
+        console.error("Qwen Review API Error:", error.message);
+        let currentBal = deduction ? deduction.remainingCredits : 0;
         if (deduction && deduction.success && !deduction.duplicate) {
-            await releaseCreditsDB(req, reqId, error.message);
+            const relRes = await releaseCreditsDB(req, reqId, error.message);
+            if (relRes && typeof relRes.remainingCredits === 'number') {
+                currentBal = relRes.remainingCredits;
+            }
         }
-        res.json({
-            overall_score: 78,
-            status_text: "STATUS: GOOD",
-            wit_score: "75%",
-            text_economy: "85%",
-            confidence_score: "70%",
-            performance_summary: "Maintained steady conversation flow throughout the session.",
-            biggest_strength: "Kept responses engaged and on topic.",
-            biggest_mistake: "Could take more playful risks to build stronger attraction.",
-            priority_focus: "Focus on driving towards a concrete date offer earlier.",
-            priority_tip: "Focus on driving towards a concrete date offer earlier."
+        if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
+            return res.status(504).json({
+                success: false,
+                error: "Simulation review timed out. You have not been charged credits.",
+                credits: currentBal
+            });
+        }
+        res.status(500).json({
+            success: false,
+            error: "Simulation review failed. You have not been charged credits.",
+            credits: currentBal
         });
     } finally {
         releaseUserConcurrencyLock(uid);
+    }
+});
+
+// 4D. USER CONSENT & 18+ VERIFICATION ENDPOINT (`/api/consent`)
+app.post('/api/consent', requireSupabaseAuth, apiLimiter, async (req, res) => {
+    try {
+        const uid = getUserIdFromReq(req);
+        if (!uid) {
+            return res.status(401).json({ success: false, error: "Authentication required to record persistent consent." });
+        }
+
+        const { termsVersion = '2026.1', privacyVersion = '2026.1', age18Plus = true, aiProcessingConsent = true } = req.body || {};
+
+        if (!age18Plus) {
+            return res.status(400).json({ success: false, error: "Age 18+ confirmation is mandatory." });
+        }
+        if (!aiProcessingConsent) {
+            return res.status(400).json({ success: false, error: "AI data processing consent is mandatory." });
+        }
+
+        const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || null;
+        const userAgent = req.headers['user-agent'] || null;
+
+        let consentRecorded = true;
+        let consentId = 'cons_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5);
+
+        if (supabaseAdmin && typeof supabaseAdmin.from === 'function') {
+            try {
+                const { data, error } = await supabaseAdmin
+                    .from('user_consents')
+                    .upsert({
+                        user_id: uid,
+                        terms_version: String(termsVersion).trim(),
+                        privacy_version: String(privacyVersion).trim(),
+                        age_18_plus: true,
+                        ai_processing_consent: true,
+                        accepted_at: new Date().toISOString(),
+                        withdrawn_at: null,
+                        ip_address: ip,
+                        user_agent: userAgent
+                    }, { onConflict: 'user_id, terms_version, privacy_version' })
+                    .select('id, accepted_at')
+                    .maybeSingle();
+
+                if (!error && data) {
+                    consentId = data.id;
+                }
+            } catch (dbErr) {
+                console.warn("[Consent] Supabase user_consents notice (migration staging):", dbErr.message);
+            }
+        }
+
+        return res.json({
+            success: true,
+            consentRecorded: true,
+            consentId: consentId,
+            termsVersion: termsVersion,
+            privacyVersion: privacyVersion,
+            message: "Legal consent and 18+ verification successfully recorded."
+        });
+    } catch (err) {
+        console.error("[Consent Error]:", err);
+        return res.status(500).json({ success: false, error: "Failed to record consent: " + err.message });
     }
 });
 
