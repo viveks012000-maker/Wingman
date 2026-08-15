@@ -1,0 +1,294 @@
+name: Maeve runtime repair
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/maeve-runtime-send
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Apply guarded Maeve-only repair
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          server = Path('server.js').read_text(encoding='utf-8')
+          app = Path('app.js').read_text(encoding='utf-8')
+
+          marker = '// Helper function to query OpenRouter dynamically with automatic key failover\n'
+          if marker not in server:
+              raise SystemExit('provider insertion marker missing')
+
+          helper = r'''// Strict Maeve provider path: exact AICredits endpoint/model with bounded transient retry.
+// This intentionally does not use the vision key, OpenRouter keys, model aliases, or AICREDITS_BASE_URL.
+function getMaeveProviderFailureCode(error) {
+    const status = Number(error && error.statusCode);
+    if (error && error.isTimeout) return 'AI_PROVIDER_TIMEOUT';
+    if (status === 401 || status === 403) return 'AI_PROVIDER_AUTH';
+    if (status === 402) return 'AI_PROVIDER_BUDGET';
+    if (status === 429) return 'AI_PROVIDER_RATE_LIMIT';
+    if ([500, 502, 503, 504].includes(status)) return 'AI_PROVIDER_UPSTREAM';
+    if (error && error.code === 'AI_PROVIDER_EMPTY_RESPONSE') return 'AI_PROVIDER_EMPTY_RESPONSE';
+    return 'AI_PROVIDER_FAILURE';
+}
+
+async function queryMaeveProvider(messagesArray, temperature = 0.7, maxTokens = 120, timeoutMs = 25000) {
+    const keysToTry = [...new Set([
+        process.env.AICREDITS_API_KEY_GENERAL,
+        process.env.AICREDITS_API_KEY
+    ].filter(Boolean))];
+    const model = 'qwen/qwen3-235b-a22b-2507';
+    const baseUrl = 'https://api.aicredits.in/v1';
+
+    if (keysToTry.length === 0) {
+        const err = new Error('Maeve provider key is not configured.');
+        err.code = 'AI_PROVIDER_CONFIG';
+        throw err;
+    }
+
+    const retryableStatuses = new Set([429, 500, 502, 503, 504]);
+    let lastError = null;
+
+    for (const apiKey of keysToTry) {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            const controller = new AbortController();
+            const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+            try {
+                const payload = {
+                    model,
+                    messages: messagesArray,
+                    temperature,
+                    max_tokens: maxTokens
+                };
+                const response = await fetch(baseUrl + '/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json',
+                        'HTTP-Referer': 'https://mywingman.com',
+                        'X-Title': 'My Wingman App'
+                    },
+                    body: JSON.stringify(payload),
+                    signal: controller.signal
+                });
+
+                if (!response.ok) {
+                    const rawText = await response.text().catch(() => '');
+                    const err = new Error(`Maeve provider request failed with HTTP ${response.status}.`);
+                    err.statusCode = response.status;
+                    err.providerDetail = rawText.slice(0, 500);
+                    lastError = err;
+
+                    if (retryableStatuses.has(response.status) && attempt < 3) {
+                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        continue;
+                    }
+                    break;
+                }
+
+                const data = await response.json();
+                if (data && data.error) {
+                    const err = new Error('Maeve provider returned an API error.');
+                    err.statusCode = Number(data.error.status || data.error.code) || 502;
+                    lastError = err;
+                    if (retryableStatuses.has(err.statusCode) && attempt < 3) {
+                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        continue;
+                    }
+                    break;
+                }
+
+                const msg = data && Array.isArray(data.choices) && data.choices[0] ? data.choices[0].message : null;
+                const output = typeof msg === 'string' ? msg : (msg ? (msg.content || msg.reasoning || '') : '');
+                if (!output || !String(output).trim()) {
+                    const err = new Error('Maeve provider returned empty output.');
+                    err.code = 'AI_PROVIDER_EMPTY_RESPONSE';
+                    err.statusCode = 502;
+                    lastError = err;
+                    if (attempt < 2) {
+                        await new Promise(resolve => setTimeout(resolve, 250));
+                        continue;
+                    }
+                    break;
+                }
+
+                return String(output).trim();
+            } catch (err) {
+                if (err && err.name === 'AbortError') {
+                    const timeoutErr = new Error('Maeve provider timed out.');
+                    timeoutErr.isTimeout = true;
+                    timeoutErr.statusCode = 504;
+                    lastError = timeoutErr;
+                    if (attempt < 3) {
+                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        continue;
+                    }
+                    break;
+                }
+                lastError = err;
+                if (attempt < 3 && (!err || !err.statusCode || retryableStatuses.has(Number(err.statusCode)))) {
+                    await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                    continue;
+                }
+                break;
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
+        }
+    }
+
+    throw lastError || new Error('Maeve provider is unavailable.');
+}
+
+'''
+          if 'async function queryMaeveProvider(' not in server:
+              server = server.replace(marker, helper + marker, 1)
+
+          old_route = "app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {\n    const reqId = req.headers['x-idempotency-key']"
+          new_route = "app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {\n    const uid = getUserIdFromReq(req);\n    if (!acquireUserConcurrencyLock(uid)) {\n        return res.status(429).json({ success: false, error: \"A generation is already in progress for your account. Please wait for it to complete.\" });\n    }\n    const reqId = req.headers['x-idempotency-key']"
+          if old_route not in server:
+              raise SystemExit('chat route guard marker missing')
+          server = server.replace(old_route, new_route, 1)
+
+          old_hotline = 'let hotlineAdvice = await queryOpenRouter("qwen3-235b-a22b-2507", hotlinePayload, 0.7, 1500);'
+          new_hotline = 'let hotlineAdvice = await queryMaeveProvider(hotlinePayload, 0.7, 1500);'
+          if old_hotline not in server:
+              raise SystemExit('hotline provider call missing')
+          server = server.replace(old_hotline, new_hotline, 1)
+
+          old_roleplay = 'let replyText = await queryOpenRouter("qwen3-235b-a22b-2507", openRouterMessages, 0.6, 120);'
+          new_roleplay = 'let replyText = await queryMaeveProvider(openRouterMessages, 0.6, 120);'
+          if old_roleplay not in server:
+              raise SystemExit('roleplay provider call missing')
+          server = server.replace(old_roleplay, new_roleplay, 1)
+
+          old_generic = '''        res.status(500).json({
+            success: false,
+            error: "Maeve AI Coach failed to respond. Your credits were restored.",
+            credits: currentBal
+        });'''
+          new_generic = '''        const providerCode = getMaeveProviderFailureCode(error);
+        res.status(500).json({
+            success: false,
+            error: "Maeve AI Coach failed to respond. Your credits were restored.",
+            code: providerCode,
+            credits: currentBal
+        });'''
+          if old_generic not in server:
+              raise SystemExit('Maeve generic catch response missing')
+          server = server.replace(old_generic, new_generic, 1)
+
+          old_exports = 'module.exports = { app, startWingmanServer, supabaseAdmin };'
+          new_exports = 'module.exports = { app, startWingmanServer, supabaseAdmin, queryMaeveProvider, getMaeveProviderFailureCode };'
+          if old_exports not in server:
+              raise SystemExit('module exports marker missing')
+          server = server.replace(old_exports, new_exports, 1)
+
+          old_button = '''            const chatSendBtn = $("chatbox-send-btn");
+            if (chatSendBtn) {
+                const isChatDisabled = isLoading || !(ci && ci.value.trim().length > 0);
+                chatSendBtn.disabled = isChatDisabled;
+                chatSendBtn.classList.toggle("opacity-40", isChatDisabled);
+                chatSendBtn.classList.toggle("cursor-not-allowed", isChatDisabled);
+                chatSendBtn.classList.toggle("cursor-pointer", !isChatDisabled);
+            }'''
+          new_button = '''            const chatSendBtn = $("chatbox-send-btn");
+            if (chatSendBtn) {
+                const hasChatText = Boolean(ci && ci.value.trim().length > 0);
+                const isChatDisabled = isLoading || !hasChatText;
+                chatSendBtn.disabled = isChatDisabled;
+                chatSendBtn.setAttribute("aria-disabled", isChatDisabled ? "true" : "false");
+                chatSendBtn.classList.toggle("opacity-40", isChatDisabled);
+                chatSendBtn.classList.toggle("cursor-not-allowed", isChatDisabled);
+                chatSendBtn.classList.toggle("cursor-pointer", !isChatDisabled);
+                chatSendBtn.classList.toggle("chat-send-active", !isChatDisabled);
+                chatSendBtn.style.setProperty("opacity", isChatDisabled ? "0.4" : "1", "important");
+                chatSendBtn.style.setProperty("filter", isChatDisabled ? "saturate(0.65)" : "saturate(1.15)", "important");
+                chatSendBtn.style.setProperty("transform", isChatDisabled ? "none" : "translateY(-1px)", "important");
+                chatSendBtn.style.setProperty("box-shadow", isChatDisabled ? "none" : "0 8px 24px rgba(168, 85, 247, 0.58)", "important");
+            }'''
+          if old_button not in app:
+              raise SystemExit('chat send button state block missing')
+          app = app.replace(old_button, new_button, 1)
+
+          Path('server.js').write_text(server, encoding='utf-8')
+          Path('app.js').write_text(app, encoding='utf-8')
+          PY
+      - name: Add Maeve regression test
+        shell: bash
+        run: |
+          cat > tests/maeve_runtime_repair.test.js <<'NODE'
+          const assert = require('assert');
+          const fs = require('fs');
+
+          process.env.NODE_ENV = 'test';
+          process.env.AICREDITS_API_KEY = 'unit-test-main-key';
+          delete process.env.AICREDITS_API_KEY_GENERAL;
+
+          const serverSource = fs.readFileSync('server.js', 'utf8');
+          const appSource = fs.readFileSync('app.js', 'utf8');
+
+          assert(serverSource.includes("const uid = getUserIdFromReq(req);\n    if (!acquireUserConcurrencyLock(uid))"), 'Maeve route must acquire a real per-user concurrency lock');
+          assert(serverSource.includes('queryMaeveProvider(hotlinePayload, 0.7, 1500)'), 'Hotline must use strict Maeve provider');
+          assert(serverSource.includes('queryMaeveProvider(openRouterMessages, 0.6, 120)'), 'Roleplay modes must use strict Maeve provider');
+          assert(serverSource.includes("const baseUrl = 'https://api.aicredits.in/v1';"), 'Maeve provider must lock the exact AICredits base URL');
+          assert(serverSource.includes("const model = 'qwen/qwen3-235b-a22b-2507';"), 'Maeve provider must lock the exact model');
+          assert(serverSource.includes('code: providerCode'), 'Maeve failure response must include safe diagnostic code');
+          assert(appSource.includes('chatSendBtn.classList.toggle("chat-send-active", !isChatDisabled)'), 'Send button must expose an active visual state');
+          assert(appSource.includes('chatSendBtn.style.setProperty("opacity", isChatDisabled ? "0.4" : "1", "important")'), 'Send button must become fully opaque with text');
+
+          const originalFetch = global.fetch;
+          const originalResponse = global.Response;
+          const { queryMaeveProvider, getMaeveProviderFailureCode } = require('../server');
+
+          (async () => {
+            let calls = 0;
+            global.fetch = async (url, options) => {
+              calls++;
+              assert.strictEqual(url, 'https://api.aicredits.in/v1/chat/completions');
+              const payload = JSON.parse(options.body);
+              assert.strictEqual(payload.model, 'qwen/qwen3-235b-a22b-2507');
+              assert.strictEqual(options.headers.Authorization, 'Bearer unit-test-main-key');
+              if (calls === 1) return new Response('temporary', { status: 503 });
+              return new Response(JSON.stringify({ choices: [{ message: { content: 'working reply' } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+            };
+            const out = await queryMaeveProvider([{ role: 'user', content: 'hi' }], 0.6, 120, 2000);
+            assert.strictEqual(out, 'working reply');
+            assert.strictEqual(calls, 2, 'retryable 503 must retry exactly once before success');
+            assert.strictEqual(getMaeveProviderFailureCode({ statusCode: 402 }), 'AI_PROVIDER_BUDGET');
+            assert.strictEqual(getMaeveProviderFailureCode({ statusCode: 429 }), 'AI_PROVIDER_RATE_LIMIT');
+            assert.strictEqual(getMaeveProviderFailureCode({ isTimeout: true }), 'AI_PROVIDER_TIMEOUT');
+            console.log('Maeve runtime repair tests passed.');
+          })().catch(err => { console.error(err); process.exitCode = 1; }).finally(() => { global.fetch = originalFetch; });
+          NODE
+      - name: Syntax and full regression gate
+        shell: bash
+        run: |
+          node -c server.js
+          node -c app.js
+          node tests/maeve_runtime_repair.test.js
+          npm test
+      - name: Commit guarded repair
+        shell: bash
+        run: |
+          git config user.name 'viveks012000-maker'
+          git config user.email 'viveks012000@gmail.com'
+          git add server.js app.js tests/maeve_runtime_repair.test.js
+          git diff --cached --check
+          changed=$(git diff --cached --name-only | sort)
+          printf '%s\n' "$changed"
+          test "$changed" = $'app.js\nserver.js\ntests/maeve_runtime_repair.test.js'
+          git commit -m 'fix: stabilize Maeve provider and send button state'
+          git push origin HEAD:fix/maeve-runtime-send
