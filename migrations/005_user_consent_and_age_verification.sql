@@ -39,18 +39,12 @@ CREATE POLICY "Users can read own consent"
     TO authenticated
     USING ((SELECT auth.uid()) = user_id);
 
--- Allow authenticated users to withdraw their own consent
+-- Drop any previous update policy to prevent direct browser mutation of consent records
 DROP POLICY IF EXISTS "Users can withdraw own consent" ON public.user_consents;
-CREATE POLICY "Users can withdraw own consent"
-    ON public.user_consents
-    FOR UPDATE
-    TO authenticated
-    USING ((SELECT auth.uid()) = user_id)
-    WITH CHECK ((SELECT auth.uid()) = user_id);
 
--- Revoke direct mutation from untrusted browser roles
-REVOKE INSERT, DELETE, TRUNCATE ON TABLE public.user_consents FROM anon, authenticated;
-GRANT SELECT, UPDATE ON TABLE public.user_consents TO authenticated;
+-- Revoke direct mutation from untrusted browser roles (Authenticated has SELECT-only)
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.user_consents FROM anon, authenticated;
+GRANT SELECT ON TABLE public.user_consents TO authenticated;
 GRANT ALL PRIVILEGES ON TABLE public.user_consents TO service_role;
 
 -- 4. Hardened Security Definer Consent Recording RPC
@@ -175,10 +169,8 @@ EXCEPTION
 END;
 $$;
 
--- Revoke execute from public/anon, grant to authenticated and service_role
-REVOKE EXECUTE ON FUNCTION public.record_user_consent(TEXT, TEXT, BOOLEAN, BOOLEAN, TEXT, TEXT, UUID) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.record_user_consent(TEXT, TEXT, BOOLEAN, BOOLEAN, TEXT, TEXT, UUID) FROM anon;
-GRANT EXECUTE ON FUNCTION public.record_user_consent(TEXT, TEXT, BOOLEAN, BOOLEAN, TEXT, TEXT, UUID) TO authenticated;
+-- Revoke execute from public, anon, and authenticated; grant to service_role only
+REVOKE ALL ON FUNCTION public.record_user_consent(TEXT, TEXT, BOOLEAN, BOOLEAN, TEXT, TEXT, UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.record_user_consent(TEXT, TEXT, BOOLEAN, BOOLEAN, TEXT, TEXT, UUID) TO service_role;
 
 COMMIT;

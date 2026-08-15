@@ -1466,7 +1466,8 @@ STRICT LAWS:
             const isLoading = !!state.isLoading;
             const isAuth = safeStorage.get("wingman_authenticated") === "true" || safeStorage.get("wingman_user_authenticated") === "true" || (typeof window.currentSupabaseUser === 'object' && window.currentSupabaseUser);
 
-            const isCreditsBlocked = !isAuth || isLocked || state.creditsStatus === "loading" || state.creditsStatus === "missing_profile" || (typeof state.credits === 'number' && state.credits < 10);
+            const isCreditsBlocked10 = !isAuth || isLocked || state.creditsStatus === "loading" || state.creditsStatus === "error" || state.creditsStatus === "missing_profile" || state.creditsStatus === "idle" || state.credits === null || (typeof state.credits === 'number' && state.credits < 10);
+            const isCreditsBlocked2 = !isAuth || isLocked || state.creditsStatus === "loading" || state.creditsStatus === "error" || state.creditsStatus === "missing_profile" || state.creditsStatus === "idle" || state.credits === null || (typeof state.credits === 'number' && state.credits < 2);
 
             const bi = $("bioInput");
             const btn2 = $("generateIcebreakerBtn");
@@ -1478,9 +1479,9 @@ STRICT LAWS:
             }
             if (btn2) {
                 const isBioValid = bi && bi.value.trim().length >= 5 && bi.value.length <= 5000;
-                const isBtn2Disabled = isLocked || !isBioValid || isLoading || isCreditsBlocked;
+                const isBtn2Disabled = isLocked || !isBioValid || isLoading || isCreditsBlocked10;
                 btn2.disabled = isBtn2Disabled;
-                btn2.classList.toggle("opacity-40", isLocked || !isBioValid || isCreditsBlocked);
+                btn2.classList.toggle("opacity-40", isLocked || !isBioValid || isCreditsBlocked10);
                 btn2.classList.toggle("opacity-70", isLoading);
                 btn2.classList.toggle("cursor-not-allowed", isBtn2Disabled);
                 btn2.classList.toggle("cursor-pointer", !isBtn2Disabled);
@@ -1518,9 +1519,9 @@ STRICT LAWS:
             if (btn3) {
                 const words = ai ? countWords(ai.value) : 0;
                 const isAuditValid = ai && ai.value.trim().length >= 5 && words <= 500;
-                const isBtn3Disabled = isLocked || !isAuditValid || isLoading || isCreditsBlocked;
+                const isBtn3Disabled = isLocked || !isAuditValid || isLoading || isCreditsBlocked10;
                 btn3.disabled = isBtn3Disabled;
-                btn3.classList.toggle("opacity-40", isLocked || !isAuditValid || isCreditsBlocked);
+                btn3.classList.toggle("opacity-40", isLocked || !isAuditValid || isCreditsBlocked10);
                 btn3.classList.toggle("opacity-70", isLoading);
                 btn3.classList.toggle("cursor-not-allowed", isBtn3Disabled);
                 btn3.classList.toggle("cursor-pointer", !isBtn3Disabled);
@@ -1555,6 +1556,18 @@ STRICT LAWS:
                 chatCounter.style.color = len > 5000 ? '#ef4444' : (len > 4500 ? '#f59e0b' : 'rgba(192, 132, 252, 0.6)');
             }
 
+            const chatSendBtn = $("chatbox-send-btn");
+            if (chatSendBtn) {
+                const isChatDisabled = isLocked || isLoading || isCreditsBlocked2;
+                chatSendBtn.disabled = isChatDisabled;
+                chatSendBtn.classList.toggle("opacity-40", isChatDisabled);
+                chatSendBtn.classList.toggle("cursor-not-allowed", isChatDisabled);
+                chatSendBtn.classList.toggle("cursor-pointer", !isChatDisabled);
+            }
+            if (ci) {
+                ci.disabled = isLocked || isLoading || isCreditsBlocked2;
+            }
+
             const btn1 = $("runAnalysisBtn");
             if (btn1) {
                 const count = Array.isArray(state.uploadedFiles) ? state.uploadedFiles.length : 0;
@@ -1562,9 +1575,9 @@ STRICT LAWS:
                 const withinLimit = count <= 5;
                 const notLoading = !state.isLoading;
 
-                const enabled = hasScreenshot && withinLimit && notLoading && !isCreditsBlocked;
+                const enabled = hasScreenshot && withinLimit && notLoading && !isCreditsBlocked10;
                 btn1.disabled = !enabled;
-                btn1.classList.toggle("opacity-40", !hasScreenshot || !withinLimit || isCreditsBlocked);
+                btn1.classList.toggle("opacity-40", !hasScreenshot || !withinLimit || isCreditsBlocked10);
                 btn1.classList.toggle("opacity-70", Boolean(state.isLoading));
                 btn1.classList.toggle("cursor-not-allowed", !enabled);
                 btn1.classList.toggle("cursor-pointer", enabled);
@@ -1937,11 +1950,11 @@ STRICT LAWS:
         safeStorage.set("wingman_login_agreed", "true");
         safeStorage.set("wingman_user_authenticated", "true");
         safeStorage.set("wingman_user_email", email);
-        safeStorage.set("wingman_terms_accepted", "true");
-        state.isTermsAccepted = true;
 
         if (typeof window.closeAuthRequiredModal === "function") window.closeAuthRequiredModal();
         if (typeof window.checkDashboardAuth === "function") window.checkDashboardAuth();
+        if (typeof window.checkCreditBalance === "function") window.checkCreditBalance();
+        if (typeof window.checkServerConsentStatus === "function") window.checkServerConsentStatus();
         if (typeof window.showToast === "function") {
             const actionText = window.isSignupMode ? "Account created as " : "Signed in as ";
             window.showToast(actionText + email + " 🚀", "success");
@@ -2468,6 +2481,9 @@ STRICT LAWS:
 
         window.updateTermsLockState();
         window.updateButtonStates();
+        if (typeof window.checkServerConsentStatus === "function") {
+            window.checkServerConsentStatus();
+        }
     }
 
     if (document.readyState === "loading") {
@@ -3758,14 +3774,46 @@ STRICT LAWS:
         }
     };
 
+    window.openInterstitialModal = function() {
+        const m = document.getElementById("interstitialModal");
+        const c = document.getElementById("interstitialCard");
+        if (!m) return;
+        m.style.display = "flex";
+        m.classList.remove("hidden", "opacity-0", "pointer-events-none");
+        m.classList.add("opacity-100", "pointer-events-auto");
+        if (c) {
+            c.classList.remove("scale-95");
+            c.classList.add("scale-100");
+        }
+    };
+
+    window.closeInterstitialModal = function(e) {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        const m = document.getElementById("interstitialModal");
+        const c = document.getElementById("interstitialCard");
+        if (c) {
+            c.classList.remove("scale-100");
+            c.classList.add("scale-95");
+        }
+        if (m) {
+            m.classList.remove("opacity-100", "pointer-events-auto");
+            m.classList.add("opacity-0", "pointer-events-none", "hidden");
+            m.style.display = "none";
+        }
+    };
+
     window.toggleInterstitialAcceptButton = function() {
         const chk = document.getElementById('interstitialAgreementCheck');
         const btn = document.getElementById('interstitialAcceptBtn');
-        if (!chk || !btn) return;
-        if (chk.checked) {
+        if (!btn) return;
+        if (chk && chk.checked) {
             btn.classList.remove('opacity-50', 'pointer-events-none');
+            btn.classList.add('opacity-100', 'pointer-events-auto');
+            btn.disabled = false;
         } else {
             btn.classList.add('opacity-50', 'pointer-events-none');
+            btn.classList.remove('opacity-100', 'pointer-events-auto');
+            btn.disabled = true;
         }
     };
 
@@ -3774,13 +3822,20 @@ STRICT LAWS:
             const isAuth = safeStorage.get("wingman_authenticated") === "true" || safeStorage.get("wingman_user_authenticated") === "true" || (typeof window.currentSupabaseUser === 'object' && window.currentSupabaseUser);
             if (!isAuth) {
                 state.isTermsAccepted = false;
+                state.consentStatus = 'unauthenticated';
+                safeStorage.remove('wingman_terms_accepted');
+                if (typeof window.closeInterstitialModal === 'function') window.closeInterstitialModal();
                 if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+                if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
                 return false;
             }
             const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
             if (!authHeaders || !authHeaders.Authorization) {
                 state.isTermsAccepted = false;
+                state.consentStatus = 'unauthenticated';
+                safeStorage.remove('wingman_terms_accepted');
                 if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+                if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
                 return false;
             }
 
@@ -3788,23 +3843,53 @@ STRICT LAWS:
                 method: 'GET',
                 headers: { ...authHeaders }
             });
+
+            if (res.status === 503) {
+                state.isTermsAccepted = false;
+                state.consentStatus = 'service_unavailable';
+                safeStorage.remove('wingman_terms_accepted');
+                if (typeof window.closeInterstitialModal === 'function') window.closeInterstitialModal();
+                if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+                if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
+                if (typeof window.showToast === 'function') {
+                    window.showToast("Consent verification service is temporarily unavailable. AI features remain locked.", "error");
+                }
+                return false;
+            }
+
             if (res.ok) {
                 const data = await res.json();
                 if (data && data.hasActiveConsent === true) {
                     state.isTermsAccepted = true;
+                    state.consentStatus = 'active';
                     safeStorage.set('wingman_terms_accepted', 'true');
                     safeStorage.set('wingman_consent_version', data.termsVersion || '2026.1');
+                    if (typeof window.closeInterstitialModal === 'function') window.closeInterstitialModal();
                     if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+                    if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
                     return true;
                 }
             }
+
+            // Authenticated with missing or expired consent
+            state.isTermsAccepted = false;
+            state.consentStatus = 'consent_required';
+            safeStorage.remove('wingman_terms_accepted');
+            if (typeof window.openInterstitialModal === 'function') {
+                window.openInterstitialModal();
+            }
+            if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+            if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
+            return false;
         } catch (e) {
             console.warn("[Consent status check error]:", e.message);
+            state.isTermsAccepted = false;
+            state.consentStatus = 'service_unavailable';
+            safeStorage.remove('wingman_terms_accepted');
+            if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+            if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
+            return false;
         }
-        state.isTermsAccepted = false;
-        safeStorage.remove('wingman_terms_accepted');
-        if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
-        return false;
     };
 
     window.acceptInterstitialTerms = async function() {
@@ -3848,6 +3933,7 @@ STRICT LAWS:
             safeStorage.set('wingman_consent_version', data.termsVersion || '2026.1');
             safeStorage.set('wingman_consent_accepted_at', new Date().toISOString());
             state.isTermsAccepted = true;
+            state.consentStatus = 'active';
 
             const modal = document.getElementById('interstitialModal');
             if (modal) {
@@ -3889,7 +3975,11 @@ STRICT LAWS:
                 throw new Error(data.error || "Failed to withdraw consent.");
             }
             state.isTermsAccepted = false;
+            state.consentStatus = 'withdrawn';
             safeStorage.remove('wingman_terms_accepted');
+            safeStorage.remove('wingman_consent_version');
+            safeStorage.remove('wingman_consent_accepted_at');
+            if (typeof window.closeSettingsModal === 'function') window.closeSettingsModal();
             if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
             if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
             if (typeof window.showToast === 'function') {

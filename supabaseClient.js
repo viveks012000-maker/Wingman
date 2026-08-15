@@ -227,13 +227,15 @@
                         safeSet('wingman_login_agreed', 'true');
                         safeSet('wingman_user_authenticated', 'true');
                         safeSet('wingman_user_email', session.user.email || '');
-                        safeSet('wingman_terms_accepted', 'true');
                         updateAuthUIState(session.user);
                         if (typeof window.checkDashboardAuth === 'function') {
                             window.checkDashboardAuth();
                         }
                         if (typeof window.checkCreditBalance === 'function') {
                             window.checkCreditBalance();
+                        }
+                        if (typeof window.checkServerConsentStatus === 'function') {
+                            window.checkServerConsentStatus();
                         }
                     } else if (event === 'SIGNED_OUT') {
                         safeRemove('wingman_authenticated');
@@ -382,7 +384,6 @@
                     safeSet('wingman_login_agreed', 'true');
                     safeSet('wingman_user_authenticated', 'true');
                     safeSet('wingman_user_email', resp.data.user.email || cleanEmail);
-                    safeSet('wingman_terms_accepted', 'true');
                     updateAuthUIState(resp.data.user);
                     notifyUser('Account created! Welcome to MyWingman.', 'success');
                     return { success: true, user: resp.data.user, session: resp.data.session };
@@ -439,7 +440,6 @@
                     safeSet('wingman_login_agreed', 'true');
                     safeSet('wingman_user_authenticated', 'true');
                     safeSet('wingman_user_email', resp.data.user.email || email);
-                    safeSet('wingman_terms_accepted', 'true');
                     updateAuthUIState(resp.data.user);
                     notifyUser('Signed in successfully!', 'success');
                     return { success: true, user: resp.data.user, session: resp.data.session };

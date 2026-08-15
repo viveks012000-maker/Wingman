@@ -370,9 +370,12 @@ const CURRENT_TERMS_VERSION = '2026.1';
 const CURRENT_PRIVACY_VERSION = '2026.1';
 
 async function checkUserActiveConsent(uid) {
-    if (!uid || uid === 'guest_user') return false;
+    if (!uid || uid === 'guest_user') return { status: 'unauthenticated', hasConsent: false };
     if (!supabaseAdmin || typeof supabaseAdmin.from !== 'function') {
-        return !IS_PROD && db && (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY);
+        if (!IS_PROD && db && (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)) {
+            return { status: 'active', hasConsent: true };
+        }
+        return { status: 'service_unavailable', hasConsent: false, error: 'Database service unavailable' };
     }
     try {
         const { data, error } = await supabaseAdmin
@@ -388,13 +391,18 @@ async function checkUserActiveConsent(uid) {
             .limit(1)
             .maybeSingle();
 
-        if (!error && data) {
-            return true;
+        if (error) {
+            console.error('[checkUserActiveConsent DB Error]:', error.message);
+            return { status: 'service_unavailable', hasConsent: false, error: error.message };
         }
+        if (data) {
+            return { status: 'active', hasConsent: true };
+        }
+        return { status: 'consent_required', hasConsent: false };
     } catch (e) {
-        console.warn('[checkUserActiveConsent Exception]:', e.message);
+        console.error('[checkUserActiveConsent Exception]:', e.message);
+        return { status: 'service_unavailable', hasConsent: false, error: e.message };
     }
-    return false;
 }
 
 async function requireActiveConsent(req, res, next) {
@@ -407,8 +415,15 @@ async function requireActiveConsent(req, res, next) {
         });
     }
 
-    const hasConsent = await checkUserActiveConsent(uid);
-    if (!hasConsent) {
+    const consentCheck = await checkUserActiveConsent(uid);
+    if (consentCheck.status === 'service_unavailable') {
+        return res.status(503).json({
+            success: false,
+            error: "Consent verification service is temporarily unavailable. Please try again shortly.",
+            code: "CONSENT_SERVICE_UNAVAILABLE"
+        });
+    }
+    if (consentCheck.status !== 'active' || !consentCheck.hasConsent) {
         return res.status(403).json({
             success: false,
             error: "Active 18+ age verification and Terms of Service consent are required to process AI requests.",
@@ -1643,7 +1658,7 @@ ${formattingRule}`;
 });
 
 // 2. ICEBREAKER GENERATOR (Direct qwen3-235b-a22b-2507)
-app.post('/api/icebreaker', requireSupabaseAuth, apiLimiter, async (req, res) => {
+app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
     if (!acquireUserConcurrencyLock(uid)) {
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
@@ -2909,15 +2924,23 @@ app.get('/api/consent/status', requireSupabaseAuth, async (req, res) => {
         if (!uid || uid === 'guest_user') {
             return res.status(401).json({ success: false, error: "Authentication required." });
         }
-        const hasConsent = await checkUserActiveConsent(uid);
+        const consentCheck = await checkUserActiveConsent(uid);
+        if (consentCheck.status === 'service_unavailable') {
+            return res.status(503).json({
+                success: false,
+                hasActiveConsent: false,
+                code: "CONSENT_SERVICE_UNAVAILABLE",
+                error: "Consent verification service is temporarily unavailable."
+            });
+        }
         return res.json({
             success: true,
-            hasActiveConsent: hasConsent,
+            hasActiveConsent: consentCheck.status === 'active' && consentCheck.hasConsent === true,
             termsVersion: CURRENT_TERMS_VERSION,
             privacyVersion: CURRENT_PRIVACY_VERSION
         });
     } catch (err) {
-        return res.status(500).json({ success: false, error: err.message });
+        return res.status(503).json({ success: false, code: "CONSENT_SERVICE_UNAVAILABLE", error: err.message });
     }
 });
 

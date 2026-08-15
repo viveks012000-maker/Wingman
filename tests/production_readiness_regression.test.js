@@ -174,7 +174,6 @@ console.log("✔ Test 6 Passed: Privacy disclosures, copy accuracy, and viewport
 // -----------------------------------------------------------------------------
 console.log("▶ [TEST 7] Responsive Layout & Overflow Audit across HTML Files");
 
-// Ensure all main HTML files include appropriate viewport tags and no unconstrained fixed widths > 100vw
 const htmlFiles = [
     { name: 'index.html', content: indexHtmlCode },
     { name: 'app.html', content: appHtmlCode },
@@ -185,11 +184,143 @@ const htmlFiles = [
 
 for (const f of htmlFiles) {
     assert.strictEqual(f.content.includes('<meta name="viewport"') || f.content.includes('name="viewport"'), true, `${f.name} must have a responsive viewport meta tag`);
-    // Ensure no hardcoded outer container width exceeding mobile screens without responsive prefixes
     assert.strictEqual(f.content.includes('style="width: 1440px"') || f.content.includes('style="width: 1200px"'), false, `${f.name} must not hardcode fixed outer container widths`);
 }
 console.log("✔ Test 7 Passed: Mobile responsive viewport configurations verified across all 5 HTML documents.");
 
+// -----------------------------------------------------------------------------
+// 8. INDIVIDUAL AI ROUTE MIDDLEWARE AUDIT (requireActiveConsent)
+// -----------------------------------------------------------------------------
+console.log("▶ [TEST 8] Individual AI Route Middleware Chain & requireActiveConsent Audit");
+
+const aiRoutesToVerify = [
+    '/api/analyze',
+    '/api/analyze-chat-screenshot',
+    '/api/icebreaker',
+    '/api/optimize',
+    '/api/bio-optimizer',
+    '/api/chat',
+    '/api/simulator/chat',
+    '/api/simulator/review'
+];
+
+for (const route of aiRoutesToVerify) {
+    const escapedRoute = route.replace(/\//g, '\\/');
+    const pattern = new RegExp(`app\\.post\\(\\s*(\\[[^\\]]*['"]${escapedRoute}['"][^\\]]*\\]|['"]${escapedRoute}['"])\\s*,\\s*requireSupabaseAuth\\s*,\\s*requireActiveConsent\\s*,`);
+    assert.strictEqual(
+        pattern.test(serverCode),
+        true,
+        `AI route ${route} MUST explicitly contain requireActiveConsent in its route definition middleware chain.`
+    );
+}
+console.log("✔ Test 8 Passed: All 8 AI routes individually verified to enforce requireActiveConsent.");
+
+// -----------------------------------------------------------------------------
+// 9. AUTH-AS-CONSENT PURGE & STORAGE INTEGRITY
+// -----------------------------------------------------------------------------
+console.log("▶ [TEST 9] Auth-As-Consent Complete Purge Across All Client Files");
+
+// 9.1 supabaseClient.js must NOT write wingman_terms_accepted anywhere
+assert.strictEqual(
+    supabaseClientCode.includes("wingman_terms_accepted"),
+    false,
+    "supabaseClient.js must NEVER write or reference wingman_terms_accepted upon auth/session restoration"
+);
+
+// 9.2 index.html handleAuthSubmit must not write wingman_terms_accepted
+assert.strictEqual(
+    indexHtmlCode.includes('localStorage.setItem("wingman_terms_accepted"'),
+    false,
+    "index.html handleAuthSubmit must not set wingman_terms_accepted on login/signup"
+);
+
+// 9.3 app.js handleSupabaseAuthSubmit must not write wingman_terms_accepted
+const handleAuthSubmitIdx = appJsCode.indexOf('window.handleSupabaseAuthSubmit = async function');
+assert.ok(handleAuthSubmitIdx !== -1, "handleSupabaseAuthSubmit must exist in app.js");
+const handleAuthSubmitSection = appJsCode.substring(handleAuthSubmitIdx, handleAuthSubmitIdx + 1200);
+assert.strictEqual(
+    handleAuthSubmitSection.includes('wingman_terms_accepted'),
+    false,
+    "app.js handleSupabaseAuthSubmit must NOT grant wingman_terms_accepted merely on auth"
+);
+console.log("✔ Test 9 Passed: Zero occurrences of auth-as-consent detected across all clients.");
+
+// -----------------------------------------------------------------------------
+// 10. MIGRATION 005 SECURITY & PRIVILEGE HARDENING
+// -----------------------------------------------------------------------------
+console.log("▶ [TEST 10] Migration 005 Privilege Restrictions & Service-Role Isolation");
+
+// 10.1 Authenticated role must have SELECT-only on user_consents table
+assert.strictEqual(
+    migration005Sql.includes("GRANT SELECT ON TABLE public.user_consents TO authenticated;"),
+    true,
+    "Migration 005 must grant SELECT only to authenticated"
+);
+assert.strictEqual(
+    migration005Sql.includes("GRANT SELECT, UPDATE ON TABLE public.user_consents TO authenticated;"),
+    false,
+    "Migration 005 must NOT grant UPDATE to authenticated"
+);
+
+// 10.2 RPC execution restricted strictly to service_role
+assert.strictEqual(
+    migration005Sql.includes("REVOKE ALL ON FUNCTION public.record_user_consent"),
+    true,
+    "Migration 005 must revoke execution from PUBLIC, anon, and authenticated"
+);
+assert.strictEqual(
+    migration005Sql.includes("GRANT EXECUTE ON FUNCTION public.record_user_consent(TEXT, TEXT, BOOLEAN, BOOLEAN, TEXT, TEXT, UUID) TO service_role;"),
+    true,
+    "Migration 005 must grant EXECUTE exclusively to service_role"
+);
+console.log("✔ Test 10 Passed: Migration 005 RLS and RPC execution privileges strictly hardened.");
+
+// -----------------------------------------------------------------------------
+// 11. CONSENT WITHDRAWAL UI & DYNAMIC BUTTON LOCKDOWN
+// -----------------------------------------------------------------------------
+console.log("▶ [TEST 11] Consent Withdrawal Control & Dynamic Button State Lockdown");
+
+// 11.1 Consent withdrawal setting in app.html
+assert.strictEqual(
+    appHtmlCode.includes('id="withdrawConsentBtn"'),
+    true,
+    "app.html settings modal must include #withdrawConsentBtn"
+);
+assert.strictEqual(
+    appHtmlCode.includes('window.withdrawConsent()'),
+    true,
+    "app.html #withdrawConsentBtn must call window.withdrawConsent()"
+);
+
+// 11.2 withdrawConsent defined and clears all consent state
+assert.strictEqual(
+    appJsCode.includes('window.withdrawConsent = async function'),
+    true,
+    "app.js must define window.withdrawConsent"
+);
+
+// 11.3 checkServerConsentStatus on boot in app.js
+assert.strictEqual(
+    appJsCode.includes('window.checkServerConsentStatus();'),
+    true,
+    "app.js must execute window.checkServerConsentStatus() on app boot"
+);
+
+// 11.4 503 vs 403 status distinction in server.js
+assert.strictEqual(
+    serverCode.includes("code: \"CONSENT_SERVICE_UNAVAILABLE\""),
+    true,
+    "server.js must return 503 CONSENT_SERVICE_UNAVAILABLE on database/service failure"
+);
+assert.strictEqual(
+    serverCode.includes("code: \"CONSENT_REQUIRED\""),
+    true,
+    "server.js must return 403 CONSENT_REQUIRED when user has not consented"
+);
+
+console.log("✔ Test 11 Passed: Consent withdrawal UI, boot status check, and 503 error handling verified.");
+
 console.log("\n============================================================");
-console.log("🎉 ALL PRODUCTION READINESS REGRESSION TESTS PASSED (7/7)");
+console.log("🎉 ALL PRODUCTION READINESS REGRESSION TESTS PASSED (11/11)");
 console.log("============================================================\n");
+

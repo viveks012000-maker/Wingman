@@ -1520,17 +1520,30 @@
                 }
                 return;
             }
-            sessionStorage.setItem("wingman_login_agreed", "true");
-            localStorage.setItem("wingman_terms_accepted", "true");
-            localStorage.setItem("wingman_consent_version", "2026.1");
-
-            if (typeof window.closeInterstitialModal === "function") window.closeInterstitialModal();
-
             var isAuth = sessionStorage.getItem("wingman_authenticated") === "true" || localStorage.getItem("wingman_user_authenticated") === "true";
-            if (isAuth) {
-                window.location.href = "app.html";
-            } else {
+            if (!isAuth) {
+                if (typeof window.closeInterstitialModal === "function") window.closeInterstitialModal();
                 if (typeof window.openAuthRequiredModal === "function") window.openAuthRequiredModal();
+                return;
+            }
+
+            try {
+                var authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
+                var res = await fetch((window.getApiBase ? window.getApiBase() : '') + '/api/consent', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...authHeaders },
+                    body: JSON.stringify({ age18Plus: true, aiProcessingConsent: true })
+                });
+                var data = await res.json();
+                if (!res.ok || !data.success || !data.consentRecorded) {
+                    throw new Error(data.error || "Failed to record legal consent.");
+                }
+                if (typeof window.closeInterstitialModal === "function") window.closeInterstitialModal();
+                window.location.href = "app.html";
+            } catch (err) {
+                if (typeof window.showToast === "function") {
+                    window.showToast(err.message || "Failed to record consent. Please try again.", "error");
+                }
             }
         };
 
@@ -1807,7 +1820,6 @@
             sessionStorage.setItem("wingman_login_agreed", "true");
             localStorage.setItem("wingman_user_authenticated", "true");
             localStorage.setItem("wingman_user_email", email);
-            localStorage.setItem("wingman_terms_accepted", "true");
 
             // Close modal and navigate to app.html dashboard
             window.closeAuthRequiredModal();

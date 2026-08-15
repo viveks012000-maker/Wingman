@@ -1882,6 +1882,18 @@
                     </div>
                 </div>
 
+                <!-- Privacy & Consent Management -->
+                <div class="border-t border-white/10 pt-4 flex flex-col gap-2.5">
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-sm font-semibold text-white">AI Data Processing Consent</span>
+                        <span class="text-[11px] text-slate-400">Withdraw permission to process conversation data</span>
+                    </div>
+                    <button type="button" id="withdrawConsentBtn" class="w-full bg-amber-600/10 hover:bg-amber-600/20 text-amber-300 font-label text-xs py-3 rounded-xl border border-amber-500/20 transition-all font-bold cursor-pointer text-center active:scale-95 flex items-center justify-center gap-1.5" onclick="window.withdrawConsent()">
+                        <span class="material-symbols-outlined text-[16px]">cancel</span>
+                        <span>Withdraw AI Processing Consent</span>
+                    </button>
+                </div>
+
                 <!-- Destructive Actions -->
                 <div class="border-t border-white/10 pt-4 flex flex-col gap-2">
                     <button type="button" class="w-full bg-red-600/10 hover:bg-red-600/20 text-red-400 font-label text-xs py-3.5 rounded-xl border border-red-500/20 transition-all font-bold cursor-pointer text-center active:scale-95 flex items-center justify-center gap-1.5" onclick="window.openDeleteFromSettings(event)">

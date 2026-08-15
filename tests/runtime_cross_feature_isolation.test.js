@@ -114,8 +114,6 @@ function setupDOMEnvironment() {
         getSupabaseAuthHeaders: async () => ({ 'Authorization': 'Bearer test-valid-access-token' }),
         openPurchaseModal: () => { windowMock._purchaseModalOpened = true; },
         openAuthRequiredModal: () => { windowMock._authModalOpened = true; },
-        checkCreditBalance: async () => ({ success: true, credits: 50 }),
-        updateUICredits: (c) => { windowMock._uiCredits = c; },
         trackWingmanEvent: () => {},
         addEventListener: (event, fn) => {
             if (!eventListeners.has(event)) eventListeners.set(event, []);
@@ -191,7 +189,15 @@ function setupDOMEnvironment() {
     mockStorage.setItem('wingman_authenticated', 'true');
     mockStorage.setItem('wingman_terms_accepted', 'true');
 
-    let currentFetch = async () => ({ ok: true, json: async () => ({ success: true }) });
+    let currentFetch = async (url) => {
+        if (String(url).includes('/api/consent/status')) {
+            return { ok: true, json: async () => ({ success: true, hasActiveConsent: true, termsVersion: '2026.1' }) };
+        }
+        if (String(url).includes('/api/credits')) {
+            return { ok: true, json: async () => ({ success: true, credits: 50, status: 'ready' }) };
+        }
+        return { ok: true, json: async () => ({ success: true }) };
+    };
 
     const sandbox = {
         window: windowMock,
@@ -253,7 +259,9 @@ function setupDOMEnvironment() {
     const bioInput = env.elements.get('bioInput');
     const auditBioInput = env.elements.get('auditBioInput');
 
-    // Initial state check
+    // Authoritative Server Consent and Credit check on boot
+    await env.sandbox.window.checkServerConsentStatus();
+    env.sandbox.window.updateUICredits(50);
     env.sandbox.window.updateButtonStates();
 
     // 1. STATE A: 0 screenshots, Bio empty, Icebreaker empty
