@@ -1,0 +1,133 @@
+name: Post-deploy live diagnostics
+
+on:
+  push:
+    branches: [audit/post-netlify-deploy-20260815]
+    paths: ['.github/workflows/post-deploy-live-diagnostics.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Netlify deployment metadata and live release marker
+        shell: bash
+        run: |
+          set -u
+          BASE='https://chimerical-granita-c68c5a.netlify.app'
+          for p in / /app.html /release.json /_headers /_redirects; do
+            echo "=== $p ==="
+            stamp=$(date +%s%N)
+            curl --silent --show-error --location -D /tmp/h "$BASE${p}?audit=$stamp" -o /tmp/b || true
+            grep -iE '^(HTTP/|age:|cache-control:|etag:|last-modified:|server:|x-nf-|date:|content-type:)' /tmp/h | tr -d '\r' || true
+            echo "BODY_SHA256=$(sha256sum /tmp/b | awk '{print $1}') BYTES=$(wc -c </tmp/b)"
+            if [ "$p" = '/release.json' ]; then echo 'RELEASE_BODY_BEGIN'; head -c 2000 /tmp/b; echo; echo 'RELEASE_BODY_END'; fi
+          done
+
+      - name: Netlify internal file exposure probes
+        shell: bash
+        run: |
+          set -u
+          BASE='https://chimerical-granita-c68c5a.netlify.app'
+          paths=(server.js database.js package.json package-lock.json PROMPT_SYSTEM_MEMORY.json PROJECT_MASTER_SPECIFICATION.md API_DOCUMENTATION.md migrations/004_cleanup_credit_security_and_rls.sql migrations/005_user_consent_and_age_verification.sql migrations/006_harden_user_consents_anon_select.sql middleware/supabaseAuth.js middleware/security.js config/promptSystem.js tests/production_readiness_regression.test.js scripts/build-netlify-dist.js netlify.toml .env .git/config)
+          exposed=0
+          for p in "${paths[@]}"; do
+            code=$(curl --silent --show-error --location -o /tmp/probe -w '%{http_code}' "$BASE/$p?audit=$(date +%s%N)" || true)
+            size=$(wc -c </tmp/probe 2>/dev/null || echo 0)
+            marker=false
+            case "$p" in
+              server.js) grep -q "require('dotenv').config" /tmp/probe && marker=true || true ;;
+              database.js) grep -Eqi 'sqlite|CREATE TABLE' /tmp/probe && marker=true || true ;;
+              package.json) grep -q '"dependencies"' /tmp/probe && marker=true || true ;;
+              package-lock.json) grep -q '"lockfileVersion"' /tmp/probe && marker=true || true ;;
+              *.sql) grep -Eqi 'CREATE|ALTER|GRANT|REVOKE|POLICY|FUNCTION' /tmp/probe && marker=true || true ;;
+              middleware/*.js|config/*.js|tests/*.js|scripts/*.js) grep -Eqi 'module\.exports|require\(|assert\.|buildNetlify' /tmp/probe && marker=true || true ;;
+              PROMPT_SYSTEM_MEMORY.json) grep -Eqi 'prompt|system' /tmp/probe && marker=true || true ;;
+              PROJECT_MASTER_SPECIFICATION.md|API_DOCUMENTATION.md) grep -Eqi 'MyWingman|API|architecture' /tmp/probe && marker=true || true ;;
+              netlify.toml) grep -Eqi '\[build\]|publish' /tmp/probe && marker=true || true ;;
+              .env) grep -Eqi 'SUPABASE|AICREDITS|SECRET|KEY=' /tmp/probe && marker=true || true ;;
+              .git/config) grep -Eqi '\[core\]|repositoryformatversion' /tmp/probe && marker=true || true ;;
+            esac
+            [ "$marker" = true ] && exposed=$((exposed+1))
+            echo "NETLIFY_PROBE path=$p status=$code bytes=$size content_match=$marker"
+          done
+          echo "CONFIRMED_INTERNAL_FILES_EXPOSED=$exposed"
+
+      - name: Railway transport and static security
+        shell: bash
+        run: |
+          set -u
+          API='https://wingman-production-c6ce.up.railway.app'
+          ORIGIN='https://chimerical-granita-c68c5a.netlify.app'
+          code=$(curl --silent --show-error -o /tmp/h -w '%{http_code}' "$API/api/health" || true)
+          echo "RAILWAY_HEALTH_STATUS=$code BODY=$(cat /tmp/h)"
+          code=$(curl --silent --show-error -o /tmp/c -w '%{http_code}' -H "Origin: $ORIGIN" "$API/api/credits" || true)
+          echo "RAILWAY_UNAUTH_CREDITS_STATUS=$code BODY=$(cat /tmp/c)"
+          code=$(curl --silent --show-error -o /tmp/p -w '%{http_code}' -X OPTIONS "$API/api/analyze" -H "Origin: $ORIGIN" -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: authorization,content-type' || true)
+          echo "RAILWAY_PREFLIGHT_STATUS=$code"
+          curl --silent --show-error -D - -o /dev/null -X OPTIONS "$API/api/analyze" -H "Origin: $ORIGIN" -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: authorization,content-type' | tr -d '\r' | grep -iE 'access-control-allow-origin|access-control-allow-headers|access-control-allow-methods' || true
+          for p in server.js database.js package.json migrations/005_user_consent_and_age_verification.sql middleware/supabaseAuth.js config/promptSystem.js tests/production_readiness_regression.test.js scripts/build-netlify-dist.js netlify.toml; do
+            code=$(curl --silent --show-error -o /tmp/x -w '%{http_code}' "$API/$p" || true)
+            echo "RAILWAY_INTERNAL_PROBE path=$p status=$code"
+          done
+
+      - name: Chromium live browser transport diagnostic
+        shell: bash
+        run: |
+          cat > /tmp/live.js <<'NODE'
+          const { chromium }=require('playwright');
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            const page=await browser.newPage({viewport:{width:390,height:844}});
+            const issues=[]; const railway=[]; const consoleLines=[];
+            page.on('pageerror',e=>issues.push('PAGEERROR '+e.message));
+            page.on('console',m=>{const t=m.text(); consoleLines.push(m.type()+': '+t); if(/content security policy|refused to connect|blocked by csp/i.test(t)) issues.push('CSP '+t);});
+            page.on('requestfailed',r=>{if(r.url().includes('railway.app')) issues.push(`RAILWAY_REQUESTFAILED ${r.url()} ${r.failure()?.errorText||''}`)});
+            page.on('response',r=>{if(r.url().includes('railway.app')) railway.push(`${r.status()} ${r.url()}`)});
+            await page.goto('https://chimerical-granita-c68c5a.netlify.app/app.html?audit='+Date.now(),{waitUntil:'networkidle',timeout:60000});
+            const r=await page.evaluate(async()=>{
+              const base=window.getApiBase?.()||window.WINGMAN_CONFIG?.API_BASE_URL||null;
+              async function probe(path){try{const x=await fetch((base||'')+path);return {status:x.status,body:await x.text()}}catch(e){return {error:String(e)}}}
+              const csp=document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content||null;
+              return {base,csp,health:base?await probe('/api/health'):null,credits:base?await probe('/api/credits'):null,hasSupabase:!!window.supabaseClient,doc:document.readyState};
+            });
+            console.log('BROWSER_RESULT='+JSON.stringify(r));
+            console.log('RAILWAY_RESPONSES='+JSON.stringify(railway));
+            console.log('BROWSER_ISSUES='+JSON.stringify(issues));
+            console.log('CONSOLE_SAMPLE='+JSON.stringify(consoleLines.slice(0,40)));
+            await browser.close();
+          })().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+          NODE_PATH="$GITHUB_WORKSPACE/node_modules" node /tmp/live.js
+
+      - name: Live viewport diagnostic
+        shell: bash
+        run: |
+          cat > /tmp/vp.js <<'NODE'
+          const { chromium }=require('playwright');
+          (async()=>{
+            const browser=await chromium.launch({headless:true}); const failures=[];
+            for(const p of ['index.html','app.html','terms.html','privacy.html','refund.html']) for(const w of [320,360,375,390,412,430,768,1024,1440]){
+              const page=await browser.newPage({viewport:{width:w,height:900}}); const errs=[]; page.on('pageerror',e=>errs.push(e.message));
+              try { await page.goto(`https://chimerical-granita-c68c5a.netlify.app/${p}?audit=${Date.now()}-${w}`,{waitUntil:'domcontentloaded',timeout:60000});
+                const m=await page.evaluate(()=>({iw:innerWidth,sw:document.documentElement.scrollWidth,bsw:document.body?.scrollWidth||0}));
+                if(m.sw>m.iw+1||m.bsw>m.iw+1||errs.length) failures.push({p,w,m,errs});
+              } catch(e){failures.push({p,w,error:String(e),errs});}
+              await page.close();
+            }
+            console.log('LIVE_VIEWPORT_CHECKS=45'); console.log('LIVE_VIEWPORT_FAILURES='+JSON.stringify(failures)); await browser.close();
+          })();
+          NODE
+          NODE_PATH="$GITHUB_WORKSPACE/node_modules" node /tmp/vp.js
