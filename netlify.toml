@@ -1,0 +1,9 @@
+[build]
+  command = "npm run build:netlify"
+  publish = "netlify-dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Security headers and no-cache rules are generated into netlify-dist/_headers by the
+# build script so they work for both Git-connected deploys and manual drag-and-drop deploys.
