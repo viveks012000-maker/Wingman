@@ -1,0 +1,152 @@
+name: Final exact-main release verification ffa848e5
+on:
+  push:
+    branches: [release/final-ffa848e5]
+    paths: ['.github/workflows/final-release-ffa848e5.yml']
+permissions:
+  contents: read
+jobs:
+  verify-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ffa848e539c9124a2cdd38aa0d9665d7f05b0ad1
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prove exact source commit and clean tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "ffa848e539c9124a2cdd38aa0d9665d7f05b0ad1"
+          test -z "$(git status --porcelain)"
+          echo EXACT_SOURCE_SHA=$(git rev-parse HEAD)
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Full 32-suite regression and browser gate
+        run: npm test
+      - name: Syntax check every tracked first-party JavaScript file
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r file; do
+            case "$file" in vendor/*) continue ;; esac
+            node --check "$file"
+            count=$((count+1))
+          done < <(git ls-files '*.js')
+          echo FIRST_PARTY_JS_SYNTAX_CHECKED=$count
+      - name: Production dependency integrity and vulnerability gate
+        shell: bash
+        run: |
+          npm ls --omit=dev
+          npm audit --omit=dev
+      - name: Runtime dependency usage inventory
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs=require('fs'); const cp=require('child_process');
+          const pkg=require('./package.json');
+          const files=cp.execSync("git ls-files '*.js' '*.html'",{encoding:'utf8'}).trim().split(/\n/).filter(Boolean).filter(f=>!f.startsWith('vendor/'));
+          const text=files.map(f=>{try{return fs.readFileSync(f,'utf8')}catch{return ''}}).join('\n');
+          for(const dep of Object.keys(pkg.dependencies||{})){
+            const escaped=dep.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+            const rx=new RegExp(`(?:require\\(\\s*['\"]${escaped}['\"]\\s*\\)|from\\s+['\"]${escaped}['\"]|import\\s+['\"]${escaped}['\"])`);
+            console.log(`DEPENDENCY_USAGE dep=${dep} referenced=${rx.test(text)}`);
+          }
+          NODE
+      - name: Current-tree private-secret heuristic
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess
+          assignments=re.compile(r'''(?i)\b(AICREDITS_API_KEY(?:_VISION)?|SUPABASE_SERVICE_ROLE_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY)\b\s*[:=]\s*["']([^"'\n]{16,})["']''')
+          findings=[]
+          for f in subprocess.check_output(['git','ls-files'],text=True).splitlines():
+              p=Path(f)
+              if f.startswith('vendor/') or p.suffix.lower() not in {'.js','.json','.html','.md','.toml','.yml','.yaml','.sql','.example'}:
+                  continue
+              text=p.read_text(errors='ignore')
+              for i,line in enumerate(text.splitlines(),1):
+                  m=assignments.search(line)
+                  if not m: continue
+                  val=m.group(2); low=val.lower()
+                  if any(x in low for x in ('your_','dummy','test_','process.env','${{')): continue
+                  findings.append((f,i,m.group(1),len(val)))
+          print('PRIVATE_SECRET_CANDIDATES='+str(len(findings)))
+          for f,i,n,l in findings:
+              print(f'REDACTED_LOCATION file={f} line={i} variable={n} length={l}')
+          if findings: raise SystemExit('Private secret candidate(s) detected in current tree')
+          PY
+      - name: Source invariants and public surface sanity
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "qwen/qwen3.5-flash-02-23" server.js
+          grep -q "qwen/qwen3-235b-a22b-2507" server.js
+          grep -q "https://api.aicredits.in/v1" server.js
+          grep -q "AICREDITS_API_KEY_VISION" server.js
+          grep -q "AICREDITS_API_KEY" server.js
+          grep -q "requireActiveConsent" server.js
+          grep -q "PROFILE_MISSING" server.js
+          grep -q "IF NOT FOUND THEN" migrations/007_harden_add_credits_profile_missing.sql
+          grep -q "Paid credit checkout is currently paused/deferred" refund.html
+          ! grep -q "secure, immutable logs" refund.html
+          ! grep -q "userCount" <(sed -n "/app.get('\/api\/health'/,/Payment verification endpoint/p" server.js)
+          ! grep -q "unsafe-eval" server.js
+      - name: Build exact Netlify production artifact
+        env:
+          GITHUB_SHA: ffa848e539c9124a2cdd38aa0d9665d7f05b0ad1
+        run: npm run build:netlify
+      - name: Verify artifact manifest CSP and internal-file exclusion
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f netlify-dist/release.json
+          node - <<'NODE'
+          const r=require('./netlify-dist/release.json');
+          const expected='ffa848e539c9124a2cdd38aa0d9665d7f05b0ad1';
+          if(r.sourceCommit!==expected) throw new Error(`wrong release sourceCommit ${r.sourceCommit}`);
+          if(r.build!=='frontend-only-netlify') throw new Error(`wrong build type ${r.build}`);
+          console.log('RELEASE_MANIFEST_SOURCE='+r.sourceCommit);
+          console.log('RELEASE_MANIFEST_FILE_COUNT='+Object.keys(r.files||{}).length);
+          NODE
+          grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/_headers
+          ! grep -q 'unsafe-eval' netlify-dist/_headers
+          test ! -e netlify-dist/server.js
+          test ! -e netlify-dist/database.js
+          test ! -e netlify-dist/package.json
+          test ! -e netlify-dist/package-lock.json
+          test ! -d netlify-dist/migrations
+          test ! -d netlify-dist/tests
+          test ! -d netlify-dist/middleware
+          test ! -d netlify-dist/scripts
+          test ! -d netlify-dist/.github
+          echo PUBLIC_ARTIFACT_FILES:
+          find netlify-dist -type f -printf '%P\n' | sort
+      - name: Create root-level deploy ZIP and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd netlify-dist && zip -q -r ../wingman-netlify-production-ffa848e5.zip .)
+          sha256sum wingman-netlify-production-ffa848e5.zip | tee wingman-netlify-production-ffa848e5.zip.sha256
+          test "$(unzip -Z1 wingman-netlify-production-ffa848e5.zip | grep -c '^index.html$')" = "1"
+          test "$(unzip -Z1 wingman-netlify-production-ffa848e5.zip | grep -c '^release.json$')" = "1"
+          ! unzip -Z1 wingman-netlify-production-ffa848e5.zip | grep -Eq '(^|/)(server\.js|database\.js|package\.json|package-lock\.json)$|(^|/)(migrations|tests|middleware|scripts|\.github)/'
+          echo DEPLOY_ZIP_ROOT_PREVIEW:
+          unzip -Z1 wingman-netlify-production-ffa848e5.zip | head -50
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wingman-netlify-production-ffa848e5
+          path: |
+            wingman-netlify-production-ffa848e5.zip
+            wingman-netlify-production-ffa848e5.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
