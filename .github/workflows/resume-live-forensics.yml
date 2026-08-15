@@ -1,0 +1,87 @@
+name: Resume live production forensics
+
+on:
+  push:
+    branches: [audit/post-netlify-deploy-20260815]
+    paths: ['.github/workflows/resume-live-forensics.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe Netlify production state
+        shell: bash
+        run: |
+          set -u
+          base='https://chimerical-granita-c68c5a.netlify.app'
+          for p in / /app.html /app.js /config.js /supabaseClient.js /release.json /server.js /package.json /migrations/005_user_consent_and_age_verification.sql /middleware/security.js /tests/run_all_tests.js; do
+            code=$(curl -sS -L --max-time 20 -o body.tmp -w '%{http_code}' "$base$p" || echo ERR)
+            size=$(wc -c < body.tmp 2>/dev/null || echo 0)
+            sha=$(sha256sum body.tmp 2>/dev/null | awk '{print $1}')
+            echo "NETLIFY path=$p status=$code bytes=$size sha256=$sha"
+            if [ "$p" = '/release.json' ] && [ "$code" = '200' ]; then
+              tr -d '\n' < body.tmp | head -c 1000; echo
+            fi
+          done
+          echo '--- NETLIFY CSP ---'
+          curl -sSI "$base/app.html?audit=$(date +%s)" | tr -d '\r' | grep -iE '^(content-security-policy|cache-control|etag|last-modified|x-nf-request-id):' || true
+
+      - name: Probe Railway health CORS and static bypasses
+        shell: bash
+        run: |
+          set -u
+          api='https://wingman-production-c6ce.up.railway.app'
+          echo '--- health ---'
+          curl -sS -D - -o /tmp/health "$api/api/health" | tr -d '\r' | grep -iE '^(HTTP/|access-control-allow-origin:|vary:|content-security-policy:)' || true
+          cat /tmp/health; echo
+          echo '--- CORS origins ---'
+          for origin in 'https://chimerical-granita-c68c5a.netlify.app' 'https://evil.example' 'null' 'https://foo.pages.dev' 'https://pages.dev.evil.example'; do
+            echo "ORIGIN=$origin"
+            curl -sS -D - -o /dev/null -H "Origin: $origin" "$api/api/health" | tr -d '\r' | grep -iE '^(HTTP/|access-control-allow-origin:|access-control-allow-credentials:|vary:)' || true
+          done
+          echo '--- preflight ---'
+          for origin in 'https://chimerical-granita-c68c5a.netlify.app' 'https://evil.example' 'null'; do
+            echo "PREFLIGHT_ORIGIN=$origin"
+            curl -sS -X OPTIONS -D - -o /dev/null -H "Origin: $origin" -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: authorization,content-type' "$api/api/analyze" | tr -d '\r' | grep -iE '^(HTTP/|access-control-allow-origin:|access-control-allow-credentials:|access-control-allow-methods:|access-control-allow-headers:)' || true
+          done
+          echo '--- static denylist bypass probes ---'
+          paths=(
+            '/server.js'
+            '/%73erver.js'
+            '/server%2Ejs'
+            '/server.js/'
+            '//server.js'
+            '/middleware/security.js'
+            '/middleware/%73ecurity.js'
+            '/migrations/005_user_consent_and_age_verification.sql'
+            '/tests/run_all_tests.js'
+            '/package.json'
+            '/package-lock.json'
+            '/.env'
+            '/%2eenv'
+            '/config/promptSystem.js'
+            '/scripts/build-netlify-dist.js'
+            '/PROMPT_SYSTEM_MEMORY.json'
+          )
+          for p in "${paths[@]}"; do
+            code=$(curl --path-as-is -sS -L --max-time 20 -o /tmp/probe -w '%{http_code}' "$api$p" || echo ERR)
+            size=$(wc -c < /tmp/probe 2>/dev/null || echo 0)
+            echo "RAILWAY path=$p status=$code bytes=$size"
+          done
+
+      - name: Unauthenticated API boundary probes
+        shell: bash
+        run: |
+          set -u
+          api='https://wingman-production-c6ce.up.railway.app'
+          for p in /api/credits /api/consent/status /api/user/bios /api/user/chat-analyses; do
+            code=$(curl -sS -o /tmp/b -w '%{http_code}' -H 'Origin: https://chimerical-granita-c68c5a.netlify.app' "$api$p" || echo ERR)
+            echo "AUTHBOUNDARY path=$p status=$code body=$(tr '\n' ' ' < /tmp/b | head -c 250)"
+          done
+          for p in /api/analyze /api/icebreaker /api/optimize /api/chat /api/simulator/review /api/consent /api/consent/withdraw /api/user/delete-account; do
+            code=$(curl -sS -o /tmp/b -w '%{http_code}' -X POST -H 'Origin: https://chimerical-granita-c68c5a.netlify.app' -H 'Content-Type: application/json' --data '{}' "$api$p" || echo ERR)
+            echo "AUTHBOUNDARY path=$p status=$code body=$(tr '\n' ' ' < /tmp/b | head -c 250)"
+          done
