@@ -28,6 +28,7 @@ const termsHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'terms.html'), 
 const refundHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'refund.html'), 'utf8');
 const migration005Path = path.join(__dirname, '..', 'migrations', '005_user_consent_and_age_verification.sql');
 
+(async function runAll() {
 // -----------------------------------------------------------------------------
 // 1. NOTIFICATIONS & TOAST DOM LIFECYCLE
 // -----------------------------------------------------------------------------
@@ -162,7 +163,7 @@ assert.strictEqual(privacyHtmlCode.includes("Your privacy is absolute"), false, 
 
 // Technical screenshot handling description
 assert.strictEqual(privacyHtmlCode.includes("processed in browser memory and transmitted over secure TLS connections"), true, "privacy.html must describe browser memory and TLS transmission");
-assert.strictEqual(privacyHtmlCode.includes("Uploaded image files are never stored in our application database"), true, "privacy.html must state zero database storage of images");
+assert.strictEqual(privacyHtmlCode.includes("Uploaded screenshots are not stored in our application database"), true, "privacy.html must state zero database storage of screenshots");
 assert.strictEqual(termsHtmlCode.includes("processed in browser memory and transmitted over secure TLS connections"), true, "terms.html must describe browser memory and TLS transmission");
 
 // Unsupported DPDP Section 13 timeline removed
@@ -320,7 +321,199 @@ assert.strictEqual(
 
 console.log("✔ Test 11 Passed: Consent withdrawal UI, boot status check, and 503 error handling verified.");
 
+// -----------------------------------------------------------------------------
+// 12. DUPLICATE IDEMPOTENCY KEY 409 REJECTION ACROSS ALL AI ROUTES
+// -----------------------------------------------------------------------------
+console.log("▶ [TEST 12] Duplicate Idempotency Key 409 Rejection Across All AI Routes");
+
+// 12.1 Assert 409 DUPLICATE_REQUEST in all 5 route blocks
+const duplicateSnippet = 'code: "DUPLICATE_REQUEST"';
+const duplicateOccurrences = (serverCode.match(new RegExp(duplicateSnippet, 'g')) || []).length;
+assert.ok(
+    duplicateOccurrences >= 5,
+    `server.js must enforce 409 DUPLICATE_REQUEST on all 5 paid AI endpoints (found ${duplicateOccurrences})`
+);
+
+// 12.2 Behavioral Test: First invocation runs AI; Duplicate request with same ID returns 409 and AI count remains 1
+let aiInvocationCount = 0;
+const mockAiProvider = async () => {
+    aiInvocationCount++;
+    return "Mock AI reply text";
+};
+
+const mockLedger = new Map();
+let userBalance = 50;
+
+async function mockReserveCredits(uid, cost, reqId) {
+    if (mockLedger.has(reqId)) {
+        return { success: true, duplicate: true, status: 'completed', remainingCredits: userBalance };
+    }
+    if (userBalance < cost) {
+        return { success: false, insufficient: true, currentCredits: userBalance };
+    }
+    userBalance -= cost;
+    mockLedger.set(reqId, { uid, cost, status: 'pending' });
+    return { success: true, duplicate: false, status: 'pending', remainingCredits: userBalance };
+}
+
+async function simulateAiRoute(uid, reqId, cost) {
+    const deduction = await mockReserveCredits(uid, cost, reqId);
+    if (!deduction.success) {
+        return { status: 402, body: { success: false, error: "Insufficient credits." } };
+    }
+    if (deduction.duplicate === true) {
+        return {
+            status: 409,
+            body: {
+                success: false,
+                code: "DUPLICATE_REQUEST",
+                duplicate: true,
+                error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
+                credits: deduction.remainingCredits
+            }
+        };
+    }
+    const aiResult = await mockAiProvider();
+    mockLedger.get(reqId).status = 'completed';
+    return { status: 200, body: { success: true, result: aiResult, credits: deduction.remainingCredits } };
+}
+
+// Request 1 with ID "req_abc123"
+const res1 = await simulateAiRoute("user_1", "req_abc123", 10);
+assert.strictEqual(res1.status, 200, "First request must succeed with HTTP 200");
+assert.strictEqual(userBalance, 40, "First request must deduct 10 credits (50 -> 40)");
+assert.strictEqual(aiInvocationCount, 1, "First request must call AI provider exactly once");
+
+// Duplicate Request 2 with SAME ID "req_abc123"
+const res2 = await simulateAiRoute("user_1", "req_abc123", 10);
+assert.strictEqual(res2.status, 409, "Duplicate request must return HTTP 409");
+assert.strictEqual(res2.body.code, "DUPLICATE_REQUEST", "Duplicate response code must be DUPLICATE_REQUEST");
+assert.strictEqual(res2.body.duplicate, true, "Duplicate flag must be true");
+assert.strictEqual(userBalance, 40, "Duplicate request must NOT deduct any additional credits (balance remains 40)");
+assert.strictEqual(aiInvocationCount, 1, "Duplicate request MUST NOT call AI provider again (count remains 1)");
+console.log("✔ Test 12 Passed: Duplicate request IDs strictly return 409 DUPLICATE_REQUEST with zero additional AI calls.");
+
+// -----------------------------------------------------------------------------
+// 13. CLIENT 409 & 403 CONSENT_REQUIRED HANDLING
+// -----------------------------------------------------------------------------
+console.log("▶ [TEST 13] Client 409 & 403 CONSENT_REQUIRED Handling");
+
+// 13.1 generateWingmanResponse handles 409 without retrying
+assert.strictEqual(
+    appJsCode.includes('if (response.status === 409)'),
+    true,
+    "generateWingmanResponse must explicitly handle response.status === 409"
+);
+assert.strictEqual(
+    appJsCode.includes("trackWingmanEvent('generation_duplicate'"),
+    true,
+    "generateWingmanResponse must track generation_duplicate event on 409"
+);
+
+// 13.2 generateWingmanResponse handles 403 CONSENT_REQUIRED
+assert.strictEqual(
+    appJsCode.includes('if (response.status === 403)'),
+    true,
+    "generateWingmanResponse must explicitly handle response.status === 403"
+);
+assert.strictEqual(
+    appJsCode.includes('errJson.code === "CONSENT_REQUIRED"'),
+    true,
+    "generateWingmanResponse must check errJson.code === 'CONSENT_REQUIRED'"
+);
+
+// 13.3 submitChatboxMessage handles 409 and 403
+assert.strictEqual(
+    appJsCode.includes('chatResp.status === 409'),
+    true,
+    "submitChatboxMessage must handle HTTP 409 duplicate"
+);
+assert.strictEqual(
+    appJsCode.includes('chatResp.status === 403'),
+    true,
+    "submitChatboxMessage must handle HTTP 403 consent required"
+);
+console.log("✔ Test 13 Passed: Client 409 duplicate and 403 consent handling verified without false retries.");
+
+// -----------------------------------------------------------------------------
+// 14. SERVER-AUTHORITATIVE CONSENT STATE (NO STALE LOCALSTORAGE UNLOCK)
+// -----------------------------------------------------------------------------
+console.log("▶ [TEST 14] Server-Authoritative Consent State");
+
+// 14.1 updateTermsLockState must NOT read localStorage to grant state.isTermsAccepted
+const updateTermsLockIdx = appJsCode.indexOf('window.updateTermsLockState = function');
+assert.ok(updateTermsLockIdx !== -1, "updateTermsLockState must exist in app.js");
+const updateTermsLockSection = appJsCode.substring(updateTermsLockIdx, updateTermsLockIdx + 600);
+assert.strictEqual(
+    updateTermsLockSection.includes('safeStorage.get("wingman_terms_accepted")'),
+    false,
+    "updateTermsLockState must NOT read localStorage to independently grant consent"
+);
+assert.strictEqual(
+    updateTermsLockSection.includes('localStorage.getItem("wingman_terms_accepted")'),
+    false,
+    "updateTermsLockState must NOT read localStorage.getItem to independently grant consent"
+);
+
+// 14.2 Initial state must have isTermsAccepted: false
+assert.strictEqual(
+    appJsCode.includes('isTermsAccepted: false,'),
+    true,
+    "app.js initial state must have isTermsAccepted: false"
+);
+console.log("✔ Test 14 Passed: Consent state is strictly server-authoritative; stale localStorage cannot unlock features.");
+
+// -----------------------------------------------------------------------------
+// 15. NETWORK FAILURE TRUTHFUL FALLBACK (ZERO FALSE CREDIT PRESERVED CLAIMS)
+// -----------------------------------------------------------------------------
+console.log("▶ [TEST 15] Network Failure Truthful Fallback");
+
+assert.strictEqual(
+    appJsCode.includes("Strategic generation failed. (Credit preserved)"),
+    false,
+    "app.js must NOT claim credits are definitely preserved on unconfirmed network failures"
+);
+assert.strictEqual(
+    appJsCode.includes("Your credits are completely safe"),
+    false,
+    "app.js must NOT claim 'Your credits are completely safe' on unconfirmed network failures"
+);
+assert.strictEqual(
+    appJsCode.includes("Generation status could not be confirmed. Refreshing your credit balance…"),
+    true,
+    "app.js must display truthful unconfirmed status message on network exceptions"
+);
+console.log("✔ Test 15 Passed: Truthful network failure copy and credit sync verified.");
+
+// -----------------------------------------------------------------------------
+// 16. REQUIRED PRODUCTION ENVIRONMENT (AICREDITS_API_KEY_VISION) & PRIVACY COPY
+// -----------------------------------------------------------------------------
+console.log("▶ [TEST 16] Required Production Environment & Truthful Screenshot Disclosure");
+
+// 16.1 Startup env validation must include AICREDITS_API_KEY_VISION
+assert.strictEqual(
+    serverCode.includes("'AICREDITS_API_KEY_VISION'"),
+    true,
+    "server.js requiredEnvVars must include AICREDITS_API_KEY_VISION"
+);
+
+// 16.2 privacy.html Section 3 disclosure
+assert.strictEqual(
+    privacyHtmlCode.includes("Uploaded screenshots are not stored in our application database or server-side persistent storage. They may remain temporarily in your browser session until cleared, replaced, or the session is reset."),
+    true,
+    "privacy.html must contain truthful screenshot retention disclosure"
+);
+
+// 16.3 terms.html Section 4.1 disclosure
+assert.strictEqual(
+    termsHtmlCode.includes("Uploaded screenshots are not stored in our application database or server-side persistent storage. They may remain temporarily in your browser session until cleared, replaced, or the session is reset."),
+    true,
+    "terms.html must contain truthful screenshot retention disclosure"
+);
+console.log("✔ Test 16 Passed: Production AICREDITS_API_KEY_VISION requirement & truthful screenshot disclosures verified.");
+
 console.log("\n============================================================");
-console.log("🎉 ALL PRODUCTION READINESS REGRESSION TESTS PASSED (11/11)");
+console.log("🎉 ALL PRODUCTION READINESS REGRESSION TESTS PASSED (16/16)");
 console.log("============================================================\n");
+})();
 

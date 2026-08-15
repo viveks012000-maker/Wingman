@@ -4,7 +4,7 @@ require('dotenv').config();
 const { supabaseAdmin, verifySupabaseToken, requireSupabaseAuth, isProduction } = require('./middleware/supabaseAuth');
 
 // Startup Environment Variables Validation
-const requiredEnvVars = ['AICREDITS_API_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'];
+const requiredEnvVars = ['AICREDITS_API_KEY', 'AICREDITS_API_KEY_VISION', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'];
 const missingEnv = requiredEnvVars.filter(key => !process.env[key]);
 if (missingEnv.length > 0 && isProduction) {
     console.error(`❌ CRITICAL SECURITY FATAL: Missing required production environment variables: ${missingEnv.join(', ')}`);
@@ -1280,6 +1280,16 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
             });
         }
 
+        if (deduction.duplicate === true) {
+            return res.status(409).json({
+                success: false,
+                error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
+                code: "DUPLICATE_REQUEST",
+                duplicate: true,
+                credits: deduction.remainingCredits
+            });
+        }
+
         // =========================================================================
         // DUAL-MODEL VISION & CHAT STATE PIPELINE
         // STAGE 1: Vision Extraction & Spatial Parsing via qwen3.5-flash-02-23
@@ -1700,6 +1710,16 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
             });
         }
 
+        if (deduction.duplicate === true) {
+            return res.status(409).json({
+                success: false,
+                error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
+                code: "DUPLICATE_REQUEST",
+                duplicate: true,
+                credits: deduction.remainingCredits
+            });
+        }
+
         const bodyData = req.body || {};
         let tone = bodyData.tone;
         let shorthandOption = bodyData.shorthandOption;
@@ -2040,6 +2060,16 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
             });
         }
 
+        if (deduction.duplicate === true) {
+            return res.status(409).json({
+                success: false,
+                error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
+                code: "DUPLICATE_REQUEST",
+                duplicate: true,
+                credits: deduction.remainingCredits
+            });
+        }
+
         let tone = req.body.tone;
         let style = req.body.style;
         let shorthandOption = req.body.shorthandOption;
@@ -2365,6 +2395,16 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
                 success: false,
                 error: "Insufficient credits. Please purchase credits to use this feature.",
                 credits: deduction.currentCredits
+            });
+        }
+
+        if (deduction.duplicate === true) {
+            return res.status(409).json({
+                success: false,
+                error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
+                code: "DUPLICATE_REQUEST",
+                duplicate: true,
+                credits: deduction.remainingCredits
             });
         }
 
@@ -2720,6 +2760,16 @@ app.post('/api/simulator/review', requireSupabaseAuth, requireActiveConsent, api
                 return res.status(401).json({ success: false, error: deduction.error || "Authentication required to use this feature." });
             }
             return res.status(402).json({ success: false, error: "Insufficient credits for simulation review.", credits: deduction.currentCredits });
+        }
+
+        if (deduction.duplicate === true) {
+            return res.status(409).json({
+                success: false,
+                error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
+                code: "DUPLICATE_REQUEST",
+                duplicate: true,
+                credits: deduction.remainingCredits
+            });
         }
 
         const formattedTranscript = historyArray

@@ -1433,19 +1433,12 @@ STRICT LAWS:
 
     window.updateTermsLockState = function () {
         try {
-            const cb = $("privacyConsent");
-            const isExplicitlyAccepted = (safeStorage.get("wingman_terms_accepted") === "true" || localStorage.getItem("wingman_terms_accepted") === "true") && (safeStorage.get("wingman_consent_version") === "2026.1" || localStorage.getItem("wingman_consent_version") === "2026.1");
-
-            if (cb && cb.checked) {
-                state.isTermsAccepted = true;
-            } else if (isExplicitlyAccepted) {
-                state.isTermsAccepted = true;
-                if (cb) cb.checked = true;
-            } else {
-                state.isTermsAccepted = false;
-                if (cb) cb.checked = false;
-            }
             const isLocked = !state.isTermsAccepted;
+
+            const cb = $("privacyConsent");
+            if (cb) {
+                cb.checked = Boolean(state.isTermsAccepted);
+            }
 
             const dz = $("dropzone");
             const si = $("screenshotInput");
@@ -2893,6 +2886,36 @@ STRICT LAWS:
                         return null;
                     }
 
+                    if (response.status === 403) {
+                        if (errJson.code === "CONSENT_REQUIRED" || (errJson.error && errJson.error.toLowerCase().includes("consent"))) {
+                            state.isTermsAccepted = false;
+                            state.consentStatus = 'consent_required';
+                            safeStorage.remove('wingman_terms_accepted');
+                            safeStorage.remove('wingman_consent_version');
+                            if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+                            if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
+                            if (typeof window.showToast === 'function') {
+                                window.showToast("18+ verification and Terms of Service consent are required to process requests.", "warning");
+                            }
+                            return null;
+                        }
+                        if (typeof window.showToast === 'function') {
+                            window.showToast(errJson.error || "Access forbidden. Please sign in or check your account permissions.", "warning");
+                        }
+                        return null;
+                    }
+
+                    if (response.status === 409) {
+                        trackWingmanEvent('generation_duplicate', { endpoint: endpoint });
+                        if (typeof window.checkCreditBalance === 'function') {
+                            await window.checkCreditBalance();
+                        }
+                        if (typeof window.showToast === 'function') {
+                            window.showToast(errJson.error || "This request ID has already been processed or is already in progress. No additional credits were deducted.", "info");
+                        }
+                        return null;
+                    }
+
                     if (response.status === 429) {
                         if (typeof window.showToast === 'function') {
                             window.showToast("Too many requests. Please slow down and wait a moment.", "warning");
@@ -2902,6 +2925,15 @@ STRICT LAWS:
 
                     if (response.status === 503) {
                         trackWingmanEvent('generation_failed', { endpoint: endpoint, status: 503 });
+                        if (errJson.code === "CONSENT_SERVICE_UNAVAILABLE") {
+                            state.isTermsAccepted = false;
+                            state.consentStatus = 'service_unavailable';
+                            if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+                            if (typeof window.showToast === 'function') {
+                                window.showToast(errJson.error || "Consent verification service is temporarily unavailable. Features remain locked.", "error");
+                            }
+                            return null;
+                        }
                         if (typeof window.showToast === 'function') {
                             window.showToast(errJson.error || "Credit service is temporarily unavailable. Your generation was not started. Please try again later.", "warning");
                         }
@@ -2930,10 +2962,12 @@ STRICT LAWS:
                 console.warn(`API attempt ${attempt} failed:`, err.message);
                 if (attempt > maxRetries) {
                     trackWingmanEvent('generation_failed', { endpoint: endpoint, status: err.status || 500 });
-                    window.showToast("Strategic generation failed. (Credit preserved)", "warning");
-                    setTimeout(function() {
-                        window.showToast("🛡️ Credit Shield Active: Your credits are completely safe.", "shield", true);
-                    }, 150);
+                    if (typeof window.showToast === 'function') {
+                        window.showToast("Generation status could not be confirmed. Refreshing your credit balance…", "warning");
+                    }
+                    if (typeof window.checkCreditBalance === 'function') {
+                        window.checkCreditBalance();
+                    }
                     return null;
                 }
                 await new Promise(resolve => setTimeout(resolve, 1000));
@@ -3751,6 +3785,21 @@ STRICT LAWS:
                 } else if (chatData && chatData.error) {
                     window.renderChatboxBubble("Notice: " + chatData.error, "assistant");
                 }
+            } else if (chatResp.status === 409) {
+                const errJson = await chatResp.json().catch(() => ({}));
+                if (typeof window.checkCreditBalance === 'function') await window.checkCreditBalance();
+                window.renderChatboxBubble(errJson.error || "This message is already being processed. No additional credits were deducted.", "assistant");
+            } else if (chatResp.status === 403) {
+                const errJson = await chatResp.json().catch(() => ({}));
+                if (errJson.code === "CONSENT_REQUIRED" || (errJson.error && errJson.error.toLowerCase().includes("consent"))) {
+                    state.isTermsAccepted = false;
+                    state.consentStatus = 'consent_required';
+                    safeStorage.remove('wingman_terms_accepted');
+                    safeStorage.remove('wingman_consent_version');
+                    if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+                    if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
+                }
+                window.renderChatboxBubble("18+ age verification and consent required to continue chatting.", "assistant");
             } else if (chatResp.status === 402) {
                 window.renderChatboxBubble("⚠️ Insufficient credits. Please top up credits to continue practicing.", "assistant");
                 if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal();
