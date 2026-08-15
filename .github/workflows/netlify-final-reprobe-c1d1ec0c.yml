@@ -1,0 +1,23 @@
+name: Final Netlify production re-probe c1d1ec0c
+on:
+  push:
+    branches: [audit/post-netlify-deploy-20260815]
+    paths: ['.github/workflows/netlify-final-reprobe-c1d1ec0c.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe active Netlify deployment
+        shell: bash
+        run: |
+          set -u
+          base='https://chimerical-granita-c68c5a.netlify.app'
+          for p in '/release.json' '/server.js' '/package.json' '/middleware/security.js' '/tests/run_all_tests.js'; do
+            code=$(curl -sS -L --max-time 20 -o /tmp/body -w '%{http_code}' "$base$p?audit=$(date +%s%N)" || echo ERR)
+            bytes=$(wc -c < /tmp/body 2>/dev/null || echo 0)
+            echo "NETLIFY path=$p status=$code bytes=$bytes body=$(tr '\n' ' ' < /tmp/body | head -c 180)"
+          done
+          echo '--- APP HEADERS ---'
+          curl -sSI --max-time 20 "$base/app.html?audit=$(date +%s%N)" | tr -d '\r' | grep -iE '^(HTTP/|content-security-policy:|cache-control:|etag:|last-modified:)' || true
