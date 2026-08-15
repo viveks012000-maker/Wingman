@@ -8,6 +8,7 @@
     "dev": "concurrently \"npm run backend\" \"echo 'Frontend client environment ready'\"",
     "backend": "node --watch server.js",
     "build:css": "npx @tailwindcss/cli -i ./input.css -o ./output.css --minify",
+    "build:netlify": "node scripts/build-netlify-dist.js",
     "watch:css": "npx @tailwindcss/cli -i ./input.css -o ./output.css --watch",
     "test": "node tests/run_all_tests.js"
   },
