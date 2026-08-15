@@ -29,7 +29,8 @@ const testSuites = [
     { name: '23. Railway Static Internal-File Denylist', file: 'static_internal_exposure.test.js' },
     { name: '24. Mobile Responsiveness & Viewport Audit', file: 'viewport_overflow_qa.test.js' },
     { name: '25. Headless Browser Live Viewport Overflow QA', file: 'browser_viewport_live_qa.js' },
-    { name: '26. Post-Audit Correctness & DOM Sink Guard', file: 'post_audit_correctness.test.js' }
+    { name: '26. Post-Audit Correctness & DOM Sink Guard', file: 'post_audit_correctness.test.js' },
+    { name: '27. Production CORS Least-Privilege Guard', file: 'cors_production_policy.test.js' }
 ];
 
 console.log('========================================================================');

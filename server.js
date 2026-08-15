@@ -94,38 +94,44 @@ app.use((req, res, next) => {
 });
 
 // 2. Configure Locked CORS Policy
-const defaultAllowedOrigins = [
+const productionAllowedOrigins = [
     'https://mywingman.com',
-    'https://*.pages.dev',
-    'https://chimerical-granita-c68c5a.netlify.app',
+    'https://chimerical-granita-c68c5a.netlify.app'
+];
+const developmentAllowedOrigins = [
     'http://localhost:3000',
     'http://localhost:10000',
     'http://127.0.0.1:3000',
     'http://127.0.0.1:10000'
 ];
-const configuredAllowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+const defaultAllowedOrigins = IS_PROD
+    ? productionAllowedOrigins
+    : [...productionAllowedOrigins, ...developmentAllowedOrigins];
+
+const rawConfiguredAllowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(value => value.trim()).filter(Boolean)
     : [];
+
+// Production must use explicit HTTPS origins. Ignore wildcard/null/localhost values even if
+// an old environment variable still contains them; this prevents stale deployment settings
+// from silently reopening browser access to arbitrary preview or local origins.
+const configuredAllowedOrigins = rawConfiguredAllowedOrigins.filter(origin => {
+    if (!IS_PROD) return true;
+    if (origin === '*' || origin === 'null' || origin.includes('*')) return false;
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return false;
+    return /^https:\/\//i.test(origin);
+});
 const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...configuredAllowedOrigins]));
 
 function isOriginAllowed(origin, allowedList) {
-    if (!origin || origin === 'null') return true;
-    if (allowedList.includes('*') || allowedList.includes(origin)) return true;
+    // Requests without an Origin header (health checks, server-to-server clients) are not
+    // browser CORS requests and remain allowed. Opaque browser origins are denied in prod.
+    if (!origin) return true;
+    if (origin === 'null') return !IS_PROD;
+    if (allowedList.includes(origin)) return true;
 
-    for (const item of allowedList) {
-        if (item.includes('*')) {
-            const regexStr = '^' + item.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '[a-zA-Z0-9-]+') + '$';
-            try {
-                if (new RegExp(regexStr).test(origin)) return true;
-            } catch (e) {}
-        }
-    }
-    if (/^https:\/\/[a-zA-Z0-9-]+\.pages\.dev$/.test(origin)) {
-        return true;
-    }
-    if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
-        return true;
-    }
+    // Development may use arbitrary localhost ports for local tooling, but production may not.
+    if (!IS_PROD && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true;
     return false;
 }
 
@@ -137,11 +143,10 @@ app.use(cors({
         if (isOriginAllowed(origin, allowedOrigins)) {
             return callback(null, true);
         }
-        if (!IS_PROD && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
-            return callback(null, true);
-        }
         console.warn(`[SECURITY WARN] Blocked request from unauthorized origin: ${origin}`);
-        callback(new Error('CORS origin not allowed'), false);
+        // CORS is a browser response policy, not an authentication boundary. Returning false
+        // omits ACAO without turning a blocked preflight into an internal-server-error response.
+        return callback(null, false);
     },
     credentials: true
 }));
