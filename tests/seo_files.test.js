@@ -45,7 +45,7 @@ console.log('✔ Test 2 Passed: sitemap.xml XML structure, canonical URLs, and p
 // 2. HTTP Server Reachability & Public Access
 process.env.NODE_ENV = 'development';
 process.env.ENABLE_MOCK_AUTH = 'true';
-const { app } = require('../server');
+const { app, server: importedServer } = require('../server');
 
 function getRequest(server, reqPath) {
     return new Promise((resolve, reject) => {
@@ -64,30 +64,39 @@ function getRequest(server, reqPath) {
     });
 }
 
+async function closeServer(server) {
+    if (!server || typeof server.close !== 'function' || !server.listening) return;
+    await new Promise((resolve, reject) => {
+        server.close(err => err ? reject(err) : resolve());
+    });
+}
+
 async function testHttpEndpoints() {
-    const server = http.createServer(app);
-    await new Promise(res => server.listen(0, '127.0.0.1', res));
+    const testServer = http.createServer(app);
+    await new Promise(res => testServer.listen(0, '127.0.0.1', res));
 
     try {
         // Test /robots.txt
-        const robotsRes = await getRequest(server, '/robots.txt');
+        const robotsRes = await getRequest(testServer, '/robots.txt');
         assert.strictEqual(robotsRes.status, 200, `Expected HTTP 200 for /robots.txt, got ${robotsRes.status}`);
         assert.strictEqual(robotsRes.body.includes('User-agent: *'), true, '/robots.txt response must match file contents');
         console.log('✔ Test 3 Passed: HTTP GET /robots.txt returns 200 OK without authentication');
 
         // Test /sitemap.xml
-        const sitemapRes = await getRequest(server, '/sitemap.xml');
+        const sitemapRes = await getRequest(testServer, '/sitemap.xml');
         assert.strictEqual(sitemapRes.status, 200, `Expected HTTP 200 for /sitemap.xml, got ${sitemapRes.status}`);
         assert.strictEqual(sitemapRes.body.includes('<urlset'), true, '/sitemap.xml response must contain valid urlset');
         console.log('✔ Test 4 Passed: HTTP GET /sitemap.xml returns 200 OK without authentication');
     } finally {
-        await new Promise(res => server.close(res));
+        await closeServer(testServer);
+        await closeServer(importedServer);
     }
 
     console.log('\n🎉 ALL SEO FILES TESTS PASSED!\n');
 }
 
-testHttpEndpoints().catch(err => {
+testHttpEndpoints().catch(async err => {
     console.error('❌ SEO Files test failed:', err);
+    try { await closeServer(importedServer); } catch (_) {}
     process.exit(1);
 });
