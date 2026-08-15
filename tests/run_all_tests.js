@@ -28,7 +28,8 @@ const testSuites = [
     { name: '22. Netlify Frontend-Only Deploy Safety', file: 'netlify_deploy_safety.test.js' },
     { name: '23. Railway Static Internal-File Denylist', file: 'static_internal_exposure.test.js' },
     { name: '24. Mobile Responsiveness & Viewport Audit', file: 'viewport_overflow_qa.test.js' },
-    { name: '25. Headless Browser Live Viewport Overflow QA', file: 'browser_viewport_live_qa.js' }
+    { name: '25. Headless Browser Live Viewport Overflow QA', file: 'browser_viewport_live_qa.js' },
+    { name: '26. Post-Audit Correctness & DOM Sink Guard', file: 'post_audit_correctness.test.js' }
 ];
 
 console.log('========================================================================');

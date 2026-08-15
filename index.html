@@ -2164,7 +2164,14 @@
 
                 var icon = type === "success" ? "check_circle" : type === "warning" ? "warning" : type === "error" ? "error" : "info";
                 toast.className = "toast-enter flex items-start gap-2.5 px-4 py-3 rounded-xl shadow-2xl border text-xs font-medium max-w-[340px] pointer-events-auto transition-all cursor-pointer " + cls;
-                toast.innerHTML = '<span class="material-symbols-outlined text-[18px] shrink-0">' + icon + '</span><span class="leading-snug">' + msg + '</span>';
+                var iconSpan = document.createElement("span");
+                iconSpan.className = "material-symbols-outlined text-[18px] shrink-0";
+                iconSpan.textContent = icon;
+                var messageSpan = document.createElement("span");
+                messageSpan.className = "leading-snug";
+                messageSpan.textContent = String(msg == null ? "" : msg);
+                toast.appendChild(iconSpan);
+                toast.appendChild(messageSpan);
                 toast.onclick = function() { try { toast.remove(); } catch(e) {} };
                 container.appendChild(toast);
                 setTimeout(function () {
