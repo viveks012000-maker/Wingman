@@ -26,8 +26,9 @@ const testSuites = [
     { name: '20. Production Readiness & QA Regression Suite', file: 'production_readiness_regression.test.js' },
     { name: '21. Credit/Purchase Modal Regression Guard', file: 'credit_purchase_modal_regression.test.js' },
     { name: '22. Netlify Frontend-Only Deploy Safety', file: 'netlify_deploy_safety.test.js' },
-    { name: '23. Mobile Responsiveness & Viewport Audit', file: 'viewport_overflow_qa.test.js' },
-    { name: '24. Headless Browser Live Viewport Overflow QA', file: 'browser_viewport_live_qa.js' }
+    { name: '23. Railway Static Internal-File Denylist', file: 'static_internal_exposure.test.js' },
+    { name: '24. Mobile Responsiveness & Viewport Audit', file: 'viewport_overflow_qa.test.js' },
+    { name: '25. Headless Browser Live Viewport Overflow QA', file: 'browser_viewport_live_qa.js' }
 ];
 
 console.log('========================================================================');
