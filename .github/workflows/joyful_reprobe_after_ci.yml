@@ -1,0 +1,58 @@
+name: Joyful deployment reprobe
+on:
+  push:
+    branches:
+      - audit/joyful-conkies-live
+    paths:
+      - .github/workflows/joyful_reprobe_after_ci.yml
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe release and exposure
+        shell: bash
+        run: |
+          set -euo pipefail
+          SITE='https://joyful-conkies-026a81.netlify.app'
+          cb=$(date +%s%N)
+          for p in release.json server.js package.json database.js middleware/security.js tests/run_all_tests.js PROMPT_SYSTEM_MEMORY.json PROJECT_MASTER_SPECIFICATION.md; do
+            code=$(curl -sS -H 'Cache-Control: no-cache' -o /tmp/body -w '%{http_code}' "$SITE/$p?audit=$cb-$RANDOM")
+            size=$(wc -c </tmp/body | tr -d ' ')
+            echo "$p STATUS=$code SIZE=$size"
+            if [ "$p" = 'release.json' ] && [ "$code" = '200' ]; then
+              jq -c '{sourceCommit,generatedAt}' /tmp/body || true
+            fi
+          done
+      - name: Browser check logged-out Maeve composer
+        shell: bash
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright@1.57.0 --no-save >/dev/null 2>&1
+          npx playwright install --with-deps chromium >/dev/null 2>&1
+          node - <<'NODE'
+          const { chromium } = require('playwright');
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            const ctx=await browser.newContext();
+            await ctx.addInitScript(()=>{try{localStorage.clear();sessionStorage.clear()}catch(_){}});
+            const page=await ctx.newPage();
+            const errors=[];
+            page.on('pageerror',e=>errors.push(String(e)));
+            await page.goto('https://joyful-conkies-026a81.netlify.app/app.html?audit='+Date.now(),{waitUntil:'domcontentloaded',timeout:30000});
+            await page.waitForTimeout(1200);
+            const result=await page.evaluate(()=>{
+              const input=document.getElementById('simulator-chat-input');
+              const send=document.getElementById('chatbox-send-btn');
+              if(!input||!send) return {missing:true};
+              const before=input.disabled;
+              input.value='audit message';
+              input.dispatchEvent(new Event('input',{bubbles:true}));
+              return {missing:false,inputDisabled:before,sendDisabled:send.disabled,sendOpacity:getComputedStyle(send).opacity};
+            });
+            console.log('BROWSER='+JSON.stringify({result,errors}));
+            await browser.close();
+          })().catch(e=>{console.error(e);process.exit(1)});
+          NODE
