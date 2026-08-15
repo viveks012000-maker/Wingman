@@ -1,0 +1,66 @@
+name: Build verified Netlify release
+
+on:
+  push:
+    branches: [release/netlify-6bbcdb9c]
+    paths: ['.github/workflows/build-verified-netlify-release.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/netlify-6bbcdb9c
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Prove product source equals merged main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code 6bbcdb9c7a9e5bf8775dd376fde51f870611d15e -- . ':(exclude).github/workflows/build-verified-netlify-release.yml'
+      - name: Full application gate
+        run: npm test
+      - name: Production dependency audit
+        run: npm audit --omit=dev
+      - name: Build frontend-only production artifact
+        shell: bash
+        run: |
+          GITHUB_SHA=6bbcdb9c7a9e5bf8775dd376fde51f870611d15e npm run build:netlify
+          node - <<'NODE'
+          const fs=require('fs');
+          const r=JSON.parse(fs.readFileSync('netlify-dist/release.json','utf8'));
+          if(r.sourceCommit!=='6bbcdb9c7a9e5bf8775dd376fde51f870611d15e') throw new Error('Wrong release source commit '+r.sourceCommit);
+          console.log('RELEASE_SOURCE_COMMIT='+r.sourceCommit);
+          console.log('RELEASE_PUBLIC_FILE_COUNT='+Object.keys(r.files||{}).length);
+          NODE
+          test ! -e netlify-dist/server.js
+          test ! -e netlify-dist/database.js
+          test ! -e netlify-dist/package.json
+          test ! -d netlify-dist/migrations
+          test ! -d netlify-dist/tests
+          test ! -d netlify-dist/middleware
+          test ! -d netlify-dist/scripts
+          grep -q 'wingman-production-c6ce.up.railway.app' netlify-dist/app.html
+          grep -q 'wingman-production-c6ce.up.railway.app' netlify-dist/_headers
+      - name: Zip exact deploy folder contents
+        shell: bash
+        run: |
+          cd netlify-dist
+          zip -r ../wingman-netlify-production-6bbcdb9c.zip . >/dev/null
+          cd ..
+          sha256sum wingman-netlify-production-6bbcdb9c.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wingman-netlify-production-6bbcdb9c
+          path: wingman-netlify-production-6bbcdb9c.zip
+          retention-days: 7
