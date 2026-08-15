@@ -1,4 +1,4 @@
-name: One-time guarded server repair 004
+name: One-time post-repair verification 004
 
 on:
   push:
@@ -7,33 +7,24 @@ on:
       - '.github/workflows/one_time_repair_004.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  repair-server:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
+          node-version: '20'
+          cache: npm
 
-      - name: Apply audited surgical repairs
-        run: python3 .github/scripts/repair_004.py
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Verify syntax and diff hygiene
-        run: |
-          node --check server.js
-          git diff --check
-          git diff -- server.js
+      - name: Verify JavaScript syntax
+        run: node --check server.js
 
-      - name: Commit guarded repair
-        run: |
-          if git diff --quiet -- server.js; then
-            echo 'No server.js changes to commit.'
-            exit 1
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add server.js
-          git commit -m 'fix(credits): preserve failure semantics and tighten analyzer routing'
-          git push origin HEAD:main
+      - name: Run complete repository test suite
+        run: npm test
