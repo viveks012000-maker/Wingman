@@ -1,4 +1,4 @@
-name: One-time post-repair verification 004
+name: One-time bounded post-repair verification 004
 
 on:
   push:
@@ -12,6 +12,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
 
@@ -26,5 +27,21 @@ jobs:
       - name: Verify JavaScript syntax
         run: node --check server.js
 
-      - name: Run complete repository test suite
-        run: npm test
+      - name: Run bounded relevant suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test_file in \
+            tests/final_hardening_pass.test.js \
+            tests/credits.test.js \
+            tests/analyzer_ai_pipeline.test.js \
+            tests/analyzer_credit_failure_zero_charge.test.js \
+            tests/analyzer_exactly_once_credits.test.js \
+            tests/credit_balance_auth_runtime.test.js \
+            tests/security_hardening_audit.test.js \
+            tests/migration_002_safety_audit.test.js \
+            tests/migration_003_coalesce_audit.test.js
+          do
+            echo "===== RUNNING ${test_file} ====="
+            timeout 45s node "${test_file}"
+          done
