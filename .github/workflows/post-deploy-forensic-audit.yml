@@ -1,0 +1,224 @@
+name: Post-deploy production forensic audit
+
+on:
+  push:
+    branches: [audit/post-netlify-deploy-20260815]
+    paths: ['.github/workflows/post-deploy-forensic-audit.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  forensic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Prove audit branch source matches production main
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=44671fec1184cfc08504f601205e4def46f53dbc
+          git diff --exit-code "$BASE" -- . ':(exclude).github/workflows/post-deploy-forensic-audit.yml'
+          echo "SOURCE_MATCHES_MAIN=true"
+
+      - name: Read and syntax-check every tracked first-party text file
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pathlib, subprocess, sys, re
+          files = subprocess.check_output(['git','ls-files'], text=True).splitlines()
+          binary_ext={'.png','.jpg','.jpeg','.gif','.webp','.ico','.woff','.woff2','.ttf','.eot'}
+          text=[]; lines=0; bad=[]; suspicious=[]
+          patterns={
+            'TODO/FIXME': re.compile(r'\b(?:TODO|FIXME|XXX|HACK)\b', re.I),
+            'eval/new Function': re.compile(r'\beval\s*\(|\bnew\s+Function\s*\('),
+            'document.write': re.compile(r'document\.write\s*\('),
+            'token in localStorage': re.compile(r'localStorage\.(?:setItem|getItem)\s*\([^\n]*(?:token|jwt|service.?role)', re.I),
+            'service-role literal': re.compile(r'(?:service.?role|SUPABASE_SERVICE_ROLE_KEY)\s*[:=]\s*["\'][^"\']+["\']', re.I),
+          }
+          for name in files:
+            p=pathlib.Path(name)
+            if p.suffix.lower() in binary_ext: continue
+            try: raw=p.read_bytes(); s=raw.decode('utf-8')
+            except (UnicodeDecodeError, OSError): continue
+            text.append(name)
+            for n,line in enumerate(s.splitlines(),1):
+              lines += 1
+              for label,rx in patterns.items():
+                if rx.search(line): suspicious.append((label,name,n))
+          print(f'TEXT_FILES_READ={len(text)} TOTAL_LINES_READ={lines}')
+          for item in suspicious: print('STATIC_FLAG', *item)
+          print(f'STATIC_FLAGS_TOTAL={len(suspicious)}')
+          PY
+          while IFS= read -r f; do
+            case "$f" in
+              *.js) node --check "$f" >/dev/null ;;
+            esac
+          done < <(git ls-files)
+          echo "ALL_TRACKED_JS_SYNTAX_OK=true"
+
+      - name: Full application test suite
+        run: npm test
+
+      - name: Production dependency audit
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > /tmp/npm-audit.json
+          code=$?
+          node - <<'NODE'
+          const r=require('/tmp/npm-audit.json');
+          console.log('NPM_AUDIT_METADATA=' + JSON.stringify(r.metadata?.vulnerabilities || {}));
+          for (const [name,v] of Object.entries(r.vulnerabilities||{})) {
+            console.log(`NPM_VULN package=${name} severity=${v.severity} direct=${!!v.isDirect} range=${v.range}`);
+          }
+          NODE
+          echo "NPM_AUDIT_EXIT=$code"
+          exit 0
+
+      - name: Build strict Netlify artifact and inspect allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run audit:netlify-dist
+          echo 'DIST_FILES_BEGIN'
+          find dist -type f -printf '%P\n' | sort
+          echo 'DIST_FILES_END'
+          forbidden=0
+          for p in server.js database.js package.json package-lock.json PROMPT_SYSTEM_MEMORY.json PROJECT_MASTER_SPECIFICATION.md API_DOCUMENTATION.md netlify.toml; do
+            if [ -e "dist/$p" ]; then echo "FORBIDDEN_DIST_FILE=$p"; forbidden=1; fi
+          done
+          if find dist -type f \( -path '*/migrations/*' -o -path '*/tests/*' -o -path '*/middleware/*' -o -path '*/scripts/*' -o -path '*/.github/*' \) | grep -q .; then
+            echo 'FORBIDDEN_DIST_TREE=true'; forbidden=1
+          fi
+          test "$forbidden" -eq 0
+
+      - name: Compare live Netlify assets byte-for-byte with main
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://chimerical-granita-c68c5a.netlify.app'
+          files=(index.html app.html app.js config.js supabaseClient.js style.css output.css privacy.html terms.html refund.html robots.txt sitemap.xml)
+          mismatches=0
+          for f in "${files[@]}"; do
+            stamp=$(date +%s%N)
+            curl --fail --silent --show-error --location -H 'Cache-Control: no-cache' "$BASE/$f?audit=$stamp" -o "/tmp/live-${f//\//_}"
+            live=$(sha256sum "/tmp/live-${f//\//_}" | awk '{print $1}')
+            repo=$(sha256sum "$f" | awk '{print $1}')
+            if [ "$live" = "$repo" ]; then echo "LIVE_MATCH $f=true sha256=$live"; else echo "LIVE_MATCH $f=false live=$live repo=$repo"; mismatches=$((mismatches+1)); fi
+          done
+          echo "LIVE_ASSET_MISMATCHES=$mismatches"
+          test "$mismatches" -eq 0
+
+      - name: Verify Netlify no longer exposes backend or internal files
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://chimerical-granita-c68c5a.netlify.app'
+          paths=(server.js database.js package.json package-lock.json PROMPT_SYSTEM_MEMORY.json PROJECT_MASTER_SPECIFICATION.md API_DOCUMENTATION.md migrations/004_cleanup_credit_security_and_rls.sql migrations/005_user_consent_and_age_verification.sql middleware/supabaseAuth.js middleware/security.js config/promptSystem.js tests/production_readiness_regression.test.js scripts/build-netlify-dist.js netlify.toml .env .git/config)
+          exposed=0
+          for p in "${paths[@]}"; do
+            code=$(curl --silent --show-error --location -o /tmp/probe -w '%{http_code}' "$BASE/$p?audit=$(date +%s%N)" || true)
+            size=$(wc -c </tmp/probe 2>/dev/null || echo 0)
+            echo "NETLIFY_PROBE path=$p status=$code bytes=$size"
+            case "$p" in
+              server.js) grep -q "require('dotenv').config" /tmp/probe && exposed=$((exposed+1)) && echo "EXPOSED $p=true" || true ;;
+              database.js) grep -Eqi 'sqlite|CREATE TABLE' /tmp/probe && exposed=$((exposed+1)) && echo "EXPOSED $p=true" || true ;;
+              package.json) grep -q '"dependencies"' /tmp/probe && exposed=$((exposed+1)) && echo "EXPOSED $p=true" || true ;;
+              *.sql) grep -Eqi 'CREATE|ALTER|GRANT|REVOKE|POLICY|FUNCTION' /tmp/probe && exposed=$((exposed+1)) && echo "EXPOSED $p=true" || true ;;
+              middleware/*.js|config/*.js|tests/*.js|scripts/*.js) grep -Eqi 'module\.exports|require\(|assert\.|buildNetlify' /tmp/probe && exposed=$((exposed+1)) && echo "EXPOSED $p=true" || true ;;
+              PROMPT_SYSTEM_MEMORY.json) grep -Eqi 'prompt|system' /tmp/probe && exposed=$((exposed+1)) && echo "EXPOSED $p=true" || true ;;
+            esac
+          done
+          echo "CONFIRMED_INTERNAL_FILES_EXPOSED=$exposed"
+          test "$exposed" -eq 0
+
+      - name: Probe Railway from the real Netlify origin
+        shell: bash
+        run: |
+          set -euo pipefail
+          API='https://wingman-production-c6ce.up.railway.app'
+          ORIGIN='https://chimerical-granita-c68c5a.netlify.app'
+          echo '--- health ---'
+          curl --fail --silent --show-error -D /tmp/health-h "$API/api/health" -o /tmp/health-b
+          cat /tmp/health-b
+          echo '--- unauthenticated credits ---'
+          code=$(curl --silent --show-error -o /tmp/credits-b -w '%{http_code}' -H "Origin: $ORIGIN" "$API/api/credits")
+          echo "RAILWAY_CREDITS_STATUS=$code"; cat /tmp/credits-b; test "$code" = 401
+          echo '--- analyzer preflight ---'
+          code=$(curl --silent --show-error -o /tmp/preflight-b -w '%{http_code}' -X OPTIONS "$API/api/analyze" -H "Origin: $ORIGIN" -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: authorization,content-type')
+          echo "RAILWAY_PREFLIGHT_STATUS=$code"; test "$code" = 204
+          curl --silent --show-error -D - -o /dev/null -X OPTIONS "$API/api/analyze" -H "Origin: $ORIGIN" -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: authorization,content-type' | tr -d '\r' | grep -iE 'access-control-allow-origin|access-control-allow-headers|access-control-allow-methods'
+
+      - name: Real Chromium production-path test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/live-audit.js <<'NODE'
+          const { chromium } = require('playwright');
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            const page=await browser.newPage({viewport:{width:390,height:844}});
+            const bad=[]; const consoles=[]; const requests=[];
+            page.on('pageerror',e=>bad.push('PAGEERROR '+e.message));
+            page.on('console',m=>{ const t=m.text(); consoles.push(`${m.type()} ${t}`); if(/content security policy|refused to connect|blocked by csp/i.test(t)) bad.push('CONSOLE '+t); });
+            page.on('requestfailed',r=>bad.push(`REQUESTFAILED ${r.url()} ${r.failure()?.errorText||''}`));
+            page.on('response',r=>{ if(r.url().includes('railway.app')) requests.push(`${r.status()} ${r.url()}`); });
+            await page.goto('https://chimerical-granita-c68c5a.netlify.app/app.html?audit='+Date.now(),{waitUntil:'networkidle',timeout:60000});
+            const result=await page.evaluate(async()=>{
+              const base=typeof window.getApiBase==='function'?window.getApiBase():(window.WINGMAN_CONFIG&&window.WINGMAN_CONFIG.API_BASE_URL);
+              let health,credits;
+              try { const r=await fetch(base+'/api/health'); health={status:r.status,text:await r.text()}; } catch(e){health={error:String(e)}}
+              try { const r=await fetch(base+'/api/credits'); credits={status:r.status,text:await r.text()}; } catch(e){credits={error:String(e)}}
+              return {base,health,credits,readyState:document.readyState,hasSupabase:!!window.supabaseClient};
+            });
+            console.log('BROWSER_RESULT='+JSON.stringify(result));
+            console.log('RAILWAY_BROWSER_RESPONSES='+JSON.stringify(requests));
+            for(const x of bad) console.log('BROWSER_BAD='+x);
+            if(result.base!=='https://wingman-production-c6ce.up.railway.app') throw new Error('Wrong API base: '+result.base);
+            if(result.health?.status!==200) throw new Error('Browser health failed '+JSON.stringify(result.health));
+            if(result.credits?.status!==401) throw new Error('Browser unauth credits expected 401 '+JSON.stringify(result.credits));
+            if(!result.hasSupabase) throw new Error('Supabase client missing');
+            if(bad.length) throw new Error('Browser path had '+bad.length+' blocking errors');
+            await browser.close();
+          })().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+          NODE_PATH="$GITHUB_WORKSPACE/node_modules" node /tmp/live-audit.js
+
+      - name: Live multi-viewport and asset QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/viewports.js <<'NODE'
+          const { chromium } = require('playwright');
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            const widths=[320,360,375,390,412,430,768,1024,1440];
+            const pages=['index.html','app.html','terms.html','privacy.html','refund.html'];
+            const failures=[];
+            for(const p of pages) for(const w of widths){
+              const page=await browser.newPage({viewport:{width:w,height:900}});
+              const errs=[]; page.on('pageerror',e=>errs.push(e.message));
+              await page.goto(`https://chimerical-granita-c68c5a.netlify.app/${p}?audit=${Date.now()}-${w}`,{waitUntil:'domcontentloaded',timeout:60000});
+              const m=await page.evaluate(()=>({iw:innerWidth,sw:document.documentElement.scrollWidth,bsw:document.body?.scrollWidth||0,title:document.title}));
+              if(m.sw>m.iw+1||m.bsw>m.iw+1||errs.length) failures.push({p,w,m,errs});
+              await page.close();
+            }
+            console.log('LIVE_VIEWPORT_CHECKS='+pages.length*widths.length);
+            console.log('LIVE_VIEWPORT_FAILURES='+JSON.stringify(failures));
+            await browser.close(); if(failures.length) process.exit(1);
+          })();
+          NODE
+          NODE_PATH="$GITHUB_WORKSPACE/node_modules" node /tmp/viewports.js
