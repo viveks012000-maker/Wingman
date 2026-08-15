@@ -1,0 +1,62 @@
+name: Joyful demo CORS gate
+on:
+  push:
+    branches:
+      - fix/joyful-demo-cors
+    paths:
+      - .github/workflows/joyful_cors_gate.yml
+permissions:
+  contents: write
+jobs:
+  verify-and-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/joyful-demo-cors
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Apply exact-origin patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('server.js')
+          s = p.read_text(encoding='utf-8')
+          old = "const productionAllowedOrigins = [\n    'https://mywingman.com',\n    'https://chimerical-granita-c68c5a.netlify.app',\n    'https://wondrous-arithmetic-0ece9d.netlify.app'\n];"
+          new = "const productionAllowedOrigins = [\n    'https://mywingman.com',\n    'https://chimerical-granita-c68c5a.netlify.app',\n    'https://wondrous-arithmetic-0ece9d.netlify.app',\n    'https://joyful-conkies-026a81.netlify.app'\n];"
+          if old not in s:
+              raise SystemExit('Audited production origin block no longer matches current source')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+
+          t = Path('tests/cors_production_policy.test.js')
+          x = t.read_text(encoding='utf-8')
+          marker = "assert.ok(server.includes(\"'https://wondrous-arithmetic-0ece9d.netlify.app'\"), 'Current Netlify demo origin must be explicitly allowed');\n"
+          add = marker + "assert.ok(server.includes(\"'https://joyful-conkies-026a81.netlify.app'\"), 'Joyful Netlify audit origin must be explicitly allowed');\n"
+          if marker not in x:
+              raise SystemExit('CORS test marker missing')
+          t.write_text(x.replace(marker, add, 1), encoding='utf-8')
+          PY
+      - name: Complete regression gate
+        run: |
+          node -c server.js
+          node tests/cors_production_policy.test.js
+          npm test
+          npm audit --omit=dev --audit-level=high
+      - name: Commit only verified CORS files
+        shell: bash
+        run: |
+          git config user.name 'viveks012000-maker'
+          git config user.email 'viveks012000@gmail.com'
+          git add server.js tests/cors_production_policy.test.js
+          git diff --cached --check
+          changed=$(git diff --cached --name-only | sort)
+          test "$changed" = $'server.js\ntests/cors_production_policy.test.js'
+          git commit -m 'fix: allow joyful Netlify audit origin'
+          git push origin HEAD:fix/joyful-demo-cors
