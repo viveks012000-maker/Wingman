@@ -23,6 +23,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - name: Apply guarded scoped-CSP repair
         run: node .github/scripts/apply_netlify_csp_heic_compat.js
       - name: Full regression and dependency gate
