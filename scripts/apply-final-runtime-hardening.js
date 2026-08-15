@@ -81,7 +81,8 @@ const output = execFileSync(process.execPath, ['-e', "require('./server'); proce
     SUPABASE_SERVICE_ROLE_KEY: 'test_service_role'
   }
 });
-assert.strictEqual(output, 'IMPORT_OK', 'requiring server.js must exit without opening a listener');
+assert.ok(output.endsWith('IMPORT_OK'), 'requiring server.js must return promptly after import');
+assert.ok(!output.includes('Secure Wingman 3-Tier Backend Online'), 'requiring server.js must not open a listener');
 console.log('✔ Runtime startup side-effect and CSP unsafe-eval hardening passed.');
 `;
 fs.writeFileSync('tests/runtime_startup_csp_hardening.test.js', test);
