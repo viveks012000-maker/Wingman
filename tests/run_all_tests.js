@@ -34,7 +34,8 @@ const testSuites = [
     { name: '28. Account Deletion Atomicity & Cascade Guard', file: 'account_deletion_atomicity.test.js' },
     { name: '29. Runtime Startup, CSP & Production-Origin Example Guard', file: 'runtime_startup_csp_hardening.test.js' },
     { name: '30. Privileged Add-Credits Missing-Profile Guard', file: 'add_credits_profile_missing.test.js' },
-    { name: '31. Production Legal & Privacy Accuracy Guard', file: 'legal_production_accuracy.test.js' }
+    { name: '31. Production Legal & Privacy Accuracy Guard', file: 'legal_production_accuracy.test.js' },
+    { name: '32. Public Health Endpoint Minimal-Disclosure Guard', file: 'health_endpoint_minimal.test.js' }
 ];
 
 console.log('========================================================================');
