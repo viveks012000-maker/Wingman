@@ -1,0 +1,24 @@
+name: Re-probe Railway sensitive paths
+on:
+  push:
+    branches: [audit/post-netlify-deploy-20260815]
+    paths: ['.github/workflows/reprobe-railway-static.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repeat sensitive path probes
+        shell: bash
+        run: |
+          api='https://wingman-production-c6ce.up.railway.app'
+          for i in 1 2 3; do
+            echo "ROUND=$i"
+            for p in '/middleware/security.js' '/middleware/%73ecurity.js' '/server.js' '/api/health'; do
+              code=$(curl --path-as-is -sS --max-time 20 -o /tmp/b -w '%{http_code}' "$api$p" || echo ERR)
+              size=$(wc -c < /tmp/b 2>/dev/null || echo 0)
+              echo "path=$p status=$code bytes=$size body=$(tr '\n' ' ' < /tmp/b | head -c 120)"
+            done
+            sleep 2
+          done
