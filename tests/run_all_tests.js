@@ -1,6 +1,8 @@
 const { execSync } = require('child_process');
 const path = require('path');
 
+const TEST_TIMEOUT_MS = 60_000;
+
 const testSuites = [
     { name: '1. Final Technical Hardening Pass Verification', file: 'final_hardening_pass.test.js' },
     { name: '2. Codex Comprehensive Audit Verification', file: 'codex_audit_verification.test.js' },
@@ -34,11 +36,19 @@ for (const suite of testSuites) {
     const filePath = path.join(__dirname, suite.file);
     console.log(`\n▶ [SUITE] ${suite.name} (${suite.file})`);
     try {
-        const output = execSync(`node "${filePath}"`, { stdio: 'pipe', encoding: 'utf8' });
+        const output = execSync(`node "${filePath}"`, {
+            stdio: 'pipe',
+            encoding: 'utf8',
+            timeout: TEST_TIMEOUT_MS,
+            killSignal: 'SIGTERM'
+        });
         console.log(output.trim());
         totalPassed++;
     } catch (err) {
         console.error(`❌ FAILED: ${suite.name}`);
+        if (err.killed || err.signal === 'SIGTERM' || err.code === 'ETIMEDOUT') {
+            console.error(`Test suite exceeded ${TEST_TIMEOUT_MS / 1000} seconds and was terminated to prevent CI from hanging.`);
+        }
         if (err.stdout) console.log(err.stdout);
         if (err.stderr) console.error(err.stderr);
         totalFailed++;
@@ -49,8 +59,4 @@ console.log('\n=================================================================
 console.log(`🏁 TEST SUITES COMPLETED: ${totalPassed} Passed, ${totalFailed} Failed`);
 console.log('========================================================================\n');
 
-if (totalFailed > 0) {
-    process.exit(1);
-} else {
-    process.exit(0);
-}
+process.exit(totalFailed > 0 ? 1 : 0);
