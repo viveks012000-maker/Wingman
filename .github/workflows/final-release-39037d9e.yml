@@ -1,0 +1,117 @@
+name: Final exact-main release verification 39037d9e
+on:
+  push:
+    branches: [release/final-39037d9e]
+    paths: ['.github/workflows/final-release-39037d9e.yml']
+permissions:
+  contents: read
+jobs:
+  verify-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 39037d9eb9b53dc543d97486d80d4cc6a8533f5f
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prove exact source commit
+        run: |
+          test "$(git rev-parse HEAD)" = "39037d9eb9b53dc543d97486d80d4cc6a8533f5f"
+          git status --porcelain
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Full 29-suite regression gate
+        run: npm test
+      - name: Syntax check every tracked first-party JavaScript file
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r file; do
+            case "$file" in vendor/*) continue ;; esac
+            node --check "$file"
+            count=$((count+1))
+          done < <(git ls-files '*.js')
+          echo "FIRST_PARTY_JS_SYNTAX_CHECKED=$count"
+      - name: Production dependency integrity and vulnerability gate
+        run: |
+          npm ls --omit=dev
+          npm audit --omit=dev
+      - name: Current-tree private-secret heuristic
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, math
+          from collections import Counter
+          files=[]
+          import subprocess
+          for f in subprocess.check_output(['git','ls-files'], text=True).splitlines():
+              p=Path(f)
+              if f.startswith('vendor/') or p.suffix.lower() not in {'.js','.json','.html','.md','.toml','.yml','.yaml','.sql','.example'}:
+                  continue
+              files.append(p)
+          assignments=re.compile(r'''(?i)\b(AICREDITS_API_KEY(?:_VISION)?|SUPABASE_SERVICE_ROLE_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY)\b\s*[:=]\s*["']([^"'\n]{16,})["']''')
+          findings=[]
+          for p in files:
+              text=p.read_text(errors='ignore')
+              for i,line in enumerate(text.splitlines(),1):
+                  m=assignments.search(line)
+                  if not m: continue
+                  val=m.group(2)
+                  lv=val.lower()
+                  if any(x in lv for x in ('your_','dummy','test_','process.env','${{')): continue
+                  findings.append((str(p),i,m.group(1),len(val)))
+          print('PRIVATE_SECRET_CANDIDATES='+str(len(findings)))
+          for f in findings:
+              print('REDACTED_LOCATION file=%s line=%s variable=%s length=%s' % f)
+          if findings:
+              raise SystemExit('Private secret candidate(s) detected in current tree')
+          PY
+      - name: Build exact Netlify production artifact
+        env:
+          GITHUB_SHA: 39037d9eb9b53dc543d97486d80d4cc6a8533f5f
+        run: npm run build:netlify
+      - name: Verify artifact manifest, CSP, and internal-file exclusion
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f netlify-dist/release.json
+          node -e "const r=require('./netlify-dist/release.json'); if(r.sourceCommit!=='39037d9eb9b53dc543d97486d80d4cc6a8533f5f') throw new Error('wrong release sourceCommit: '+r.sourceCommit)"
+          grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/_headers
+          ! grep -q 'unsafe-eval' netlify-dist/_headers
+          test ! -e netlify-dist/server.js
+          test ! -e netlify-dist/database.js
+          test ! -e netlify-dist/package.json
+          test ! -e netlify-dist/package-lock.json
+          test ! -d netlify-dist/migrations
+          test ! -d netlify-dist/tests
+          test ! -d netlify-dist/middleware
+          test ! -d netlify-dist/scripts
+          test ! -d netlify-dist/.github
+          echo 'PUBLIC_ARTIFACT_FILES:'
+          find netlify-dist -type f -printf '%P\n' | sort
+      - name: Create root-level deploy ZIP and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd netlify-dist && zip -q -r ../wingman-netlify-production-39037d9e.zip .)
+          sha256sum wingman-netlify-production-39037d9e.zip | tee wingman-netlify-production-39037d9e.zip.sha256
+          unzip -l wingman-netlify-production-39037d9e.zip
+          test "$(unzip -Z1 wingman-netlify-production-39037d9e.zip | grep -c '^index.html$')" = "1"
+          test "$(unzip -Z1 wingman-netlify-production-39037d9e.zip | grep -c '^release.json$')" = "1"
+          ! unzip -Z1 wingman-netlify-production-39037d9e.zip | grep -Eq '(^|/)(server\.js|package\.json|package-lock\.json)$|(^|/)(migrations|tests|middleware|scripts|\.github)/'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wingman-netlify-production-39037d9e
+          path: |
+            wingman-netlify-production-39037d9e.zip
+            wingman-netlify-production-39037d9e.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
