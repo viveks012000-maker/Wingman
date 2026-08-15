@@ -37,6 +37,7 @@ jobs:
               const opts={hostname:'127.0.0.1',port:server.address().port,path,method,headers:{...headers}};
               if(origin!==undefined) opts.headers.Origin=origin;
               const r=http.request(opts,res=>{let body='';res.on('data',c=>body+=c);res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,body}));});
+              r.setTimeout(5000,()=>r.destroy(new Error('request timeout')));
               r.on('error',reject); r.end();
             });
           }
@@ -44,14 +45,21 @@ jobs:
             const server=http.createServer(app); await new Promise(r=>server.listen(0,'127.0.0.1',r));
             try {
               for(const origin of ['https://chimerical-granita-c68c5a.netlify.app','https://evil.example','null','https://foo.pages.dev','https://pages.dev.evil.example','http://localhost:9999']){
-                const x=await req(server,'/favicon.ico',{origin});
-                console.log('LOCAL_CORS', JSON.stringify({origin,status:x.status,acao:x.headers['access-control-allow-origin']||null,acac:x.headers['access-control-allow-credentials']||null}));
+                try {
+                  const x=await req(server,'/favicon.ico',{origin});
+                  console.log('LOCAL_CORS', JSON.stringify({origin,status:x.status,acao:x.headers['access-control-allow-origin']||null,acac:x.headers['access-control-allow-credentials']||null}));
+                } catch (e) { console.log('LOCAL_CORS_ERROR', JSON.stringify({origin,error:e.message})); }
               }
               const paths=['/server.js','/%73erver.js','/server%2Ejs','/middleware/security.js','/middleware/%73ecurity.js','/migrations/005_user_consent_and_age_verification.sql','/tests/run_all_tests.js','/package.json','/.env','/%2eenv','/config/promptSystem.js','/scripts/build-netlify-dist.js','/PROMPT_SYSTEM_MEMORY.json'];
               for(const path of paths){
-                const x=await req(server,path);
-                console.log('LOCAL_STATIC', JSON.stringify({path,status:x.status,bytes:Buffer.byteLength(x.body),prefix:x.body.slice(0,80)}));
+                try {
+                  const x=await req(server,path);
+                  console.log('LOCAL_STATIC', JSON.stringify({path,status:x.status,bytes:Buffer.byteLength(x.body),prefix:x.body.slice(0,80)}));
+                } catch (e) { console.log('LOCAL_STATIC_ERROR', JSON.stringify({path,error:e.message})); }
               }
-            } finally { server.close(); }
+            } finally {
+              await new Promise(r=>server.close(r));
+            }
+            process.exit(0);
           })().catch(e=>{console.error(e);process.exit(1)});
           NODE
