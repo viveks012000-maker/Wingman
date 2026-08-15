@@ -1,0 +1,153 @@
+name: Purchase modal credit context gate v2
+on:
+  push:
+    branches: [fix/purchase-modal-credit-context]
+    paths: [.github/workflows/purchase_modal_context_gate_v2.yml]
+permissions:
+  contents: write
+jobs:
+  verify-and-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/purchase-modal-credit-context
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Apply guarded popup-context repair and stronger regression contracts
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          app_path = Path('app.js')
+          html_path = Path('app.html')
+          purchase_test_path = Path('tests/credit_purchase_modal_regression.test.js')
+          preflight_test_path = Path('tests/feature_access_preflight.test.js')
+          app = app_path.read_text(encoding='utf-8')
+          html = html_path.read_text(encoding='utf-8')
+          purchase_test = purchase_test_path.read_text(encoding='utf-8')
+          preflight_test = preflight_test_path.read_text(encoding='utf-8')
+
+          old_html = '<p class="font-body text-[11px] text-slate-300 mt-1 max-w-xs leading-normal">Select a credit pack below to unlock instant AI screenshot analysis, bio optimization &amp; practice coach turns.</p>'
+          new_html = old_html + '\n                <p id="purchaseCreditContext" class="hidden mt-2 max-w-sm rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 font-body text-[11px] font-semibold leading-relaxed text-amber-200" role="status" aria-live="polite"></p>'
+          if html.count(old_html) != 1:
+              raise SystemExit(f'purchase modal subtitle marker count={html.count(old_html)}')
+          html = html.replace(old_html, new_html, 1)
+
+          signature = 'window.openPurchaseModal = function () {'
+          if app.count(signature) != 1:
+              raise SystemExit(f'openPurchaseModal signature count={app.count(signature)}')
+          app = app.replace(signature, 'window.openPurchaseModal = function (requiredCredits) {', 1)
+          fn_start = app.index('window.openPurchaseModal = function (requiredCredits) {')
+          overflow_anchor = 'document.body.style.overflow = "hidden";'
+          overflow_idx = app.find(overflow_anchor, fn_start)
+          if overflow_idx < 0:
+              raise SystemExit('purchase modal overflow anchor missing')
+          context_lines = [
+              '// When the popup is opened by an authoritative insufficient-credit gate,',
+              '        // explain the exact shortage inside the popup itself. Manual pricing opens',
+              '        // remain generic and never invent a balance or required cost.',
+              '        const contextEl = $("purchaseCreditContext");',
+              '        const currentBalance = (typeof state.credits === "number" && Number.isFinite(state.credits)) ? state.credits : null;',
+              '        const required = Number(requiredCredits);',
+              '        const hasShortageContext = Number.isFinite(required) && required > 0 && currentBalance !== null && currentBalance < required;',
+              '        if (contextEl) {',
+              '            if (hasShortageContext) {',
+              '                const shortfall = required - currentBalance;',
+              '                const creditWord = (n) => n === 1 ? "credit" : "credits";',
+              '                contextEl.textContent = "Insufficient credits: you have " + currentBalance + " " + creditWord(currentBalance) + ". This action requires " + required + " " + creditWord(required) + ". You need " + shortfall + " more " + creditWord(shortfall) + ".";',
+              '                contextEl.classList.remove("hidden");',
+              '            } else {',
+              '                contextEl.textContent = "";',
+              '                contextEl.classList.add("hidden");',
+              '            }',
+              '        }',
+              '',
+              '        '
+          ]
+          app = app[:overflow_idx] + '\n'.join(context_lines) + app[overflow_idx:]
+
+          def replace_next_call(source, semantic_anchor, replacement, label):
+              anchor_idx = source.find(semantic_anchor)
+              if anchor_idx < 0:
+                  raise SystemExit(f'{label} semantic anchor missing')
+              call = 'window.openPurchaseModal();'
+              call_idx = source.find(call, anchor_idx)
+              if call_idx < 0 or call_idx - anchor_idx > 5000:
+                  raise SystemExit(f'{label} purchase modal call missing or out of bounds')
+              return source[:call_idx] + replacement + source[call_idx + len(call):]
+
+          app = replace_next_call(app, 'if (state.credits < cost) {', 'window.openPurchaseModal(cost);', 'preflight')
+          app = replace_next_call(app, 'if (state.credits >= requiredCreditCost)', 'window.openPurchaseModal(requiredCreditCost);', 'generation 402')
+          app = replace_next_call(app, 'const authoritativeChatBalance = await window.checkCreditBalance();', 'window.openPurchaseModal(2);', 'chat 402')
+
+          marker = "assert.ok(app.includes('cleanUrl.searchParams.delete(\\\"tier\\\")'), 'tier URL must be cleared after the unavailable-purchase notice');\n"
+          addition = marker + "assert.ok(app.includes('window.openPurchaseModal = function (requiredCredits)'), 'purchase popup must accept explicit required-credit context');\nassert.ok(app.includes('window.openPurchaseModal(cost);'), 'client preflight must pass the exact feature cost into the purchase popup');\nassert.ok(app.includes('window.openPurchaseModal(requiredCreditCost);'), 'authoritative 402 generation path must pass its exact route cost into the purchase popup');\nassert.ok(app.includes('window.openPurchaseModal(2);'), 'Maeve HTTP 402 path must pass the exact 2-credit cost into the purchase popup');\nassert.ok(app.includes('Insufficient credits: you have '), 'purchase popup must render an explicit shortage explanation');\nconst appHtml = fs.readFileSync(path.join(__dirname, '..', 'app.html'), 'utf8');\nassert.ok(appHtml.includes('id=\\\"purchaseCreditContext\\\"'), 'purchase modal must contain a dedicated live shortage-context element');\n"
+          if purchase_test.count(marker) != 1:
+              raise SystemExit(f'purchase regression insertion marker count={purchase_test.count(marker)}')
+          purchase_test = purchase_test.replace(marker, addition, 1)
+
+          old_preflight_assert = "const insufficient = src.indexOf('Insufficient credits. Current balance: ');\nconst purchase = src.indexOf('window.openPurchaseModal()', insufficient);\nassert(insufficient >= 0 && purchase > insufficient, 'Insufficient-credit users must receive exact balance + purchase UI');"
+          new_preflight_assert = "const insufficient = src.indexOf('Insufficient credits. Current balance: ');\nconst purchase = src.indexOf('window.openPurchaseModal(cost);', insufficient);\nassert(insufficient >= 0 && purchase > insufficient, 'Insufficient-credit users must receive exact balance + cost-aware purchase UI');\nassert(src.includes('window.openPurchaseModal(requiredCreditCost);'), 'Authoritative 10-credit 402 path must preserve the exact route cost in purchase UI');\nassert(src.includes('window.openPurchaseModal(2);'), 'Maeve 402 path must preserve its exact 2-credit cost in purchase UI');\nassert(src.includes('Insufficient credits: you have '), 'Purchase popup itself must explain the authoritative shortage, not rely only on a toast');"
+          if preflight_test.count(old_preflight_assert) != 1:
+              raise SystemExit(f'preflight old assertion count={preflight_test.count(old_preflight_assert)}')
+          preflight_test = preflight_test.replace(old_preflight_assert, new_preflight_assert, 1)
+
+          app_path.write_text(app, encoding='utf-8')
+          html_path.write_text(html, encoding='utf-8')
+          purchase_test_path.write_text(purchase_test, encoding='utf-8')
+          preflight_test_path.write_text(preflight_test, encoding='utf-8')
+          print('Guarded popup context + stronger test contracts applied.')
+          PY
+      - name: Full regression and dependency gate
+        run: |
+          node -c app.js
+          node tests/credit_purchase_modal_regression.test.js
+          node tests/feature_access_preflight.test.js
+          npm test
+          npm audit --omit=dev --audit-level=high
+      - name: Chromium verify exact popup context
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const { chromium } = require('playwright');
+          const http = require('http');
+          const fs = require('fs');
+          const path = require('path');
+          const root = process.cwd();
+          const types={'.html':'text/html','.js':'application/javascript','.css':'text/css','.json':'application/json','.png':'image/png','.jpg':'image/jpeg'};
+          const server=http.createServer((req,res)=>{let p=(req.url.split('?')[0]||'/');if(p==='/')p='/index.html';const fp=path.join(root,p.replace(/^\//,''));if(!fp.startsWith(root)||!fs.existsSync(fp)||fs.statSync(fp).isDirectory()){res.statusCode=404;return res.end('not found');}res.setHeader('Content-Type',types[path.extname(fp)]||'application/octet-stream');fs.createReadStream(fp).pipe(res);});
+          (async()=>{
+            await new Promise(r=>server.listen(4188,'127.0.0.1',r));
+            const browser=await chromium.launch({headless:true});
+            const page=await browser.newPage();
+            const errors=[]; page.on('pageerror',e=>errors.push(String(e)));
+            await page.goto('http://127.0.0.1:4188/app.html',{waitUntil:'domcontentloaded'}); await page.waitForTimeout(700);
+            const results=await page.evaluate(()=>{const get=()=>({text:document.getElementById('purchaseCreditContext').textContent,hidden:document.getElementById('purchaseCreditContext').classList.contains('hidden')});window.state.credits=0;window.openPurchaseModal(10);const zeroTen=get();window.closePurchaseModal();window.state.credits=1;window.openPurchaseModal(2);const oneTwo=get();window.closePurchaseModal();window.state.credits=9;window.openPurchaseModal(10);const nineTen=get();window.closePurchaseModal();window.state.credits=10;window.openPurchaseModal();const manual=get();window.closePurchaseModal();return{zeroTen,oneTwo,nineTen,manual};});
+            console.log(JSON.stringify({results,errors},null,2));
+            if(results.zeroTen.hidden||results.zeroTen.text!=='Insufficient credits: you have 0 credits. This action requires 10 credits. You need 10 more credits.')throw new Error('0->10 context incorrect');
+            if(results.oneTwo.hidden||results.oneTwo.text!=='Insufficient credits: you have 1 credit. This action requires 2 credits. You need 1 more credit.')throw new Error('1->2 context incorrect');
+            if(results.nineTen.hidden||results.nineTen.text!=='Insufficient credits: you have 9 credits. This action requires 10 credits. You need 1 more credit.')throw new Error('9->10 context incorrect');
+            if(!results.manual.hidden||results.manual.text!=='')throw new Error('manual pricing must remain generic');
+            if(errors.length)throw new Error('page errors: '+errors.join(' | '));
+            await browser.close();server.close();
+          })().catch(e=>{console.error(e);server.close();process.exit(1);});
+          NODE
+      - name: Commit verified product and permanent tests only
+        shell: bash
+        run: |
+          git config user.name 'viveks012000-maker'
+          git config user.email 'viveks012000@gmail.com'
+          git add app.js app.html tests/credit_purchase_modal_regression.test.js tests/feature_access_preflight.test.js
+          git diff --cached --check
+          changed=$(git diff --cached --name-only | sort)
+          expected=$'app.html\napp.js\ntests/credit_purchase_modal_regression.test.js\ntests/feature_access_preflight.test.js'
+          test "$changed" = "$expected"
+          git commit -m 'fix: explain exact credit shortage in purchase popup'
+          git push origin HEAD:fix/purchase-modal-credit-context
