@@ -701,15 +701,34 @@ async function addUserCreditsDB(req, amountCreditsOrInr, tierName = 'purchase', 
         if (!rpcErr && rpcRes) {
             const row = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
             if (row && typeof row === 'object') {
-                const rem = typeof row.new_balance === 'number' ? row.new_balance : (typeof row.remainingCredits === 'number' ? row.remainingCredits : addCredits);
+                if (row.success !== true) {
+                    const rowCode = typeof row.error === 'string' ? row.error.trim() : '';
+                    const rowMessage = typeof row.error_message === 'string' ? row.error_message.trim() : '';
+                    if (rowCode === 'PROFILE_MISSING' || rowMessage === 'PROFILE_MISSING') {
+                        const profileErr = new Error('PROFILE_MISSING');
+                        profileErr.code = 'PROFILE_MISSING';
+                        profileErr.statusCode = 404;
+                        throw profileErr;
+                    }
+                    const rejected = new Error(rowMessage || 'Credit minting request was rejected. No credits were added.');
+                    rejected.statusCode = 503;
+                    throw rejected;
+                }
+                const rem = typeof row.new_balance === 'number' ? row.new_balance : (typeof row.remainingCredits === 'number' ? row.remainingCredits : null);
+                if (typeof rem !== 'number') {
+                    const malformed = new Error('Credit minting service returned an invalid balance. No success was accepted.');
+                    malformed.statusCode = 503;
+                    throw malformed;
+                }
                 return rem / CREDITS_PER_INR;
             }
         }
     } catch (rpcEx) {
+        if (rpcEx && (rpcEx.code === 'PROFILE_MISSING' || rpcEx.statusCode === 404)) throw rpcEx;
         console.warn('[addUserCreditsDB RPC notice]:', rpcEx.message);
     }
 
-    // Fail closed: privileged credit minting may only succeed through the add_credits RPC.
+    // Fail closed: privileged credit minting may only succeed through a semantically successful add_credits RPC.
     const mintErr = new Error('Credit minting service unavailable. No credits were added.');
     mintErr.statusCode = 503;
     throw mintErr;
