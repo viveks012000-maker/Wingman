@@ -73,3 +73,5 @@ jobs:
           git diff --cached --check
           git commit -m 'fix(security): lock production CORS to explicit origins'
           git push origin HEAD:fix/cors-production-lockdown
+
+# rerun after simplifying one-shot patch helper
