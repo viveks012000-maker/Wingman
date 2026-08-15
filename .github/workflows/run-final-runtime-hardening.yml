@@ -40,3 +40,4 @@ jobs:
           git diff --cached --check
           git commit -m 'fix(security): make server imports side-effect free and drop unsafe-eval'
           git push origin HEAD:fix/final-runtime-csp-hardening
+# rerun: corrected import assertion tolerates dotenv informational output
