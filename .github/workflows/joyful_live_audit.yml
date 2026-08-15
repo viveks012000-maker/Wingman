@@ -1,0 +1,129 @@
+name: Joyful live audit
+on:
+  push:
+    branches:
+      - audit/joyful-conkies-live
+    paths:
+      - .github/workflows/joyful_live_audit.yml
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Probe deployed artifact and sensitive paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          SITE='https://joyful-conkies-026a81.netlify.app'
+          EXPECTED='127296d18c51636d4453f2abbd1af72a284575bc'
+          curl -fsS --retry 3 --retry-delay 2 "$SITE/release.json?audit=$(date +%s)" -o /tmp/release.json
+          cat /tmp/release.json
+          test "$(jq -r .sourceCommit /tmp/release.json)" = "$EXPECTED"
+          for p in server.js package.json database.js middleware/security.js tests/run_all_tests.js migrations/005_user_consent_and_age_verification.sql; do
+            code=$(curl -sS -o /tmp/body -w '%{http_code}' "$SITE/$p?audit=$(date +%s%N)")
+            echo "$p -> $code"
+            test "$code" != '200'
+          done
+      - name: Probe Railway CORS from exact new origin
+        shell: bash
+        run: |
+          set -euo pipefail
+          ORIGIN='https://joyful-conkies-026a81.netlify.app'
+          API='https://wingman-production-c6ce.up.railway.app'
+          curl -sS -D /tmp/h -o /tmp/b -H "Origin: $ORIGIN" "$API/api/health"
+          cat /tmp/h
+          echo '--- body ---'
+          cat /tmp/b
+          acao=$(awk 'BEGIN{IGNORECASE=1} /^access-control-allow-origin:/ {gsub(/\r/,""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' /tmp/h)
+          echo "ACAO=${acao:-NONE}"
+          if [ "$acao" != "$ORIGIN" ]; then
+            echo 'JOYFUL_CORS_BLOCKED=true'
+            exit 23
+          fi
+      - name: Live logged-out browser interaction audit
+        shell: bash
+        run: |
+          cat > /tmp/live-audit.js <<'NODE'
+          const { chromium } = require('playwright');
+          const assert = require('assert');
+          (async () => {
+            const browser = await chromium.launch({headless:true});
+            const context = await browser.newContext();
+            await context.addInitScript(() => { try { localStorage.clear(); sessionStorage.clear(); } catch (_) {} });
+            const page = await context.newPage();
+            const pageErrors=[]; const consoleErrors=[]; const aiRequests=[];
+            page.on('pageerror', e => pageErrors.push(String(e)));
+            page.on('console', m => { if (m.type()==='error') consoleErrors.push(m.text()); });
+            page.on('request', req => { if (/\/api\/(chat|analyze|icebreaker|optimize|simulator\/review)/.test(req.url())) aiRequests.push(req.url()); });
+            await page.goto('https://joyful-conkies-026a81.netlify.app/app.html?audit=' + Date.now(), {waitUntil:'domcontentloaded', timeout:30000});
+            await page.waitForTimeout(1800);
+            await page.evaluate(() => {
+              window.__auditAuthModalCalls = 0;
+              window.__auditPurchaseModalCalls = 0;
+              const a = window.openAuthRequiredModal;
+              const p = window.openPurchaseModal;
+              window.openAuthRequiredModal = function(...args){ window.__auditAuthModalCalls++; return typeof a === 'function' ? a.apply(this,args) : undefined; };
+              window.openPurchaseModal = function(...args){ window.__auditPurchaseModalCalls++; return typeof p === 'function' ? p.apply(this,args) : undefined; };
+            });
+
+            const chat = page.locator('#simulator-chat-input');
+            const send = page.locator('#chatbox-send-btn');
+            assert.strictEqual(await chat.isDisabled(), false, 'Maeve input must be usable while logged out');
+            await chat.fill('Can you help me reply to this message?');
+            await page.waitForTimeout(150);
+            assert.strictEqual(await send.isDisabled(), false, 'Maeve Send must activate when logged-out user has text');
+            const opacity = await send.evaluate(el => getComputedStyle(el).opacity);
+            assert(Number(opacity) >= 0.95, 'Active Maeve Send must be visibly active');
+            await send.click();
+            await page.waitForTimeout(250);
+            let counts = await page.evaluate(() => ({auth:window.__auditAuthModalCalls,purchase:window.__auditPurchaseModalCalls}));
+            assert(counts.auth >= 1, 'Logged-out Maeve click must invoke auth-required modal');
+            assert.strictEqual(counts.purchase, 0, 'Logged-out Maeve click must not invoke purchase modal');
+
+            const ice = page.locator('#bioInput');
+            const iceBtn = page.locator('#generateIcebreakerBtn');
+            await ice.fill('Loves hiking, coffee, dogs and weekend road trips.');
+            await page.waitForTimeout(150);
+            assert.strictEqual(await iceBtn.isDisabled(), false, 'Icebreaker button must be clickable while logged out once content is valid');
+            await iceBtn.click();
+            await page.waitForTimeout(200);
+
+            const bio = page.locator('#auditBioInput');
+            const bioBtn = page.locator('#runAuditBtn');
+            await bio.fill('Curious traveler who loves coffee, books and spontaneous weekend adventures.');
+            await page.waitForTimeout(150);
+            assert.strictEqual(await bioBtn.isDisabled(), false, 'Bio optimizer button must be clickable while logged out once content is valid');
+            await bioBtn.click();
+            await page.waitForTimeout(200);
+
+            const screenshotInput = page.locator('#screenshotInput');
+            assert.strictEqual(await screenshotInput.isDisabled(), false, 'Screenshot input must be usable while logged out');
+            const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlZ8kQAAAAASUVORK5CYII=', 'base64');
+            await screenshotInput.setInputFiles({name:'audit.png',mimeType:'image/png',buffer:png});
+            await page.waitForTimeout(900);
+            const analyzer = page.locator('#runAnalysisBtn');
+            assert.strictEqual(await analyzer.isDisabled(), false, 'Analyzer generate button must be clickable while logged out after valid upload');
+            await analyzer.click();
+            await page.waitForTimeout(250);
+
+            counts = await page.evaluate(() => ({auth:window.__auditAuthModalCalls,purchase:window.__auditPurchaseModalCalls}));
+            assert(counts.auth >= 4, 'All four logged-out feature clicks must route to auth-required UX');
+            assert.strictEqual(counts.purchase, 0, 'Logged-out feature clicks must never show purchase modal');
+            assert.strictEqual(aiRequests.length, 0, 'Logged-out preflight must block all paid AI network requests');
+            assert.strictEqual(pageErrors.length, 0, 'No page errors allowed: ' + pageErrors.join(' | '));
+            console.log(JSON.stringify({counts, opacity, aiRequests, pageErrors, consoleErrors:consoleErrors.slice(0,10)}, null, 2));
+            await browser.close();
+          })().catch(e => { console.error(e); process.exit(1); });
+          NODE
+          node /tmp/live-audit.js
