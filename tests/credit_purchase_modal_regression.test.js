@@ -17,5 +17,12 @@ assert.ok((server.match(/err\.statusCode === 503/g) || []).length >= 2, 'credit 
 assert.ok(app.includes('currentBatchBytes > 25 * 1024 * 1024'), 'client screenshot total limit must match 25 MB invariant');
 assert.ok(!app.includes('title.textContent = creditMap[tier] + \" Credits Added\"'), 'tier URL must never falsely claim that credits were added while payments are fail-closed');
 assert.ok(app.includes('cleanUrl.searchParams.delete(\"tier\")'), 'tier URL must be cleared after the unavailable-purchase notice');
+assert.ok(app.includes('window.openPurchaseModal = function (requiredCredits)'), 'purchase popup must accept explicit required-credit context');
+assert.ok(app.includes('window.openPurchaseModal(cost);'), 'client preflight must pass the exact feature cost into the purchase popup');
+assert.ok(app.includes('window.openPurchaseModal(requiredCreditCost);'), 'authoritative 402 generation path must pass its exact route cost into the purchase popup');
+assert.ok(app.includes('window.openPurchaseModal(2);'), 'Maeve HTTP 402 path must pass the exact 2-credit cost into the purchase popup');
+assert.ok(app.includes('Insufficient credits: you have '), 'purchase popup must render an explicit shortage explanation');
+const appHtml = fs.readFileSync(path.join(__dirname, '..', 'app.html'), 'utf8');
+assert.ok(appHtml.includes('id=\"purchaseCreditContext\"'), 'purchase modal must contain a dedicated live shortage-context element');
 
 console.log('✔ Credit purchase-modal regression guard passed.');

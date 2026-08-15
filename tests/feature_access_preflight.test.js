@@ -13,8 +13,11 @@ const authMessage = src.indexOf('Authentication required to use AI features. Ple
 const authModal = src.indexOf('window.openAuthRequiredModal()', authMessage);
 assert(authMessage >= 0 && authModal > authMessage, 'Logged-out users must receive sign-in UI');
 const insufficient = src.indexOf('Insufficient credits. Current balance: ');
-const purchase = src.indexOf('window.openPurchaseModal()', insufficient);
-assert(insufficient >= 0 && purchase > insufficient, 'Insufficient-credit users must receive exact balance + purchase UI');
+const purchase = src.indexOf('window.openPurchaseModal(cost);', insufficient);
+assert(insufficient >= 0 && purchase > insufficient, 'Insufficient-credit users must receive exact balance + cost-aware purchase UI');
+assert(src.includes('window.openPurchaseModal(requiredCreditCost);'), 'Authoritative 10-credit 402 path must preserve the exact route cost in purchase UI');
+assert(src.includes('window.openPurchaseModal(2);'), 'Maeve 402 path must preserve its exact 2-credit cost in purchase UI');
+assert(src.includes('Insufficient credits: you have '), 'Purchase popup itself must explain the authoritative shortage, not rely only on a toast');
 
 for (const fn of [
     'window.runAnalysis = async function',
