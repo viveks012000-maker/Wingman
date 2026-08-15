@@ -1,10 +1,8 @@
 name: Purchase modal credit context gate
 on:
   push:
-    branches:
-      - fix/purchase-modal-credit-context
-    paths:
-      - .github/workflows/purchase_modal_context_gate.yml
+    branches: [fix/purchase-modal-credit-context]
+    paths: [.github/workflows/purchase_modal_context_gate.yml]
 permissions:
   contents: write
 jobs:
@@ -27,7 +25,6 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-
           app_path = Path('app.js')
           html_path = Path('app.html')
           test_path = Path('tests/credit_purchase_modal_regression.test.js')
@@ -45,33 +42,34 @@ jobs:
           if app.count(signature) != 1:
               raise SystemExit(f'openPurchaseModal signature count={app.count(signature)}')
           app = app.replace(signature, 'window.openPurchaseModal = function (requiredCredits) {', 1)
-
           fn_start = app.index('window.openPurchaseModal = function (requiredCredits) {')
           overflow_anchor = 'document.body.style.overflow = "hidden";'
           overflow_idx = app.find(overflow_anchor, fn_start)
           if overflow_idx < 0:
               raise SystemExit('purchase modal overflow anchor missing after function signature')
-          context_block = '''// When the popup is opened by an authoritative insufficient-credit gate,
-        // explain the exact shortage inside the popup itself. Manual pricing opens
-        // remain generic and never invent a balance or required cost.
-        const contextEl = $("purchaseCreditContext");
-        const currentBalance = (typeof state.credits === "number" && Number.isFinite(state.credits)) ? state.credits : null;
-        const required = Number(requiredCredits);
-        const hasShortageContext = Number.isFinite(required) && required > 0 && currentBalance !== null && currentBalance < required;
-        if (contextEl) {
-            if (hasShortageContext) {
-                const shortfall = required - currentBalance;
-                const creditWord = (n) => n === 1 ? "credit" : "credits";
-                contextEl.textContent = "Insufficient credits: you have " + currentBalance + " " + creditWord(currentBalance) + ". This action requires " + required + " " + creditWord(required) + ". You need " + shortfall + " more " + creditWord(shortfall) + ".";
-                contextEl.classList.remove("hidden");
-            } else {
-                contextEl.textContent = "";
-                contextEl.classList.add("hidden");
-            }
-        }
-
-        '''
-          app = app[:overflow_idx] + context_block + app[overflow_idx:]
+          context_lines = [
+              '// When the popup is opened by an authoritative insufficient-credit gate,',
+              '        // explain the exact shortage inside the popup itself. Manual pricing opens',
+              '        // remain generic and never invent a balance or required cost.',
+              '        const contextEl = $("purchaseCreditContext");',
+              '        const currentBalance = (typeof state.credits === "number" && Number.isFinite(state.credits)) ? state.credits : null;',
+              '        const required = Number(requiredCredits);',
+              '        const hasShortageContext = Number.isFinite(required) && required > 0 && currentBalance !== null && currentBalance < required;',
+              '        if (contextEl) {',
+              '            if (hasShortageContext) {',
+              '                const shortfall = required - currentBalance;',
+              '                const creditWord = (n) => n === 1 ? "credit" : "credits";',
+              '                contextEl.textContent = "Insufficient credits: you have " + currentBalance + " " + creditWord(currentBalance) + ". This action requires " + required + " " + creditWord(required) + ". You need " + shortfall + " more " + creditWord(shortfall) + ".";',
+              '                contextEl.classList.remove("hidden");',
+              '            } else {',
+              '                contextEl.textContent = "";',
+              '                contextEl.classList.add("hidden");',
+              '            }',
+              '        }',
+              '',
+              '        '
+          ]
+          app = app[:overflow_idx] + '\n'.join(context_lines) + app[overflow_idx:]
 
           def replace_next_call(source, semantic_anchor, replacement, label):
               anchor_idx = source.find(semantic_anchor)
@@ -79,11 +77,8 @@ jobs:
                   raise SystemExit(f'{label} semantic anchor missing')
               call = 'window.openPurchaseModal();'
               call_idx = source.find(call, anchor_idx)
-              if call_idx < 0:
-                  raise SystemExit(f'{label} purchase modal call missing after anchor')
-              # Bound each replacement so we do not accidentally jump into another handler.
-              if call_idx - anchor_idx > 5000:
-                  raise SystemExit(f'{label} purchase modal call too far from semantic anchor')
+              if call_idx < 0 or call_idx - anchor_idx > 5000:
+                  raise SystemExit(f'{label} purchase modal call missing or out of bounds')
               return source[:call_idx] + replacement + source[call_idx + len(call):]
 
           app = replace_next_call(app, 'if (state.credits < cost) {', 'window.openPurchaseModal(cost);', 'preflight')
