@@ -1406,7 +1406,7 @@ STRICT LAWS:
             if (skel) skel.classList.add("hidden");
             if (res) res.classList.add("hidden");
             if (dzContainer) dzContainer.classList.remove("pointer-events-none", "opacity-60");
-            if (si && state.isTermsAccepted) si.disabled = false;
+            if (si && !state.isLoading) si.disabled = false;
         } else if (phase === "SELECTED") {
             toggleLaserScanner(false);
             if (scannerContainer) scannerContainer.classList.remove("is-analyzing");
@@ -1414,7 +1414,7 @@ STRICT LAWS:
             if (skel) skel.classList.add("hidden");
             if (res) res.classList.add("hidden");
             if (dzContainer) dzContainer.classList.remove("pointer-events-none", "opacity-60");
-            if (si && state.isTermsAccepted) si.disabled = false;
+            if (si && !state.isLoading) si.disabled = false;
         } else if (phase === "ANALYZING") {
             toggleLaserScanner(true);
             if (scannerContainer) scannerContainer.classList.add("is-analyzing");
@@ -1429,7 +1429,7 @@ STRICT LAWS:
             if (empty) empty.classList.add("hidden");
             if (skel) skel.classList.add("hidden");
             if (dzContainer) dzContainer.classList.remove("pointer-events-none", "opacity-60");
-            if (si && state.isTermsAccepted) si.disabled = false;
+            if (si && !state.isLoading) si.disabled = false;
             if (res) {
                 res.classList.remove("hidden");
                 res.classList.remove("animate-results-reveal");
@@ -1458,6 +1458,7 @@ STRICT LAWS:
     window.updateTermsLockState = function () {
         try {
             const isLocked = !state.isTermsAccepted;
+            const isBusy = !!state.isLoading;
 
             const cb = $("privacyConsent");
             if (cb) {
@@ -1467,11 +1468,13 @@ STRICT LAWS:
             const dz = $("dropzone");
             const si = $("screenshotInput");
 
+            // Local preparation is allowed before login/consent; nothing is sent until submit preflight passes.
             if (dz) {
-                dz.classList.toggle("opacity-40", isLocked);
-                dz.classList.toggle("cursor-not-allowed", isLocked);
+                dz.classList.remove("opacity-40", "cursor-not-allowed");
+                dz.classList.toggle("pointer-events-none", isBusy);
+                dz.classList.toggle("opacity-60", isBusy);
             }
-            if (si) si.disabled = isLocked;
+            if (si) si.disabled = isBusy;
 
             window.updateButtonStates();
         } catch (e) {}
@@ -1496,9 +1499,9 @@ STRICT LAWS:
             }
             if (btn2) {
                 const isBioValid = bi && bi.value.trim().length >= 5 && bi.value.length <= 5000;
-                const isBtn2Disabled = isLocked || !isBioValid || isLoading || isCreditsBlocked10;
+                const isBtn2Disabled = !isBioValid || isLoading;
                 btn2.disabled = isBtn2Disabled;
-                btn2.classList.toggle("opacity-40", isLocked || !isBioValid || isCreditsBlocked10);
+                btn2.classList.toggle("opacity-40", !isBioValid);
                 btn2.classList.toggle("opacity-70", isLoading);
                 btn2.classList.toggle("cursor-not-allowed", isBtn2Disabled);
                 btn2.classList.toggle("cursor-pointer", !isBtn2Disabled);
@@ -1536,9 +1539,9 @@ STRICT LAWS:
             if (btn3) {
                 const words = ai ? countWords(ai.value) : 0;
                 const isAuditValid = ai && ai.value.trim().length >= 5 && words <= 500;
-                const isBtn3Disabled = isLocked || !isAuditValid || isLoading || isCreditsBlocked10;
+                const isBtn3Disabled = !isAuditValid || isLoading;
                 btn3.disabled = isBtn3Disabled;
-                btn3.classList.toggle("opacity-40", isLocked || !isAuditValid || isCreditsBlocked10);
+                btn3.classList.toggle("opacity-40", !isAuditValid);
                 btn3.classList.toggle("opacity-70", isLoading);
                 btn3.classList.toggle("cursor-not-allowed", isBtn3Disabled);
                 btn3.classList.toggle("cursor-pointer", !isBtn3Disabled);
@@ -1575,11 +1578,18 @@ STRICT LAWS:
 
             const chatSendBtn = $("chatbox-send-btn");
             if (chatSendBtn) {
-                const isChatDisabled = isLoading || !(ci && ci.value.trim().length > 0);
+                const hasChatText = Boolean(ci && ci.value.trim().length > 0);
+                const isChatDisabled = isLoading || !hasChatText;
                 chatSendBtn.disabled = isChatDisabled;
+                chatSendBtn.setAttribute("aria-disabled", isChatDisabled ? "true" : "false");
                 chatSendBtn.classList.toggle("opacity-40", isChatDisabled);
                 chatSendBtn.classList.toggle("cursor-not-allowed", isChatDisabled);
                 chatSendBtn.classList.toggle("cursor-pointer", !isChatDisabled);
+                chatSendBtn.classList.toggle("chat-send-active", !isChatDisabled);
+                chatSendBtn.style.setProperty("opacity", isChatDisabled ? "0.4" : "1", "important");
+                chatSendBtn.style.setProperty("filter", isChatDisabled ? "saturate(0.65)" : "saturate(1.15)", "important");
+                chatSendBtn.style.setProperty("transform", isChatDisabled ? "none" : "translateY(-1px)", "important");
+                chatSendBtn.style.setProperty("box-shadow", isChatDisabled ? "none" : "0 8px 24px rgba(168, 85, 247, 0.58)", "important");
             }
             if (ci) {
                 ci.disabled = isLoading;
@@ -1592,9 +1602,9 @@ STRICT LAWS:
                 const withinLimit = count <= 5;
                 const notLoading = !state.isLoading;
 
-                const enabled = hasScreenshot && withinLimit && notLoading && !isCreditsBlocked10;
+                const enabled = hasScreenshot && withinLimit && notLoading;
                 btn1.disabled = !enabled;
-                btn1.classList.toggle("opacity-40", !hasScreenshot || !withinLimit || isCreditsBlocked10);
+                btn1.classList.toggle("opacity-40", !hasScreenshot || !withinLimit);
                 btn1.classList.toggle("opacity-70", Boolean(state.isLoading));
                 btn1.classList.toggle("cursor-not-allowed", !enabled);
                 btn1.classList.toggle("cursor-pointer", enabled);
@@ -3205,11 +3215,6 @@ STRICT LAWS:
     window.runAnalysis = async function (e) {
         if (e) e.preventDefault();
         if (state.isLoading) return;
-        if (!state.isTermsAccepted) {
-            window.highlightTermsCheckbox();
-            window.showToast("Please agree to the Terms of Service & Privacy Protocol box first!", "warning");
-            return;
-        }
 
         const useCache = (state.activeTranscriptCache && state.uploadedFiles.length === 0);
         if (!useCache && state.uploadedFiles.length === 0) {
@@ -3218,6 +3223,13 @@ STRICT LAWS:
         }
 
         if (!(await hasSufficientCredits(10))) return;
+
+        if (!state.isTermsAccepted) {
+            window.highlightTermsCheckbox();
+            if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
+            window.showToast("18+ verification and consent are required before AI processing.", "warning");
+            return;
+        }
 
         state.isLoading = true;
         setButtonLoadingState("runAnalysisBtn", true, "Analyzing Context...", "Generate Perfect Replies");
@@ -3308,13 +3320,14 @@ STRICT LAWS:
         }
         text = enforceWordLimitClient(text, 500);
 
+        if (!(await hasSufficientCredits(10))) return;
+
         if (!state.isTermsAccepted) {
             window.highlightTermsCheckbox();
-            window.showToast("Please agree to the Terms of Service & Privacy Protocol box first!", "warning");
+            if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
+            window.showToast("18+ verification and consent are required before AI processing.", "warning");
             return;
         }
-
-        if (!(await hasSufficientCredits(10))) return;
 
         state.isLoading = true;
         setButtonLoadingState("generateIcebreakerBtn", true, "Crafting Openers...", "Generate Icebreaker");
@@ -3396,13 +3409,14 @@ STRICT LAWS:
         }
         raw = enforceWordLimitClient(raw, 500);
 
+        if (!(await hasSufficientCredits(10))) return;
+
         if (!state.isTermsAccepted) {
             window.highlightTermsCheckbox();
-            window.showToast("Please agree to the Terms of Service & Privacy Protocol box first!", "warning");
+            if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
+            window.showToast("18+ verification and consent are required before AI processing.", "warning");
             return;
         }
-
-        if (!(await hasSufficientCredits(10))) return;
 
         state.isLoading = true;
         setButtonLoadingState("runAuditBtn", true, "Optimizing Bio...", "Optimize My Bio");
@@ -3487,11 +3501,6 @@ STRICT LAWS:
     };
 
     window.loadPresetBio = function(btn) {
-        if (!state.isTermsAccepted) {
-            window.highlightTermsCheckbox();
-            window.showToast("Please agree to the Terms of Service & Privacy Protocol box first!", "warning");
-            return;
-        }
         const bi = $("bioInput");
         if (bi && btn && typeof btn.getAttribute === 'function' && btn.getAttribute("data-sample")) {
             bi.value = btn.getAttribute("data-sample");
@@ -3744,6 +3753,13 @@ STRICT LAWS:
         userText = enforceWordLimitClient(userText, 500);
 
         if (!(await hasSufficientCredits(2))) return;
+
+        if (!state.isTermsAccepted) {
+            window.highlightTermsCheckbox();
+            if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
+            window.showToast("18+ verification and consent are required before AI processing.", "warning");
+            return;
+        }
 
         const sendBtn = $("chatbox-send-btn");
         if (sendBtn) {

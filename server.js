@@ -1084,6 +1084,125 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
     }
 }
 
+// Strict Maeve provider path: exact AICredits endpoint/model with bounded transient retry.
+// This keeps Maeve on the proven main text-provider path and never falls back to the vision key.
+function getMaeveProviderFailureCode(error) {
+    const status = Number(error && error.statusCode);
+    if (error && error.isTimeout) return 'AI_PROVIDER_TIMEOUT';
+    if (status === 401 || status === 403) return 'AI_PROVIDER_AUTH';
+    if (status === 402) return 'AI_PROVIDER_BUDGET';
+    if (status === 429) return 'AI_PROVIDER_RATE_LIMIT';
+    if ([500, 502, 503, 504].includes(status)) return 'AI_PROVIDER_UPSTREAM';
+    if (error && error.code === 'AI_PROVIDER_EMPTY_RESPONSE') return 'AI_PROVIDER_EMPTY_RESPONSE';
+    if (error && error.code === 'AI_PROVIDER_CONFIG') return 'AI_PROVIDER_CONFIG';
+    return 'AI_PROVIDER_FAILURE';
+}
+
+async function queryMaeveProvider(messagesArray, temperature = 0.7, maxTokens = 120, timeoutMs = 25000) {
+    const keysToTry = [...new Set([
+        process.env.AICREDITS_API_KEY_GENERAL,
+        process.env.AICREDITS_API_KEY
+    ].filter(Boolean))];
+    const model = 'qwen/qwen3-235b-a22b-2507';
+    const baseUrl = 'https://api.aicredits.in/v1';
+
+    if (keysToTry.length === 0) {
+        const err = new Error('Maeve provider key is not configured.');
+        err.code = 'AI_PROVIDER_CONFIG';
+        throw err;
+    }
+
+    const retryableStatuses = new Set([429, 500, 502, 503, 504]);
+    let lastError = null;
+
+    for (const apiKey of keysToTry) {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            const controller = new AbortController();
+            const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+            try {
+                const response = await fetch(baseUrl + '/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json',
+                        'HTTP-Referer': 'https://mywingman.com',
+                        'X-Title': 'My Wingman App'
+                    },
+                    body: JSON.stringify({
+                        model,
+                        messages: messagesArray,
+                        temperature,
+                        max_tokens: maxTokens
+                    }),
+                    signal: controller.signal
+                });
+
+                if (!response.ok) {
+                    const err = new Error(`Maeve provider request failed with HTTP ${response.status}.`);
+                    err.statusCode = response.status;
+                    lastError = err;
+                    if (retryableStatuses.has(response.status) && attempt < 3) {
+                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        continue;
+                    }
+                    break;
+                }
+
+                const data = await response.json();
+                if (data && data.error) {
+                    const err = new Error('Maeve provider returned an API error.');
+                    err.statusCode = Number(data.error.status || data.error.code) || 502;
+                    lastError = err;
+                    if (retryableStatuses.has(err.statusCode) && attempt < 3) {
+                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        continue;
+                    }
+                    break;
+                }
+
+                const msg = data && Array.isArray(data.choices) && data.choices[0] ? data.choices[0].message : null;
+                const output = typeof msg === 'string' ? msg : (msg ? (msg.content || msg.reasoning || '') : '');
+                if (!output || !String(output).trim()) {
+                    const err = new Error('Maeve provider returned empty output.');
+                    err.code = 'AI_PROVIDER_EMPTY_RESPONSE';
+                    err.statusCode = 502;
+                    lastError = err;
+                    if (attempt < 2) {
+                        await new Promise(resolve => setTimeout(resolve, 250));
+                        continue;
+                    }
+                    break;
+                }
+
+                return String(output).trim();
+            } catch (err) {
+                if (err && err.name === 'AbortError') {
+                    const timeoutErr = new Error('Maeve provider timed out.');
+                    timeoutErr.isTimeout = true;
+                    timeoutErr.statusCode = 504;
+                    lastError = timeoutErr;
+                    if (attempt < 3) {
+                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        continue;
+                    }
+                    break;
+                }
+
+                lastError = err;
+                if (attempt < 3 && (!err || !err.statusCode || retryableStatuses.has(Number(err.statusCode)))) {
+                    await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                    continue;
+                }
+                break;
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
+        }
+    }
+
+    throw lastError || new Error('Maeve provider is unavailable.');
+}
+
 // Helper function to query OpenRouter dynamically with automatic key failover
 async function queryOpenRouter(modelIdentifier, messagesArray, temperature = 0.7, maxTokens = null, timeoutMs = 25000, topP = null) {
     const isVisionModel = (typeof modelIdentifier === 'string') && (modelIdentifier.includes('vl') || modelIdentifier.includes('vision') || modelIdentifier.includes('flash'));
@@ -2374,6 +2493,10 @@ FORMATTING: Use ${casingInstruction}.`;
 
 // 4. MAEVE AI DATING COACH & EVALUATOR CHAT (/api/chat & /api/simulator/chat)
 app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
+    const uid = getUserIdFromReq(req);
+    if (!acquireUserConcurrencyLock(uid)) {
+        return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
+    }
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('chat_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
@@ -2498,7 +2621,7 @@ CONVERSATIONAL FREEDOM & LAWS:
                 hotlinePayload.push({ role: "user", content: userTextRaw });
             }
 
-            let hotlineAdvice = await queryOpenRouter("qwen3-235b-a22b-2507", hotlinePayload, 0.7, 1500);
+            let hotlineAdvice = await queryMaeveProvider(hotlinePayload, 0.7, 1500);
             if (!hotlineAdvice) {
                 throw new Error("AI Coach endpoint returned empty response.");
             }
@@ -2636,7 +2759,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
             openRouterMessages.push({ role: "user", content: enforceWordLimit(userTextRaw, 500) });
         }
 
-        let replyText = await queryOpenRouter("qwen3-235b-a22b-2507", openRouterMessages, 0.6, 120);
+        let replyText = await queryMaeveProvider(openRouterMessages, 0.6, 120);
 
         if (!replyText) {
             throw new Error("AI provider returned empty response.");
@@ -2748,9 +2871,11 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
                 credits: currentBal
             });
         }
+        const providerCode = getMaeveProviderFailureCode(error);
         res.status(500).json({
             success: false,
             error: "Maeve AI Coach failed to respond. Your credits were restored.",
+            code: providerCode,
             credits: currentBal
         });
     } finally {
@@ -3473,6 +3598,8 @@ async function startWingmanServer() {
 // Importing the application must not open a network listener. Runtime entry points call
 // startWingmanServer explicitly; tests and tooling can safely import the Express app.
 module.exports = { app, startWingmanServer, supabaseAdmin };
+module.exports.queryMaeveProvider = queryMaeveProvider;
+module.exports.getMaeveProviderFailureCode = getMaeveProviderFailureCode;
 
 if (require.main === module) {
     startWingmanServer().catch(() => process.exit(1));
