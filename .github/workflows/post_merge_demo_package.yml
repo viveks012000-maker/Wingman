@@ -1,0 +1,82 @@
+name: Post-merge demo package verification
+on:
+  push:
+    branches:
+      - audit/post-127296-demo
+    paths:
+      - .github/workflows/post_merge_demo_package.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Verify exact source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "127296d18c51636d4453f2abbd1af72a284575bc"
+      - name: Full regression gate
+        run: |
+          node -c server.js
+          node -c app.js
+          node tests/run_all_tests.js
+          npm audit --omit=dev --audit-level=high
+      - name: Build strict Netlify demo artifact
+        run: npm run build:netlify
+      - name: Verify public bundle allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f netlify-dist/index.html
+          test -f netlify-dist/app.html
+          test -f netlify-dist/app.js
+          test -f netlify-dist/config.js
+          test -f netlify-dist/supabaseClient.js
+          test -f netlify-dist/release.json
+          for forbidden in server.js database.js package.json package-lock.json PROMPT_SYSTEM_MEMORY.json PROJECT_MASTER_SPECIFICATION.md API_DOCUMENTATION.md; do
+            test ! -e "netlify-dist/$forbidden"
+          done
+          for forbidden_dir in middleware migrations tests config utilities scripts .github; do
+            test ! -e "netlify-dist/$forbidden_dir"
+          done
+          ! find netlify-dist -type f | grep -E '\.(sql|sqlite|db|md|ps1|bat|vbs)$'
+          grep -Fq 'https://wingman-production-c6ce.up.railway.app' netlify-dist/app.html
+          grep -Fq 'https://wingman-production-c6ce.up.railway.app' netlify-dist/config.js
+          grep -Fq 'Paid Plan' netlify-dist/config.js
+          grep -Fq 'chat-send-active' netlify-dist/app.js
+      - name: Verify Railway live CORS for current demo origin
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS https://wingman-production-c6ce.up.railway.app/api/health -o /tmp/health
+          cat /tmp/health
+          curl -sS -D /tmp/headers -o /tmp/body -X OPTIONS \
+            'https://wingman-production-c6ce.up.railway.app/api/chat' \
+            -H 'Origin: https://wondrous-arithmetic-0ece9d.netlify.app' \
+            -H 'Access-Control-Request-Method: POST' \
+            -H 'Access-Control-Request-Headers: authorization,content-type,x-idempotency-key'
+          cat /tmp/headers
+          grep -iF 'access-control-allow-origin: https://wondrous-arithmetic-0ece9d.netlify.app' /tmp/headers
+      - name: Create demo ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd netlify-dist && zip -qr ../wingman-netlify-demo-127296d1.zip .)
+          sha256sum wingman-netlify-demo-127296d1.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wingman-netlify-demo-127296d1
+          path: wingman-netlify-demo-127296d1.zip
+          retention-days: 7
