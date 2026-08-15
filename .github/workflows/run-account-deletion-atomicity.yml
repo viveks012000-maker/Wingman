@@ -1,0 +1,50 @@
+name: Apply account deletion atomicity fix
+
+on:
+  push:
+    branches: [fix/account-deletion-atomicity]
+    paths: ['.github/workflows/run-account-deletion-atomicity.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/account-deletion-atomicity
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply deletion atomicity patch
+        run: node scripts/patch-account-deletion-atomicity.js
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Full 28-suite gate
+        run: npm test
+      - name: Syntax diff and dependency gate
+        shell: bash
+        run: |
+          node --check server.js
+          node --check tests/account_deletion_atomicity.test.js
+          node --check tests/second_pass_verification.test.js
+          node --check tests/run_all_tests.js
+          git diff --check
+          npm audit --omit=dev
+      - name: Verify Netlify package remains frontend-only
+        run: npm run build:netlify
+      - name: Commit verified product changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'OpenAI Audit Bot'
+          git config user.email 'audit-bot@users.noreply.github.com'
+          git add server.js tests/account_deletion_atomicity.test.js tests/second_pass_verification.test.js tests/run_all_tests.js
+          git diff --cached --check
+          git commit -m 'fix(auth): make account deletion fail-safe around Auth cascade'
+          git push origin HEAD:fix/account-deletion-atomicity
