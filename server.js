@@ -97,7 +97,8 @@ app.use((req, res, next) => {
 const productionAllowedOrigins = [
     'https://mywingman.com',
     'https://chimerical-granita-c68c5a.netlify.app',
-    'https://wondrous-arithmetic-0ece9d.netlify.app'
+    'https://wondrous-arithmetic-0ece9d.netlify.app',
+    'https://joyful-conkies-026a81.netlify.app'
 ];
 const developmentAllowedOrigins = [
     'http://localhost:3000',
