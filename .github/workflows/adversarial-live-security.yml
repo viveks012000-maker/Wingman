@@ -1,0 +1,77 @@
+name: Adversarial live security probes
+
+on:
+  push:
+    branches: [audit/security-after-6bbc]
+    paths: ['.github/workflows/adversarial-live-security.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: CORS origin matrix
+        shell: bash
+        run: |
+          set -u
+          API='https://wingman-production-c6ce.up.railway.app/api/analyze'
+          origins=(
+            'https://chimerical-granita-c68c5a.netlify.app'
+            'https://mywingman.com'
+            'https://evil-preview.pages.dev'
+            'http://localhost:9999'
+            'null'
+            'https://evil.example'
+          )
+          for o in "${origins[@]}"; do
+            curl --silent --show-error -D /tmp/h -o /tmp/b -X OPTIONS "$API" \
+              -H "Origin: $o" \
+              -H 'Access-Control-Request-Method: POST' \
+              -H 'Access-Control-Request-Headers: authorization,content-type' || true
+            status=$(awk 'NR==1{print $2}' /tmp/h)
+            allow=$(tr -d '\r' </tmp/h | awk -F': ' 'tolower($1)=="access-control-allow-origin" {print $2; exit}')
+            echo "CORS origin=$o status=${status:-none} allow_origin=${allow:-NONE}"
+          done
+
+      - name: No-Origin server-to-server request remains possible
+        shell: bash
+        run: |
+          code=$(curl --silent --show-error -o /tmp/b -w '%{http_code}' 'https://wingman-production-c6ce.up.railway.app/api/health')
+          echo "NO_ORIGIN_HEALTH_STATUS=$code"
+          test "$code" = 200
+
+      - name: Encoded sensitive-path bypass matrix
+        shell: bash
+        run: |
+          set -u
+          BASE='https://wingman-production-c6ce.up.railway.app'
+          paths=(
+            '/server.js'
+            '/%73erver.js'
+            '/%2573erver.js'
+            '/migrations/005_user_consent_and_age_verification.sql'
+            '/migrations%2F005_user_consent_and_age_verification.sql'
+            '/migrations%252F005_user_consent_and_age_verification.sql'
+            '/config/promptSystem.js'
+            '/config%2FpromptSystem.js'
+            '/tests/production_readiness_regression.test.js'
+            '/tests%2Fproduction_readiness_regression.test.js'
+            '/.env'
+            '/%2eenv'
+            '/%252eenv'
+            '/package.json'
+            '/%70ackage.json'
+          )
+          leaked=0
+          for p in "${paths[@]}"; do
+            code=$(curl --path-as-is --silent --show-error -o /tmp/body -w '%{http_code}' "$BASE$p" || true)
+            bytes=$(wc -c </tmp/body 2>/dev/null || echo 0)
+            content=false
+            if grep -Eqi "require\('dotenv'\)|CREATE TABLE|CREATE POLICY|SUPABASE_SERVICE_ROLE_KEY|promptSystem|production_readiness|\"dependencies\"" /tmp/body; then content=true; leaked=$((leaked+1)); fi
+            echo "PATH_PROBE path=$p status=$code bytes=$bytes sensitive_content=$content"
+          done
+          echo "ENCODED_SENSITIVE_CONTENT_LEAKS=$leaked"
+          test "$leaked" -eq 0
