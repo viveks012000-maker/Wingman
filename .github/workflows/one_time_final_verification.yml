@@ -1,0 +1,34 @@
+name: One-time final full-suite verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one_time_final_verification.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify JavaScript syntax
+        run: |
+          node --check server.js
+          node --check tests/run_all_tests.js
+          node --check tests/analyzer_full_e2e_integration.test.js
+
+      - name: Run complete bounded test suite
+        run: npm test
