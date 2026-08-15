@@ -1,0 +1,48 @@
+name: Identify live Netlify source version
+
+on:
+  push:
+    branches: [audit/full-production-forensics]
+    paths: ['.github/workflows/live-netlify-version-match.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  match:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: audit/full-production-forensics
+      - name: Match live assets against git history
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://chimerical-granita-c68c5a.netlify.app'
+          mkdir -p /tmp/live
+          files=(app.html app.js config.js supabaseClient.js style.css)
+          for f in "${files[@]}"; do
+            curl --fail --silent --show-error --location "$BASE/$f" -o "/tmp/live/$f"
+            live_sha=$(sha256sum "/tmp/live/$f" | awk '{print $1}')
+            echo "LIVE $f sha256=$live_sha"
+            found=''
+            while read -r c; do
+              if git cat-file -e "$c:$f" 2>/dev/null; then
+                repo_sha=$(git show "$c:$f" | sha256sum | awk '{print $1}')
+                if [ "$repo_sha" = "$live_sha" ]; then
+                  found="$c"
+                  echo "MATCH $f commit=$c date=$(git show -s --format=%cI "$c") subject=$(git show -s --format=%s "$c")"
+                  break
+                fi
+              fi
+            done < <(git rev-list --all --date-order)
+            if [ -z "$found" ]; then echo "MATCH $f commit=NONE"; fi
+          done
+
+          echo '=== LIVE CREDIT-RELEVANT LINES ==='
+          grep -n -E 'function hasSufficientCredits|checkCreditBalance|openPurchaseModal|creditsStatus|updateUICredits\(0\)|status === 402|state\.credits <|isCreditsBlocked' /tmp/live/app.js || true
+          echo '=== LIVE CSP ==='
+          grep -n 'Content-Security-Policy' /tmp/live/app.html || true
