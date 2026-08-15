@@ -37,76 +37,63 @@ jobs:
 
           old_html = '<p class="font-body text-[11px] text-slate-300 mt-1 max-w-xs leading-normal">Select a credit pack below to unlock instant AI screenshot analysis, bio optimization &amp; practice coach turns.</p>'
           new_html = old_html + '\n                <p id="purchaseCreditContext" class="hidden mt-2 max-w-sm rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 font-body text-[11px] font-semibold leading-relaxed text-amber-200" role="status" aria-live="polite"></p>'
-          if old_html not in html:
-              raise SystemExit('purchase modal subtitle marker missing')
+          if html.count(old_html) != 1:
+              raise SystemExit(f'purchase modal subtitle marker count={html.count(old_html)}')
           html = html.replace(old_html, new_html, 1)
 
-          old_open = '''    window.openPurchaseModal = function () {
-          const m = $("purchaseModal"), c = $("modalCard"), pt = $("pricingTiers");
-          if (!m || !c) return;
-          document.body.style.overflow = "hidden";'''
-          new_open = '''    window.openPurchaseModal = function (requiredCredits) {
-          const m = $("purchaseModal"), c = $("modalCard"), pt = $("pricingTiers");
-          if (!m || !c) return;
+          signature = 'window.openPurchaseModal = function () {'
+          if app.count(signature) != 1:
+              raise SystemExit(f'openPurchaseModal signature count={app.count(signature)}')
+          app = app.replace(signature, 'window.openPurchaseModal = function (requiredCredits) {', 1)
 
-          // When the popup is opened by an authoritative insufficient-credit gate,
-          // explain the exact shortage inside the popup itself. Manual pricing opens
-          // remain generic and never invent a balance or required cost.
-          const contextEl = $("purchaseCreditContext");
-          const currentBalance = (typeof state.credits === "number" && Number.isFinite(state.credits)) ? state.credits : null;
-          const required = Number(requiredCredits);
-          const hasShortageContext = Number.isFinite(required) && required > 0 && currentBalance !== null && currentBalance < required;
-          if (contextEl) {
-              if (hasShortageContext) {
-                  const shortfall = required - currentBalance;
-                  const creditWord = (n) => n === 1 ? "credit" : "credits";
-                  contextEl.textContent = "Insufficient credits: you have " + currentBalance + " " + creditWord(currentBalance) + ". This action requires " + required + " " + creditWord(required) + ". You need " + shortfall + " more " + creditWord(shortfall) + ".";
-                  contextEl.classList.remove("hidden");
-              } else {
-                  contextEl.textContent = "";
-                  contextEl.classList.add("hidden");
-              }
-          }
+          fn_start = app.index('window.openPurchaseModal = function (requiredCredits) {')
+          overflow_anchor = 'document.body.style.overflow = "hidden";'
+          overflow_idx = app.find(overflow_anchor, fn_start)
+          if overflow_idx < 0:
+              raise SystemExit('purchase modal overflow anchor missing after function signature')
+          context_block = '''// When the popup is opened by an authoritative insufficient-credit gate,
+        // explain the exact shortage inside the popup itself. Manual pricing opens
+        // remain generic and never invent a balance or required cost.
+        const contextEl = $("purchaseCreditContext");
+        const currentBalance = (typeof state.credits === "number" && Number.isFinite(state.credits)) ? state.credits : null;
+        const required = Number(requiredCredits);
+        const hasShortageContext = Number.isFinite(required) && required > 0 && currentBalance !== null && currentBalance < required;
+        if (contextEl) {
+            if (hasShortageContext) {
+                const shortfall = required - currentBalance;
+                const creditWord = (n) => n === 1 ? "credit" : "credits";
+                contextEl.textContent = "Insufficient credits: you have " + currentBalance + " " + creditWord(currentBalance) + ". This action requires " + required + " " + creditWord(required) + ". You need " + shortfall + " more " + creditWord(shortfall) + ".";
+                contextEl.classList.remove("hidden");
+            } else {
+                contextEl.textContent = "";
+                contextEl.classList.add("hidden");
+            }
+        }
 
-          document.body.style.overflow = "hidden";'''
-          if old_open not in app:
-              raise SystemExit('openPurchaseModal source marker missing')
-          app = app.replace(old_open, new_open, 1)
+        '''
+          app = app[:overflow_idx] + context_block + app[overflow_idx:]
 
-          old_preflight = '''                if (typeof window.openPurchaseModal === 'function') {
-                      window.openPurchaseModal();
-                  }
-                  return false;'''
-          new_preflight = '''                if (typeof window.openPurchaseModal === 'function') {
-                      window.openPurchaseModal(cost);
-                  }
-                  return false;'''
-          if old_preflight not in app:
-              raise SystemExit('preflight purchase modal call missing')
-          app = app.replace(old_preflight, new_preflight, 1)
+          def replace_next_call(source, semantic_anchor, replacement, label):
+              anchor_idx = source.find(semantic_anchor)
+              if anchor_idx < 0:
+                  raise SystemExit(f'{label} semantic anchor missing')
+              call = 'window.openPurchaseModal();'
+              call_idx = source.find(call, anchor_idx)
+              if call_idx < 0:
+                  raise SystemExit(f'{label} purchase modal call missing after anchor')
+              # Bound each replacement so we do not accidentally jump into another handler.
+              if call_idx - anchor_idx > 5000:
+                  raise SystemExit(f'{label} purchase modal call too far from semantic anchor')
+              return source[:call_idx] + replacement + source[call_idx + len(call):]
 
-          old_generation = '''                        if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal();
-                          return null;'''
-          new_generation = '''                        if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal(requiredCreditCost);
-                          return null;'''
-          if old_generation not in app:
-              raise SystemExit('generation 402 purchase modal call missing')
-          app = app.replace(old_generation, new_generation, 1)
-
-          old_chat = '''                    if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal();
-                  }
-              } else {'''
-          new_chat = '''                    if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal(2);
-                  }
-              } else {'''
-          if old_chat not in app:
-              raise SystemExit('chat 402 purchase modal call missing')
-          app = app.replace(old_chat, new_chat, 1)
+          app = replace_next_call(app, 'if (state.credits < cost) {', 'window.openPurchaseModal(cost);', 'preflight')
+          app = replace_next_call(app, 'if (state.credits >= requiredCreditCost)', 'window.openPurchaseModal(requiredCreditCost);', 'generation 402')
+          app = replace_next_call(app, 'const authoritativeChatBalance = await window.checkCreditBalance();', 'window.openPurchaseModal(2);', 'chat 402')
 
           marker = "assert.ok(app.includes('cleanUrl.searchParams.delete(\\\"tier\\\")'), 'tier URL must be cleared after the unavailable-purchase notice');\n"
           addition = marker + "assert.ok(app.includes('window.openPurchaseModal = function (requiredCredits)'), 'purchase popup must accept explicit required-credit context');\nassert.ok(app.includes('window.openPurchaseModal(cost);'), 'client preflight must pass the exact feature cost into the purchase popup');\nassert.ok(app.includes('window.openPurchaseModal(requiredCreditCost);'), 'authoritative 402 generation path must pass its exact route cost into the purchase popup');\nassert.ok(app.includes('window.openPurchaseModal(2);'), 'Maeve HTTP 402 path must pass the exact 2-credit cost into the purchase popup');\nassert.ok(app.includes('Insufficient credits: you have '), 'purchase popup must render an explicit shortage explanation');\nconst appHtml = fs.readFileSync(path.join(__dirname, '..', 'app.html'), 'utf8');\nassert.ok(appHtml.includes('id=\\\"purchaseCreditContext\\\"'), 'purchase modal must contain a dedicated live shortage-context element');\n"
-          if marker not in test:
-              raise SystemExit('credit purchase regression insertion marker missing')
+          if test.count(marker) != 1:
+              raise SystemExit(f'credit regression insertion marker count={test.count(marker)}')
           test = test.replace(marker, addition, 1)
 
           app_path.write_text(app, encoding='utf-8')
