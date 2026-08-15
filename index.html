@@ -1506,7 +1506,7 @@
             m.style.display = "none";
         };
 
-        window.handleEnterDashboard = function (e) {
+        window.handleEnterDashboard = async function (e) {
             if (e) e.preventDefault();
             var cb = $("interstitialCheckbox");
             if (!cb || !cb.checked) {

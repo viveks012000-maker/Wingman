@@ -3800,6 +3800,18 @@ STRICT LAWS:
                     if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
                 }
                 window.renderChatboxBubble("18+ age verification and consent required to continue chatting.", "assistant");
+            } else if (chatResp.status === 503) {
+                const errJson = await chatResp.json().catch(() => ({}));
+                if (errJson.code === "CONSENT_SERVICE_UNAVAILABLE") {
+                    state.isTermsAccepted = false;
+                    state.consentStatus = 'service_unavailable';
+                    safeStorage.remove('wingman_terms_accepted');
+                    if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+                    if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
+                    window.renderChatboxBubble("Consent verification service is temporarily unavailable. Features remain locked.", "assistant");
+                } else {
+                    window.renderChatboxBubble(errJson.error || "Credit service is temporarily unavailable. Please try again later.", "assistant");
+                }
             } else if (chatResp.status === 402) {
                 window.renderChatboxBubble("⚠️ Insufficient credits. Please top up credits to continue practicing.", "assistant");
                 if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal();
@@ -3816,9 +3828,8 @@ STRICT LAWS:
             console.error("Chatbox API Error:", chatErr);
             window.renderChatboxBubble("Connection issue. Please check your network and try again.", "assistant");
         } finally {
-            if (sendBtn) {
-                sendBtn.disabled = false;
-                sendBtn.classList.remove("opacity-50", "cursor-not-allowed");
+            if (typeof window.updateButtonStates === 'function') {
+                window.updateButtonStates();
             }
         }
     };

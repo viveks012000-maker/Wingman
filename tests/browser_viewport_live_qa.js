@@ -63,6 +63,23 @@ async function runBrowserQA() {
         const context = await browser.newContext();
         const page = await context.newPage();
 
+        const pageErrors = [];
+        page.on('pageerror', (err) => {
+            console.error(`  ❌ [PAGE ERROR]: ${err.message}\n${err.stack || ''}`);
+            pageErrors.push(err);
+        });
+
+        page.on('console', (msg) => {
+            if (msg.type() === 'error') {
+                const text = msg.text();
+                // Filter out non-fatal offline backend connection attempts in mock static env if any
+                if (text.includes('SyntaxError') || text.includes('Uncaught') || text.includes('ReferenceError') || text.includes('TypeError')) {
+                    console.error(`  ❌ [CONSOLE JS ERROR]: ${text}`);
+                    pageErrors.push(new Error(`Browser Console JS Error: ${text}`));
+                }
+            }
+        });
+
         for (const pageName of PAGES) {
             console.log(`\n▶ Testing [${pageName}] across all 9 viewports:`);
             const url = `http://localhost:${PORT}/${pageName}`;
@@ -72,6 +89,11 @@ async function runBrowserQA() {
                 await page.setViewportSize({ width, height: 800 });
                 await page.goto(url, { waitUntil: 'domcontentloaded' });
                 await page.waitForTimeout(100);
+
+                if (pageErrors.length > 0) {
+                    const firstErr = pageErrors[0];
+                    throw new Error(`Page-level JavaScript exception in [${pageName}]: ${firstErr.message}`);
+                }
 
                 const metrics = await page.evaluate(() => {
                     const scrollWidth = document.documentElement.scrollWidth;
@@ -108,7 +130,7 @@ async function runBrowserQA() {
                     throw new Error(`Horizontal overflow detected in ${pageName} at ${width}px (scrollWidth: ${metrics.scrollWidth}, innerWidth: ${metrics.innerWidth})`);
                 } else {
                     passedChecks++;
-                    console.log(`  ✔ ${width}px: scrollWidth (${metrics.scrollWidth}px) <= viewport (${metrics.innerWidth}px)`);
+                    console.log(`  ✔ ${width}px: scrollWidth (${metrics.scrollWidth}px) <= viewport (${metrics.innerWidth}px) [0 errors]`);
                 }
             }
         }

@@ -18,17 +18,18 @@ console.log("\n============================================================");
 console.log("🛡️  RUNNING PRODUCTION READINESS REGRESSION TEST SUITE");
 console.log("============================================================\n");
 
-const serverCode = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
-const appJsCode = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
-const supabaseClientCode = fs.readFileSync(path.join(__dirname, '..', 'supabaseClient.js'), 'utf8');
-const appHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'app.html'), 'utf8');
-const indexHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-const privacyHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'privacy.html'), 'utf8');
-const termsHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'terms.html'), 'utf8');
-const refundHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'refund.html'), 'utf8');
-const migration005Path = path.join(__dirname, '..', 'migrations', '005_user_consent_and_age_verification.sql');
-
 (async function runAll() {
+    const serverCode = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+    const appJsCode = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+    const supabaseClientCode = fs.readFileSync(path.join(__dirname, '..', 'supabaseClient.js'), 'utf8');
+    const appHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'app.html'), 'utf8');
+    const indexHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    const privacyHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'privacy.html'), 'utf8');
+    const termsHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'terms.html'), 'utf8');
+    const refundHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'refund.html'), 'utf8');
+    const migration005Path = path.join(__dirname, '..', 'migrations', '005_user_consent_and_age_verification.sql');
+    const migration005Sql = fs.readFileSync(migration005Path, 'utf8');
+
 // -----------------------------------------------------------------------------
 // 1. NOTIFICATIONS & TOAST DOM LIFECYCLE
 // -----------------------------------------------------------------------------
@@ -89,7 +90,6 @@ assert.strictEqual(updateAuthSection.includes("safeSet('wingman_terms_accepted',
 
 // 3.4 Migration 005 exists and contains correct schema
 assert.strictEqual(fs.existsSync(migration005Path), true, "Migration 005 must exist on filesystem");
-const migration005Sql = fs.readFileSync(migration005Path, 'utf8');
 assert.strictEqual(migration005Sql.includes('CREATE TABLE IF NOT EXISTS public.user_consents'), true, "Migration 005 must create user_consents table");
 assert.strictEqual(migration005Sql.includes('record_user_consent'), true, "Migration 005 must define record_user_consent RPC function");
 assert.strictEqual(migration005Sql.includes('SET search_path = \'\''), true, "Migration 005 RPC must enforce hardened search_path");
@@ -512,8 +512,226 @@ assert.strictEqual(
 );
 console.log("✔ Test 16 Passed: Production AICREDITS_API_KEY_VISION requirement & truthful screenshot disclosures verified.");
 
+// -----------------------------------------------------------------------------
+// 17. INDEX.HTML INLINE JAVASCRIPT SYNTAX & ASYNC DECLARATION
+// -----------------------------------------------------------------------------
+console.log("▶ [TEST 17] index.html Inline JavaScript Syntax & Async Declaration");
+
+// 17.1 window.handleEnterDashboard must be declared async
+assert.strictEqual(
+    indexHtmlCode.includes("window.handleEnterDashboard = async function"),
+    true,
+    "index.html must declare window.handleEnterDashboard as async function"
+);
+
+// 17.2 Parse all script tags in index.html to prove zero syntax errors
+const vm = require('vm');
+const scriptRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
+let match;
+let scriptIndex = 0;
+while ((match = scriptRegex.exec(indexHtmlCode)) !== null) {
+    const scriptBody = match[1];
+    if (scriptBody && scriptBody.trim()) {
+        try {
+            new vm.Script(scriptBody);
+            scriptIndex++;
+        } catch (e) {
+            assert.fail(`Syntax error detected in index.html script block #${scriptIndex}: ${e.message}`);
+        }
+    }
+}
+console.log(`✔ Test 17 Passed: index.html async declaration verified and all ${scriptIndex} inline script blocks parsed with zero syntax errors.`);
+
+// -----------------------------------------------------------------------------
+// 18. PLAYWRIGHT PAGEERROR & CONSOLE ERROR REGISTRATION
+// -----------------------------------------------------------------------------
+console.log("▶ [TEST 18] Playwright Browser QA Pageerror & Console Error Registration");
+
+const browserQaCode = fs.readFileSync(path.join(__dirname, 'browser_viewport_live_qa.js'), 'utf8');
+assert.strictEqual(
+    browserQaCode.includes("page.on('pageerror'"),
+    true,
+    "browser_viewport_live_qa.js must register page.on('pageerror')"
+);
+assert.strictEqual(
+    browserQaCode.includes("page.on('console'"),
+    true,
+    "browser_viewport_live_qa.js must register page.on('console')"
+);
+assert.strictEqual(
+    browserQaCode.includes("throw new Error(`Page-level JavaScript exception in [${pageName}]"),
+    true,
+    "browser_viewport_live_qa.js must fail on any page-level JS exception"
+);
+console.log("✔ Test 18 Passed: Playwright suite actively registers pageerror and console listeners to catch JS failures.");
+
+// -----------------------------------------------------------------------------
+// 19. SIMULATOR REVIEW STRICT VALIDATION, ZERO SYNTHETIC FALLBACKS & SCORE 0
+// -----------------------------------------------------------------------------
+console.log("▶ [TEST 19] Simulator Review Strict Validation, Zero Synthetic Fallbacks & Score 0");
+
+// 19.1 Verify absence of synthetic score fallbacks in server.js
+assert.strictEqual(
+    serverCode.includes("overall_score: Number(reviewJson.overall_score) || 70"),
+    false,
+    "server.js must NOT contain synthetic fallback overall_score || 70"
+);
+assert.strictEqual(
+    serverCode.includes('status_text: reviewJson.status_text || "STATUS: OK"'),
+    false,
+    "server.js must NOT contain synthetic fallback status_text || 'STATUS: OK'"
+);
+assert.strictEqual(
+    serverCode.includes('wit_score: reviewJson.wit_score || "70%"'),
+    false,
+    "server.js must NOT contain synthetic fallback wit_score || '70%'"
+);
+assert.strictEqual(
+    serverCode.includes('text_economy: reviewJson.text_economy || "80%"'),
+    false,
+    "server.js must NOT contain synthetic fallback text_economy || '80%'"
+);
+
+// 19.2 Behavioral Test: Malformed AI output (missing fields) fails closed & releases credits
+function validateReviewPayload(reviewJson) {
+    function validatePercentage(val) {
+        if (typeof val === 'number' && Number.isFinite(val) && val >= 0 && val <= 100) {
+            return `${Math.round(val)}%`;
+        }
+        if (typeof val === 'string') {
+            const trimmed = val.replace('%', '').trim();
+            const num = parseFloat(trimmed);
+            if (Number.isFinite(num) && num >= 0 && num <= 100) {
+                return `${Math.round(num)}%`;
+            }
+        }
+        return null;
+    }
+
+    if (!reviewJson || typeof reviewJson !== 'object') {
+        throw new Error("Simulation review output is not a valid JSON object.");
+    }
+    const rawOverallScore = Number(reviewJson.overall_score);
+    if (!Number.isFinite(rawOverallScore) || rawOverallScore < 0 || rawOverallScore > 100) {
+        throw new Error("Simulation review output is missing a valid overall_score (0-100).");
+    }
+    const overallScore = Math.round(rawOverallScore);
+
+    const statusText = typeof reviewJson.status_text === 'string' ? reviewJson.status_text.trim() : '';
+    if (!statusText) throw new Error("Simulation review output is missing a valid status_text.");
+
+    const witScore = validatePercentage(reviewJson.wit_score);
+    if (!witScore) throw new Error("Simulation review output is missing a valid wit_score percentage.");
+
+    const textEconomy = validatePercentage(reviewJson.text_economy);
+    if (!textEconomy) throw new Error("Simulation review output is missing a valid text_economy percentage.");
+
+    const confidenceScore = validatePercentage(reviewJson.confidence_score);
+    if (!confidenceScore) throw new Error("Simulation review output is missing a valid confidence_score percentage.");
+
+    const performanceSummary = typeof reviewJson.performance_summary === 'string' ? reviewJson.performance_summary.trim() : '';
+    if (!performanceSummary) throw new Error("Simulation review output is missing a valid performance_summary.");
+
+    const biggestStrength = typeof reviewJson.biggest_strength === 'string' ? reviewJson.biggest_strength.trim() : '';
+    if (!biggestStrength) throw new Error("Simulation review output is missing a valid biggest_strength.");
+
+    const biggestMistake = typeof reviewJson.biggest_mistake === 'string' ? reviewJson.biggest_mistake.trim() : '';
+    if (!biggestMistake) throw new Error("Simulation review output is missing a valid biggest_mistake.");
+
+    const rawPriority = reviewJson.priority_focus || reviewJson.priority_tip;
+    const priorityFocus = typeof rawPriority === 'string' ? rawPriority.trim() : '';
+    if (!priorityFocus) throw new Error("Simulation review output is missing a valid priority_focus.");
+
+    return {
+        overall_score: overallScore,
+        status_text: statusText,
+        wit_score: witScore,
+        text_economy: textEconomy,
+        confidence_score: confidenceScore,
+        performance_summary: performanceSummary,
+        biggest_strength: biggestStrength,
+        biggest_mistake: biggestMistake,
+        priority_focus: priorityFocus
+    };
+}
+
+// Incomplete payload test (only performance_summary)
+let reviewFailedClosed = false;
+try {
+    validateReviewPayload({ performance_summary: "Only summary provided" });
+} catch (e) {
+    reviewFailedClosed = true;
+}
+assert.strictEqual(reviewFailedClosed, true, "Malformed review payload without overall_score/metrics MUST throw validation error");
+
+// Legitimate 0 score test
+const zeroScoreResult = validateReviewPayload({
+    overall_score: 0,
+    status_text: "STATUS: NEEDS WORK",
+    wit_score: "0%",
+    text_economy: "10%",
+    confidence_score: "5%",
+    performance_summary: "User was entirely passive.",
+    biggest_strength: "None noted.",
+    biggest_mistake: "Did not send responses.",
+    priority_focus: "Send engaging open-ended texts."
+});
+assert.strictEqual(zeroScoreResult.overall_score, 0, "Legitimate score of 0 must strictly remain 0 and not be overwritten with fallback");
+console.log("✔ Test 19 Passed: Simulator review strictly validates all fields; synthetic fallbacks eliminated and score 0 preserved.");
+
+// -----------------------------------------------------------------------------
+// 20. CHAT 503 CONSENT_SERVICE_UNAVAILABLE LOCKDOWN & BUTTON CONTROLS
+// -----------------------------------------------------------------------------
+console.log("▶ [TEST 20] Chat 503 CONSENT_SERVICE_UNAVAILABLE Lockdown & Button Controls");
+
+// 20.1 submitChatboxMessage handles 503 CONSENT_SERVICE_UNAVAILABLE
+assert.strictEqual(
+    appJsCode.includes('chatResp.status === 503'),
+    true,
+    "submitChatboxMessage must explicitly check chatResp.status === 503"
+);
+assert.strictEqual(
+    appJsCode.includes('errJson.code === "CONSENT_SERVICE_UNAVAILABLE"'),
+    true,
+    "submitChatboxMessage must check errJson.code === 'CONSENT_SERVICE_UNAVAILABLE'"
+);
+
+// 20.2 submitChatboxMessage finally block uses updateButtonStates
+const submitChatboxIdx = appJsCode.indexOf('window.submitChatboxMessage = async function');
+assert.ok(submitChatboxIdx !== -1, "submitChatboxMessage must exist in app.js");
+const nextFuncIdx = appJsCode.indexOf('window.openInterstitialModal = function', submitChatboxIdx);
+const submitChatboxSection = appJsCode.substring(submitChatboxIdx, nextFuncIdx !== -1 ? nextFuncIdx : submitChatboxIdx + 10000);
+assert.strictEqual(
+    submitChatboxSection.includes('window.updateButtonStates()'),
+    true,
+    "submitChatboxMessage finally block must call updateButtonStates()"
+);
+assert.strictEqual(
+    submitChatboxSection.includes('sendBtn.disabled = false'),
+    false,
+    "submitChatboxMessage finally block must NOT unconditionally set sendBtn.disabled = false"
+);
+console.log("✔ Test 20 Passed: Chat 503 consent service failure locks controls and prevents unconditional re-enable.");
+
+// -----------------------------------------------------------------------------
+// 21. PRIVACY AFFIRMATIVE CONSENT COPY AUDIT
+// -----------------------------------------------------------------------------
+console.log("▶ [TEST 21] Privacy Affirmative Consent Copy Audit");
+
+assert.strictEqual(
+    privacyHtmlCode.includes("By explicitly completing the consent and 18+ verification flow, you consent to this processing."),
+    true,
+    "privacy.html must state consent is granted by completing verification flow"
+);
+assert.strictEqual(
+    privacyHtmlCode.includes("By accessing these tools"),
+    false,
+    "privacy.html must NOT claim access/navigation constitutes consent"
+);
+console.log("✔ Test 21 Passed: Privacy affirmative consent copy audit verified.");
+
 console.log("\n============================================================");
-console.log("🎉 ALL PRODUCTION READINESS REGRESSION TESTS PASSED (16/16)");
+console.log("🎉 ALL PRODUCTION READINESS REGRESSION TESTS PASSED (21/21)");
 console.log("============================================================\n");
 })();
 

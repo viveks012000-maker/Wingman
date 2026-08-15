@@ -2788,15 +2788,15 @@ CRITICAL EVALUATION & SCORING LAWS:
 
 You MUST reply with ONLY a single valid JSON object strictly adhering to this structure:
 {
-  "overall_score": 78,
-  "status_text": "STATUS: GOOD",
-  "wit_score": "68%",
-  "text_economy": "85%",
-  "confidence_score": "72%",
-  "performance_summary": "Detailed 2-sentence summary of how the user performed.",
-  "biggest_strength": "Direct quote or specific action the user did well and why.",
-  "biggest_mistake": "Direct quote or specific mistake the user made (e.g. sending dry 'hm' replies or needy apologies) and why it hurt momentum.",
-  "priority_focus": "Actionable, 1-sentence tactical rule for their next attempt."
+  "overall_score": <integer from 0 to 100 based strictly on performance>,
+  "status_text": "<short uppercase rating, e.g. NEEDS WORK, DECENT, GOOD, STRONG, ELITE>",
+  "wit_score": "<percentage string between 0% and 100%>",
+  "text_economy": "<percentage string between 0% and 100%>",
+  "confidence_score": "<percentage string between 0% and 100%>",
+  "performance_summary": "<detailed 2-sentence summary of how the user performed>",
+  "biggest_strength": "<specific line or action the user did well and why>",
+  "biggest_mistake": "<specific mistake the user made and why it hurt momentum>",
+  "priority_focus": "<actionable 1-sentence tactical rule for their next attempt>"
 }`;
 
         const payload = [
@@ -2819,8 +2819,78 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
             throw new Error("Failed to parse simulation review output from AI model.");
         }
 
-        if (!reviewJson || typeof reviewJson !== 'object' || !reviewJson.performance_summary) {
-            throw new Error("Simulation review output is incomplete or malformed.");
+        if (!reviewJson || typeof reviewJson !== 'object') {
+            throw new Error("Simulation review output is not a valid JSON object.");
+        }
+
+        function validatePercentage(val) {
+            if (typeof val === 'number' && Number.isFinite(val) && val >= 0 && val <= 100) {
+                return `${Math.round(val)}%`;
+            }
+            if (typeof val === 'string') {
+                const trimmed = val.replace('%', '').trim();
+                const num = parseFloat(trimmed);
+                if (Number.isFinite(num) && num >= 0 && num <= 100) {
+                    return `${Math.round(num)}%`;
+                }
+            }
+            return null;
+        }
+
+        // 1. overall_score: finite number in 0..100 (0 must remain 0)
+        const rawOverallScore = Number(reviewJson.overall_score);
+        if (!Number.isFinite(rawOverallScore) || rawOverallScore < 0 || rawOverallScore > 100) {
+            throw new Error("Simulation review output is missing a valid overall_score (0-100).");
+        }
+        const overallScore = Math.round(rawOverallScore);
+
+        // 2. status_text: non-empty string
+        const statusText = typeof reviewJson.status_text === 'string' ? reviewJson.status_text.trim() : '';
+        if (!statusText) {
+            throw new Error("Simulation review output is missing a valid status_text.");
+        }
+
+        // 3. wit_score: valid percentage 0..100
+        const witScore = validatePercentage(reviewJson.wit_score);
+        if (!witScore) {
+            throw new Error("Simulation review output is missing a valid wit_score percentage.");
+        }
+
+        // 4. text_economy: valid percentage 0..100
+        const textEconomy = validatePercentage(reviewJson.text_economy);
+        if (!textEconomy) {
+            throw new Error("Simulation review output is missing a valid text_economy percentage.");
+        }
+
+        // 5. confidence_score: valid percentage 0..100
+        const confidenceScore = validatePercentage(reviewJson.confidence_score);
+        if (!confidenceScore) {
+            throw new Error("Simulation review output is missing a valid confidence_score percentage.");
+        }
+
+        // 6. performance_summary: non-empty string
+        const performanceSummary = typeof reviewJson.performance_summary === 'string' ? reviewJson.performance_summary.trim() : '';
+        if (!performanceSummary) {
+            throw new Error("Simulation review output is missing a valid performance_summary.");
+        }
+
+        // 7. biggest_strength: non-empty string
+        const biggestStrength = typeof reviewJson.biggest_strength === 'string' ? reviewJson.biggest_strength.trim() : '';
+        if (!biggestStrength) {
+            throw new Error("Simulation review output is missing a valid biggest_strength.");
+        }
+
+        // 8. biggest_mistake: non-empty string
+        const biggestMistake = typeof reviewJson.biggest_mistake === 'string' ? reviewJson.biggest_mistake.trim() : '';
+        if (!biggestMistake) {
+            throw new Error("Simulation review output is missing a valid biggest_mistake.");
+        }
+
+        // 9. priority_focus: non-empty string
+        const rawPriority = reviewJson.priority_focus || reviewJson.priority_tip;
+        const priorityFocus = typeof rawPriority === 'string' ? rawPriority.trim() : '';
+        if (!priorityFocus) {
+            throw new Error("Simulation review output is missing a valid priority_focus.");
         }
 
         const settleResult = await settleCreditsDB(req, reqId);
@@ -2835,16 +2905,16 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
 
         res.json({
             success: true,
-            overall_score: Number(reviewJson.overall_score) || 70,
-            status_text: reviewJson.status_text || "STATUS: OK",
-            wit_score: reviewJson.wit_score || "70%",
-            text_economy: reviewJson.text_economy || "80%",
-            confidence_score: reviewJson.confidence_score || "70%",
-            performance_summary: reviewJson.performance_summary,
-            biggest_strength: reviewJson.biggest_strength || "Engaged with the scenario.",
-            biggest_mistake: reviewJson.biggest_mistake || "Opportunity to take stronger conversational initiative.",
-            priority_focus: reviewJson.priority_focus || reviewJson.priority_tip || "Aim for clear forward momentum in future rounds.",
-            priority_tip: reviewJson.priority_focus || reviewJson.priority_tip || "Aim for clear forward momentum in future rounds.",
+            overall_score: overallScore,
+            status_text: statusText,
+            wit_score: witScore,
+            text_economy: textEconomy,
+            confidence_score: confidenceScore,
+            performance_summary: performanceSummary,
+            biggest_strength: biggestStrength,
+            biggest_mistake: biggestMistake,
+            priority_focus: priorityFocus,
+            priority_tip: priorityFocus,
             credits: deduction.remainingCredits
         });
 
