@@ -1,0 +1,69 @@
+name: Current Netlify Maeve Audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/current_netlify_maeve_audit.yml'
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Compare live Netlify assets to current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://wondrous-arithmetic-0ece9d.netlify.app'
+          for f in app.html app.js config.js supabaseClient.js style.css; do
+            curl -fsSL --retry 3 "$base/$f?audit=${GITHUB_SHA}" -o "/tmp/live-$f"
+            echo "$f repo=$(sha256sum "$f" | cut -d' ' -f1) live=$(sha256sum "/tmp/live-$f" | cut -d' ' -f1)"
+          done
+          echo '--- live markers ---'
+          grep -F 'Paid Plan' /tmp/live-config.js || true
+          grep -F 'Free Plan' /tmp/live-app.html | head -3 || true
+          grep -F 'wingman-production-c6ce.up.railway.app' /tmp/live-app.html || true
+      - name: Browser-test live send button
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const { chromium } = require('playwright');
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            const page=await browser.newPage({viewport:{width:1440,height:1000}});
+            const errors=[];
+            page.on('pageerror',e=>errors.push('pageerror:'+e.message));
+            page.on('console',m=>{if(m.type()==='error') errors.push('console:'+m.text())});
+            await page.goto('https://wondrous-arithmetic-0ece9d.netlify.app/app.html?audit='+Date.now(),{waitUntil:'domcontentloaded',timeout:45000});
+            await page.waitForTimeout(2500);
+            const input=page.locator('#simulator-chat-input');
+            const btn=page.locator('#chatbox-send-btn');
+            console.log('input count',await input.count(),'button count',await btn.count());
+            if(await input.count() && await btn.count()){
+              const before=await btn.evaluate(el=>({disabled:el.disabled,className:el.className,opacity:getComputedStyle(el).opacity,background:getComputedStyle(el).backgroundImage,cursor:getComputedStyle(el).cursor}));
+              console.log('before',JSON.stringify(before));
+              await input.fill('hello');
+              await page.waitForTimeout(300);
+              const after=await btn.evaluate(el=>({disabled:el.disabled,className:el.className,opacity:getComputedStyle(el).opacity,background:getComputedStyle(el).backgroundImage,cursor:getComputedStyle(el).cursor}));
+              console.log('after',JSON.stringify(after));
+            }
+            console.log('browserErrors',JSON.stringify(errors));
+            await browser.close();
+          })().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+      - name: Probe Railway
+        shell: bash
+        run: |
+          set -e
+          curl -sS -o /tmp/h -w 'health_http=%{http_code}\n' https://wingman-production-c6ce.up.railway.app/api/health
+          cat /tmp/h
+          curl -sS -o /tmp/c -w 'chat_http=%{http_code}\n' -X POST https://wingman-production-c6ce.up.railway.app/api/chat -H 'Content-Type: application/json' --data '{"messages":[{"role":"user","content":"hi"}],"mode":"hotline","scenario":"Coach Hotline"}'
+          cat /tmp/c
