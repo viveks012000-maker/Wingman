@@ -1,0 +1,167 @@
+name: Apply final runtime and CSP hardening
+
+on:
+  push:
+    branches: [fix/final-runtime-csp-hardening]
+    paths: ['.github/workflows/apply-final-runtime-csp-hardening.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/final-runtime-csp-hardening
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply focused source patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          server_path = Path('server.js')
+          s = server_path.read_text()
+          old_eval = 'scriptSrc: ["\'self\'", "\'unsafe-inline\'", "\'unsafe-eval\'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.supabase.co"],'
+          new_eval = 'scriptSrc: ["\'self\'", "\'unsafe-inline\'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.supabase.co"],'
+          if old_eval not in s:
+              raise SystemExit('Expected Helmet unsafe-eval directive not found')
+          s = s.replace(old_eval, new_eval, 1)
+
+          old_start = '''        const server = app.listen(PORT, '0.0.0.0', () => {
+            console.log(`🚀 Secure Wingman 3-Tier Backend Online on port ${PORT} (Supabase Postgres Active)`);
+        });
+        server.keepAliveTimeout = 120000;
+        server.headersTimeout = 125000;
+        module.exports = { app, server, db, supabaseAdmin };
+    } catch (err) {
+        console.error("Fatal Server Startup Error:", err);
+        process.exit(1);
+    }
+}
+
+startWingmanServer();'''
+          new_start = '''        const server = app.listen(PORT, '0.0.0.0', () => {
+            console.log(`🚀 Secure Wingman 3-Tier Backend Online on port ${PORT} (Supabase Postgres Active)`);
+        });
+        server.keepAliveTimeout = 120000;
+        server.headersTimeout = 125000;
+        return server;
+    } catch (err) {
+        console.error("Fatal Server Startup Error:", err);
+        throw err;
+    }
+}
+
+// Importing the application must be side-effect free. Tests, tooling, and future serverless
+// adapters can use the Express app without silently opening a production listener.
+module.exports = { app, startWingmanServer, supabaseAdmin };
+
+if (require.main === module) {
+    startWingmanServer().catch(() => process.exit(1));
+}'''
+          if old_start not in s:
+              raise SystemExit('Expected startup/export block not found')
+          s = s.replace(old_start, new_start, 1)
+          server_path.write_text(s)
+
+          build_path = Path('scripts/build-netlify-dist.js')
+          b = build_path.read_text()
+          old_csp = '"script-src \'self\' \'unsafe-inline\' \'unsafe-eval\' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co",'
+          new_csp = '"script-src \'self\' \'unsafe-inline\' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co",'
+          if old_csp not in b:
+              raise SystemExit('Expected Netlify unsafe-eval directive not found')
+          b = b.replace(old_csp, new_csp, 1)
+          build_path.write_text(b)
+
+          test_path = Path('tests/runtime_startup_csp_hardening.test.js')
+          test_path.write_text(r'''const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const { execFileSync } = require('child_process');
+
+const root = path.join(__dirname, '..');
+const serverSource = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+const buildSource = fs.readFileSync(path.join(root, 'scripts', 'build-netlify-dist.js'), 'utf8');
+
+assert.ok(serverSource.includes('if (require.main === module) {'),
+  'server must only bind a listener when executed as the process entry point');
+assert.ok(!serverSource.includes('\nstartWingmanServer();'),
+  'server import must not unconditionally start a listener');
+assert.ok(serverSource.includes('module.exports = { app, startWingmanServer, supabaseAdmin };'),
+  'server must export a side-effect-free Express app and explicit start function');
+assert.ok(!serverSource.includes("'unsafe-eval'"),
+  'Helmet CSP must not allow unsafe-eval when runtime code does not require it');
+assert.ok(!buildSource.includes("'unsafe-eval'"),
+  'Netlify CSP must not allow unsafe-eval when public browser code does not require it');
+
+const output = execFileSync(process.execPath, ['-e', "require('./server'); process.stdout.write('IMPORT_OK')"], {
+  cwd: root,
+  encoding: 'utf8',
+  timeout: 2500,
+  env: {
+    ...process.env,
+    NODE_ENV: 'production',
+    AICREDITS_API_KEY: 'test_key',
+    AICREDITS_API_KEY_VISION: 'test_vision_key',
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_ANON_KEY: 'test_anon',
+    SUPABASE_SERVICE_ROLE_KEY: 'test_service_role'
+  }
+});
+assert.strictEqual(output, 'IMPORT_OK', 'requiring server.js must return without opening a listener');
+
+console.log('✔ Runtime startup side-effect and CSP unsafe-eval hardening passed.');
+''')
+
+          runner = Path('tests/run_all_tests.js')
+          r = runner.read_text()
+          old = "    { name: '27. Production CORS Least-Privilege Guard', file: 'cors_production_policy.test.js' }\n"
+          new = "    { name: '27. Production CORS Least-Privilege Guard', file: 'cors_production_policy.test.js' },\n    { name: '28. Runtime Startup & CSP Unsafe-Eval Guard', file: 'runtime_startup_csp_hardening.test.js' }\n"
+          if old not in r:
+              raise SystemExit('Runner suite 27 anchor not found')
+          r = r.replace(old, new, 1)
+          runner.write_text(r)
+          PY
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Full 28-suite regression gate
+        run: npm test
+      - name: Syntax and diff checks
+        shell: bash
+        run: |
+          node --check server.js
+          node --check scripts/build-netlify-dist.js
+          node --check tests/runtime_startup_csp_hardening.test.js
+          node --check tests/run_all_tests.js
+          git diff --check
+      - name: Production dependency audit
+        run: npm audit --omit=dev
+      - name: Build and verify Netlify artifact
+        shell: bash
+        run: |
+          npm run build:netlify
+          test -f netlify-dist/release.json
+          ! grep -R "unsafe-eval" netlify-dist/_headers
+          test ! -e netlify-dist/server.js
+          test ! -e netlify-dist/package.json
+          test ! -d netlify-dist/migrations
+          test ! -d netlify-dist/tests
+          test ! -d netlify-dist/middleware
+      - name: Commit verified product changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'OpenAI Audit Bot'
+          git config user.email 'audit-bot@users.noreply.github.com'
+          git add server.js scripts/build-netlify-dist.js tests/runtime_startup_csp_hardening.test.js tests/run_all_tests.js
+          git diff --cached --check
+          git commit -m 'fix(security): make server imports side-effect free and drop unsafe-eval'
+          git push origin HEAD:fix/final-runtime-csp-hardening
