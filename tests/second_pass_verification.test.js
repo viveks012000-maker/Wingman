@@ -65,7 +65,7 @@ assert.strictEqual(migrationSql.includes('status = \'cancelled\''), true, 'relea
 console.log('✔ Test 4 Passed: SQL Migration 002 row-locking, zero-charge release, 50-credit default, and idempotency verified');
 
 // 5. TEST ACCOUNT DELETION PURGES SUPABASE DATA AND AUTH IDENTITY
-assert.strictEqual(serverFile.includes("await supabaseAdmin.from('profiles').delete().eq('id', uid);"), true, 'delete-account must purge profiles');
+assert.strictEqual(serverFile.includes("await supabaseAdmin.from('profiles').delete().eq('id', uid);"), false, 'delete-account must not pre-delete profiles before Auth deletion');
 assert.strictEqual(serverFile.includes("await supabaseAdmin.auth.admin.deleteUser(uid);"), true, 'delete-account must purge Supabase Auth user identity');
 
 console.log('✔ Test 5 Passed: Account deletion purges Supabase tables and Supabase Auth identity');

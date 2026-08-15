@@ -3296,54 +3296,47 @@ app.post('/api/user/delete-account', requireSupabaseAuth, apiLimiter, async (req
             return res.status(500).json({ success: false, error: 'Server authentication admin service is unavailable.' });
         }
 
-        // 1. Delete user-created dating content from Supabase Postgres tables if they exist
+        const isMissingOptionalTableError = (err) => {
+            const code = err && err.code ? String(err.code) : '';
+            return code === '42P01' || code === 'PGRST116' || code === 'PGRST205';
+        };
+
+        // 1. Purge optional user-created content before deleting the Auth identity. These tables
+        // are not part of the core FK cascade and may not exist in every deployment.
         for (const table of ['saved_bios', 'saved_chat_analyses', 'saved_chat_histories']) {
             try {
                 const { error: tblErr } = await supabaseAdmin.from(table).delete().eq('user_id', uid);
-                if (tblErr && tblErr.code !== '42P01' && tblErr.code !== 'PGRST116') {
-                    console.warn(`[delete-account ${table} notice]:`, tblErr.message);
+                if (tblErr && !isMissingOptionalTableError(tblErr)) {
+                    console.error(`[delete-account ${table} error]:`, tblErr.message);
+                    return res.status(500).json({ success: false, error: 'Failed to purge saved account content.' });
                 }
-            } catch (e) {}
-        }
-
-        // 2. Clean user credit transactions ledger
-        try {
-            const { error: txErr } = await supabaseAdmin.from('credit_transactions').delete().eq('user_id', uid);
-            if (txErr && txErr.code !== '42P01' && txErr.code !== 'PGRST116') {
-                console.error('[delete-account credit_transactions error]:', txErr.message);
-                return res.status(500).json({ success: false, error: 'Failed to purge credit transaction history.' });
+            } catch (e) {
+                return res.status(500).json({ success: false, error: 'Failed to purge saved account content.' });
             }
-        } catch (e) {
-            return res.status(500).json({ success: false, error: 'Failed to purge credit transaction history: ' + e.message });
         }
 
-        // 3. Delete user profile
-        try {
-            const { error: profErr } = await supabaseAdmin.from('profiles').delete().eq('id', uid);
-            if (profErr && profErr.code !== '42P01' && profErr.code !== 'PGRST116') {
-                console.error('[delete-account profiles error]:', profErr.message);
-                return res.status(500).json({ success: false, error: 'Failed to purge user profile.' });
-            }
-        } catch (e) {
-            return res.status(500).json({ success: false, error: 'Failed to purge user profile: ' + e.message });
-        }
-
-        // 4. Permanently Delete Supabase Auth User via Supabase Admin SDK
-        if (supabaseAdmin && supabaseAdmin.auth && supabaseAdmin.auth.admin) {
-            const { error: authDelErr } = await supabaseAdmin.auth.admin.deleteUser(uid);
-            if (authDelErr) {
-                console.error('[delete-account Auth delete error]:', authDelErr.message);
-                return res.status(500).json({ success: false, error: 'Failed to delete authentication account: ' + authDelErr.message });
-            }
-        } else {
-            return res.status(500).json({ success: false, error: 'Failed to access authentication admin service.' });
-        }
-
-        // 5. Purge local SQLite user rows if local dev DB attached
+        // 2. In local development, purge auxiliary SQLite state before the irreversible Auth
+        // deletion. A local cleanup failure must not leave an already-deleted Auth identity.
         if (db) {
-            const rls = forRequest(req, db);
-            await rls.purgeAll();
-            await db.run('DELETE FROM users_auth WHERE id = ?', uid);
+            try {
+                const rls = forRequest(req, db);
+                await rls.purgeAll();
+                await db.run('DELETE FROM users_auth WHERE id = ?', uid);
+            } catch (localErr) {
+                console.error('[delete-account local database error]:', localErr.message);
+                return res.status(500).json({ success: false, error: 'Failed to purge local account data.' });
+            }
+        }
+
+        // 3. Delete the Supabase Auth identity as the authoritative commit point. Core Postgres
+        // data is protected by ON DELETE CASCADE foreign keys:
+        // auth.users -> profiles -> credit_transactions, and auth.users -> user_consents.
+        // We deliberately do NOT pre-delete profiles or the credit ledger. If Auth deletion fails,
+        // the user's core account state therefore remains intact instead of becoming corrupted.
+        const { error: authDelErr } = await supabaseAdmin.auth.admin.deleteUser(uid);
+        if (authDelErr) {
+            console.error('[delete-account Auth delete error]:', authDelErr.message);
+            return res.status(500).json({ success: false, error: 'Failed to delete authentication account: ' + authDelErr.message });
         }
 
         res.json({ success: true, message: "Account data and authentication profile permanently purged." });

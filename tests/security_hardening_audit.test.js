@@ -61,7 +61,7 @@ console.log('✔ Test 4 Passed: Simulator review is Supabase authenticated, mete
 // Test 5: Account Deletion — No False Success & Proper Error Handling
 assert.strictEqual(serverContent.includes("if (!supabaseAdmin || !supabaseAdmin.auth || !supabaseAdmin.auth.admin || typeof supabaseAdmin.auth.admin.deleteUser !== 'function') {\n            return res.status(500).json({ success: false, error: 'Server authentication admin service is unavailable.' });\n        }"), true);
 assert.strictEqual(serverContent.includes("const { error: authDelErr } = await supabaseAdmin.auth.admin.deleteUser(uid);"), true);
-assert.strictEqual(serverContent.includes("if (authDelErr) {\n                console.error('[delete-account Auth delete error]:', authDelErr.message);\n                return res.status(500).json({ success: false, error: 'Failed to delete authentication account: ' + authDelErr.message });\n            }"), true);
+assert.strictEqual(serverContent.includes("if (authDelErr) {") && serverContent.includes("Failed to delete authentication account: ' + authDelErr.message"), true);
 console.log('✔ Test 5 Passed: Account deletion checks admin service capability, verifies Auth deletion, and prevents false success');
 
 // Test 6: Signup Authentication State (Requires Session)
