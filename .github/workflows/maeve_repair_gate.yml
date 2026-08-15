@@ -24,6 +24,19 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Apply guarded source repair
         run: python scripts/repair_maeve_runtime.py
+      - name: Preserve canonical server export contract
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('server.js')
+          s=p.read_text(encoding='utf-8')
+          old='module.exports = { app, startWingmanServer, supabaseAdmin, queryMaeveProvider, getMaeveProviderFailureCode };'
+          new="module.exports = { app, startWingmanServer, supabaseAdmin };\nmodule.exports.queryMaeveProvider = queryMaeveProvider;\nmodule.exports.getMaeveProviderFailureCode = getMaeveProviderFailureCode;"
+          if old not in s:
+              raise SystemExit('Expected expanded export not found')
+          p.write_text(s.replace(old,new,1),encoding='utf-8')
+          PY
       - name: Syntax and complete test gate
         run: |
           node -c server.js
