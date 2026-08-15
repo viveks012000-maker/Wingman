@@ -7,14 +7,17 @@ const path = require('path');
 
 const root = path.join(process.cwd(), 'netlify-dist');
 const headersText = fs.readFileSync(path.join(root, '_headers'), 'utf8');
+const headerLines = headersText.split(/\r?\n/);
 
-function block(route) {
-  const lines = headersText.split(/\r?\n/);
-  const start = lines.indexOf(route);
-  if (start < 0) throw new Error(`missing _headers block ${route}`);
+function block(route, required = true) {
+  const start = headerLines.indexOf(route);
+  if (start < 0) {
+    if (required) throw new Error(`missing _headers block ${route}`);
+    return {};
+  }
   const out = {};
-  for (let i = start + 1; i < lines.length && /^\s/.test(lines[i]); i++) {
-    const line = lines[i].trim();
+  for (let i = start + 1; i < headerLines.length && /^\s/.test(headerLines[i]); i++) {
+    const line = headerLines[i].trim();
     const j = line.indexOf(':');
     if (j > 0) out[line.slice(0, j)] = line.slice(j + 1).trim();
   }
@@ -54,7 +57,10 @@ const server = http.createServer((req, res) => {
     res.statusCode = 404;
     return res.end('not found');
   }
-  const merged = { ...block('/*'), ...block(route) };
+
+  // Netlify applies the wildcard block to all resources, plus a more-specific
+  // route block when one exists. Static assets need no dedicated route block.
+  const merged = { ...block('/*'), ...block(route, false) };
   for (const [k, v] of Object.entries(merged)) res.setHeader(k, v);
   res.setHeader('Content-Type', mime[path.extname(fp)] || 'application/octet-stream');
   fs.createReadStream(fp).pipe(res);
