@@ -1,0 +1,129 @@
+name: Final exact-main release verification c1d1ec0c
+on:
+  push:
+    branches: [release/final-c1d1ec0c]
+    paths: ['.github/workflows/final-release-c1d1ec0c.yml']
+permissions:
+  contents: read
+jobs:
+  verify-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: c1d1ec0c760a2de57b8b0f6b4894aea90b786837
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prove immutable source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "c1d1ec0c760a2de57b8b0f6b4894aea90b786837"
+          test -z "$(git status --porcelain)"
+          echo EXACT_SOURCE_SHA=$(git rev-parse HEAD)
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Full 33-suite regression and browser gate
+        run: npm test
+      - name: Syntax check every tracked first-party JavaScript file
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r file; do
+            case "$file" in vendor/*) continue ;; esac
+            node --check "$file"
+            count=$((count+1))
+          done < <(git ls-files '*.js')
+          echo FIRST_PARTY_JS_SYNTAX_CHECKED=$count
+      - name: Production dependency and vulnerability gate
+        run: |
+          npm ls --omit=dev
+          npm audit --omit=dev
+      - name: Current-tree private-secret guard
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess
+          rx=re.compile(r'''(?i)\b(AICREDITS_API_KEY(?:_VISION)?|SUPABASE_SERVICE_ROLE_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY)\b\s*[:=]\s*["']([^"'\n]{16,})["']''')
+          findings=[]
+          for f in subprocess.check_output(['git','ls-files'], text=True).splitlines():
+              p=Path(f)
+              if f.startswith('vendor/') or p.suffix.lower() not in {'.js','.json','.html','.md','.toml','.yml','.yaml','.sql','.example'}:
+                  continue
+              for i,line in enumerate(p.read_text(errors='ignore').splitlines(),1):
+                  m=rx.search(line)
+                  if not m: continue
+                  val=m.group(2).lower()
+                  if any(x in val for x in ('your_','dummy','test_','process.env')): continue
+                  findings.append((f,i,m.group(1),len(m.group(2))))
+          print('PRIVATE_SECRET_CANDIDATES='+str(len(findings)))
+          for f,i,n,l in findings: print(f'REDACTED_LOCATION file={f} line={i} variable={n} length={l}')
+          if findings: raise SystemExit('private secret candidate(s) detected')
+          PY
+      - name: Critical source invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "qwen/qwen3.5-flash-02-23" server.js
+          grep -q "qwen/qwen3-235b-a22b-2507" server.js
+          grep -q "https://api.aicredits.in/v1" server.js
+          grep -q "AICREDITS_API_KEY_VISION" server.js
+          grep -q "requireActiveConsent" server.js
+          grep -q "PROFILE_MISSING" server.js
+          grep -q "IF NOT FOUND THEN" migrations/007_harden_add_credits_profile_missing.sql
+          grep -q "Paid credit checkout is currently paused/deferred" refund.html
+          ! grep -q "secure, immutable logs" refund.html
+          ! grep -q "unsafe-eval" server.js
+          ! grep -q "userCount" <(sed -n "/app.get('\/api\/health'/,/Payment verification endpoint/p" server.js)
+      - name: Build exact Netlify frontend artifact
+        run: npm run build:netlify
+      - name: Verify release manifest and public-only artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const r=require('./netlify-dist/release.json');
+          const expected='c1d1ec0c760a2de57b8b0f6b4894aea90b786837';
+          if(r.sourceCommit!==expected) throw new Error('wrong sourceCommit: '+r.sourceCommit);
+          if(r.build!=='frontend-only-netlify') throw new Error('wrong build type: '+r.build);
+          console.log('RELEASE_MANIFEST_SOURCE='+r.sourceCommit);
+          console.log('RELEASE_MANIFEST_FILE_COUNT='+Object.keys(r.files||{}).length);
+          NODE
+          grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/_headers
+          ! grep -q 'unsafe-eval' netlify-dist/_headers
+          test ! -e netlify-dist/server.js
+          test ! -e netlify-dist/database.js
+          test ! -e netlify-dist/package.json
+          test ! -e netlify-dist/package-lock.json
+          test ! -d netlify-dist/migrations
+          test ! -d netlify-dist/tests
+          test ! -d netlify-dist/middleware
+          test ! -d netlify-dist/scripts
+          test ! -d netlify-dist/.github
+          echo PUBLIC_ARTIFACT_FILES:
+          find netlify-dist -type f -printf '%P\n' | sort
+      - name: Create final root-level Netlify deploy ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd netlify-dist && zip -q -r ../wingman-netlify-production-c1d1ec0c.zip .)
+          sha256sum wingman-netlify-production-c1d1ec0c.zip | tee wingman-netlify-production-c1d1ec0c.zip.sha256
+          test "$(unzip -Z1 wingman-netlify-production-c1d1ec0c.zip | grep -c '^index.html$')" = "1"
+          test "$(unzip -Z1 wingman-netlify-production-c1d1ec0c.zip | grep -c '^release.json$')" = "1"
+          ! unzip -Z1 wingman-netlify-production-c1d1ec0c.zip | grep -Eq '(^|/)(server\.js|database\.js|package\.json|package-lock\.json)$|(^|/)(migrations|tests|middleware|scripts|\.github)/'
+          echo ZIP_ROOT_PREVIEW:
+          unzip -Z1 wingman-netlify-production-c1d1ec0c.zip | head -50
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wingman-netlify-production-c1d1ec0c
+          path: |
+            wingman-netlify-production-c1d1ec0c.zip
+            wingman-netlify-production-c1d1ec0c.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
