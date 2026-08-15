@@ -37,10 +37,10 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import pathlib, subprocess, sys, re
+          import pathlib, subprocess, re
           files = subprocess.check_output(['git','ls-files'], text=True).splitlines()
           binary_ext={'.png','.jpg','.jpeg','.gif','.webp','.ico','.woff','.woff2','.ttf','.eot'}
-          text=[]; lines=0; bad=[]; suspicious=[]
+          text=[]; lines=0; suspicious=[]
           patterns={
             'TODO/FIXME': re.compile(r'\b(?:TODO|FIXME|XXX|HACK)\b', re.I),
             'eval/new Function': re.compile(r'\beval\s*\(|\bnew\s+Function\s*\('),
@@ -51,7 +51,7 @@ jobs:
           for name in files:
             p=pathlib.Path(name)
             if p.suffix.lower() in binary_ext: continue
-            try: raw=p.read_bytes(); s=raw.decode('utf-8')
+            try: s=p.read_bytes().decode('utf-8')
             except (UnicodeDecodeError, OSError): continue
             text.append(name)
             for n,line in enumerate(s.splitlines(),1):
@@ -62,11 +62,7 @@ jobs:
           for item in suspicious: print('STATIC_FLAG', *item)
           print(f'STATIC_FLAGS_TOTAL={len(suspicious)}')
           PY
-          while IFS= read -r f; do
-            case "$f" in
-              *.js) node --check "$f" >/dev/null ;;
-            esac
-          done < <(git ls-files)
+          while IFS= read -r f; do case "$f" in *.js) node --check "$f" >/dev/null ;; esac; done < <(git ls-files)
           echo "ALL_TRACKED_JS_SYNTAX_OK=true"
 
       - name: Full application test suite
@@ -81,9 +77,7 @@ jobs:
           node - <<'NODE'
           const r=require('/tmp/npm-audit.json');
           console.log('NPM_AUDIT_METADATA=' + JSON.stringify(r.metadata?.vulnerabilities || {}));
-          for (const [name,v] of Object.entries(r.vulnerabilities||{})) {
-            console.log(`NPM_VULN package=${name} severity=${v.severity} direct=${!!v.isDirect} range=${v.range}`);
-          }
+          for (const [name,v] of Object.entries(r.vulnerabilities||{})) console.log(`NPM_VULN package=${name} severity=${v.severity} direct=${!!v.isDirect} range=${v.range}`);
           NODE
           echo "NPM_AUDIT_EXIT=$code"
           exit 0
@@ -92,7 +86,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm run audit:netlify-dist
+          npm run build:netlify
           echo 'DIST_FILES_BEGIN'
           find dist -type f -printf '%P\n' | sort
           echo 'DIST_FILES_END'
@@ -100,9 +94,7 @@ jobs:
           for p in server.js database.js package.json package-lock.json PROMPT_SYSTEM_MEMORY.json PROJECT_MASTER_SPECIFICATION.md API_DOCUMENTATION.md netlify.toml; do
             if [ -e "dist/$p" ]; then echo "FORBIDDEN_DIST_FILE=$p"; forbidden=1; fi
           done
-          if find dist -type f \( -path '*/migrations/*' -o -path '*/tests/*' -o -path '*/middleware/*' -o -path '*/scripts/*' -o -path '*/.github/*' \) | grep -q .; then
-            echo 'FORBIDDEN_DIST_TREE=true'; forbidden=1
-          fi
+          if find dist -type f \( -path '*/migrations/*' -o -path '*/tests/*' -o -path '*/middleware/*' -o -path '*/scripts/*' -o -path '*/.github/*' \) | grep -q .; then echo 'FORBIDDEN_DIST_TREE=true'; forbidden=1; fi
           test "$forbidden" -eq 0
 
       - name: Compare live Netlify assets byte-for-byte with main
@@ -151,13 +143,10 @@ jobs:
           set -euo pipefail
           API='https://wingman-production-c6ce.up.railway.app'
           ORIGIN='https://chimerical-granita-c68c5a.netlify.app'
-          echo '--- health ---'
-          curl --fail --silent --show-error -D /tmp/health-h "$API/api/health" -o /tmp/health-b
-          cat /tmp/health-b
-          echo '--- unauthenticated credits ---'
+          curl --fail --silent --show-error "$API/api/health" -o /tmp/health-b
+          echo 'RAILWAY_HEALTH_BODY='$(cat /tmp/health-b)
           code=$(curl --silent --show-error -o /tmp/credits-b -w '%{http_code}' -H "Origin: $ORIGIN" "$API/api/credits")
-          echo "RAILWAY_CREDITS_STATUS=$code"; cat /tmp/credits-b; test "$code" = 401
-          echo '--- analyzer preflight ---'
+          echo "RAILWAY_CREDITS_STATUS=$code"; test "$code" = 401
           code=$(curl --silent --show-error -o /tmp/preflight-b -w '%{http_code}' -X OPTIONS "$API/api/analyze" -H "Origin: $ORIGIN" -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: authorization,content-type')
           echo "RAILWAY_PREFLIGHT_STATUS=$code"; test "$code" = 204
           curl --silent --show-error -D - -o /dev/null -X OPTIONS "$API/api/analyze" -H "Origin: $ORIGIN" -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: authorization,content-type' | tr -d '\r' | grep -iE 'access-control-allow-origin|access-control-allow-headers|access-control-allow-methods'
@@ -171,11 +160,11 @@ jobs:
           (async()=>{
             const browser=await chromium.launch({headless:true});
             const page=await browser.newPage({viewport:{width:390,height:844}});
-            const bad=[]; const consoles=[]; const requests=[];
-            page.on('pageerror',e=>bad.push('PAGEERROR '+e.message));
-            page.on('console',m=>{ const t=m.text(); consoles.push(`${m.type()} ${t}`); if(/content security policy|refused to connect|blocked by csp/i.test(t)) bad.push('CONSOLE '+t); });
-            page.on('requestfailed',r=>bad.push(`REQUESTFAILED ${r.url()} ${r.failure()?.errorText||''}`));
-            page.on('response',r=>{ if(r.url().includes('railway.app')) requests.push(`${r.status()} ${r.url()}`); });
+            const blocking=[]; const railway=[];
+            page.on('pageerror',e=>blocking.push('PAGEERROR '+e.message));
+            page.on('console',m=>{const t=m.text(); if(/content security policy|refused to connect|blocked by csp/i.test(t)) blocking.push('CONSOLE '+t);});
+            page.on('requestfailed',r=>{if(r.url().includes('railway.app')) blocking.push(`REQUESTFAILED ${r.url()} ${r.failure()?.errorText||''}`);});
+            page.on('response',r=>{if(r.url().includes('railway.app')) railway.push(`${r.status()} ${r.url()}`);});
             await page.goto('https://chimerical-granita-c68c5a.netlify.app/app.html?audit='+Date.now(),{waitUntil:'networkidle',timeout:60000});
             const result=await page.evaluate(async()=>{
               const base=typeof window.getApiBase==='function'?window.getApiBase():(window.WINGMAN_CONFIG&&window.WINGMAN_CONFIG.API_BASE_URL);
@@ -185,13 +174,13 @@ jobs:
               return {base,health,credits,readyState:document.readyState,hasSupabase:!!window.supabaseClient};
             });
             console.log('BROWSER_RESULT='+JSON.stringify(result));
-            console.log('RAILWAY_BROWSER_RESPONSES='+JSON.stringify(requests));
-            for(const x of bad) console.log('BROWSER_BAD='+x);
+            console.log('RAILWAY_BROWSER_RESPONSES='+JSON.stringify(railway));
+            for(const x of blocking) console.log('BROWSER_BLOCKING='+x);
             if(result.base!=='https://wingman-production-c6ce.up.railway.app') throw new Error('Wrong API base: '+result.base);
             if(result.health?.status!==200) throw new Error('Browser health failed '+JSON.stringify(result.health));
             if(result.credits?.status!==401) throw new Error('Browser unauth credits expected 401 '+JSON.stringify(result.credits));
             if(!result.hasSupabase) throw new Error('Supabase client missing');
-            if(bad.length) throw new Error('Browser path had '+bad.length+' blocking errors');
+            if(blocking.length) throw new Error('Browser path had '+blocking.length+' blocking errors');
             await browser.close();
           })().catch(e=>{console.error(e);process.exit(1)});
           NODE
