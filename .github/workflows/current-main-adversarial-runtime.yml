@@ -1,0 +1,57 @@
+name: Current main adversarial runtime
+
+on:
+  push:
+    branches: [audit/post-netlify-deploy-20260815]
+    paths: ['.github/workflows/current-main-adversarial-runtime.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Exercise CORS and static denylist locally from exact current main
+        env:
+          NODE_ENV: production
+          AICREDITS_API_KEY: dummy_test_key
+          AICREDITS_API_KEY_VISION: dummy_test_key_vision
+          SUPABASE_URL: https://example.supabase.co
+          SUPABASE_ANON_KEY: dummy_anon
+          SUPABASE_SERVICE_ROLE_KEY: dummy_service
+        run: |
+          node <<'NODE'
+          const http = require('http');
+          const { app } = require('./server');
+          function req(server, path, {origin, method='GET', headers={}}={}) {
+            return new Promise((resolve,reject)=>{
+              const opts={hostname:'127.0.0.1',port:server.address().port,path,method,headers:{...headers}};
+              if(origin!==undefined) opts.headers.Origin=origin;
+              const r=http.request(opts,res=>{let body='';res.on('data',c=>body+=c);res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,body}));});
+              r.on('error',reject); r.end();
+            });
+          }
+          (async()=>{
+            const server=http.createServer(app); await new Promise(r=>server.listen(0,'127.0.0.1',r));
+            try {
+              for(const origin of ['https://chimerical-granita-c68c5a.netlify.app','https://evil.example','null','https://foo.pages.dev','https://pages.dev.evil.example','http://localhost:9999']){
+                const x=await req(server,'/favicon.ico',{origin});
+                console.log('LOCAL_CORS', JSON.stringify({origin,status:x.status,acao:x.headers['access-control-allow-origin']||null,acac:x.headers['access-control-allow-credentials']||null}));
+              }
+              const paths=['/server.js','/%73erver.js','/server%2Ejs','/middleware/security.js','/middleware/%73ecurity.js','/migrations/005_user_consent_and_age_verification.sql','/tests/run_all_tests.js','/package.json','/.env','/%2eenv','/config/promptSystem.js','/scripts/build-netlify-dist.js','/PROMPT_SYSTEM_MEMORY.json'];
+              for(const path of paths){
+                const x=await req(server,path);
+                console.log('LOCAL_STATIC', JSON.stringify({path,status:x.status,bytes:Buffer.byteLength(x.body),prefix:x.body.slice(0,80)}));
+              }
+            } finally { server.close(); }
+          })().catch(e=>{console.error(e);process.exit(1)});
+          NODE
