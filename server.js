@@ -363,10 +363,61 @@ function acquireUserConcurrencyLock(userId) {
     activeUserAiRequests.add(userId);
     return true;
 }
-function releaseUserConcurrencyLock(userId) {
-    if (userId && activeUserAiRequests.has(userId)) {
-        activeUserAiRequests.delete(userId);
+// =========================================================================================
+// SERVER-AUTHORITATIVE CONSENT & 18+ AGE VERIFICATION
+// =========================================================================================
+const CURRENT_TERMS_VERSION = '2026.1';
+const CURRENT_PRIVACY_VERSION = '2026.1';
+
+async function checkUserActiveConsent(uid) {
+    if (!uid || uid === 'guest_user') return false;
+    if (!supabaseAdmin || typeof supabaseAdmin.from !== 'function') {
+        return !IS_PROD && db && (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY);
     }
+    try {
+        const { data, error } = await supabaseAdmin
+            .from('user_consents')
+            .select('id, terms_version, privacy_version, age_18_plus, ai_processing_consent, withdrawn_at')
+            .eq('user_id', uid)
+            .eq('terms_version', CURRENT_TERMS_VERSION)
+            .eq('privacy_version', CURRENT_PRIVACY_VERSION)
+            .eq('age_18_plus', true)
+            .eq('ai_processing_consent', true)
+            .is('withdrawn_at', null)
+            .order('accepted_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (!error && data) {
+            return true;
+        }
+    } catch (e) {
+        console.warn('[checkUserActiveConsent Exception]:', e.message);
+    }
+    return false;
+}
+
+async function requireActiveConsent(req, res, next) {
+    const uid = getUserIdFromReq(req);
+    if (!uid || uid === 'guest_user') {
+        return res.status(401).json({
+            success: false,
+            error: "Authentication required to access AI features.",
+            code: "AUTH_REQUIRED"
+        });
+    }
+
+    const hasConsent = await checkUserActiveConsent(uid);
+    if (!hasConsent) {
+        return res.status(403).json({
+            success: false,
+            error: "Active 18+ age verification and Terms of Service consent are required to process AI requests.",
+            code: "CONSENT_REQUIRED",
+            termsVersion: CURRENT_TERMS_VERSION,
+            privacyVersion: CURRENT_PRIVACY_VERSION
+        });
+    }
+    next();
 }
 
 // =========================================================================================
@@ -1066,7 +1117,7 @@ function sanitizePromptInput(input) {
 }
 
 // ==================== THE 4 CORE FEATURE API // 1. CHAT SCREENSHOT ANALYZER (/api/analyze & /api/analyze-chat-screenshot)
-app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, apiLimiter, async (req, res) => {
+app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
     if (!acquireUserConcurrencyLock(uid)) {
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
@@ -1537,7 +1588,15 @@ ${formattingRule}`;
             throw new Error("Analysis failed: AI provider generated empty or malformed output.");
         }
 
-        await settleCreditsDB(req, reqId);
+        const settleResult = await settleCreditsDB(req, reqId);
+        if (!settleResult || !settleResult.success) {
+            console.error(`[Ledger Error] Failed to settle credits for analyzer reqId ${reqId}:`, settleResult ? settleResult.error : "Unknown");
+            return res.status(503).json({
+                success: false,
+                error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
+                reqId: reqId
+            });
+        }
 
         res.json({
             success: true,
@@ -1548,22 +1607,34 @@ ${formattingRule}`;
     } catch (error) {
         console.error("Pipeline breakdown:", error.message);
         let currentBal = deduction ? deduction.remainingCredits : 0;
+        let releaseSucceeded = false;
         if (deduction && deduction.success && !deduction.duplicate) {
             const relRes = await releaseCreditsDB(req, reqId, error.message);
-            if (relRes && typeof relRes.remainingCredits === 'number') {
-                currentBal = relRes.remainingCredits;
+            if (relRes && relRes.success) {
+                releaseSucceeded = true;
+                if (typeof relRes.remainingCredits === 'number') {
+                    currentBal = relRes.remainingCredits;
+                }
             }
+        }
+        if (deduction && deduction.success && !deduction.duplicate && !releaseSucceeded) {
+            return res.status(500).json({
+                success: false,
+                error: `Analysis failed and credit release could not be confirmed (Ref: ${reqId}). Please refresh your balance or contact support.mywingman@gmail.com.`,
+                reqId: reqId,
+                credits: deduction.currentCredits
+            });
         }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
-                error: "Analysis timed out. You have not been charged credits.",
+                error: "Analysis timed out. Your credits were restored.",
                 credits: currentBal
             });
         }
         res.status(500).json({
             success: false,
-            error: "AI analysis failed. You have not been charged credits.",
+            error: "AI analysis failed. Your credits were restored.",
             credits: currentBal
         });
     } finally {
@@ -1720,6 +1791,21 @@ GENERAL ICEBREAKER LAWS:
             cleaned = cleaned.replace(/\b(?:do i stand a chance|give me a shot|can i get a chance)\b/gi, 'let\'s see if you can handle this');
             cleaned = cleaned.replace(/\b(?:i'm not like other guys|good thing i'm different|one of the good ones)\b/gi, 'care to test that theory');
 
+            if (emojiLevel === 0) {
+                try {
+                    cleaned = cleaned.replace(new RegExp('\\p{Extended_Pictographic}', 'gu'), '').trim();
+                } catch(e) {
+                    cleaned = cleaned.replace(/[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]/g, '').trim();
+                }
+            } else if (emojiLevel === 1) {
+                const emojiRegex = /(\p{Extended_Pictographic}|\p{Emoji_Presentation})/gu;
+                let count = 0;
+                cleaned = cleaned.replace(emojiRegex, (match) => {
+                    count++;
+                    return count === 1 ? match : '';
+                });
+            }
+
             return applyFormattingRules(cleaned, useShorthand, emojiLevel);
         });
 
@@ -1728,13 +1814,32 @@ GENERAL ICEBREAKER LAWS:
             console.log("[ICEBREAKER CLEAN OUTPUT]:", cleanedOptions);
         }
 
+        try {
+            const currentUserId = getUserIdFromReq(req);
+            if (db && currentUserId) {
+                const iceId = 'ice_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5);
+                const rls = forRequest(req, db);
+                await rls.create('saved_icebreakers', ['id', 'bio_text', 'vibe', 'generated_options'], [iceId, String(text).substring(0, 1000), tone || "Direct", JSON.stringify(cleanedOptions)]);
+            }
+        } catch (dbErr) {
+            console.error("Database insert error (Icebreaker):", dbErr);
+        }
+
         if (!cleanedOptions || !Array.isArray(cleanedOptions) || cleanedOptions.length === 0) {
             throw new Error("Icebreaker generation failed: AI provider returned empty options.");
         }
 
         const formattedText = cleanedOptions.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
 
-        await settleCreditsDB(req, reqId);
+        const settleResult = await settleCreditsDB(req, reqId);
+        if (!settleResult || !settleResult.success) {
+            console.error(`[Ledger Error] Failed to settle credits for icebreaker reqId ${reqId}:`, settleResult ? settleResult.error : "Unknown");
+            return res.status(503).json({
+                success: false,
+                error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
+                reqId: reqId
+            });
+        }
 
         res.json({
             success: true,
@@ -1745,22 +1850,34 @@ GENERAL ICEBREAKER LAWS:
     } catch (error) {
         console.error("Icebreaker breakdown:", error.message);
         let currentBal = deduction ? deduction.remainingCredits : 0;
+        let releaseSucceeded = false;
         if (deduction && deduction.success && !deduction.duplicate) {
             const relRes = await releaseCreditsDB(req, reqId, error.message);
-            if (relRes && typeof relRes.remainingCredits === 'number') {
-                currentBal = relRes.remainingCredits;
+            if (relRes && relRes.success) {
+                releaseSucceeded = true;
+                if (typeof relRes.remainingCredits === 'number') {
+                    currentBal = relRes.remainingCredits;
+                }
             }
+        }
+        if (deduction && deduction.success && !deduction.duplicate && !releaseSucceeded) {
+            return res.status(500).json({
+                success: false,
+                error: `Icebreaker generation failed and credit release could not be confirmed (Ref: ${reqId}). Please refresh your balance or contact support.mywingman@gmail.com.`,
+                reqId: reqId,
+                credits: deduction.currentCredits
+            });
         }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
-                error: "Icebreaker generation timed out. You have not been charged credits.",
+                error: "Icebreaker generation timed out. Your credits were restored.",
                 credits: currentBal
             });
         }
         res.status(500).json({
             success: false,
-            error: "Icebreaker generation failed. You have not been charged credits.",
+            error: "Icebreaker generation failed. Your credits were restored.",
             credits: currentBal
         });
     } finally {
@@ -1857,7 +1974,7 @@ function formatBioLineBreaks(biosArray) {
 }
 
 // 3. PROFILE BIO OPTIMIZER (/api/optimize & /api/bio-optimizer)
-app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, apiLimiter, async (req, res) => {
+app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
     if (!acquireUserConcurrencyLock(uid)) {
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
@@ -2110,7 +2227,15 @@ FORMATTING: Use ${casingInstruction}.`;
             throw new Error("Bio optimization failed: AI provider returned empty options.");
         }
 
-        await settleCreditsDB(req, reqId);
+        const settleResult = await settleCreditsDB(req, reqId);
+        if (!settleResult || !settleResult.success) {
+            console.error(`[Ledger Error] Failed to settle credits for bio reqId ${reqId}:`, settleResult ? settleResult.error : "Unknown");
+            return res.status(503).json({
+                success: false,
+                error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
+                reqId: reqId
+            });
+        }
 
         res.json({
             success: true,
@@ -2121,22 +2246,34 @@ FORMATTING: Use ${casingInstruction}.`;
     } catch (error) {
         console.error("Bio optimizer breakdown:", error.message);
         let currentBal = deduction ? deduction.remainingCredits : 0;
+        let releaseSucceeded = false;
         if (deduction && deduction.success && !deduction.duplicate) {
             const relRes = await releaseCreditsDB(req, reqId, error.message);
-            if (relRes && typeof relRes.remainingCredits === 'number') {
-                currentBal = relRes.remainingCredits;
+            if (relRes && relRes.success) {
+                releaseSucceeded = true;
+                if (typeof relRes.remainingCredits === 'number') {
+                    currentBal = relRes.remainingCredits;
+                }
             }
+        }
+        if (deduction && deduction.success && !deduction.duplicate && !releaseSucceeded) {
+            return res.status(500).json({
+                success: false,
+                error: `Bio optimization failed and credit release could not be confirmed (Ref: ${reqId}). Please refresh your balance or contact support.mywingman@gmail.com.`,
+                reqId: reqId,
+                credits: deduction.currentCredits
+            });
         }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
-                error: "Bio optimization timed out. You have not been charged credits.",
+                error: "Bio optimization timed out. Your credits were restored.",
                 credits: currentBal
             });
         }
         res.status(500).json({
             success: false,
-            error: "Bio optimization failed. You have not been charged credits.",
+            error: "Bio optimization failed. Your credits were restored.",
             credits: currentBal
         });
     } finally {
@@ -2145,7 +2282,7 @@ FORMATTING: Use ${casingInstruction}.`;
 });
 
 // 4. MAEVE AI DATING COACH & EVALUATOR CHAT (/api/chat & /api/simulator/chat)
-app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, apiLimiter, async (req, res) => {
+app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('chat_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
@@ -2265,6 +2402,16 @@ CONVERSATIONAL FREEDOM & LAWS:
                 throw new Error("AI Coach endpoint returned empty response.");
             }
             hotlineAdvice = sanitizeResponseText(hotlineAdvice.trim());
+
+            const settleResult = await settleCreditsDB(req, reqId);
+            if (!settleResult || !settleResult.success) {
+                console.error(`[Ledger Error] Failed to settle credits for hotline reqId ${reqId}:`, settleResult ? settleResult.error : "Unknown");
+                return res.status(503).json({
+                    success: false,
+                    error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
+                    reqId: reqId
+                });
+            }
 
             return res.json({
                 success: true,
@@ -2456,7 +2603,15 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
         const attractionChange = isDryOrNonsense ? -15 : (score >= 80 ? 5 : (score < 45 ? -10 : -2));
         replyText = sanitizeTrailingConjunctions(replyText);
 
-        await settleCreditsDB(req, reqId);
+        const settleResult = await settleCreditsDB(req, reqId);
+        if (!settleResult || !settleResult.success) {
+            console.error(`[Ledger Error] Failed to settle credits for roleplay reqId ${reqId}:`, settleResult ? settleResult.error : "Unknown");
+            return res.status(503).json({
+                success: false,
+                error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
+                reqId: reqId
+            });
+        }
 
         res.json({
             success: true,
@@ -2467,15 +2622,34 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
     } catch (error) {
         console.error("Maeve AI Chat Pipeline Error:", error.stack || error.message || error);
         let currentBal = deduction ? deduction.remainingCredits : 0;
+        let releaseSucceeded = false;
         if (deduction && deduction.success && !deduction.duplicate) {
             const relRes = await releaseCreditsDB(req, reqId, error.message);
-            if (relRes && typeof relRes.remainingCredits === 'number') {
-                currentBal = relRes.remainingCredits;
+            if (relRes && relRes.success) {
+                releaseSucceeded = true;
+                if (typeof relRes.remainingCredits === 'number') {
+                    currentBal = relRes.remainingCredits;
+                }
             }
+        }
+        if (deduction && deduction.success && !deduction.duplicate && !releaseSucceeded) {
+            return res.status(500).json({
+                success: false,
+                error: `Maeve AI Coach failed to respond and credit release could not be confirmed (Ref: ${reqId}). Please refresh your balance or contact support.mywingman@gmail.com.`,
+                reqId: reqId,
+                credits: deduction.currentCredits
+            });
+        }
+        if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
+            return res.status(504).json({
+                success: false,
+                error: "Maeve AI Coach timed out. Your credits were restored.",
+                credits: currentBal
+            });
         }
         res.status(500).json({
             success: false,
-            error: "Maeve AI Coach failed to respond. You have not been charged credits.",
+            error: "Maeve AI Coach failed to respond. Your credits were restored.",
             credits: currentBal
         });
     } finally {
@@ -2484,7 +2658,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
 });
 
 // 4C. DATING FLIGHT SIMULATOR REVIEW API ENGINE (`/api/simulator/review`)
-app.post('/api/simulator/review', requireSupabaseAuth, apiLimiter, async (req, res) => {
+app.post('/api/simulator/review', requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
     if (!acquireUserConcurrencyLock(uid)) {
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
@@ -2584,7 +2758,15 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
             throw new Error("Simulation review output is incomplete or malformed.");
         }
 
-        await settleCreditsDB(req, reqId);
+        const settleResult = await settleCreditsDB(req, reqId);
+        if (!settleResult || !settleResult.success) {
+            console.error(`[Ledger Error] Failed to settle credits for review reqId ${reqId}:`, settleResult ? settleResult.error : "Unknown");
+            return res.status(503).json({
+                success: false,
+                error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
+                reqId: reqId
+            });
+        }
 
         res.json({
             success: true,
@@ -2604,22 +2786,34 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
     } catch (error) {
         console.error("Qwen Review API Error:", error.message);
         let currentBal = deduction ? deduction.remainingCredits : 0;
+        let releaseSucceeded = false;
         if (deduction && deduction.success && !deduction.duplicate) {
             const relRes = await releaseCreditsDB(req, reqId, error.message);
-            if (relRes && typeof relRes.remainingCredits === 'number') {
-                currentBal = relRes.remainingCredits;
+            if (relRes && relRes.success) {
+                releaseSucceeded = true;
+                if (typeof relRes.remainingCredits === 'number') {
+                    currentBal = relRes.remainingCredits;
+                }
             }
+        }
+        if (deduction && deduction.success && !deduction.duplicate && !releaseSucceeded) {
+            return res.status(500).json({
+                success: false,
+                error: `Simulation review failed and credit release could not be confirmed (Ref: ${reqId}). Please refresh your balance or contact support.mywingman@gmail.com.`,
+                reqId: reqId,
+                credits: deduction.currentCredits
+            });
         }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
-                error: "Simulation review timed out. You have not been charged credits.",
+                error: "Simulation review timed out. Your credits were restored.",
                 credits: currentBal
             });
         }
         res.status(500).json({
             success: false,
-            error: "Simulation review failed. You have not been charged credits.",
+            error: "Simulation review failed. Your credits were restored.",
             credits: currentBal
         });
     } finally {
@@ -2631,62 +2825,124 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
 app.post('/api/consent', requireSupabaseAuth, apiLimiter, async (req, res) => {
     try {
         const uid = getUserIdFromReq(req);
-        if (!uid) {
+        if (!uid || uid === 'guest_user') {
             return res.status(401).json({ success: false, error: "Authentication required to record persistent consent." });
         }
 
-        const { termsVersion = '2026.1', privacyVersion = '2026.1', age18Plus = true, aiProcessingConsent = true } = req.body || {};
+        const { age18Plus, aiProcessingConsent } = req.body || {};
 
-        if (!age18Plus) {
-            return res.status(400).json({ success: false, error: "Age 18+ confirmation is mandatory." });
+        if (age18Plus !== true) {
+            return res.status(400).json({ success: false, error: "Confirmation of age 18 or older is mandatory." });
         }
-        if (!aiProcessingConsent) {
+        if (aiProcessingConsent !== true) {
             return res.status(400).json({ success: false, error: "AI data processing consent is mandatory." });
         }
 
         const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || null;
         const userAgent = req.headers['user-agent'] || null;
 
-        let consentRecorded = true;
-        let consentId = 'cons_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5);
-
-        if (supabaseAdmin && typeof supabaseAdmin.from === 'function') {
-            try {
-                const { data, error } = await supabaseAdmin
-                    .from('user_consents')
-                    .upsert({
-                        user_id: uid,
-                        terms_version: String(termsVersion).trim(),
-                        privacy_version: String(privacyVersion).trim(),
-                        age_18_plus: true,
-                        ai_processing_consent: true,
-                        accepted_at: new Date().toISOString(),
-                        withdrawn_at: null,
-                        ip_address: ip,
-                        user_agent: userAgent
-                    }, { onConflict: 'user_id, terms_version, privacy_version' })
-                    .select('id, accepted_at')
-                    .maybeSingle();
-
-                if (!error && data) {
-                    consentId = data.id;
-                }
-            } catch (dbErr) {
-                console.warn("[Consent] Supabase user_consents notice (migration staging):", dbErr.message);
+        if (!supabaseAdmin || typeof supabaseAdmin.from !== 'function') {
+            if (!IS_PROD && db && (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)) {
+                return res.json({
+                    success: true,
+                    consentRecorded: true,
+                    consentId: 'dev_consent_' + Date.now(),
+                    termsVersion: CURRENT_TERMS_VERSION,
+                    privacyVersion: CURRENT_PRIVACY_VERSION,
+                    message: "Dev local consent recorded."
+                });
             }
+            return res.status(503).json({
+                success: false,
+                consentRecorded: false,
+                error: "Consent persistence service unavailable. Consent not recorded."
+            });
+        }
+
+        const { data, error } = await supabaseAdmin
+            .from('user_consents')
+            .upsert({
+                user_id: uid,
+                terms_version: CURRENT_TERMS_VERSION,
+                privacy_version: CURRENT_PRIVACY_VERSION,
+                age_18_plus: true,
+                ai_processing_consent: true,
+                accepted_at: new Date().toISOString(),
+                withdrawn_at: null,
+                ip_address: ip,
+                user_agent: userAgent
+            }, { onConflict: 'user_id, terms_version, privacy_version' })
+            .select('id, accepted_at')
+            .single();
+
+        if (error || !data) {
+            console.error("[Consent DB Error]:", error ? error.message : "No data returned");
+            return res.status(503).json({
+                success: false,
+                consentRecorded: false,
+                error: "Failed to persist legal consent to database. Please try again."
+            });
         }
 
         return res.json({
             success: true,
             consentRecorded: true,
-            consentId: consentId,
-            termsVersion: termsVersion,
-            privacyVersion: privacyVersion,
+            consentId: data.id,
+            termsVersion: CURRENT_TERMS_VERSION,
+            privacyVersion: CURRENT_PRIVACY_VERSION,
             message: "Legal consent and 18+ verification successfully recorded."
         });
     } catch (err) {
         console.error("[Consent Error]:", err);
-        return res.status(500).json({ success: false, error: "Failed to record consent: " + err.message });
+        return res.status(503).json({
+            success: false,
+            consentRecorded: false,
+            error: "Consent service error: " + err.message
+        });
+    }
+});
+
+// Check current server-side active consent status
+app.get('/api/consent/status', requireSupabaseAuth, async (req, res) => {
+    try {
+        const uid = getUserIdFromReq(req);
+        if (!uid || uid === 'guest_user') {
+            return res.status(401).json({ success: false, error: "Authentication required." });
+        }
+        const hasConsent = await checkUserActiveConsent(uid);
+        return res.json({
+            success: true,
+            hasActiveConsent: hasConsent,
+            termsVersion: CURRENT_TERMS_VERSION,
+            privacyVersion: CURRENT_PRIVACY_VERSION
+        });
+    } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Withdraw AI processing consent
+app.post('/api/consent/withdraw', requireSupabaseAuth, apiLimiter, async (req, res) => {
+    try {
+        const uid = getUserIdFromReq(req);
+        if (!uid || uid === 'guest_user') {
+            return res.status(401).json({ success: false, error: "Authentication required to withdraw consent." });
+        }
+        if (!supabaseAdmin || typeof supabaseAdmin.from !== 'function') {
+            return res.status(503).json({ success: false, error: "Consent service unavailable." });
+        }
+        const { error } = await supabaseAdmin
+            .from('user_consents')
+            .update({ withdrawn_at: new Date().toISOString() })
+            .eq('user_id', uid)
+            .is('withdrawn_at', null);
+
+        if (error) {
+            return res.status(503).json({ success: false, error: "Failed to record consent withdrawal." });
+        }
+        return res.json({ success: true, message: "Consent successfully withdrawn. AI processing locked." });
+    } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
     }
 });
 

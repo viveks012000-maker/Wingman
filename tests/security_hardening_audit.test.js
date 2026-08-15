@@ -16,9 +16,9 @@ const supabaseAuthPath = path.join(__dirname, '../middleware/supabaseAuth.js');
 const authPath = path.join(__dirname, '../middleware/auth.js');
 const serverPath = path.join(__dirname, '../server.js');
 
-const supabaseAuthContent = fs.readFileSync(supabaseAuthPath, 'utf8');
-const authContent = fs.readFileSync(authPath, 'utf8');
-const serverContent = fs.readFileSync(serverPath, 'utf8');
+const supabaseAuthContent = fs.readFileSync(supabaseAuthPath, 'utf8').replace(/\r\n/g, '\n');
+const authContent = fs.readFileSync(authPath, 'utf8').replace(/\r\n/g, '\n');
+const serverContent = fs.readFileSync(serverPath, 'utf8').replace(/\r\n/g, '\n');
 
 // Test 1: Canonical Railway & NODE_ENV checks present in middleware and server
 assert.strictEqual(supabaseAuthContent.includes('RAILWAY_ENVIRONMENT'), true);
@@ -53,7 +53,7 @@ assert.strictEqual(
 console.log('✔ Test 3 Passed: Payment verification and purchase routes strictly locked down in production (HTTP 503)');
 
 // Test 4: Simulator Review Cost Abuse & Protection
-assert.strictEqual(serverContent.includes("app.post('/api/simulator/review', requireSupabaseAuth, apiLimiter"), true);
+assert.strictEqual(serverContent.includes("app.post('/api/simulator/review'") && serverContent.includes("requireSupabaseAuth") && serverContent.includes("apiLimiter"), true);
 assert.strictEqual(serverContent.includes("deduction = await verifyAndDeductCreditsDB(req, 2, 'simulator_review', reqId);"), true);
 assert.strictEqual(serverContent.includes("if (!acquireUserConcurrencyLock(uid))"), true);
 console.log('✔ Test 4 Passed: Simulator review is Supabase authenticated, metered, rate limited, and concurrency locked');

@@ -1466,6 +1466,8 @@ STRICT LAWS:
             const isLoading = !!state.isLoading;
             const isAuth = safeStorage.get("wingman_authenticated") === "true" || safeStorage.get("wingman_user_authenticated") === "true" || (typeof window.currentSupabaseUser === 'object' && window.currentSupabaseUser);
 
+            const isCreditsBlocked = !isAuth || isLocked || state.creditsStatus === "loading" || state.creditsStatus === "missing_profile" || (typeof state.credits === 'number' && state.credits < 10);
+
             const bi = $("bioInput");
             const btn2 = $("generateIcebreakerBtn");
             const bioCounter = $("bioCharCounter");
@@ -1476,9 +1478,9 @@ STRICT LAWS:
             }
             if (btn2) {
                 const isBioValid = bi && bi.value.trim().length >= 5 && bi.value.length <= 5000;
-                const isBtn2Disabled = isLocked || !isBioValid || isLoading;
+                const isBtn2Disabled = isLocked || !isBioValid || isLoading || isCreditsBlocked;
                 btn2.disabled = isBtn2Disabled;
-                btn2.classList.toggle("opacity-40", isLocked || !isBioValid);
+                btn2.classList.toggle("opacity-40", isLocked || !isBioValid || isCreditsBlocked);
                 btn2.classList.toggle("opacity-70", isLoading);
                 btn2.classList.toggle("cursor-not-allowed", isBtn2Disabled);
                 btn2.classList.toggle("cursor-pointer", !isBtn2Disabled);
@@ -1516,9 +1518,9 @@ STRICT LAWS:
             if (btn3) {
                 const words = ai ? countWords(ai.value) : 0;
                 const isAuditValid = ai && ai.value.trim().length >= 5 && words <= 500;
-                const isBtn3Disabled = isLocked || !isAuditValid || isLoading;
+                const isBtn3Disabled = isLocked || !isAuditValid || isLoading || isCreditsBlocked;
                 btn3.disabled = isBtn3Disabled;
-                btn3.classList.toggle("opacity-40", isLocked || !isAuditValid);
+                btn3.classList.toggle("opacity-40", isLocked || !isAuditValid || isCreditsBlocked);
                 btn3.classList.toggle("opacity-70", isLoading);
                 btn3.classList.toggle("cursor-not-allowed", isBtn3Disabled);
                 btn3.classList.toggle("cursor-pointer", !isBtn3Disabled);
@@ -1560,9 +1562,9 @@ STRICT LAWS:
                 const withinLimit = count <= 5;
                 const notLoading = !state.isLoading;
 
-                const enabled = hasScreenshot && withinLimit && notLoading;
+                const enabled = hasScreenshot && withinLimit && notLoading && !isCreditsBlocked;
                 btn1.disabled = !enabled;
-                btn1.classList.toggle("opacity-40", !hasScreenshot || !withinLimit);
+                btn1.classList.toggle("opacity-40", !hasScreenshot || !withinLimit || isCreditsBlocked);
                 btn1.classList.toggle("opacity-70", Boolean(state.isLoading));
                 btn1.classList.toggle("cursor-not-allowed", !enabled);
                 btn1.classList.toggle("cursor-pointer", enabled);
@@ -1588,7 +1590,9 @@ STRICT LAWS:
                     }
                 }
             }
-        } catch (e) {}
+        } catch (err) {
+            console.error("Button states update error:", err);
+        }
     };
 
     // ============================================================
@@ -3765,6 +3769,44 @@ STRICT LAWS:
         }
     };
 
+    window.checkServerConsentStatus = async function() {
+        try {
+            const isAuth = safeStorage.get("wingman_authenticated") === "true" || safeStorage.get("wingman_user_authenticated") === "true" || (typeof window.currentSupabaseUser === 'object' && window.currentSupabaseUser);
+            if (!isAuth) {
+                state.isTermsAccepted = false;
+                if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+                return false;
+            }
+            const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
+            if (!authHeaders || !authHeaders.Authorization) {
+                state.isTermsAccepted = false;
+                if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+                return false;
+            }
+
+            const res = await fetch((window.getApiBase ? window.getApiBase() : '') + '/api/consent/status', {
+                method: 'GET',
+                headers: { ...authHeaders }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data && data.hasActiveConsent === true) {
+                    state.isTermsAccepted = true;
+                    safeStorage.set('wingman_terms_accepted', 'true');
+                    safeStorage.set('wingman_consent_version', data.termsVersion || '2026.1');
+                    if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+                    return true;
+                }
+            }
+        } catch (e) {
+            console.warn("[Consent status check error]:", e.message);
+        }
+        state.isTermsAccepted = false;
+        safeStorage.remove('wingman_terms_accepted');
+        if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+        return false;
+    };
+
     window.acceptInterstitialTerms = async function() {
         const chk = document.getElementById('interstitialAgreementCheck');
         if (!chk || !chk.checked) {
@@ -3773,33 +3815,90 @@ STRICT LAWS:
             }
             return;
         }
-        safeStorage.set('wingman_terms_accepted', 'true');
-        safeStorage.set('wingman_consent_version', '2026.1');
-        safeStorage.set('wingman_consent_accepted_at', new Date().toISOString());
-        state.isTermsAccepted = true;
 
-        const modal = document.getElementById('interstitialModal');
-        if (modal) {
-            modal.classList.add('hidden', 'opacity-0', 'pointer-events-none');
-            modal.classList.remove('opacity-100', 'pointer-events-auto');
-            modal.style.display = 'none';
+        const isAuth = safeStorage.get("wingman_authenticated") === "true" || safeStorage.get("wingman_user_authenticated") === "true" || (typeof window.currentSupabaseUser === 'object' && window.currentSupabaseUser);
+        if (!isAuth) {
+            if (typeof window.openAuthRequiredModal === 'function') {
+                window.openAuthRequiredModal("Please sign in or create an account to record your 18+ verification and consent.");
+            }
+            return;
         }
-        if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
-        if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
+
+        const acceptBtn = document.getElementById('interstitialAcceptBtn');
+        const origText = acceptBtn ? acceptBtn.textContent : "Confirm & Enter";
+        if (acceptBtn) {
+            acceptBtn.disabled = true;
+            acceptBtn.textContent = "Verifying & Recording…";
+        }
 
         try {
             const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
-            if (authHeaders && authHeaders.Authorization) {
-                fetch((window.getApiBase ? window.getApiBase() : '') + '/api/consent', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', ...authHeaders },
-                    body: JSON.stringify({ termsVersion: '2026.1', privacyVersion: '2026.1', age18Plus: true, aiProcessingConsent: true })
-                }).catch(() => {});
-            }
-        } catch (_) {}
+            const res = await fetch((window.getApiBase ? window.getApiBase() : '') + '/api/consent', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
+                body: JSON.stringify({ age18Plus: true, aiProcessingConsent: true })
+            });
 
-        if (typeof window.showToast === 'function') {
-            window.showToast("Legal terms and 18+ age verification confirmed.", "success");
+            const data = await res.json();
+            if (!res.ok || !data.success || !data.consentRecorded) {
+                throw new Error(data.error || "Failed to record persistent legal consent.");
+            }
+
+            safeStorage.set('wingman_terms_accepted', 'true');
+            safeStorage.set('wingman_consent_version', data.termsVersion || '2026.1');
+            safeStorage.set('wingman_consent_accepted_at', new Date().toISOString());
+            state.isTermsAccepted = true;
+
+            const modal = document.getElementById('interstitialModal');
+            if (modal) {
+                modal.classList.add('hidden', 'opacity-0', 'pointer-events-none');
+                modal.classList.remove('opacity-100', 'pointer-events-auto');
+                modal.style.display = 'none';
+            }
+            if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+            if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
+            if (typeof window.showToast === 'function') {
+                window.showToast("18+ Age verification & legal consent successfully recorded.", "success");
+            }
+        } catch (err) {
+            state.isTermsAccepted = false;
+            safeStorage.remove('wingman_terms_accepted');
+            if (typeof window.showToast === 'function') {
+                window.showToast(err.message || "Failed to record legal consent. Workspace remains locked.", "error");
+            }
+        } finally {
+            if (acceptBtn) {
+                acceptBtn.disabled = false;
+                acceptBtn.textContent = origText;
+            }
+        }
+    };
+
+    window.withdrawConsent = async function() {
+        if (!confirm("Are you sure you want to withdraw your AI data processing consent? This will lock all AI generation features until you consent again.")) {
+            return;
+        }
+        try {
+            const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
+            const res = await fetch((window.getApiBase ? window.getApiBase() : '') + '/api/consent/withdraw', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...authHeaders }
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || "Failed to withdraw consent.");
+            }
+            state.isTermsAccepted = false;
+            safeStorage.remove('wingman_terms_accepted');
+            if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+            if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
+            if (typeof window.showToast === 'function') {
+                window.showToast("AI data processing consent successfully withdrawn. AI features locked.", "info");
+            }
+        } catch (err) {
+            if (typeof window.showToast === 'function') {
+                window.showToast(err.message || "Failed to withdraw consent.", "error");
+            }
         }
     };
 

@@ -23,7 +23,7 @@ assert.strictEqual(countWords(fiveHundredAndOneWords) > 500, true, '501 words mu
 console.log('✔ Test 1 Passed: 500-word boundary strictly validated (500 allowed, 501 rejected)');
 
 // 2. TEST MOCK AUTH SECURITY IN PRODUCTION
-const authFile = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'supabaseAuth.js'), 'utf8');
+const authFile = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'supabaseAuth.js'), 'utf8').replace(/\r\n/g, '\n');
 assert.strictEqual(
     authFile.includes("const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);"),
     true,
@@ -38,7 +38,7 @@ assert.strictEqual(
 console.log('✔ Test 2 Passed: Mock auth bypass strictly blocked in production');
 
 // 3. TEST CANONICAL 50 FREE SIGNUP CREDITS & FAIL-CLOSED SEMANTICS IN server.js
-const serverFile = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+const serverFile = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8').replace(/\r\n/g, '\n');
 
 assert.strictEqual(serverFile.includes('const INITIAL_FREE_CREDITS = 50;'), true, 'server.js must define INITIAL_FREE_CREDITS = 50');
 assert.strictEqual(serverFile.includes('insert({ id: uid, credits: INITIAL_FREE_CREDITS });'), false, 'getUserCreditsDB must NOT recreate missing profile with 50 credits (Rule 16)');
@@ -49,7 +49,7 @@ assert.strictEqual(serverFile.includes('Production FAIL-CLOSED: Refuse un-locked
 console.log('✔ Test 3 Passed: Canonical 50 signup credits and fail-closed RPC enforcement verified');
 
 // 4. TEST SQL MIGRATION 002 FOR RPCs, LOCKING, CONSTRAINTS & IDEMPOTENCY
-const migrationSql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '002_atomic_credits_and_transactions.sql'), 'utf8');
+const migrationSql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '002_atomic_credits_and_transactions.sql'), 'utf8').replace(/\r\n/g, '\n');
 
 // Schema integrity
 assert.strictEqual(migrationSql.includes('ALTER TABLE public.profiles ALTER COLUMN credits SET DEFAULT 50;'), true, 'Migration must set 50 credits default');

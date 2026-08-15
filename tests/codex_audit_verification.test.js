@@ -5,10 +5,10 @@ const path = require('path');
 console.log('--- STARTING CODEX AUDIT COMPREHENSIVE VERIFICATION SUITE ---');
 
 // 1. TEST NEW-USER INITIAL CREDITS (CANONICAL 50)
-const serverFile = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
-const migrationSql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '002_atomic_credits_and_transactions.sql'), 'utf8');
-const userProvFile = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'userProvisioning.js'), 'utf8');
-const dbFile = fs.readFileSync(path.join(__dirname, '..', 'database.js'), 'utf8');
+const serverFile = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8').replace(/\r\n/g, '\n');
+const migrationSql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '002_atomic_credits_and_transactions.sql'), 'utf8').replace(/\r\n/g, '\n');
+const userProvFile = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'userProvisioning.js'), 'utf8').replace(/\r\n/g, '\n');
+const dbFile = fs.readFileSync(path.join(__dirname, '..', 'database.js'), 'utf8').replace(/\r\n/g, '\n');
 
 assert.strictEqual(serverFile.includes('const INITIAL_FREE_CREDITS = 50;'), true, 'server.js must define INITIAL_FREE_CREDITS = 50');
 assert.strictEqual(migrationSql.includes('ALTER TABLE public.profiles ALTER COLUMN credits SET DEFAULT 50;'), true, 'Migration 002 must set default 50 credits on profiles');

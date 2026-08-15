@@ -26,7 +26,7 @@ const indexHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 
 const privacyHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'privacy.html'), 'utf8');
 const termsHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'terms.html'), 'utf8');
 const refundHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'refund.html'), 'utf8');
-const migration004Path = path.join(__dirname, '..', 'migrations', '004_user_consent_and_age_verification.sql');
+const migration005Path = path.join(__dirname, '..', 'migrations', '005_user_consent_and_age_verification.sql');
 
 // -----------------------------------------------------------------------------
 // 1. NOTIFICATIONS & TOAST DOM LIFECYCLE
@@ -49,9 +49,9 @@ assert.strictEqual(appJsCode.includes('Icebreaker Error:'), true);
 console.log("✔ Test 1 Passed: Toast container and feedback lifecycle verified.");
 
 // -----------------------------------------------------------------------------
-// 2. SIMULATOR REVIEW NO FAKE SUCCESS
+// 2. SIMULATOR REVIEW NO FAKE SUCCESS & SETTLEMENT CHECKS
 // -----------------------------------------------------------------------------
-console.log("▶ [TEST 2] Simulator Review Endpoint Fallback Purge");
+console.log("▶ [TEST 2] Simulator Review Endpoint Fallback Purge & Ledger Settle");
 
 // Must reject < 2 messages with HTTP 400
 assert.strictEqual(serverCode.includes('historyArray.length < 2'), true, "Simulator review must check history length < 2");
@@ -60,11 +60,11 @@ assert.strictEqual(serverCode.includes('At least 2 messages are required to eval
 // Must release credits and return error on AI failure (NO score 78 fallback)
 const reviewEndpointIdx = serverCode.indexOf("app.post('/api/simulator/review'");
 assert.ok(reviewEndpointIdx !== -1, "Review endpoint must exist");
-const reviewSection = serverCode.substring(reviewEndpointIdx, reviewEndpointIdx + 8000);
+const reviewSection = serverCode.substring(reviewEndpointIdx, reviewEndpointIdx + 15000);
 
 assert.strictEqual(reviewSection.includes('throw new Error("Failed to parse simulation review output from AI model.");'), true, "Review endpoint must throw on parse error rather than return fake score");
 assert.strictEqual(reviewSection.includes('releaseCreditsDB(req, reqId, error.message)'), true, "Review endpoint must release credits on catch");
-assert.strictEqual(reviewSection.includes('Simulation review failed. You have not been charged credits.'), true, "Review endpoint must return failure message on catch");
+assert.strictEqual(reviewSection.includes('Simulation review failed. Your credits were restored.'), true, "Review endpoint must return accurate restored message when release succeeds");
 console.log("✔ Test 2 Passed: Fake simulator review fallbacks strictly purged.");
 
 // -----------------------------------------------------------------------------
@@ -86,16 +86,18 @@ const updateAuthIdx = supabaseClientCode.indexOf('function updateAuthUIState(use
 const updateAuthSection = supabaseClientCode.substring(updateAuthIdx, updateAuthIdx + 1200);
 assert.strictEqual(updateAuthSection.includes("safeSet('wingman_terms_accepted', 'true');"), false, "updateAuthUIState must not auto-accept terms on login");
 
-// 3.4 Migration 004 exists and contains correct schema
-assert.strictEqual(fs.existsSync(migration004Path), true, "Migration 004 must exist on filesystem");
-const migration004Sql = fs.readFileSync(migration004Path, 'utf8');
-assert.strictEqual(migration004Sql.includes('CREATE TABLE IF NOT EXISTS public.user_consents'), true, "Migration 004 must create user_consents table");
-assert.strictEqual(migration004Sql.includes('record_user_consent'), true, "Migration 004 must define record_user_consent RPC function");
-assert.strictEqual(migration004Sql.includes('SET search_path = \'\''), true, "Migration 004 RPC must enforce hardened search_path");
+// 3.4 Migration 005 exists and contains correct schema
+assert.strictEqual(fs.existsSync(migration005Path), true, "Migration 005 must exist on filesystem");
+const migration005Sql = fs.readFileSync(migration005Path, 'utf8');
+assert.strictEqual(migration005Sql.includes('CREATE TABLE IF NOT EXISTS public.user_consents'), true, "Migration 005 must create user_consents table");
+assert.strictEqual(migration005Sql.includes('record_user_consent'), true, "Migration 005 must define record_user_consent RPC function");
+assert.strictEqual(migration005Sql.includes('SET search_path = \'\''), true, "Migration 005 RPC must enforce hardened search_path");
 
-// 3.5 Backend /api/consent endpoint exists
+// 3.5 Backend /api/consent endpoint and middleware exists
 assert.strictEqual(serverCode.includes("app.post('/api/consent'"), true, "server.js must expose POST /api/consent endpoint");
-assert.strictEqual(serverCode.includes("user_consents"), true, "server.js must interact with user_consents table");
+assert.strictEqual(serverCode.includes("app.get('/api/consent/status'"), true, "server.js must expose GET /api/consent/status endpoint");
+assert.strictEqual(serverCode.includes("app.post('/api/consent/withdraw'"), true, "server.js must expose POST /api/consent/withdraw endpoint");
+assert.strictEqual(serverCode.includes("requireActiveConsent"), true, "server.js must have requireActiveConsent middleware");
 console.log("✔ Test 3 Passed: 18+ Age verification & affirmative consent contracts verified.");
 
 // -----------------------------------------------------------------------------

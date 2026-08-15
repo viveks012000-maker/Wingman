@@ -9,9 +9,9 @@ console.log('\n============================================================');
 console.log('🧪 RUNNING SYSTEM SETTINGS & FORMATTING VERIFICATION TESTS');
 console.log('============================================================\n');
 
-const appJs = fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8');
-const serverJs = fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8');
-const appHtml = fs.readFileSync(path.join(__dirname, '../app.html'), 'utf8');
+const appJs = fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8').replace(/\r\n/g, '\n');
+const serverJs = fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8').replace(/\r\n/g, '\n');
+const appHtml = fs.readFileSync(path.join(__dirname, '../app.html'), 'utf8').replace(/\r\n/g, '\n');
 
 // 1. Verify UI Elements in app.html
 assert.strictEqual(appHtml.includes('id="settingLinguisticShorthand"'), true, 'app.html must have settingLinguisticShorthand checkbox');
