@@ -1,0 +1,68 @@
+name: Maeve failure forensics
+on:
+  push:
+    branches: [audit/maeve-failure-20260815]
+    paths: ['.github/workflows/maeve_failure_forensics.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Syntax
+        run: |
+          node -c server.js
+          node -c app.js
+      - name: Full test suite
+        run: npm test
+      - name: Provider public health and model existence
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== AICredits health ==='
+          curl -fsS --max-time 20 https://api.aicredits.in/health
+          echo
+          echo '=== AICredits readiness ==='
+          curl -fsS --max-time 20 https://api.aicredits.in/health/ready
+          echo
+          echo '=== exact Maeve model in catalog ==='
+          curl -fsS --max-time 30 https://api.aicredits.in/api/models -o /tmp/models.json
+          node - <<'NODE'
+          const fs=require('fs');
+          const raw=JSON.parse(fs.readFileSync('/tmp/models.json','utf8'));
+          const arr=Array.isArray(raw)?raw:(raw.data||raw.models||[]);
+          const ids=arr.map(x=>typeof x==='string'?x:(x.id||x.model||x.slug)).filter(Boolean);
+          const exact='qwen/qwen3-235b-a22b-2507';
+          console.log('catalog_count=',ids.length);
+          console.log('exact_model_present=',ids.includes(exact));
+          console.log('matching=',ids.filter(x=>String(x).includes('qwen3-235b-a22b-2507')).slice(0,20));
+          if(!ids.includes(exact)) process.exit(2);
+          NODE
+      - name: Extract Maeve and provider control-flow invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs=require('fs');
+          const s=fs.readFileSync('server.js','utf8');
+          const checks={
+            chat_route:s.includes("app.post(['/api/chat', '/api/simulator/chat']"),
+            chat_cost_2:s.includes("verifyAndDeductCreditsDB(req, 2, 'chat', reqId)"),
+            maeve_model:s.includes('queryOpenRouter("qwen3-235b-a22b-2507"'),
+            empty_response_guard:s.includes('AI provider returned empty response.'),
+            release_on_chat_failure:s.includes('Maeve AI Chat Pipeline Error:'),
+            aicredits_base:s.includes('https://api.aicredits.in/v1'),
+            only_model_name_fallback_on_400_404:s.includes('response.status === 400 || response.status === 404')
+          };
+          console.log(JSON.stringify(checks,null,2));
+          if(Object.entries(checks).filter(([k])=>k!=='only_model_name_fallback_on_400_404').some(([,v])=>!v)) process.exit(3);
+          NODE
