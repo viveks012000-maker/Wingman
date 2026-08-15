@@ -1,0 +1,26 @@
+name: Joyful CORS live probe
+on:
+  push:
+    branches:
+      - audit/joyful-conkies-live
+    paths:
+      - .github/workflows/joyful_cors_live_probe.yml
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify exact ACAO after Railway deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          ORIGIN='https://joyful-conkies-026a81.netlify.app'
+          API='https://wingman-production-c6ce.up.railway.app'
+          curl -sS -D /tmp/h -o /tmp/b -H "Origin: $ORIGIN" "$API/api/health"
+          cat /tmp/h
+          cat /tmp/b
+          acao=$(awk 'BEGIN{IGNORECASE=1} /^access-control-allow-origin:/ {gsub(/\r/,""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' /tmp/h)
+          test "$acao" = "$ORIGIN"
+          echo "JOYFUL_CORS_ALLOWED=true"
