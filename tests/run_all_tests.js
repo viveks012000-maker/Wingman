@@ -35,7 +35,8 @@ const testSuites = [
     { name: '29. Runtime Startup, CSP & Production-Origin Example Guard', file: 'runtime_startup_csp_hardening.test.js' },
     { name: '30. Privileged Add-Credits Missing-Profile Guard', file: 'add_credits_profile_missing.test.js' },
     { name: '31. Production Legal & Privacy Accuracy Guard', file: 'legal_production_accuracy.test.js' },
-    { name: '32. Public Health Endpoint Minimal-Disclosure Guard', file: 'health_endpoint_minimal.test.js' }
+    { name: '32. Public Health Endpoint Minimal-Disclosure Guard', file: 'health_endpoint_minimal.test.js' },
+    { name: '33. Netlify Release Manifest Source-Commit Truth Guard', file: 'release_manifest_source.test.js' }
 ];
 
 console.log('========================================================================');

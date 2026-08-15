@@ -99,12 +99,21 @@ function sha256(file) {
 }
 
 function currentGitSha() {
-  if (process.env.GITHUB_SHA && /^[0-9a-f]{40}$/i.test(process.env.GITHUB_SHA)) return process.env.GITHUB_SHA.toLowerCase();
+  // The checked-out Git HEAD is the artifact source of truth. GitHub reserves GITHUB_SHA
+  // for the workflow-triggering commit, which can differ from an explicitly checked-out SHA.
   try {
-    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
-  } catch (_) {
-    return 'unknown';
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
+    if (/^[0-9a-f]{40}$/i.test(head)) return head.toLowerCase();
+  } catch (_) {}
+
+  // Fallback for build environments where Git metadata is unavailable.
+  if (process.env.SOURCE_COMMIT && /^[0-9a-f]{40}$/i.test(process.env.SOURCE_COMMIT)) {
+    return process.env.SOURCE_COMMIT.toLowerCase();
   }
+  if (process.env.GITHUB_SHA && /^[0-9a-f]{40}$/i.test(process.env.GITHUB_SHA)) {
+    return process.env.GITHUB_SHA.toLowerCase();
+  }
+  return 'unknown';
 }
 
 function writeSecurityFiles() {
