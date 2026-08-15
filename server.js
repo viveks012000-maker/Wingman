@@ -433,11 +433,33 @@ async function verifyAndDeductCreditsDB(req, costParam, featureName = 'ai_featur
             if (row && typeof row === 'object') {
                 if (row.success === false) {
                     const currentBal = typeof row.new_balance === 'number' ? row.new_balance : (typeof row.currentCredits === 'number' ? row.currentCredits : 0);
+                    const rowErrorCode = typeof row.error === 'string' ? row.error.trim() : '';
+                    const rowErrorMessage = typeof row.error_message === 'string' ? row.error_message.trim() : '';
+
+                    if (rowErrorCode === 'PROFILE_MISSING' || rowErrorMessage === 'PROFILE_MISSING') {
+                        return {
+                            success: false,
+                            currentCredits: currentBal,
+                            profileMissing: true,
+                            code: 'PROFILE_MISSING',
+                            error: 'PROFILE_MISSING'
+                        };
+                    }
+
+                    if (rowErrorCode === 'INSUFFICIENT_CREDITS' || rowErrorMessage === 'Insufficient credit balance.') {
+                        return {
+                            success: false,
+                            currentCredits: currentBal,
+                            insufficient: true,
+                            error: 'Insufficient credit balance.'
+                        };
+                    }
+
                     return {
                         success: false,
                         currentCredits: currentBal,
-                        insufficient: true,
-                        error: row.error_message || 'Insufficient credit balance.'
+                        serviceUnavailable: true,
+                        error: rowErrorMessage || 'Credit service rejected the reservation. Balance unchanged. Please try again.'
                     };
                 }
                 if (row.success === true) {
@@ -594,63 +616,10 @@ async function addUserCreditsDB(req, amountCreditsOrInr, tierName = 'purchase', 
         console.warn('[addUserCreditsDB RPC notice]:', rpcEx.message);
     }
 
-    // Priority 2: Direct Supabase Postgres Fallback Pipeline
-    const { data: profile } = await supabaseAdmin
-        .from('profiles')
-        .select('credits')
-        .eq('id', uid)
-        .maybeSingle();
-
-    const currentCredits = (profile && typeof profile.credits === 'number') ? Number(profile.credits) : 0;
-    const newCredits = currentCredits + addCredits;
-
-    const { error: upsertErr } = await supabaseAdmin
-        .from('profiles')
-        .upsert({ id: uid, credits: newCredits, tier: tierName || 'starter' });
-
-    if (upsertErr) {
-        console.error('[addUserCreditsDB Supabase Upsert ERROR]:', upsertErr.message);
-        throw new Error('Failed to update credit balance in Supabase database.');
-    }
-
-    // Log entry in credit_transactions
-    try {
-        await supabaseAdmin
-            .from('credit_transactions')
-            .insert({
-                user_id: uid,
-                amount: addCredits,
-                feature: 'purchase:' + (tierName || 'topup'),
-                payment_id: paymentId,
-                request_id: orderId,
-                created_at: new Date().toISOString()
-            });
-    } catch (txErr) {
-        console.warn('[credit_transactions topup notice]:', txErr.message);
-    }
-
-    // Log entry in payments table if paymentId provided
-    if (paymentId) {
-        try {
-            await supabaseAdmin
-                .from('payments')
-                .insert({
-                    user_id: uid,
-                    order_id: orderId || 'manual_order',
-                    payment_id: paymentId,
-                    signature: signature || null,
-                    tier: tierName || 'purchase',
-                    amount_inr: amountInr || (addCredits / CREDITS_PER_INR),
-                    credits_granted: addCredits,
-                    status: 'completed',
-                    created_at: new Date().toISOString()
-                });
-        } catch (payErr) {
-            console.warn('[payments audit notice]:', payErr.message);
-        }
-    }
-
-    return newCredits / CREDITS_PER_INR;
+    // Fail closed: privileged credit minting may only succeed through the add_credits RPC.
+    const mintErr = new Error('Credit minting service unavailable. No credits were added.');
+    mintErr.statusCode = 503;
+    throw mintErr;
 }
 
 function sanitizeResponseText(text) {
@@ -934,6 +903,75 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
     throw lastErr || new Error(`AI API call failed for model ${modelIdentifier}`);
 }
 
+// Strict Screenshot Analyzer provider call: exact AICREDITS endpoint/model/key, no model or key fallback.
+async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, maxTokens = null, timeoutMs = 25000, topP = null) {
+    const isVisionStage = stage === 'vision';
+    const isMainStage = stage === 'main';
+    if (!isVisionStage && !isMainStage) {
+        throw new Error(`Invalid Screenshot Analyzer stage: ${stage}`);
+    }
+
+    const apiKey = isVisionStage ? process.env.AICREDITS_API_KEY_VISION : process.env.AICREDITS_API_KEY;
+    const model = isVisionStage ? 'qwen/qwen3.5-flash-02-23' : 'qwen/qwen3-235b-a22b-2507';
+    const baseUrl = 'https://api.aicredits.in/v1';
+
+    if (!apiKey) {
+        throw new Error(`Missing required Screenshot Analyzer API key for ${stage} stage.`);
+    }
+
+    const payload = { model, messages: messagesArray, temperature };
+    if (maxTokens) payload.max_tokens = maxTokens;
+    if (topP !== null && topP !== undefined) payload.top_p = topP;
+
+    const controller = timeoutMs ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+
+    try {
+        const response = await fetch(baseUrl + '/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+                'HTTP-Referer': 'http://localhost:3000',
+                'X-Title': 'My Wingman App'
+            },
+            body: JSON.stringify(payload),
+            ...(controller ? { signal: controller.signal } : {})
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            const err = new Error(`Screenshot Analyzer AI API Failure [${model}]: ${response.status} - ${errText}`);
+            err.statusCode = response.status;
+            throw err;
+        }
+
+        const data = await response.json();
+        if (data.error) {
+            throw new Error(`Screenshot Analyzer AI API Error: ${data.error.message || JSON.stringify(data.error)}`);
+        }
+        if (!data.choices || data.choices.length === 0) {
+            throw new Error(`Screenshot Analyzer AI API returned no choices for ${model}.`);
+        }
+
+        const msg = data.choices[0].message;
+        const outputContent = typeof msg === 'string' ? msg : (msg ? (msg.content || msg.reasoning || '') : '');
+        if (!outputContent) {
+            throw new Error(`Screenshot Analyzer AI API returned empty content for ${model}.`);
+        }
+        return outputContent;
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            const timeoutErr = new Error('Analysis timed out. Please try again.');
+            timeoutErr.isTimeout = true;
+            throw timeoutErr;
+        }
+        throw err;
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+}
+
 // Helper function to query OpenRouter dynamically with automatic key failover
 async function queryOpenRouter(modelIdentifier, messagesArray, temperature = 0.7, maxTokens = null, timeoutMs = 25000, topP = null) {
     const isVisionModel = (typeof modelIdentifier === 'string') && (modelIdentifier.includes('vl') || modelIdentifier.includes('vision') || modelIdentifier.includes('flash'));
@@ -1154,6 +1192,9 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
 
         deduction = await verifyAndDeductCreditsDB(req, 10, 'analyze', reqId);
         if (!deduction.success) {
+            if (deduction.profileMissing) {
+                return res.status(404).json({ success: false, error: "PROFILE_MISSING", code: "PROFILE_MISSING" });
+            }
             if (deduction.unauthenticated) {
                 return res.status(401).json({
                     success: false,
@@ -1228,7 +1269,7 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
                         ]
                     }
                 ];
-                const singleTranscript = await queryOpenRouter("qwen3.5-flash-02-23", visionMessages, 0.2, 800, 25000);
+                const singleTranscript = await queryAnalyzerProvider('vision', visionMessages, 0.2, 800, 25000);
                 if (!singleTranscript || typeof singleTranscript !== 'string' || singleTranscript.trim().length === 0) {
                     throw new Error(`Optical parsing failed for screenshot ${i + 1}.`);
                 }
@@ -1434,7 +1475,7 @@ ${formattingRule}`;
 
         console.log(`Executing Stage 2: Generating 10 strategic response cards for mode ${modeConfig.name} using qwen3-235b-a22b-2507...`);
         let finalCardsOutput = "";
-        finalCardsOutput = await queryOpenRouter("qwen3-235b-a22b-2507", generationMessages, 0.20, 800, 25000);
+        finalCardsOutput = await queryAnalyzerProvider('main', generationMessages, 0.20, 800, 25000);
 
         let optionsList = [];
         try {
@@ -1551,6 +1592,15 @@ app.post('/api/icebreaker', requireSupabaseAuth, apiLimiter, async (req, res) =>
 
         deduction = await verifyAndDeductCreditsDB(req, 10, 'icebreaker', reqId);
         if (!deduction.success) {
+            if (deduction.profileMissing) {
+                return res.status(404).json({ success: false, error: "PROFILE_MISSING", code: "PROFILE_MISSING" });
+            }
+            if (deduction.serviceUnavailable) {
+                return res.status(503).json({
+                    success: false,
+                    error: deduction.error || "Credit service temporarily unavailable. Please try again."
+                });
+            }
             if (deduction.unauthenticated) {
                 return res.status(401).json({
                     success: false,
@@ -1836,6 +1886,15 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, apiLimite
 
         deduction = await verifyAndDeductCreditsDB(req, 10, 'optimize', reqId);
         if (!deduction.success) {
+            if (deduction.profileMissing) {
+                return res.status(404).json({ success: false, error: "PROFILE_MISSING", code: "PROFILE_MISSING" });
+            }
+            if (deduction.serviceUnavailable) {
+                return res.status(503).json({
+                    success: false,
+                    error: deduction.error || "Credit service temporarily unavailable. Please try again."
+                });
+            }
             if (deduction.unauthenticated) {
                 return res.status(401).json({
                     success: false,
@@ -2135,6 +2194,15 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, apiLimiter, 
 
         deduction = await verifyAndDeductCreditsDB(req, 2, 'chat', reqId);
         if (!deduction.success) {
+            if (deduction.profileMissing) {
+                return res.status(404).json({ success: false, error: "PROFILE_MISSING", code: "PROFILE_MISSING" });
+            }
+            if (deduction.serviceUnavailable) {
+                return res.status(503).json({
+                    success: false,
+                    error: deduction.error || "Credit service temporarily unavailable. Please try again."
+                });
+            }
             if (deduction.unauthenticated) {
                 return res.status(401).json({
                     success: false,
@@ -2458,6 +2526,15 @@ app.post('/api/simulator/review', requireSupabaseAuth, apiLimiter, async (req, r
 
         deduction = await verifyAndDeductCreditsDB(req, 2, 'simulator_review', reqId);
         if (!deduction.success) {
+            if (deduction.profileMissing) {
+                return res.status(404).json({ success: false, error: "PROFILE_MISSING", code: "PROFILE_MISSING" });
+            }
+            if (deduction.serviceUnavailable) {
+                return res.status(503).json({
+                    success: false,
+                    error: deduction.error || "Credit service temporarily unavailable. Please try again."
+                });
+            }
             if (deduction.unauthenticated) {
                 return res.status(401).json({ success: false, error: deduction.error || "Authentication required to use this feature." });
             }
