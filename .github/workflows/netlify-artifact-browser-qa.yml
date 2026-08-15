@@ -1,0 +1,65 @@
+name: Netlify artifact browser QA
+
+on:
+  push:
+    branches: [audit/full-production-forensics]
+    paths: ['.github/workflows/netlify-artifact-browser-qa.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  artifact-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build:netlify
+      - name: Serve exact artifact and run browser QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 4173 --directory netlify-dist >/tmp/netlify-http.log 2>&1 &
+          server_pid=$!
+          trap 'kill $server_pid || true' EXIT
+          sleep 1
+          node <<'NODE'
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch({headless:true});
+            for (const file of ['index.html','app.html','terms.html','privacy.html','refund.html']) {
+              const page = await browser.newPage();
+              const pageErrors=[];
+              const failed=[];
+              page.on('pageerror', e => pageErrors.push(e.message));
+              page.on('requestfailed', r => failed.push(`${r.url()} :: ${r.failure()?.errorText||''}`));
+              await page.goto(`http://127.0.0.1:4173/${file}`, {waitUntil:'networkidle', timeout:60000});
+              const state = await page.evaluate(() => ({
+                title: document.title,
+                apiBase: typeof window.getApiBase === 'function' ? window.getApiBase() : null,
+                scrollWidth: document.documentElement.scrollWidth,
+                innerWidth: window.innerWidth
+              }));
+              console.log(file, JSON.stringify(state));
+              if (pageErrors.length) throw new Error(`${file} page errors: ${pageErrors.join(' | ')}`);
+              const localFailed = failed.filter(x => x.includes('127.0.0.1:4173'));
+              if (localFailed.length) throw new Error(`${file} missing local assets: ${localFailed.join(' | ')}`);
+              if (file === 'app.html' && state.apiBase !== 'http://localhost:3000') {
+                // getApiBase intentionally locks localhost/local test origins to local backend.
+                throw new Error(`Unexpected local artifact API base: ${state.apiBase}`);
+              }
+              await page.close();
+            }
+            await browser.close();
+          })().catch(e => { console.error(e); process.exit(1); });
+          NODE
