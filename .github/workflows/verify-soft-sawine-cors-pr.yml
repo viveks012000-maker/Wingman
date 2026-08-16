@@ -1,0 +1,34 @@
+name: Verify soft-sawine CORS repair
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - server.js
+      - tests/cors_production_policy.test.js
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify exact origin and full regression gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check server.js
+          node tests/cors_production_policy.test.js
+          npm test
+          npm audit --omit=dev --audit-level=high
+          npm run build:netlify
+          test "$(grep -o "https://soft-sawine-30785c.netlify.app" server.js | wc -l | tr -d ' ')" = '1'
+          test "$(find netlify-dist -type f | wc -l | tr -d ' ')" = '23'
