@@ -98,7 +98,8 @@ const productionAllowedOrigins = [
     'https://mywingman.com',
     'https://chimerical-granita-c68c5a.netlify.app',
     'https://wondrous-arithmetic-0ece9d.netlify.app',
-    'https://joyful-conkies-026a81.netlify.app'
+    'https://joyful-conkies-026a81.netlify.app',
+    'https://soft-sawine-30785c.netlify.app'
 ];
 const developmentAllowedOrigins = [
     'http://localhost:3000',

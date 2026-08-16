@@ -6,6 +6,7 @@ const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 assert.ok(server.includes("'https://chimerical-granita-c68c5a.netlify.app'"), 'Netlify production origin must remain allowed');
 assert.ok(server.includes("'https://wondrous-arithmetic-0ece9d.netlify.app'"), 'Current Netlify demo origin must be explicitly allowed');
 assert.ok(server.includes("'https://joyful-conkies-026a81.netlify.app'"), 'Joyful Netlify audit origin must be explicitly allowed');
+assert.ok(server.includes("'https://soft-sawine-30785c.netlify.app'"), 'Current Git-linked Netlify production origin must be explicitly allowed');
 assert.ok(server.includes("'https://mywingman.com'"), 'Custom production domain must remain allowed');
 assert.ok(!server.includes("'https://*.pages.dev'"), 'Production defaults must not trust every Cloudflare Pages project');
 assert.ok(server.includes("if (origin === 'null') return !IS_PROD;"), 'Opaque/null browser origins must be denied in production');
