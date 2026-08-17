@@ -123,10 +123,19 @@ async function runBrowserQA() {
                     if (await page.isVisible('#authRequiredModal')) throw new Error('Escape did not close app auth dialog');
 
                     const buySemantics = await page.evaluate(() => {
+                        const focusableSelector = 'button:not([disabled]),a[href],input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
                         const candidates = [...document.querySelectorAll('[onclick*="openPurchaseModal"]')].filter(el => el.tagName !== 'BUTTON' && el.tagName !== 'A');
-                        return candidates.map(el => ({ role: el.getAttribute('role'), tabIndex: el.tabIndex, label: el.getAttribute('aria-label') }));
+                        return candidates.map(el => ({
+                            hasFocusableChild: !!el.querySelector(focusableSelector),
+                            role: el.getAttribute('role'),
+                            tabIndex: el.tabIndex,
+                            label: el.getAttribute('aria-label')
+                        }));
                     });
-                    if (buySemantics.some(x => x.role !== 'button' || x.tabIndex < 0 || !x.label)) throw new Error(`Non-native Buy Credits control lacks keyboard semantics: ${JSON.stringify(buySemantics)}`);
+                    const nestedInvalid = buySemantics.filter(x => x.hasFocusableChild && (x.role === 'button' || x.tabIndex >= 0));
+                    if (nestedInvalid.length) throw new Error(`Buy Credits container with focusable descendant must not become another interactive parent: ${JSON.stringify(nestedInvalid)}`);
+                    const standaloneInvalid = buySemantics.filter(x => !x.hasFocusableChild && (x.role !== 'button' || x.tabIndex < 0 || !x.label));
+                    if (standaloneInvalid.length) throw new Error(`Standalone non-native Buy Credits control lacks keyboard semantics: ${JSON.stringify(standaloneInvalid)}`);
                 }
 
                 if (width <= 430 && pageName === 'index.html') {

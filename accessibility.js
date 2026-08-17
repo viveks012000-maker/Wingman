@@ -84,11 +84,7 @@
             states.set(modal, st);
             var target = st.returnFocus;
             st.returnFocus = null;
-            if (target && target.isConnected && typeof target.focus === 'function') {
-                setTimeout(function () {
-                    try { target.focus({ preventScroll: true }); } catch (_) { try { target.focus(); } catch (_) {} }
-                }, 0);
-            }
+            scheduleFocusAfterClose(target);
         } else if (!isVisible(modal)) {
             setModalInteractiveState(modal, false);
         }
@@ -100,6 +96,27 @@
             return (parseInt(getComputedStyle(a).zIndex || '0', 10) || 0) - (parseInt(getComputedStyle(b).zIndex || '0', 10) || 0);
         });
         return open.length ? open[open.length - 1] : null;
+    }
+
+    function focusElement(target) {
+        if (!target || !target.isConnected || typeof target.focus !== 'function') return;
+        try { target.focus({ preventScroll: true }); } catch (_) { try { target.focus(); } catch (_) {} }
+    }
+
+    function scheduleFocusAfterClose(target) {
+        if (!target || !target.isConnected || typeof target.focus !== 'function') return;
+        setTimeout(function () {
+            var activeModal = topOpenModal();
+            if (activeModal) {
+                // A second dialog may have opened immediately after the first closed.
+                // Never let delayed restoration steal focus outside the active modal.
+                if (!activeModal.contains(document.activeElement)) {
+                    focusElement(focusables(activeModal)[0] || activeModal);
+                }
+                return;
+            }
+            focusElement(target);
+        }, 0);
     }
 
     function closeTopModal(modal) {
@@ -124,8 +141,30 @@
     }
 
     function enhanceNonNativeActions() {
+        var focusableSelector = 'button:not([disabled]),a[href],input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
         document.querySelectorAll('[onclick*="openPurchaseModal"]').forEach(function (el) {
             if (/^(BUTTON|A)$/.test(el.tagName)) return;
+
+            var nestedFocusable = el.querySelector(focusableSelector);
+            if (nestedFocusable) {
+                // Do not create an interactive parent around an already-focusable child.
+                // The native child remains the keyboard-accessible purchase action.
+                el.removeAttribute('role');
+                el.removeAttribute('tabindex');
+                el.removeAttribute('aria-label');
+
+                // Avoid calling the same purchase-modal action twice when a nested
+                // purchase control bubbles to the clickable card container.
+                el.querySelectorAll('[onclick*="openPurchaseModal"]').forEach(function (child) {
+                    if (child === el || child.__wingmanPurchaseBubbleGuard) return;
+                    child.__wingmanPurchaseBubbleGuard = true;
+                    child.addEventListener('click', function (event) {
+                        event.stopPropagation();
+                    });
+                });
+                return;
+            }
+
             el.setAttribute('role', 'button');
             if (el.tabIndex < 0) el.tabIndex = 0;
             if (!el.getAttribute('aria-label')) el.setAttribute('aria-label', 'Buy credits');
@@ -155,7 +194,7 @@
                 st.open = true;
                 states.set(modal, st);
                 var first = focusables(modal)[0] || modal;
-                try { first.focus({ preventScroll: true }); } catch (_) { try { first.focus(); } catch (_) {} }
+                focusElement(first);
                 return result;
             };
             wrappedOpen.__wingmanA11yWrapped = true;
@@ -172,11 +211,7 @@
                 st.returnFocus = null;
                 setModalInteractiveState(modal, false);
                 states.set(modal, st);
-                if (target && target.isConnected && typeof target.focus === 'function') {
-                    setTimeout(function () {
-                        try { target.focus({ preventScroll: true }); } catch (_) { try { target.focus(); } catch (_) {} }
-                    }, 0);
-                }
+                scheduleFocusAfterClose(target);
                 return result;
             };
             wrappedClose.__wingmanA11yWrapped = true;

@@ -41,7 +41,8 @@ const testSuites = [
     { name: '35. Feature Access Preflight UX Guard', file: 'feature_access_preflight.test.js' },
     { name: '36. Duplicate Request Concurrency Lock Race Guard', file: 'duplicate_request_lock_race.test.js' },
     { name: '37. Analyzer Provider Diagnostic Boundary Guard', file: 'analyzer_provider_diagnostics.test.js' },
-    { name: '38. Closed Dialog Inert Accessibility Guard', file: 'modal_inert_accessibility.test.js' }
+    { name: '38. Closed Dialog Inert Accessibility Guard', file: 'modal_inert_accessibility.test.js' },
+    { name: '39. Buy Credits Nested-Interactive Accessibility Guard', file: 'buy_credits_nested_interactive.test.js' }
 ];
 
 console.log('========================================================================');
