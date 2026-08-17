@@ -240,3 +240,30 @@ button, a, .tone-chip, .vibe-chip, .bio-style-chip, .nav-tab-mobile, .nav-tab-de
         min-height: 330px !important;
     }
 }
+
+
+/* Accessibility hardening: cross-browser mobile + keyboard contracts. */
+.a11y-icon-touch-target {
+    min-width: 44px !important;
+    min-height: 44px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+#analyzeEmptyState > p:nth-child(3),
+#screenshotPreviewContainer > div > p:nth-child(3) {
+    color: #9ca3af !important;
+}
+
+@media (max-width: 767px) {
+    #authEmailInput,
+    #authPasswordInput,
+    #forgotEmailInput,
+    #resetEmailInput,
+    #bioInput,
+    #auditBioInput,
+    #simulator-chat-input {
+        font-size: 16px !important;
+    }
+}
