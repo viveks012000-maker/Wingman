@@ -1,0 +1,8 @@
+release_sha=ba8267322e7da3161a570b1b7959ec63626c6b22
+health_code=200
+cloudflare_acao=https://mywingman.pages.dev
+soft_sawine_acao=https://soft-sawine-30785c.netlify.app
+joyful_conkies_acao=https://joyful-conkies-026a81.netlify.app
+wondrous_arithmetic_acao=https://wondrous-arithmetic-0ece9d.netlify.app
+chimerical_granita_acao=https://chimerical-granita-c68c5a.netlify.app
+localhost_acao=NONE
