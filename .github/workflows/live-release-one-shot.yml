@@ -1,0 +1,32 @@
+name: Live Netlify release one-shot
+on:
+  push:
+    branches: [audit/post-mobile-repair-20260817]
+    paths:
+      - .github/workflows/live-release-one-shot.yml
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Report exact live release
+        run: |
+          node - <<'NODE'
+          const expected='d2a917b0d3ea56b4e19c43b2bd80071f5707b989';
+          const url='https://soft-sawine-30785c.netlify.app/release.json?oneshot='+Date.now();
+          fetch(url,{headers:{'Cache-Control':'no-cache','Pragma':'no-cache'}})
+            .then(async r=>({status:r.status,text:await r.text()}))
+            .then(({status,text})=>{
+              let actual='UNPARSEABLE';
+              try{actual=JSON.parse(text).sourceCommit||'MISSING';}catch(e){}
+              console.log(`HTTP=${status} ACTUAL=${actual} EXPECTED=${expected}`);
+              console.log(`::notice title=LIVE_NETLIFY_RELEASE::HTTP=${status} actual=${actual} expected=${expected}`);
+              if(status!==200||actual!==expected) process.exitCode=2;
+            })
+            .catch(e=>{console.error(String(e));console.log(`::error title=LIVE_NETLIFY_RELEASE::${String(e)}`);process.exitCode=3;});
+          NODE
