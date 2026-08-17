@@ -1,0 +1,29 @@
+name: Comprehensive interface audit
+
+on:
+  push:
+    branches:
+      - audit/live-demo-20260816
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  interface-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - name: Run live production interface matrix
+        env:
+          SITE: https://soft-sawine-30785c.netlify.app
+          API: https://wingman-production-c6ce.up.railway.app
+          EXPECTED_SHA: d3419c4ba705f1b76692aca1920a848f20df224e
+        run: node scripts/comprehensive-interface-audit.js
