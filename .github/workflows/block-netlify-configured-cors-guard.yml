@@ -1,0 +1,91 @@
+name: Block Netlify configured CORS guard
+
+on:
+  push:
+    branches:
+      - fix/block-netlify-configured-cors-20260817
+    paths:
+      - .github/workflows/block-netlify-configured-cors-guard.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/block-netlify-configured-cors-20260817
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Apply exact configured-origin retirement patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          server_path = Path('server.js')
+          test_path = Path('tests/cors_production_policy.test.js')
+          server = server_path.read_text()
+          test = test_path.read_text()
+
+          old_filter = """const configuredAllowedOrigins = rawConfiguredAllowedOrigins.filter(origin => {
+              if (!IS_PROD) return true;
+              if (origin === '*' || origin === 'null' || origin.includes('*')) return false;
+              if (/^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/i.test(origin)) return false;
+              return /^https:\\/\\//i.test(origin);
+          });"""
+          new_filter = """const configuredAllowedOrigins = rawConfiguredAllowedOrigins.filter(origin => {
+              if (!IS_PROD) return true;
+              if (origin === '*' || origin === 'null' || origin.includes('*')) return false;
+              if (/^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/i.test(origin)) return false;
+              if (/^https:\\/\\/[^/]+\\.netlify\\.app$/i.test(origin)) return false;
+              return /^https:\\/\\//i.test(origin);
+          });"""
+          if server.count(old_filter) != 1:
+              raise SystemExit('Expected configuredAllowedOrigins filter not found exactly once; refusing to patch.')
+          server = server.replace(old_filter, new_filter)
+
+          anchor = "assert.ok(server.includes(\"if (origin === '*' || origin === 'null' || origin.includes('*')) return false;\"), 'Production configured origins must reject wildcard/null values');"
+          insertion = anchor + "\nassert.ok(server.includes(\"if (/^https:\\\\/\\\\/[^/]+\\\\.netlify\\\\.app$/i.test(origin)) return false;\"), 'Production configured origins must reject every Netlify Pages hostname');"
+          if test.count(anchor) != 1:
+              raise SystemExit('Expected CORS regression anchor not found exactly once; refusing to patch.')
+          test = test.replace(anchor, insertion)
+
+          server_path.write_text(server)
+          test_path.write_text(test)
+          PY
+      - name: Targeted CORS regression
+        run: node tests/cors_production_policy.test.js
+      - name: Complete regression suite
+        run: npm test
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+      - name: Production frontend artifact
+        run: npm run build:netlify
+      - name: Artifact safety sanity
+        shell: bash
+        run: |
+          test -f netlify-dist/release.json
+          test -f netlify-dist/404.html
+          test ! -e netlify-dist/server.js
+          test ! -e netlify-dist/package.json
+          test ! -e netlify-dist/database.js
+          test ! -d netlify-dist/tests
+          test ! -d netlify-dist/middleware
+          echo "ARTIFACT_FILE_COUNT=$(find netlify-dist -type f | wc -l)"
+      - name: Commit verified product changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server.js tests/cors_production_policy.test.js
+          git diff --cached --exit-code && { echo 'No product changes to commit'; exit 1; } || true
+          git commit -m "security: block Netlify configured CORS origins"
+          git push origin HEAD:fix/block-netlify-configured-cors-20260817
