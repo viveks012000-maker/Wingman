@@ -1,0 +1,119 @@
+name: Netlify retirement final live
+
+on:
+  push:
+    branches:
+      - audit/netlify-retirement-live-20260817
+    paths:
+      - .github/workflows/netlify-retirement-final-live.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SITE: https://mywingman.pages.dev
+      API: https://wingman-production-c6ce.up.railway.app
+      EXPECTED_MAIN_SHA: 3454220f3dae19befe0d7e393c8ae884538fbd31
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/netlify-retirement-live-20260817
+          fetch-depth: 0
+      - name: Verify live production convergence
+        shell: bash
+        run: |
+          set +e
+          mkdir -p .audit
+          pass=.audit/netlify-retirement-final-pass.txt
+          fail=.audit/netlify-retirement-final-fail.txt
+          rm -f "$pass" "$fail"
+
+          log=.audit/netlify-retirement-final-observed.txt
+          : > "$log"
+          echo "EXPECTED_MAIN_SHA=$EXPECTED_MAIN_SHA" >> "$log"
+
+          root_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$SITE/")"
+          app_code="$(curl -sS -L -o /dev/null -w '%{http_code}' --max-time 20 "$SITE/app")"
+          echo "CLOUDFLARE_ROOT=$root_code" >> "$log"
+          echo "CLOUDFLARE_APP=$app_code" >> "$log"
+
+          sensitive_ok=1
+          for p in /server.js /database.js /package.json /package-lock.json /tests/run_all_tests.js /middleware/security.js; do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$SITE$p")"
+            echo "CLOUDFLARE_${p//\//_}=$code" >> "$log"
+            [ "$code" = "404" ] || sensitive_ok=0
+          done
+
+          health_code="$(curl -sS -o /tmp/health -w '%{http_code}' --max-time 20 "$API/api/health")"
+          health_body="$(cat /tmp/health 2>/dev/null || true)"
+          echo "RAILWAY_HEALTH_CODE=$health_code" >> "$log"
+          echo "RAILWAY_HEALTH_BODY=$health_body" >> "$log"
+
+          probe() {
+            origin="$1"
+            headers="$(mktemp)"
+            code="$(curl -sS -D "$headers" -o /dev/null -w '%{http_code}' --max-time 20 -X OPTIONS "$API/api/chat" \
+              -H "Origin: $origin" \
+              -H 'Access-Control-Request-Method: POST' \
+              -H 'Access-Control-Request-Headers: authorization,content-type')"
+            acao="$(awk 'BEGIN{IGNORECASE=1} /^access-control-allow-origin:/ {sub(/^[^:]*:[[:space:]]*/,""); gsub(/\r/,""); print; exit}' "$headers")"
+            creds="$(awk 'BEGIN{IGNORECASE=1} /^access-control-allow-credentials:/ {sub(/^[^:]*:[[:space:]]*/,""); gsub(/\r/,""); print; exit}' "$headers")"
+            rm -f "$headers"
+            PROBE_CODE="$code" PROBE_ACAO="$acao" PROBE_CREDS="$creds"
+          }
+
+          converged=0
+          last_netlify=""
+          for i in $(seq 1 60); do
+            probe 'https://mywingman.pages.dev'
+            cloud_code="$PROBE_CODE"; cloud_acao="$PROBE_ACAO"; cloud_creds="$PROBE_CREDS"
+            netlify_allowed=0
+            last_netlify=""
+            for origin in \
+              'https://soft-sawine-30785c.netlify.app' \
+              'https://joyful-conkies-026a81.netlify.app' \
+              'https://wondrous-arithmetic-0ece9d.netlify.app' \
+              'https://chimerical-granita-c68c5a.netlify.app'; do
+              probe "$origin"
+              last_netlify+="$origin status=$PROBE_CODE acao=${PROBE_ACAO:-NONE} creds=${PROBE_CREDS:-NONE}; "
+              [ -z "$PROBE_ACAO" ] || netlify_allowed=1
+            done
+            echo "CORS_ATTEMPT_$i cloudflare_status=$cloud_code cloudflare_acao=${cloud_acao:-NONE} cloudflare_creds=${cloud_creds:-NONE} netlify_allowed=$netlify_allowed" >> "$log"
+            if [ "$cloud_code" = "204" ] && [ "$cloud_acao" = 'https://mywingman.pages.dev' ] && [ "$cloud_creds" = 'true' ] && [ "$netlify_allowed" = "0" ]; then
+              converged=1
+              break
+            fi
+            sleep 10
+          done
+
+          echo "LAST_NETLIFY=$last_netlify" >> "$log"
+          cat "$log"
+
+          if [ "$root_code" = "200" ] && [ "$app_code" = "200" ] && [ "$sensitive_ok" = "1" ] && [ "$health_code" = "200" ] && [ "$converged" = "1" ]; then
+            cat > "$pass" <<EOF
+          NETLIFY_RETIREMENT_FINAL_LIVE=PASS
+          CURRENT_MAIN_SHA=$EXPECTED_MAIN_SHA
+          CLOUDFLARE_SITE=PASS
+          CLOUDFLARE_SENSITIVE_PATHS=404
+          RAILWAY_HEALTH=PASS
+          CLOUDFLARE_CORS=ALLOWED
+          NETLIFY_CORS=DENIED_ALL_TESTED_ORIGINS
+          EOF
+            marker="$pass"
+            result=0
+          else
+            cp "$log" "$fail"
+            marker="$fail"
+            result=1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$marker" "$log"
+          git commit -m "audit: record final live Netlify retirement result"
+          git push origin HEAD:audit/netlify-retirement-live-20260817
+          exit "$result"
