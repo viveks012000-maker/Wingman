@@ -1,0 +1,149 @@
+name: Repair duplicate request lock race v3
+
+on:
+  push:
+    branches: [fix/duplicate-request-lock-race]
+    paths: ['.github/workflows/repair-duplicate-request-lock-race-v3.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  repair-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/duplicate-request-lock-race
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply request-aware lock repair and regression updates
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p=Path('server.js'); s=p.read_text(encoding='utf-8')
+          old='''const activeUserAiRequests = new Set();
+          function acquireUserConcurrencyLock(userId) {
+              if (!userId || userId === 'guest_user') return true;
+              if (activeUserAiRequests.has(userId)) {
+                  return false;
+              }
+              activeUserAiRequests.add(userId);
+              return true;
+          }
+          '''
+          new='''const activeUserAiRequests = new Map();
+          function acquireUserConcurrencyLock(userId, requestId) {
+              if (!userId || userId === 'guest_user') return { acquired: true, duplicate: false };
+              const activeRequestId = activeUserAiRequests.get(userId);
+              if (activeRequestId !== undefined) {
+                  return { acquired: false, duplicate: activeRequestId === requestId };
+              }
+              activeUserAiRequests.set(userId, requestId);
+              return { acquired: true, duplicate: false };
+          }
+          function releaseUserConcurrencyLock(userId, requestId) {
+              if (!userId || userId === 'guest_user') return;
+              if (requestId === undefined || activeUserAiRequests.get(userId) === requestId) {
+                  activeUserAiRequests.delete(userId);
+              }
+          }
+          '''
+          assert s.count(old)==1, f'lock block count={s.count(old)}'
+          s=s.replace(old,new,1)
+          pat=re.compile(
+            r'''    const uid = getUserIdFromReq\(req\);\n'''
+            r'''    if \(!acquireUserConcurrencyLock\(uid\)\) \{\n'''
+            r'''        return res\.status\(429\)\.json\(\{ success: false, error: "A generation is already in progress for your account\. Please wait for it to complete\." \}\);\n'''
+            r'''    \}\n'''
+            r'''    (const reqId = [^\n]+;\n)''')
+          def repl(m):
+            q=m.group(1)
+            return ('    const uid = getUserIdFromReq(req);\n    '+q+
+              '    const lockState = acquireUserConcurrencyLock(uid, reqId);\n'
+              '    if (!lockState.acquired) {\n'
+              '        if (lockState.duplicate) {\n'
+              '            return res.status(409).json({\n'
+              '                success: false,\n'
+              '                error: "This request ID is already in progress. No additional credits were deducted.",\n'
+              '                code: "DUPLICATE_REQUEST",\n'
+              '                duplicate: true\n'
+              '            });\n'
+              '        }\n'
+              '        return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });\n'
+              '    }\n')
+          s,n=pat.subn(repl,s); assert n==5, f'route replacements={n}'
+          assert s.count('releaseUserConcurrencyLock(uid);')==5
+          s=s.replace('releaseUserConcurrencyLock(uid);','releaseUserConcurrencyLock(uid, reqId);')
+          p.write_text(s,encoding='utf-8')
+
+          replacements={
+            'tests/maeve_runtime_repair.test.js': [
+              ('assert(serverSource.includes("const uid = getUserIdFromReq(req);\\n    if (!acquireUserConcurrencyLock(uid))"));',
+               "assert(serverSource.includes('const lockState = acquireUserConcurrencyLock(uid, reqId);'));\nassert(serverSource.includes('releaseUserConcurrencyLock(uid, reqId);'));")],
+            'tests/final_hardening_pass.test.js': [
+              ("serverFile.includes('acquireUserConcurrencyLock(uid)')", "serverFile.includes('acquireUserConcurrencyLock(uid, reqId)')")],
+            'tests/security_hardening_audit.test.js': [
+              ('serverContent.includes("if (!acquireUserConcurrencyLock(uid))")', 'serverContent.includes("const lockState = acquireUserConcurrencyLock(uid, reqId);")')]
+          }
+          for file,pairs in replacements.items():
+            path=Path(file); text=path.read_text(encoding='utf-8')
+            for a,b in pairs:
+              assert a in text, f'stale assertion missing in {file}'
+              text=text.replace(a,b,1)
+            path.write_text(text,encoding='utf-8')
+
+          rp=Path('tests/run_all_tests.js'); rs=rp.read_text(encoding='utf-8')
+          tail="    { name: '35. Feature Access Preflight UX Guard', file: 'feature_access_preflight.test.js' }\n];"
+          assert tail in rs
+          rp.write_text(rs.replace(tail,"    { name: '35. Feature Access Preflight UX Guard', file: 'feature_access_preflight.test.js' },\n    { name: '36. Duplicate Request Concurrency Lock Race Guard', file: 'duplicate_request_lock_race.test.js' }\n];",1),encoding='utf-8')
+          PY
+
+          cat > tests/duplicate_request_lock_race.test.js <<'EOF'
+          const assert=require('assert'); const fs=require('fs'); const vm=require('vm');
+          const source=fs.readFileSync('server.js','utf8');
+          assert(source.includes('const activeUserAiRequests = new Map();'));
+          assert(source.includes('function acquireUserConcurrencyLock(userId, requestId)'));
+          assert(source.includes('function releaseUserConcurrencyLock(userId, requestId)'));
+          assert(!source.includes('const activeUserAiRequests = new Set();'));
+          const a=source.indexOf('const activeUserAiRequests = new Map();');
+          const b=source.indexOf('// =========================================================================================\n// SERVER-AUTHORITATIVE CONSENT',a);
+          const ctx={}; vm.createContext(ctx); vm.runInContext(source.slice(a,b)+'\nthis.acq=acquireUserConcurrencyLock;this.rel=releaseUserConcurrencyLock;',ctx);
+          let x=ctx.acq('u','r1'); assert(x.acquired&&!x.duplicate);
+          x=ctx.acq('u','r1'); assert(!x.acquired&&x.duplicate);
+          x=ctx.acq('u','r2'); assert(!x.acquired&&!x.duplicate);
+          ctx.rel('u','r2'); x=ctx.acq('u','r2'); assert(!x.acquired,'wrong request id released active lock');
+          ctx.rel('u','r1'); x=ctx.acq('u','r2'); assert(x.acquired); ctx.rel('u','r2');
+          const markers=["app.post(['/api/analyze', '/api/analyze-chat-screenshot']","app.post('/api/icebreaker'","app.post(['/api/optimize', '/api/bio-optimizer']","app.post(['/api/chat', '/api/simulator/chat']","app.post('/api/simulator/review'"];
+          for(const m of markers){ const i=source.indexOf(m); assert(i>=0,m); const h=source.slice(i,i+2200); const q=h.indexOf('const reqId ='); const l=h.indexOf('const lockState = acquireUserConcurrencyLock(uid, reqId);'); assert(q>=0&&l>q,`${m}: reqId must precede lock`); assert(h.includes('if (lockState.duplicate)')); assert(h.includes('return res.status(409).json({')); assert(h.includes('code: "DUPLICATE_REQUEST"')); assert(h.includes('return res.status(429).json({ success: false, error: "A generation is already in progress')); }
+          assert.strictEqual((source.match(/releaseUserConcurrencyLock\(uid, reqId\);/g)||[]).length,5);
+          console.log('Duplicate request concurrency lock race guard passed.');
+          EOF
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: node tests/duplicate_request_lock_race.test.js
+      - run: npm test
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run build:netlify
+      - name: Verify exact scope and push repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf netlify-dist
+          echo '=== STATUS ==='
+          git status --short
+          allowed='^(server\.js|tests/maeve_runtime_repair\.test\.js|tests/final_hardening_pass\.test\.js|tests/security_hardening_audit\.test\.js|tests/run_all_tests\.js|tests/duplicate_request_lock_race\.test\.js)$'
+          unexpected=$(git status --porcelain | awk '{print $2}' | grep -Ev "$allowed" || true)
+          if [ -n "$unexpected" ]; then echo "Unexpected changed files:"; echo "$unexpected"; exit 2; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add server.js tests/maeve_runtime_repair.test.js tests/final_hardening_pass.test.js tests/security_hardening_audit.test.js tests/run_all_tests.js tests/duplicate_request_lock_race.test.js
+          git commit -m 'fix: make paid request locks idempotency-aware'
+          git push origin HEAD:fix/duplicate-request-lock-race
