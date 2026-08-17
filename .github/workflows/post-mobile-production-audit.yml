@@ -1,0 +1,29 @@
+name: Post-mobile production audit
+
+on:
+  push:
+    branches:
+      - audit/post-mobile-repair-20260817
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false axe-core
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - name: Audit current production
+        env:
+          SITE: https://soft-sawine-30785c.netlify.app
+          EXPECTED_SHA: 3e6f47bb472a119e3f830739d30f084fb010da52
+        run: node scripts/post-mobile-production-audit.js
