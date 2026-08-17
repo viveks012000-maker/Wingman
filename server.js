@@ -119,6 +119,7 @@ const configuredAllowedOrigins = rawConfiguredAllowedOrigins.filter(origin => {
     if (!IS_PROD) return true;
     if (origin === '*' || origin === 'null' || origin.includes('*')) return false;
     if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return false;
+    if (/^https:\/\/[^/]+\.netlify\.app$/i.test(origin)) return false;
     return /^https:\/\//i.test(origin);
 });
 const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...configuredAllowedOrigins]));
