@@ -118,6 +118,18 @@ function currentGitSha() {
   return 'unknown';
 }
 
+function optimizeDashboardAssetLoading() {
+  const appHtmlPath = path.join(OUT, 'app.html');
+  let appHtml = fs.readFileSync(appHtmlPath, 'utf8');
+  const eagerHeicTag = '<script src="./vendor/heic2any.min.js"></script>';
+  const lazyHeicTag = '<script src="./vendor/heic-lazy-loader.js"></script>';
+  const eagerCount = appHtml.split(eagerHeicTag).length - 1;
+  if (eagerCount !== 1) fail(`Expected exactly one eager HEIC converter tag in app.html; found ${eagerCount}`);
+  if (!fs.existsSync(path.join(OUT, 'vendor', 'heic-lazy-loader.js'))) fail('HEIC lazy loader is missing from the public artifact');
+  appHtml = appHtml.replace(eagerHeicTag, lazyHeicTag);
+  fs.writeFileSync(appHtmlPath, appHtml, 'utf8');
+}
+
 function writeSecurityFiles() {
   const railway = 'https://wingman-production-c6ce.up.railway.app';
   // heic2any.min.js currently performs runtime code generation. Keep unsafe-eval
@@ -206,6 +218,7 @@ function verifyCriticalRuntimeContent() {
   const appJs = fs.readFileSync(path.join(OUT, 'app.js'), 'utf8');
   const config = fs.readFileSync(path.join(OUT, 'config.js'), 'utf8');
   const headers = fs.readFileSync(path.join(OUT, '_headers'), 'utf8');
+  const heicLazyLoader = fs.readFileSync(path.join(OUT, 'vendor', 'heic-lazy-loader.js'), 'utf8');
 
   const railway = 'https://wingman-production-c6ce.up.railway.app';
   if (!appHtml.includes(railway)) fail('app.html CSP does not include Railway backend');
@@ -214,7 +227,10 @@ function verifyCriticalRuntimeContent() {
   if (!headers.includes('Strict-Transport-Security: max-age=31536000')) fail('_headers does not enforce HSTS');
   const unsafeEvalHeaderCount = (headers.match(/'unsafe-eval'/g) || []).length;
   if (unsafeEvalHeaderCount !== 2) fail(`unsafe-eval must appear only on /app and /app.html CSP blocks; found ${unsafeEvalHeaderCount}`);
-  if (!appHtml.includes("'unsafe-eval'") || !appHtml.includes('vendor/heic2any.min.js')) fail('Dashboard HEIC runtime/CSP compatibility contract is missing');
+  if (!appHtml.includes("'unsafe-eval'") || !appHtml.includes('vendor/heic-lazy-loader.js')) fail('Dashboard HEIC lazy runtime/CSP compatibility contract is missing');
+  if (appHtml.includes('<script src="./vendor/heic2any.min.js"></script>')) fail('Dashboard must not eagerly load the 1+ MB HEIC converter');
+  if (!heicLazyLoader.includes("var REAL_SCRIPT_SRC = './vendor/heic2any.min.js'")) fail('HEIC lazy loader does not target the vendored converter');
+  if (!heicLazyLoader.includes('window.heic2any = lazyHeic2Any')) fail('HEIC lazy loader does not preserve the app.js conversion API');
 
   // Prevent the known stale-production regression from ever entering a new artifact.
   if (appJs.includes("if (response.status === 401) {\n                        window.updateUICredits(0);")) {
@@ -263,6 +279,7 @@ fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
 for (const rel of PUBLIC_FILES) copyFile(rel);
 for (const rel of PUBLIC_DIRS) copyDir(rel);
+optimizeDashboardAssetLoading();
 writeSecurityFiles();
 const files = verifyNoForbiddenFiles();
 verifyCriticalRuntimeContent();
