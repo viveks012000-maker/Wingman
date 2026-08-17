@@ -1,0 +1,30 @@
+name: Post18 release probe
+on:
+  push:
+    branches: [audit/post-mobile-repair-20260817]
+    paths: [.github/workflows/post18-release-probe.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify exact Netlify release
+        env:
+          EXPECTED: 3e6f47bb472a119e3f830739d30f084fb010da52
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 12); do
+            curl -fsS -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "https://soft-sawine-30785c.netlify.app/release.json?audit=$(date +%s%N)" -o /tmp/release.json || true
+            actual=$(python - <<'PY'
+          import json
+          try: print(json.load(open('/tmp/release.json')).get('sourceCommit',''))
+          except: print('')
+          PY
+          )
+            echo "attempt=$i expected=$EXPECTED actual=$actual"
+            if [ "$actual" = "$EXPECTED" ]; then echo 'POST18_NETLIFY_RELEASE=PASS'; exit 0; fi
+            sleep 5
+          done
+          echo 'POST18_NETLIFY_RELEASE=FAIL'; exit 2
