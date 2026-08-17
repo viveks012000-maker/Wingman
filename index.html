@@ -2136,13 +2136,25 @@
         window.toggleMobileMenu = function () {
             var menu = document.getElementById("mobileMenu");
             var icon = document.getElementById("menu-icon");
+            var button = document.getElementById("mobile-menu-btn");
             if (!menu || !icon) return;
             if (menu.classList.contains("opacity-0")) {
                 menu.classList.remove("opacity-0", "pointer-events-none");
                 menu.classList.add("opacity-100", "pointer-events-auto");
                 icon.textContent = "close";
+                if (button) {
+                    button.setAttribute("aria-expanded", "true");
+                    button.setAttribute("aria-label", "Close navigation menu");
+                }
                 document.body.style.overflow = "hidden"; // Prevent background scrolling
             } else {
+                menu.classList.remove("opacity-100", "pointer-events-auto");
+                menu.classList.add("opacity-0", "pointer-events-none");
+                icon.textContent = "menu";
+                if (button) {
+                    button.setAttribute("aria-expanded", "false");
+                    button.setAttribute("aria-label", "Open navigation menu");
+                }
                 document.body.style.overflow = "";
             }
         };

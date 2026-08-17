@@ -104,6 +104,32 @@ async function runBrowserQA() {
                         throw new Error(`Footer brand link needs explicit accessible purpose; got ${footerLabel}`);
                     }
 
+                    // Mobile navigation must be reversible and expose accurate expanded state.
+                    await page.click('#mobile-menu-btn');
+                    let menuState = await page.evaluate(() => ({
+                        open: document.getElementById('mobileMenu').classList.contains('opacity-100'),
+                        blocked: document.getElementById('mobileMenu').classList.contains('pointer-events-none'),
+                        icon: document.getElementById('menu-icon').textContent.trim(),
+                        expanded: document.getElementById('mobile-menu-btn').getAttribute('aria-expanded'),
+                        label: document.getElementById('mobile-menu-btn').getAttribute('aria-label'),
+                        bodyOverflow: document.body.style.overflow
+                    }));
+                    if (!menuState.open || menuState.blocked || menuState.icon !== 'close' || menuState.expanded !== 'true' || menuState.label !== 'Close navigation menu' || menuState.bodyOverflow !== 'hidden') {
+                        throw new Error(`Mobile menu did not enter a correct open state: ${JSON.stringify(menuState)}`);
+                    }
+                    await page.click('#mobile-menu-btn');
+                    menuState = await page.evaluate(() => ({
+                        hidden: document.getElementById('mobileMenu').classList.contains('opacity-0'),
+                        blocked: document.getElementById('mobileMenu').classList.contains('pointer-events-none'),
+                        icon: document.getElementById('menu-icon').textContent.trim(),
+                        expanded: document.getElementById('mobile-menu-btn').getAttribute('aria-expanded'),
+                        label: document.getElementById('mobile-menu-btn').getAttribute('aria-label'),
+                        bodyOverflow: document.body.style.overflow
+                    }));
+                    if (!menuState.hidden || !menuState.blocked || menuState.icon !== 'menu' || menuState.expanded !== 'false' || menuState.label !== 'Open navigation menu' || menuState.bodyOverflow !== '') {
+                        throw new Error(`Mobile menu did not return to a correct closed state: ${JSON.stringify(menuState)}`);
+                    }
+
                     await page.evaluate(() => window.openInterstitialModal());
                     await page.waitForTimeout(20);
                     const interstitialClose = await page.$eval('#interstitialModal button[aria-label="Close age and consent dialog"]', el => {
