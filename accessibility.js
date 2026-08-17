@@ -108,8 +108,6 @@
         setTimeout(function () {
             var activeModal = topOpenModal();
             if (activeModal) {
-                // A second dialog may have opened immediately after the first closed.
-                // Never let delayed restoration steal focus outside the active modal.
                 if (!activeModal.contains(document.activeElement)) {
                     focusElement(focusables(activeModal)[0] || activeModal);
                 }
@@ -147,14 +145,10 @@
 
             var nestedFocusable = el.querySelector(focusableSelector);
             if (nestedFocusable) {
-                // Do not create an interactive parent around an already-focusable child.
-                // The native child remains the keyboard-accessible purchase action.
                 el.removeAttribute('role');
                 el.removeAttribute('tabindex');
                 el.removeAttribute('aria-label');
 
-                // Avoid calling the same purchase-modal action twice when a nested
-                // purchase control bubbles to the clickable card container.
                 el.querySelectorAll('[onclick*="openPurchaseModal"]').forEach(function (child) {
                     if (child === el || child.__wingmanPurchaseBubbleGuard) return;
                     child.__wingmanPurchaseBubbleGuard = true;
@@ -269,4 +263,25 @@
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
     else init();
+})();
+
+/* Production blocker runtime loads after app.js and after the accessibility layer is registered. */
+(function () {
+    'use strict';
+    var loaded = false;
+    function loadProductionRuntime() {
+        if (loaded || document.querySelector('script[data-wingman-production-runtime]')) return;
+        loaded = true;
+        var script = document.createElement('script');
+        script.src = 'vendor/production-runtime.js';
+        script.setAttribute('data-wingman-production-runtime', 'true');
+        script.async = false;
+        script.onerror = function () {
+            loaded = false;
+            console.error('[MyWingman] Production runtime failed to load.');
+        };
+        document.head.appendChild(script);
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadProductionRuntime, { once: true });
+    else loadProductionRuntime();
 })();
