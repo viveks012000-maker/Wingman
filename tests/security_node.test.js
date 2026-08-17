@@ -26,6 +26,15 @@ async function runSecurityTests() {
         const anlRes = await request(app).post('/api/analyze').send({});
         assert.strictEqual(anlRes.status, 401, 'Unauthenticated /api/analyze must return 401 Unauthorized');
 
+        const malformedAnlRes = await request(app)
+            .post('/api/analyze')
+            .send({ images: ['https://attacker.invalid/remote-image.png'] });
+        assert.strictEqual(
+            malformedAnlRes.status,
+            401,
+            'Unauthenticated screenshot payloads must be rejected before image validation'
+        );
+
         const iceRes = await request(app).post('/api/icebreaker').send({});
         assert.strictEqual(iceRes.status, 401, 'Unauthenticated /api/icebreaker must return 401 Unauthorized');
 
