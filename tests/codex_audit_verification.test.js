@@ -70,11 +70,11 @@ assert.strictEqual(appJs.includes('if (data.uploadedFiles || data.icebreakHtml |
 console.log('✔ Test 7 Passed: Screenshot base64 and raw HTML excluded from localStorage persistence');
 
 // 8. TEST PRODUCTION AUTH HARDENING (LOCAL JWT BLOCKED IN PRODUCTION)
-const authJs = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'auth.js'), 'utf8');
+const authJs = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'auth.js'), 'utf8').replace(/\r\n/g, '\n');
 assert.strictEqual(authJs.includes('const isProduction = process.env.NODE_ENV === \'production\' || Boolean(process.env.RAILWAY_ENVIRONMENT);'), true, 'auth.js detects production');
 assert.strictEqual(authJs.includes('if (!isProduction) {\n        try {\n            const decoded = jwt.verify(token, JWT_SECRET);'), true, 'auth.js gates local JWT decoding behind !isProduction');
 
-const supAuth = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'supabaseAuth.js'), 'utf8');
+const supAuth = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'supabaseAuth.js'), 'utf8').replace(/\r\n/g, '\n');
 assert.strictEqual(supAuth.includes('const isProduction = process.env.NODE_ENV === \'production\' || Boolean(process.env.RAILWAY_ENVIRONMENT);'), true, 'supabaseAuth detects production');
 assert.strictEqual(supAuth.includes('if (!isProduction && (process.env.ENABLE_MOCK_AUTH === \'true\' || req.headers[\'x-mock-auth\'] === \'true\'))'), true, 'supabaseAuth gates mock auth behind !isProduction');
 
