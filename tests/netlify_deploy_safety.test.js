@@ -63,6 +63,7 @@ try {
   assert.ok(appHtml.includes(railway), 'app.html CSP must permit Railway');
   assert.ok(configJs.includes(`API_BASE_URL: "${railway}"`), 'config.js must target Railway');
   assert.ok(headers.includes(railway), 'HTTP CSP must permit Railway');
+  assert.ok(headerBlock('/*').includes('Strict-Transport-Security: max-age=31536000'), 'All frontend routes must enforce HSTS');
   assert.ok(!headerBlock('/').includes("'unsafe-eval'"), 'Root landing CSP must not allow unsafe-eval');
   assert.ok(!headerBlock('/index.html').includes("'unsafe-eval'"), 'index.html CSP must not allow unsafe-eval');
   assert.ok(headerBlock('/app').includes("'unsafe-eval'"), '/app rewrite CSP must allow HEIC converter runtime code generation');

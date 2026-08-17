@@ -145,6 +145,7 @@ function writeSecurityFiles() {
   const appCsp = cspFor(true);
   const security = [
     '/*',
+    '  Strict-Transport-Security: max-age=31536000',
     '  X-Frame-Options: DENY',
     '  X-Content-Type-Options: nosniff',
     '  Referrer-Policy: strict-origin-when-cross-origin',
@@ -210,6 +211,7 @@ function verifyCriticalRuntimeContent() {
   if (!appHtml.includes(railway)) fail('app.html CSP does not include Railway backend');
   if (!config.includes(`API_BASE_URL: "${railway}"`)) fail('config.js does not point to Railway backend');
   if (!headers.includes(railway)) fail('_headers CSP does not include Railway backend');
+  if (!headers.includes('Strict-Transport-Security: max-age=31536000')) fail('_headers does not enforce HSTS');
   const unsafeEvalHeaderCount = (headers.match(/'unsafe-eval'/g) || []).length;
   if (unsafeEvalHeaderCount !== 2) fail(`unsafe-eval must appear only on /app and /app.html CSP blocks; found ${unsafeEvalHeaderCount}`);
   if (!appHtml.includes("'unsafe-eval'") || !appHtml.includes('vendor/heic2any.min.js')) fail('Dashboard HEIC runtime/CSP compatibility contract is missing');
