@@ -92,10 +92,41 @@ async function runBrowserQA() {
 
                 // Mobile usability regressions found by the production cross-browser audit.
                 if (width <= 430 && pageName === 'app.html') {
-                    const maeveFontPx = await page.$eval('#simulator-chat-input', el => parseFloat(getComputedStyle(el).fontSize));
-                    if (maeveFontPx < 16) {
-                        throw new Error(`Maeve mobile input must compute to >=16px to avoid iOS focus zoom; got ${maeveFontPx}px at ${width}px`);
+                    const mobileInputFonts = await page.evaluate(() => ['authEmailInput','authPasswordInput','resetEmailInput','bioInput','auditBioInput','simulator-chat-input'].map(id => document.getElementById(id)).filter(Boolean).map(el => ({ id: el.id, px: parseFloat(getComputedStyle(el).fontSize) })));
+                    const undersized = mobileInputFonts.filter(x => x.px < 16);
+                    if (undersized.length) {
+                        throw new Error(`Mobile text inputs must compute to >=16px to avoid iOS focus zoom: ${JSON.stringify(undersized)}`);
                     }
+
+                    await page.evaluate(() => window.openAuthRequiredModal());
+                    await page.waitForTimeout(30);
+                    const appAuth = await page.evaluate(() => {
+                        const m = document.getElementById('authRequiredModal');
+                        const close = [...m.querySelectorAll('button')].find(b => (b.getAttribute('onclick') || '').includes('closeAuthRequiredModal'));
+                        const eye = document.getElementById('togglePasswordBtn');
+                        const cr = close.getBoundingClientRect();
+                        const er = eye.getBoundingClientRect();
+                        return {
+                            role: m.getAttribute('role'),
+                            modal: m.getAttribute('aria-modal'),
+                            labelledby: m.getAttribute('aria-labelledby'),
+                            focused: m.contains(document.activeElement),
+                            close: { w: cr.width, h: cr.height, label: close.getAttribute('aria-label') },
+                            eye: { w: er.width, h: er.height, label: eye.getAttribute('aria-label'), tabIndex: eye.tabIndex }
+                        };
+                    });
+                    if (appAuth.role !== 'dialog' || appAuth.modal !== 'true' || !appAuth.labelledby || !appAuth.focused) throw new Error(`App auth dialog semantics/focus invalid: ${JSON.stringify(appAuth)}`);
+                    if (appAuth.close.w < 40 || appAuth.close.h < 40 || !appAuth.close.label) throw new Error(`App auth close target invalid: ${JSON.stringify(appAuth.close)}`);
+                    if (appAuth.eye.w < 40 || appAuth.eye.h < 40 || appAuth.eye.tabIndex < 0 || appAuth.eye.label !== 'Show password') throw new Error(`App password toggle invalid: ${JSON.stringify(appAuth.eye)}`);
+                    await page.keyboard.press('Escape');
+                    await page.waitForTimeout(30);
+                    if (await page.isVisible('#authRequiredModal')) throw new Error('Escape did not close app auth dialog');
+
+                    const buySemantics = await page.evaluate(() => {
+                        const candidates = [...document.querySelectorAll('[onclick*="openPurchaseModal"]')].filter(el => el.tagName !== 'BUTTON' && el.tagName !== 'A');
+                        return candidates.map(el => ({ role: el.getAttribute('role'), tabIndex: el.tabIndex, label: el.getAttribute('aria-label') }));
+                    });
+                    if (buySemantics.some(x => x.role !== 'button' || x.tabIndex < 0 || !x.label)) throw new Error(`Non-native Buy Credits control lacks keyboard semantics: ${JSON.stringify(buySemantics)}`);
                 }
 
                 if (width <= 430 && pageName === 'index.html') {
@@ -132,6 +163,11 @@ async function runBrowserQA() {
 
                     await page.evaluate(() => window.openInterstitialModal());
                     await page.waitForTimeout(20);
+                    const interstitialSemantics = await page.evaluate(() => {
+                        const m = document.getElementById('interstitialModal');
+                        return { role: m.getAttribute('role'), modal: m.getAttribute('aria-modal'), labelledby: m.getAttribute('aria-labelledby'), focused: m.contains(document.activeElement) };
+                    });
+                    if (interstitialSemantics.role !== 'dialog' || interstitialSemantics.modal !== 'true' || !interstitialSemantics.labelledby || !interstitialSemantics.focused) throw new Error(`Interstitial dialog semantics/focus invalid: ${JSON.stringify(interstitialSemantics)}`);
                     const interstitialClose = await page.$eval('#interstitialModal button[aria-label="Close age and consent dialog"]', el => {
                         const r = el.getBoundingClientRect();
                         return { width: r.width, height: r.height };
@@ -144,15 +180,20 @@ async function runBrowserQA() {
                     await page.evaluate(() => window.openAuthRequiredModal());
                     await page.waitForTimeout(20);
                     const authTargets = await page.evaluate(() => {
+                        const modal = document.getElementById('authRequiredModal');
                         const close = document.querySelector('#authRequiredModal button[aria-label="Close sign-in dialog"]');
                         const eye = document.getElementById('togglePasswordBtn');
                         const cr = close.getBoundingClientRect();
                         const er = eye.getBoundingClientRect();
                         return {
+                            modal: { role: modal.getAttribute('role'), ariaModal: modal.getAttribute('aria-modal'), labelledby: modal.getAttribute('aria-labelledby'), focused: modal.contains(document.activeElement) },
                             close: { width: cr.width, height: cr.height, label: close.getAttribute('aria-label') },
                             eye: { width: er.width, height: er.height, label: eye.getAttribute('aria-label'), tabIndex: eye.tabIndex }
                         };
                     });
+                    if (authTargets.modal.role !== 'dialog' || authTargets.modal.ariaModal !== 'true' || !authTargets.modal.labelledby || !authTargets.modal.focused) {
+                        throw new Error(`Auth dialog semantics/focus invalid: ${JSON.stringify(authTargets.modal)}`);
+                    }
                     if (authTargets.close.width < 40 || authTargets.close.height < 40) {
                         throw new Error(`Auth close touch target too small: ${authTargets.close.width}x${authTargets.close.height}`);
                     }
