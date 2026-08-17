@@ -19,7 +19,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm install --no-save --package-lock=false axe-core
-      - run: npx playwright install --with-deps chromium firefox
+      - run: npx playwright install --with-deps chromium webkit
       - name: Emit exact axe nodes as annotations
         run: |
           set +e
