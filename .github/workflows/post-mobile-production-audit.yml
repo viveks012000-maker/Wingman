@@ -40,5 +40,5 @@ jobs:
       - name: Audit current production
         env:
           SITE: https://soft-sawine-30785c.netlify.app
-          EXPECTED_SHA: 3e6f47bb472a119e3f830739d30f084fb010da52
+          EXPECTED_SHA: 2a85dca179d6c8d1f0288b2977de2be93036bb3c
         run: node scripts/post-mobile-production-audit.js
