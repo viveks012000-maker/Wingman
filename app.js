@@ -1573,7 +1573,7 @@ STRICT LAWS:
             if (ci && chatCounter) {
                 const len = ci.value.length;
                 chatCounter.textContent = `${len.toLocaleString()} / 5,000`;
-                chatCounter.style.color = len > 5000 ? '#ef4444' : (len > 4500 ? '#f59e0b' : 'rgba(192, 132, 252, 0.6)');
+                chatCounter.style.color = len > 5000 ? '#ef4444' : (len > 4500 ? '#f59e0b' : '#c084fc');
             }
 
             const chatSendBtn = $("chatbox-send-btn");

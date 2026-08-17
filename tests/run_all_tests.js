@@ -44,7 +44,8 @@ const testSuites = [
     { name: '38. Closed Dialog Inert Accessibility Guard', file: 'modal_inert_accessibility.test.js' },
     { name: '39. Buy Credits Nested-Interactive Accessibility Guard', file: 'buy_credits_nested_interactive.test.js' },
     { name: '40. Mobile Empty-State WCAG Contrast Guard', file: 'empty_state_mobile_contrast.test.js' },
-    { name: '41. Cloudflare Pages Routing, 404 & CORS Cutover Guard', file: 'cloudflare_pages_cutover.test.js' }
+    { name: '41. Cloudflare Pages Routing, 404 & CORS Cutover Guard', file: 'cloudflare_pages_cutover.test.js' },
+    { name: '42. Cloudflare Final Accessibility Guard', file: 'cloudflare_final_accessibility.test.js' }
 ];
 
 console.log('========================================================================');
