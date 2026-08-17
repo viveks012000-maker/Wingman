@@ -22,6 +22,17 @@ jobs:
       - run: npm ci
       - run: npm install --no-save --package-lock=false axe-core
       - run: npx playwright install --with-deps chromium firefox webkit
+      - name: Correct audit-only internal anchor probe
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/post-mobile-production-audit.js')
+          s=p.read_text()
+          old="""      if (id && !(await page.locator(`#${CSS.escape ? '' : ''}`).count().catch(()=>0))) {\n        const exists = await page.evaluate(id => !!document.getElementById(id), id);\n        if (!exists) fail(scope, `broken in-page anchor ${l.href}`);\n      }"""
+          new="""      if (id) {\n        const exists = await page.evaluate(id => !!document.getElementById(id), id);\n        if (!exists) fail(scope, `broken in-page anchor ${l.href}`);\n      }"""
+          if s.count(old)!=1: raise SystemExit(f'anchor patch count={s.count(old)}')
+          p.write_text(s.replace(old,new))
+          PY
       - name: Audit current production
         env:
           SITE: https://soft-sawine-30785c.netlify.app
