@@ -1,4 +1,4 @@
-name: Post18 release probe
+name: Round2 release probe
 on:
   push:
     branches: [audit/post-mobile-repair-20260817]
@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Verify exact Netlify release
         env:
-          EXPECTED: 3e6f47bb472a119e3f830739d30f084fb010da52
+          EXPECTED: 2a85dca179d6c8d1f0288b2977de2be93036bb3c
         run: |
           set -euo pipefail
           for i in $(seq 1 12); do
@@ -24,7 +24,7 @@ jobs:
           PY
           )
             echo "attempt=$i expected=$EXPECTED actual=$actual"
-            if [ "$actual" = "$EXPECTED" ]; then echo 'POST18_NETLIFY_RELEASE=PASS'; exit 0; fi
+            if [ "$actual" = "$EXPECTED" ]; then echo 'ROUND2_NETLIFY_RELEASE=PASS'; exit 0; fi
             sleep 5
           done
-          echo 'POST18_NETLIFY_RELEASE=FAIL'; exit 2
+          echo 'ROUND2_NETLIFY_RELEASE=FAIL'; exit 2
