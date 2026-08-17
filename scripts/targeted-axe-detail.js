@@ -1,54 +1,88 @@
-const { chromium } = require('playwright');
+const { chromium, firefox } = require('playwright');
 const axeSource = require('axe-core').source;
 const SITE = 'https://soft-sawine-30785c.netlify.app';
 const EXPECTED = '261d7a3060ba5868541b653e0697a4667e4fe321';
 
 async function waitRelease() {
-  for (let i=0;i<30;i++) {
+  for (let i = 0; i < 30; i++) {
     try {
-      const r=await fetch(`${SITE}/release.json?audit=${Date.now()}-${i}`,{headers:{'Cache-Control':'no-cache','Pragma':'no-cache'}});
-      const j=await r.json();
-      console.log(`release_attempt=${i+1} actual=${j.sourceCommit}`);
-      if(j.sourceCommit===EXPECTED)return;
-    } catch(e) { console.warn(`release_attempt=${i+1} error=${String(e)}`); }
-    await new Promise(r=>setTimeout(r,3000));
+      const r = await fetch(`${SITE}/release.json?audit=${Date.now()}-${i}`, {
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+      });
+      const j = await r.json();
+      console.log(`release_attempt=${i + 1} actual=${j.sourceCommit}`);
+      if (j.sourceCommit === EXPECTED) return;
+    } catch (e) {
+      console.warn(`release_attempt=${i + 1} error=${String(e)}`);
+    }
+    await new Promise(r => setTimeout(r, 3000));
   }
   throw new Error('release mismatch');
 }
 
-async function scan(page, scope, path) {
-  await page.goto(SITE+path,{waitUntil:'domcontentloaded',timeout:30000});
-  await page.waitForTimeout(500);
-  await page.addScriptTag({content:axeSource});
-  const v=await page.evaluate(async()=>{
-    const r=await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21a','wcag21aa']}});
-    return r.violations.filter(x=>x.impact==='serious'||x.impact==='critical').map(x=>({
-      id:x.id,impact:x.impact,help:x.help,helpUrl:x.helpUrl,
-      nodes:x.nodes.map(n=>({target:n.target,html:n.html,summary:n.failureSummary,any:n.any?.map(c=>c.message),all:n.all?.map(c=>c.message),none:n.none?.map(c=>c.message)}))
-    }));
-  });
-  if(!v.length){console.log(`AXE_PASS scope=${scope}`);return 0;}
-  for(const rule of v){
-    for(const node of rule.nodes){
-      console.log('AXE_FAIL '+JSON.stringify({scope,rule:rule.id,impact:rule.impact,help:rule.help,selector:node.target,html:node.html,summary:node.summary,any:node.any,all:node.all,none:node.none}));
+async function scan(browserType, name) {
+  const browser = await browserType.launch({ headless: true });
+  try {
+    const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+    const page = await context.newPage();
+    await page.goto(`${SITE}/app`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1000);
+    await page.addScriptTag({ content: axeSource });
+    const violations = await page.evaluate(async () => {
+      const r = await axe.run(document, {
+        runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] }
+      });
+      return r.violations
+        .filter(x => x.impact === 'serious' || x.impact === 'critical')
+        .map(x => ({
+          id: x.id,
+          impact: x.impact,
+          help: x.help,
+          nodes: x.nodes.map(n => ({
+            target: n.target,
+            html: n.html,
+            summary: n.failureSummary,
+            any: n.any?.map(c => c.message),
+            all: n.all?.map(c => c.message),
+            none: n.none?.map(c => c.message)
+          }))
+        }));
+    });
+    let count = 0;
+    for (const rule of violations) {
+      for (const node of rule.nodes) {
+        count++;
+        console.log('AXE_FAIL ' + JSON.stringify({
+          browser: name,
+          path: '/app',
+          rule: rule.id,
+          impact: rule.impact,
+          help: rule.help,
+          selector: node.target,
+          html: node.html,
+          summary: node.summary,
+          any: node.any,
+          all: node.all,
+          none: node.none
+        }));
+      }
     }
+    if (!count) console.log(`AXE_PASS browser=${name} path=/app`);
+    await context.close();
+    return count;
+  } finally {
+    await browser.close();
   }
-  return v.reduce((n,x)=>n+x.nodes.length,0);
 }
 
-(async()=>{
+(async () => {
   await waitRelease();
-  const b=await chromium.launch({headless:true});
-  let count=0;
-  try{
-    const desktop=await b.newContext({viewport:{width:1366,height:768}}); const dp=await desktop.newPage();
-    for(const p of ['/','/terms.html','/privacy.html','/refund.html']) count+=await scan(dp,'desktop'+p,p);
-    await desktop.close();
-    for(const [w,h] of [[320,568],[390,844]]){
-      const c=await b.newContext({viewport:{width:w,height:h},isMobile:true,hasTouch:true});const p=await c.newPage();
-      count+=await scan(p,`mobile-${w}/`,'/');await c.close();
-    }
-  } finally {await b.close();}
-  console.log(`AXE_DETAIL_TOTAL_NODES=${count}`);
-  if(count)process.exit(2);
-})().catch(e=>{console.error('AXE_DETAIL_FATAL '+String(e));process.exit(3);});
+  const chromiumCount = await scan(chromium, 'chromium-desktop');
+  const firefoxCount = await scan(firefox, 'firefox-desktop');
+  const total = chromiumCount + firefoxCount;
+  console.log(`AXE_APP_TOTAL_NODES=${total}`);
+  if (total) process.exit(2);
+})().catch(e => {
+  console.error('AXE_DETAIL_FATAL ' + String(e));
+  process.exit(3);
+});
