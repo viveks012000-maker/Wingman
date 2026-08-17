@@ -1,4 +1,10 @@
 const { createClient } = require('@supabase/supabase-js');
+const { installAnalyzerTransportRetry } = require('./analyzerTransportRetry');
+
+// Install a narrowly-scoped retry wrapper before Supabase/server clients are created.
+// It only matches the exact Screenshot Analyzer vision endpoint + model; all other fetches
+// pass through untouched.
+installAnalyzerTransportRetry();
 
 const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
 
