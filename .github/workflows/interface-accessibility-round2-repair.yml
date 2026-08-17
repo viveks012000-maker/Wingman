@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Normalize audit-only index insertion anchor
+      - name: Normalize audit-only applicator anchors
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -33,7 +33,12 @@ jobs:
           new="""p_index = Path('index.html')\ns_index = p_index.read_text()\nif s_index.count('</body>') != 1:\n    raise SystemExit(f\"index.html: expected one </body>, found {s_index.count('</body>')}\")\np_index.write_text(s_index.replace('</body>', '    <script src=\"accessibility.js\"></script>\\n</body>'))"""
           if s.count(old)!=1:
               raise SystemExit(f'index applicator anchor mismatch: {s.count(old)}')
-          p.write_text(s.replace(old,new))
+          s=s.replace(old,new)
+          old_visibility="if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;"
+          new_visibility="if (style.display === 'none' || style.visibility === 'hidden') return false;"
+          if s.count(old_visibility)!=1:
+              raise SystemExit(f'visibility applicator anchor mismatch: {s.count(old_visibility)}')
+          p.write_text(s.replace(old_visibility,new_visibility))
           PY
       - name: Apply exact round2 product/test patch
         run: python scripts/apply-interface-accessibility-round2.py
