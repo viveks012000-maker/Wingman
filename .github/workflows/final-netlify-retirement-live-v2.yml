@@ -1,0 +1,92 @@
+name: Final Netlify retirement live verification v2
+
+on:
+  push:
+    branches:
+      - audit/final-netlify-retirement-v2-20260817
+    paths:
+      - .github/workflows/final-netlify-retirement-live-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/final-netlify-retirement-v2-20260817
+      - name: Wait for exact production deployments and verify CORS retirement
+        shell: bash
+        env:
+          EXPECTED_SHA: ba8267322e7da3161a570b1b7959ec63626c6b22
+          API: https://wingman-production-c6ce.up.railway.app
+          SITE: https://mywingman.pages.dev
+        run: |
+          set -euo pipefail
+
+          cloudflare_ok=0
+          for i in $(seq 1 72); do
+            body="$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' "${SITE}/release.json?audit=${RANDOM}${RANDOM}" 2>/dev/null || true)"
+            actual="$(printf '%s' "$body" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).sourceCommit||'')}catch(e){console.log('')}})" || true)"
+            echo "Cloudflare attempt ${i}: ${actual:-<none>}"
+            if [ "$actual" = "$EXPECTED_SHA" ]; then cloudflare_ok=1; break; fi
+            sleep 5
+          done
+          test "$cloudflare_ok" -eq 1
+
+          railway_ok=0
+          for i in $(seq 1 72); do
+            health_code="$(curl -sS --max-time 15 -o /tmp/health.json -w '%{http_code}' "${API}/api/health" || true)"
+            curl -sS --max-time 15 -D /tmp/cf.headers -o /dev/null -X OPTIONS "${API}/api/chat" \
+              -H 'Origin: https://mywingman.pages.dev' \
+              -H 'Access-Control-Request-Method: POST' \
+              -H 'Access-Control-Request-Headers: content-type,authorization' || true
+            cf_acao="$(awk 'BEGIN{IGNORECASE=1} /^access-control-allow-origin:/ {sub(/\r$/,""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' /tmp/cf.headers)"
+
+            old_allowed=0
+            for origin in \
+              https://soft-sawine-30785c.netlify.app \
+              https://joyful-conkies-026a81.netlify.app \
+              https://wondrous-arithmetic-0ece9d.netlify.app \
+              https://chimerical-granita-c68c5a.netlify.app; do
+              curl -sS --max-time 15 -D /tmp/old.headers -o /dev/null -X OPTIONS "${API}/api/chat" \
+                -H "Origin: ${origin}" \
+                -H 'Access-Control-Request-Method: POST' \
+                -H 'Access-Control-Request-Headers: content-type,authorization' || true
+              old_acao="$(awk 'BEGIN{IGNORECASE=1} /^access-control-allow-origin:/ {sub(/\r$/,""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' /tmp/old.headers)"
+              if [ -n "$old_acao" ]; then
+                echo "Retired origin still allowed: ${origin} -> ${old_acao}"
+                old_allowed=1
+              fi
+            done
+
+            echo "Railway attempt ${i}: health=${health_code} cloudflare_acao=${cf_acao:-<none>} old_allowed=${old_allowed}"
+            if [ "$health_code" = "200" ] && [ "$cf_acao" = "https://mywingman.pages.dev" ] && [ "$old_allowed" -eq 0 ]; then
+              railway_ok=1
+              break
+            fi
+            sleep 5
+          done
+          test "$railway_ok" -eq 1
+
+          mkdir -p .audit
+          cat > .audit/final-netlify-retirement-pass-v2.txt <<EOF
+          PASS
+          expected_sha=${EXPECTED_SHA}
+          cloudflare_release=${EXPECTED_SHA}
+          railway_health=200
+          cloudflare_acao=https://mywingman.pages.dev
+          retired_netlify_origins_acao=none
+          EOF
+
+      - name: Commit audit pass marker
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .audit/final-netlify-retirement-pass-v2.txt
+          git commit -m "audit: record final Netlify retirement pass v2"
+          git push origin HEAD:audit/final-netlify-retirement-v2-20260817
