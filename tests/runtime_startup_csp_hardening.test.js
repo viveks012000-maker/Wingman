@@ -19,7 +19,8 @@ assert.ok(buildSource.includes('const strictCsp = cspFor(false);'), 'Landing/leg
 assert.ok(buildSource.includes('const appCsp = cspFor(true);'), 'Netlify dashboard CSP must opt into the HEIC compatibility policy explicitly');
 assert.ok(!indexHtml.includes("'unsafe-eval'"), 'Landing-page meta CSP must remain eval-free');
 assert.ok(appHtml.includes("'unsafe-eval'") && appHtml.includes('vendor/heic2any.min.js'), 'Dashboard may retain unsafe-eval only for the vendored HEIC converter compatibility contract');
-assert.ok(envExample.includes('ALLOWED_ORIGINS="https://mywingman.com,https://chimerical-granita-c68c5a.netlify.app"'), 'production origin example must use exact trusted origins');
+assert.ok(envExample.includes('ALLOWED_ORIGINS="https://mywingman.pages.dev,https://mywingman.com"'), 'production origin example must use the exact Cloudflare and future custom-domain origins');
+assert.ok(!envExample.includes('netlify.app'), 'production origin example must not advertise or trust retired Netlify origins');
 assert.ok(!envExample.includes('https://*.pages.dev'), 'production origin example must not advertise wildcard preview origins');
 
 const output = execFileSync(process.execPath, ['-e', "require('./server'); process.stdout.write('IMPORT_OK')"], {
