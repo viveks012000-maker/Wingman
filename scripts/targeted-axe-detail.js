@@ -1,7 +1,7 @@
 const { chromium, firefox } = require('playwright');
 const axeSource = require('axe-core').source;
 const SITE = 'https://soft-sawine-30785c.netlify.app';
-const EXPECTED = '261d7a3060ba5868541b653e0697a4667e4fe321';
+const EXPECTED = '7ec0570a5ea0a69c15328e6f7972f7a3f1ef36b7';
 
 async function waitRelease() {
   for (let i = 0; i < 30; i++) {
