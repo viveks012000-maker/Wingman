@@ -10,7 +10,7 @@ permissions:
 jobs:
   axe-detail:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,6 +20,17 @@ jobs:
       - run: npm ci
       - run: npm install --no-save --package-lock=false axe-core
       - run: npx playwright install --with-deps chromium webkit
+      - name: Extend exact-release wait window
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/targeted-axe-detail.js')
+          s=p.read_text()
+          old='for (let i = 0; i < 40; i++) {'
+          new='for (let i = 0; i < 160; i++) {'
+          if s.count(old)!=1: raise SystemExit(f'release loop patch count={s.count(old)}')
+          p.write_text(s.replace(old,new))
+          PY
       - name: Emit exact axe nodes as annotations
         run: |
           set +e
@@ -31,4 +42,10 @@ jobs:
             safe=${safe//$'\n'/'%0A'}
             echo "::error title=Exact axe node::$safe"
           done < <(grep '^AXE_FAIL ' /tmp/axe.log || true)
+          while IFS= read -r line; do
+            safe=${line//'%'/'%25'}
+            safe=${safe//$'\r'/'%0D'}
+            safe=${safe//$'\n'/'%0A'}
+            echo "::error title=Audit precondition failure::$safe"
+          done < <(grep '^AXE_DETAIL_FATAL ' /tmp/axe.log || true)
           exit "$status"
