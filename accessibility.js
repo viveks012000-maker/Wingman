@@ -43,6 +43,18 @@
         }
     }
 
+    function setModalInteractiveState(modal, open) {
+        if (open) {
+            modal.inert = false;
+            modal.removeAttribute('inert');
+            modal.setAttribute('aria-hidden', 'false');
+        } else {
+            modal.inert = true;
+            modal.setAttribute('inert', '');
+            modal.setAttribute('aria-hidden', 'true');
+        }
+    }
+
     function enhanceCloseControls(modal, config) {
         modal.querySelectorAll('button').forEach(function (button) {
             var onclick = button.getAttribute('onclick') || '';
@@ -59,7 +71,7 @@
         if (isVisible(modal) && !st.open) {
             st.open = true;
             st.returnFocus = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
-            modal.setAttribute('aria-hidden', 'false');
+            setModalInteractiveState(modal, true);
             states.set(modal, st);
             setTimeout(function () {
                 if (!isVisible(modal)) return;
@@ -68,7 +80,7 @@
             }, 0);
         } else if (!isVisible(modal) && st.open) {
             st.open = false;
-            modal.setAttribute('aria-hidden', 'true');
+            setModalInteractiveState(modal, false);
             states.set(modal, st);
             var target = st.returnFocus;
             st.returnFocus = null;
@@ -78,7 +90,7 @@
                 }, 0);
             }
         } else if (!isVisible(modal)) {
-            modal.setAttribute('aria-hidden', 'true');
+            setModalInteractiveState(modal, false);
         }
     }
 
@@ -138,9 +150,9 @@
                 if (!st.open) {
                     st.returnFocus = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
                 }
+                setModalInteractiveState(modal, true);
                 var result = originalOpen.apply(this, arguments);
                 st.open = true;
-                modal.setAttribute('aria-hidden', 'false');
                 states.set(modal, st);
                 var first = focusables(modal)[0] || modal;
                 try { first.focus({ preventScroll: true }); } catch (_) { try { first.focus(); } catch (_) {} }
@@ -158,7 +170,7 @@
                 var result = originalClose.apply(this, arguments);
                 st.open = false;
                 st.returnFocus = null;
-                modal.setAttribute('aria-hidden', 'true');
+                setModalInteractiveState(modal, false);
                 states.set(modal, st);
                 if (target && target.isConnected && typeof target.focus === 'function') {
                     setTimeout(function () {
