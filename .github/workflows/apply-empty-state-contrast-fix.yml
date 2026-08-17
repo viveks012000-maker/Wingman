@@ -1,0 +1,46 @@
+name: Apply empty-state contrast repair
+on:
+  push:
+    branches: [fix/empty-state-mobile-contrast-20260817]
+    paths:
+      - .github/workflows/apply-empty-state-contrast-fix.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact shared empty-state contrast fix
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app.html')
+          s = p.read_text()
+          old = '''        #analyzeEmptyState *,
+          #icebreakEmptyState *,
+          #optimizeEmptyState * {
+              color: rgba(156, 163, 175, 0.4) !important;'''
+          new = '''        #analyzeEmptyState *,
+          #icebreakEmptyState *,
+          #optimizeEmptyState * {
+              color: rgba(156, 163, 175, 0.8) !important;'''
+          count = s.count(old)
+          if count != 1:
+              raise SystemExit(f'Expected exactly one shared empty-state color rule; found {count}')
+          p.write_text(s.replace(old, new))
+          PY
+          git diff --check
+          git diff -- app.html
+      - name: Commit exact product change
+        run: |
+          set -euo pipefail
+          test "$(git status --porcelain | awk '{print $2}' | paste -sd' ' -)" = "app.html"
+          git config user.name 'viveks012000-maker'
+          git config user.email 'viveks012000@gmail.com'
+          git add app.html
+          git commit -m 'fix: raise empty-state text contrast'
+          git push origin HEAD:fix/empty-state-mobile-contrast-20260817
