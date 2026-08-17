@@ -4,13 +4,13 @@
   "description": "",
   "main": "app.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node railway-server.js",
     "dev": "concurrently \"npm run backend\" \"echo 'Frontend client environment ready'\"",
     "backend": "node --watch server.js",
     "build:css": "npx @tailwindcss/cli -i ./input.css -o ./output.css --minify",
     "build:netlify": "node scripts/build-netlify-dist.js",
     "watch:css": "npx @tailwindcss/cli -i ./input.css -o ./output.css --watch",
-    "test": "node tests/run_all_tests.js && node tests/production_blocker_runtime.test.js && node tests/analyzer_transport_retry.test.js"
+    "test": "node tests/run_all_tests.js && node tests/production_blocker_runtime.test.js && node tests/analyzer_transport_retry.test.js && node tests/railway_api_surface.test.js"
   },
   "keywords": [],
   "author": "",
