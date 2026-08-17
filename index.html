@@ -168,7 +168,7 @@
     <nav class="sticky top-0 z-50 w-full bg-[#090d16]/80 backdrop-blur-xl border-b border-white/10 transition-all">
         <div class="max-w-7xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between gap-8">
             <!-- Brand Logo Image (Sleek & Proportional) -->
-            <a href="index.html" class="flex items-center gap-3 group shrink-0" title="MyWingman Home">
+            <a href="index.html" class="flex items-center gap-3 group shrink-0" title="MyWingman Home" aria-label="MyWingman home">
                 <img src="logo.png" alt="MyWingman Logo"
                     class="h-14 md:h-16 w-auto object-contain transition-transform duration-300 group-hover:scale-105" />
             </a>
@@ -206,7 +206,7 @@
                 </a>
 
                 <!-- Hamburger Menu Button (mobile only) -->
-                <button type="button" id="mobile-menu-btn"
+                <button type="button" id="mobile-menu-btn" aria-label="Open navigation menu" aria-expanded="false"
                     class="flex sm:hidden items-center justify-center text-slate-400 hover:text-white transition-colors p-2 z-50 cursor-pointer"
                     onclick="window.toggleMobileMenu()">
                     <span class="material-symbols-outlined text-[28px]" id="menu-icon">menu</span>
@@ -1232,7 +1232,7 @@
     <footer class="py-12 px-4 md:px-8 bg-transparent border-t border-white/10">
         <div class="max-w-7xl mx-auto flex flex-col items-center justify-center gap-6 text-center">
             <!-- Footer Logo Image -->
-            <a href="index.html" class="flex items-center gap-2.5">
+            <a href="index.html" class="flex items-center gap-2.5" aria-label="MyWingman home">
                 <img src="logo.png" alt="MyWingman Logo" class="h-28 md:h-32 w-auto object-contain" />
             </a>
 
@@ -1274,8 +1274,8 @@
         <div class="relative w-full max-w-md bg-gradient-to-b from-[#0f1424] via-[#090d16] to-[#05070d] rounded-3xl border border-violet-500/30 shadow-[0_0_60px_rgba(139,92,246,0.3)] flex flex-col p-6 space-y-5 transform scale-95 transition-all duration-300"
             id="interstitialCard">
 
-            <button type="button"
-                class="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors p-1.5 rounded-full hover:bg-white/10"
+            <button type="button" aria-label="Close age and consent dialog"
+                class="absolute top-4 right-4 w-11 h-11 flex items-center justify-center text-slate-400 hover:text-white transition-colors p-0 rounded-full hover:bg-white/10"
                 onclick="window.closeInterstitialModal()">
                 <span class="material-symbols-outlined block text-[20px]">close</span>
             </button>
@@ -1365,7 +1365,7 @@
         <div class="relative w-full max-w-md bg-[#090d16] rounded-3xl border border-violet-500/30 shadow-[0_0_50px_rgba(139,92,246,0.3)] flex flex-col p-6 space-y-4 transform scale-95 transition-all duration-300"
             id="authRequiredCard">
 
-            <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors p-1"
+            <button type="button" aria-label="Close sign-in dialog" class="absolute top-4 right-4 w-11 h-11 flex items-center justify-center text-slate-400 hover:text-white transition-colors p-0 rounded-full hover:bg-white/10"
                 onclick="window.closeAuthRequiredModal(event)">
                 <span class="material-symbols-outlined block text-[20px]">close</span>
             </button>
@@ -1425,10 +1425,10 @@
                     </div>
                     <div class="relative">
                         <input type="password" id="authPasswordInput" placeholder="••••••••"
-                            class="w-full bg-black/50 border border-white/15 rounded-xl p-2.5 pr-10 text-sm text-white focus:border-violet-500 focus:outline-none transition-all" />
-                        <button type="button" id="togglePasswordBtn"
-                            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors cursor-pointer"
-                            onclick="window.togglePasswordVisibility()" tabindex="-1">
+                            class="w-full bg-black/50 border border-white/15 rounded-xl p-2.5 pr-14 text-sm text-white focus:border-violet-500 focus:outline-none transition-all" />
+                        <button type="button" id="togglePasswordBtn" aria-label="Show password"
+                            class="absolute right-0.5 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center text-slate-400 hover:text-white transition-colors cursor-pointer rounded-lg"
+                            onclick="window.togglePasswordVisibility()">
                             <span class="material-symbols-outlined text-[20px]"
                                 style="font-variation-settings: 'FILL' 0;">visibility_off</span>
                         </button>
@@ -1614,9 +1614,11 @@
             var iconEl = toggleBtn.querySelector(".material-symbols-outlined");
             if (pwInput.type === "password") {
                 pwInput.type = "text";
+                toggleBtn.setAttribute("aria-label", "Hide password");
                 if (iconEl) iconEl.textContent = "visibility";
             } else {
                 pwInput.type = "password";
+                toggleBtn.setAttribute("aria-label", "Show password");
                 if (iconEl) iconEl.textContent = "visibility_off";
             }
         };

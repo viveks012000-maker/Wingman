@@ -90,6 +90,59 @@ async function runBrowserQA() {
                 await page.goto(url, { waitUntil: 'domcontentloaded' });
                 await page.waitForTimeout(100);
 
+                // Mobile usability regressions found by the production cross-browser audit.
+                if (width <= 430 && pageName === 'app.html') {
+                    const maeveFontPx = await page.$eval('#simulator-chat-input', el => parseFloat(getComputedStyle(el).fontSize));
+                    if (maeveFontPx < 16) {
+                        throw new Error(`Maeve mobile input must compute to >=16px to avoid iOS focus zoom; got ${maeveFontPx}px at ${width}px`);
+                    }
+                }
+
+                if (width <= 430 && pageName === 'index.html') {
+                    const footerLabel = await page.$eval('footer a[href="index.html"]', el => el.getAttribute('aria-label'));
+                    if (footerLabel !== 'MyWingman home') {
+                        throw new Error(`Footer brand link needs explicit accessible purpose; got ${footerLabel}`);
+                    }
+
+                    await page.evaluate(() => window.openInterstitialModal());
+                    await page.waitForTimeout(20);
+                    const interstitialClose = await page.$eval('#interstitialModal button[aria-label="Close age and consent dialog"]', el => {
+                        const r = el.getBoundingClientRect();
+                        return { width: r.width, height: r.height };
+                    });
+                    if (interstitialClose.width < 40 || interstitialClose.height < 40) {
+                        throw new Error(`Interstitial close touch target too small: ${interstitialClose.width}x${interstitialClose.height}`);
+                    }
+                    await page.evaluate(() => window.closeInterstitialModal());
+
+                    await page.evaluate(() => window.openAuthRequiredModal());
+                    await page.waitForTimeout(20);
+                    const authTargets = await page.evaluate(() => {
+                        const close = document.querySelector('#authRequiredModal button[aria-label="Close sign-in dialog"]');
+                        const eye = document.getElementById('togglePasswordBtn');
+                        const cr = close.getBoundingClientRect();
+                        const er = eye.getBoundingClientRect();
+                        return {
+                            close: { width: cr.width, height: cr.height, label: close.getAttribute('aria-label') },
+                            eye: { width: er.width, height: er.height, label: eye.getAttribute('aria-label'), tabIndex: eye.tabIndex }
+                        };
+                    });
+                    if (authTargets.close.width < 40 || authTargets.close.height < 40) {
+                        throw new Error(`Auth close touch target too small: ${authTargets.close.width}x${authTargets.close.height}`);
+                    }
+                    if (authTargets.eye.width < 40 || authTargets.eye.height < 40) {
+                        throw new Error(`Password visibility touch target too small: ${authTargets.eye.width}x${authTargets.eye.height}`);
+                    }
+                    if (authTargets.eye.label !== 'Show password' || authTargets.eye.tabIndex < 0) {
+                        throw new Error(`Password visibility control accessibility invalid: ${JSON.stringify(authTargets.eye)}`);
+                    }
+                    await page.click('#togglePasswordBtn');
+                    const hideLabel = await page.getAttribute('#togglePasswordBtn', 'aria-label');
+                    if (hideLabel !== 'Hide password') throw new Error(`Password visibility label did not update: ${hideLabel}`);
+                    await page.click('#togglePasswordBtn');
+                    await page.evaluate(() => window.closeAuthRequiredModal());
+                }
+
                 if (pageErrors.length > 0) {
                     const firstErr = pageErrors[0];
                     throw new Error(`Page-level JavaScript exception in [${pageName}]: ${firstErr.message}`);
