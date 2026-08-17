@@ -55,7 +55,7 @@ console.log('✔ Test 3 Passed: Payment verification and purchase routes strictl
 // Test 4: Simulator Review Cost Abuse & Protection
 assert.strictEqual(serverContent.includes("app.post('/api/simulator/review'") && serverContent.includes("requireSupabaseAuth") && serverContent.includes("apiLimiter"), true);
 assert.strictEqual(serverContent.includes("deduction = await verifyAndDeductCreditsDB(req, 2, 'simulator_review', reqId);"), true);
-assert.strictEqual(serverContent.includes("if (!acquireUserConcurrencyLock(uid))"), true);
+assert.strictEqual(serverContent.includes("const lockState = acquireUserConcurrencyLock(uid, reqId);"), true);
 console.log('✔ Test 4 Passed: Simulator review is Supabase authenticated, metered, rate limited, and concurrency locked');
 
 // Test 5: Account Deletion — No False Success & Proper Error Handling

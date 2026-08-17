@@ -372,14 +372,21 @@ function countWords(str) {
 }
 
 // In-flight request concurrency lock per authenticated user (Prevents parallel overlapping AI costs)
-const activeUserAiRequests = new Set();
-function acquireUserConcurrencyLock(userId) {
-    if (!userId || userId === 'guest_user') return true;
-    if (activeUserAiRequests.has(userId)) {
-        return false;
+const activeUserAiRequests = new Map();
+function acquireUserConcurrencyLock(userId, requestId) {
+    if (!userId || userId === 'guest_user') return { acquired: true, duplicate: false };
+    const activeRequestId = activeUserAiRequests.get(userId);
+    if (activeRequestId !== undefined) {
+        return { acquired: false, duplicate: activeRequestId === requestId };
     }
-    activeUserAiRequests.add(userId);
-    return true;
+    activeUserAiRequests.set(userId, requestId);
+    return { acquired: true, duplicate: false };
+}
+function releaseUserConcurrencyLock(userId, requestId) {
+    if (!userId || userId === 'guest_user') return;
+    if (requestId === undefined || activeUserAiRequests.get(userId) === requestId) {
+        activeUserAiRequests.delete(userId);
+    }
 }
 // =========================================================================================
 // SERVER-AUTHORITATIVE CONSENT & 18+ AGE VERIFICATION
@@ -1302,10 +1309,19 @@ function sanitizePromptInput(input) {
 // ==================== THE 4 CORE FEATURE API // 1. CHAT SCREENSHOT ANALYZER (/api/analyze & /api/analyze-chat-screenshot)
 app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
-    if (!acquireUserConcurrencyLock(uid)) {
+    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('anl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    const lockState = acquireUserConcurrencyLock(uid, reqId);
+    if (!lockState.acquired) {
+        if (lockState.duplicate) {
+            return res.status(409).json({
+                success: false,
+                error: "This request ID is already in progress. No additional credits were deducted.",
+                code: "DUPLICATE_REQUEST",
+                duplicate: true
+            });
+        }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
     }
-    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('anl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
     try {
@@ -1831,17 +1847,26 @@ ${formattingRule}`;
             credits: currentBal
         });
     } finally {
-        releaseUserConcurrencyLock(uid);
+        releaseUserConcurrencyLock(uid, reqId);
     }
 });
 
 // 2. ICEBREAKER GENERATOR (Direct qwen3-235b-a22b-2507)
 app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
-    if (!acquireUserConcurrencyLock(uid)) {
+    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('ice_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    const lockState = acquireUserConcurrencyLock(uid, reqId);
+    if (!lockState.acquired) {
+        if (lockState.duplicate) {
+            return res.status(409).json({
+                success: false,
+                error: "This request ID is already in progress. No additional credits were deducted.",
+                code: "DUPLICATE_REQUEST",
+                duplicate: true
+            });
+        }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
     }
-    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('ice_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
     try {
@@ -2084,7 +2109,7 @@ GENERAL ICEBREAKER LAWS:
             credits: currentBal
         });
     } finally {
-        releaseUserConcurrencyLock(uid);
+        releaseUserConcurrencyLock(uid, reqId);
     }
 });
 
@@ -2179,10 +2204,19 @@ function formatBioLineBreaks(biosArray) {
 // 3. PROFILE BIO OPTIMIZER (/api/optimize & /api/bio-optimizer)
 app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
-    if (!acquireUserConcurrencyLock(uid)) {
+    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('opt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    const lockState = acquireUserConcurrencyLock(uid, reqId);
+    if (!lockState.acquired) {
+        if (lockState.duplicate) {
+            return res.status(409).json({
+                success: false,
+                error: "This request ID is already in progress. No additional credits were deducted.",
+                code: "DUPLICATE_REQUEST",
+                duplicate: true
+            });
+        }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
     }
-    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('opt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
     try {
@@ -2490,17 +2524,26 @@ FORMATTING: Use ${casingInstruction}.`;
             credits: currentBal
         });
     } finally {
-        releaseUserConcurrencyLock(uid);
+        releaseUserConcurrencyLock(uid, reqId);
     }
 });
 
 // 4. MAEVE AI DATING COACH & EVALUATOR CHAT (/api/chat & /api/simulator/chat)
 app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
-    if (!acquireUserConcurrencyLock(uid)) {
+    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('chat_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    const lockState = acquireUserConcurrencyLock(uid, reqId);
+    if (!lockState.acquired) {
+        if (lockState.duplicate) {
+            return res.status(409).json({
+                success: false,
+                error: "This request ID is already in progress. No additional credits were deducted.",
+                code: "DUPLICATE_REQUEST",
+                duplicate: true
+            });
+        }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
     }
-    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('chat_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
     try {
@@ -2882,17 +2925,26 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
             credits: currentBal
         });
     } finally {
-        releaseUserConcurrencyLock(uid);
+        releaseUserConcurrencyLock(uid, reqId);
     }
 });
 
 // 4C. DATING FLIGHT SIMULATOR REVIEW API ENGINE (`/api/simulator/review`)
 app.post('/api/simulator/review', requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
-    if (!acquireUserConcurrencyLock(uid)) {
+    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('rev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    const lockState = acquireUserConcurrencyLock(uid, reqId);
+    if (!lockState.acquired) {
+        if (lockState.duplicate) {
+            return res.status(409).json({
+                success: false,
+                error: "This request ID is already in progress. No additional credits were deducted.",
+                code: "DUPLICATE_REQUEST",
+                duplicate: true
+            });
+        }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
     }
-    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('rev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
     try {
@@ -3126,7 +3178,7 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
             credits: currentBal
         });
     } finally {
-        releaseUserConcurrencyLock(uid);
+        releaseUserConcurrencyLock(uid, reqId);
     }
 });
 

@@ -6,7 +6,8 @@ delete process.env.AICREDITS_API_KEY_GENERAL;
 
 const serverSource = fs.readFileSync('server.js', 'utf8');
 const appSource = fs.readFileSync('app.js', 'utf8');
-assert(serverSource.includes("const uid = getUserIdFromReq(req);\n    if (!acquireUserConcurrencyLock(uid))"));
+assert(serverSource.includes('const lockState = acquireUserConcurrencyLock(uid, reqId);'));
+assert(serverSource.includes('releaseUserConcurrencyLock(uid, reqId);'));
 assert(serverSource.includes('queryMaeveProvider(hotlinePayload, 0.7, 1500)'));
 assert(serverSource.includes('queryMaeveProvider(openRouterMessages, 0.6, 120)'));
 assert(serverSource.includes("const model = 'qwen/qwen3-235b-a22b-2507';"));

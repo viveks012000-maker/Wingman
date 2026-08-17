@@ -33,7 +33,7 @@ assert.strictEqual(serverFile.includes('Production FAIL-CLOSED: Refuse un-locked
 assert.strictEqual(serverFile.includes('Credit service temporarily unavailable. Balance unchanged. Please try again.'), true, 'Returns explicit balance unchanged message on RPC error');
 assert.strictEqual(serverFile.includes('settleCreditsDB(req, reqId)'), true, 'server.js settles credits on successful AI completion');
 assert.strictEqual(serverFile.includes('releaseCreditsDB(req, reqId, error.message)'), true, 'server.js releases credits on AI failure');
-assert.strictEqual(serverFile.includes('acquireUserConcurrencyLock(uid)'), true, 'server.js acquires per-user in-flight request lock');
+assert.strictEqual(serverFile.includes('acquireUserConcurrencyLock(uid, reqId)'), true, 'server.js acquires per-user in-flight request lock');
 console.log('✔ Passed: Production credit deduction uses zero-charge reservation architecture with per-user concurrency locking.');
 
 // 4. ROW LOCKING, ANTI-TAMPERING, AND PRIVILEGE LOCKDOWN IN MIGRATION 002
