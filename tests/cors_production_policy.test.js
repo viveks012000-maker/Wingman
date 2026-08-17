@@ -3,10 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
-assert.ok(server.includes("'https://chimerical-granita-c68c5a.netlify.app'"), 'Netlify production origin must remain allowed');
-assert.ok(server.includes("'https://wondrous-arithmetic-0ece9d.netlify.app'"), 'Current Netlify demo origin must be explicitly allowed');
-assert.ok(server.includes("'https://joyful-conkies-026a81.netlify.app'"), 'Joyful Netlify audit origin must be explicitly allowed');
-assert.ok(server.includes("'https://soft-sawine-30785c.netlify.app'"), 'Current Git-linked Netlify production origin must be explicitly allowed');
+const productionOriginsBlock = server.match(/const productionAllowedOrigins = \[([\s\S]*?)\];/);
+assert.ok(productionOriginsBlock, 'Production CORS origin block must exist');
+assert.ok(!productionOriginsBlock[1].includes('netlify.app'), 'Production CORS defaults must not trust any Netlify origin after Cloudflare cutover');
 assert.ok(server.includes("'https://mywingman.com'"), 'Custom production domain must remain allowed');
 assert.ok(server.includes("'https://mywingman.pages.dev'"), 'Exact Cloudflare Pages production origin must be explicitly allowed');
 assert.ok(!server.includes("'https://*.pages.dev'"), 'Production defaults must not trust every Cloudflare Pages project');
