@@ -17,7 +17,7 @@ jobs:
       - name: Report exact live release
         run: |
           node - <<'NODE'
-          const expected='d2a917b0d3ea56b4e19c43b2bd80071f5707b989';
+          const expected='5b01f27a9f85157e7cf9ad38e79271f6f6fa4ccb';
           const url='https://soft-sawine-30785c.netlify.app/release.json?oneshot='+Date.now();
           fetch(url,{headers:{'Cache-Control':'no-cache','Pragma':'no-cache'}})
             .then(async r=>({status:r.status,text:await r.text()}))
