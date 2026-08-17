@@ -42,7 +42,8 @@ const testSuites = [
     { name: '36. Duplicate Request Concurrency Lock Race Guard', file: 'duplicate_request_lock_race.test.js' },
     { name: '37. Analyzer Provider Diagnostic Boundary Guard', file: 'analyzer_provider_diagnostics.test.js' },
     { name: '38. Closed Dialog Inert Accessibility Guard', file: 'modal_inert_accessibility.test.js' },
-    { name: '39. Buy Credits Nested-Interactive Accessibility Guard', file: 'buy_credits_nested_interactive.test.js' }
+    { name: '39. Buy Credits Nested-Interactive Accessibility Guard', file: 'buy_credits_nested_interactive.test.js' },
+    { name: '40. Mobile Empty-State WCAG Contrast Guard', file: 'empty_state_mobile_contrast.test.js' }
 ];
 
 console.log('========================================================================');
