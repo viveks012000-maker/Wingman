@@ -1,0 +1,35 @@
+name: Live mobile production UX audit
+
+on:
+  push:
+    branches:
+      - audit/live-demo-20260816
+    paths:
+      - scripts/mobile-production-ux-audit.js
+      - .github/workflows/mobile-production-ux-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mobile-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Audit current production mobile UX
+        run: node scripts/mobile-production-ux-audit.js
+      - name: Upload screenshots and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-production-ux-audit
+          path: mobile-audit/
+          if-no-files-found: warn
