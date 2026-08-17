@@ -22,7 +22,7 @@ jobs:
       - run: npm ci
       - run: npm install --no-save --package-lock=false axe-core
       - run: npx playwright install --with-deps chromium firefox webkit
-      - name: Correct audit-only internal anchor probe
+      - name: Correct audit-only harness scopes
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -31,7 +31,11 @@ jobs:
           old="""      if (id && !(await page.locator(`#${CSS.escape ? '' : ''}`).count().catch(()=>0))) {\n        const exists = await page.evaluate(id => !!document.getElementById(id), id);\n        if (!exists) fail(scope, `broken in-page anchor ${l.href}`);\n      }"""
           new="""      if (id) {\n        const exists = await page.evaluate(id => !!document.getElementById(id), id);\n        if (!exists) fail(scope, `broken in-page anchor ${l.href}`);\n      }"""
           if s.count(old)!=1: raise SystemExit(f'anchor patch count={s.count(old)}')
-          p.write_text(s.replace(old,new))
+          s=s.replace(old,new)
+          old2="""    const off=controls.filter(x=>x.left<-2||x.right>innerWidth+2); if(off.length) fail(`${scope}:${target}`,'controls extend outside viewport',off.slice(0,10));"""
+          new2="""    const viewportWidth=await page.evaluate(()=>window.innerWidth);\n    const off=controls.filter(x=>x.left<-2||x.right>viewportWidth+2); if(off.length) fail(`${scope}:${target}`,'controls extend outside viewport',off.slice(0,10));"""
+          if s.count(old2)!=1: raise SystemExit(f'viewport patch count={s.count(old2)}')
+          p.write_text(s.replace(old2,new2))
           PY
       - name: Audit current production
         env:
