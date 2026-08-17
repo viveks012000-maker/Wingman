@@ -12,7 +12,7 @@ permissions:
 jobs:
   interface-audit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,4 +26,17 @@ jobs:
           SITE: https://soft-sawine-30785c.netlify.app
           API: https://wingman-production-c6ce.up.railway.app
           EXPECTED_SHA: d3419c4ba705f1b76692aca1920a848f20df224e
-        run: node scripts/comprehensive-interface-audit.js
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            echo "=== interface audit attempt $attempt/3 ==="
+            if node scripts/comprehensive-interface-audit.js; then
+              exit 0
+            fi
+            status=$?
+            if [ "$attempt" -eq 3 ]; then
+              exit "$status"
+            fi
+            echo "Audit attempt failed (possibly transient network); retrying after 3s..."
+            sleep 3
+          done
