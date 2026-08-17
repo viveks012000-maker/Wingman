@@ -37,8 +37,25 @@ jobs:
           if s.count(old2)!=1: raise SystemExit(f'viewport patch count={s.count(old2)}')
           p.write_text(s.replace(old2,new2))
           PY
-      - name: Audit current production
+      - name: Audit current production and annotate every failure
         env:
           SITE: https://soft-sawine-30785c.netlify.app
           EXPECTED_SHA: 2a85dca179d6c8d1f0288b2977de2be93036bb3c
-        run: node scripts/post-mobile-production-audit.js
+        run: |
+          set +e
+          node scripts/post-mobile-production-audit.js 2>&1 | tee /tmp/post-mobile-audit.log
+          status=${PIPESTATUS[0]}
+          echo "AUDIT_PROCESS_STATUS=$status"
+          grep '^FAIL \[' /tmp/post-mobile-audit.log > /tmp/fail-lines.txt || true
+          count=$(wc -l < /tmp/fail-lines.txt | tr -d ' ')
+          echo "AUDIT_FAILURE_LINE_COUNT=$count"
+          while IFS= read -r line; do
+            safe=${line//'%'/'%25'}
+            safe=${safe//$'\r'/'%0D'}
+            safe=${safe//$'\n'/'%0A'}
+            echo "::error title=Production interface audit failure::$safe"
+          done < /tmp/fail-lines.txt
+          tail -n 120 /tmp/post-mobile-audit.log > /tmp/audit-tail.txt || true
+          echo '=== COMPACT AUDIT TAIL ==='
+          cat /tmp/audit-tail.txt
+          exit "$status"
