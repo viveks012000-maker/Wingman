@@ -1025,6 +1025,20 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
     throw lastErr || new Error(`AI API call failed for model ${modelIdentifier}`);
 }
 
+// Machine-readable Screenshot Analyzer provider failure classification.
+// This intentionally exposes only a coarse failure class + pipeline stage, never provider bodies or secrets.
+function getAnalyzerProviderFailureCode(error) {
+    const status = Number(error && error.statusCode);
+    if (error && error.isTimeout) return 'AI_PROVIDER_TIMEOUT';
+    if (error && error.code === 'AI_PROVIDER_CONFIG') return 'AI_PROVIDER_CONFIG';
+    if (status === 401 || status === 403) return 'AI_PROVIDER_AUTH';
+    if (status === 402) return 'AI_PROVIDER_BUDGET';
+    if (status === 429) return 'AI_PROVIDER_RATE_LIMIT';
+    if ([500, 502, 503, 504].includes(status)) return 'AI_PROVIDER_UPSTREAM';
+    if (error && error.code === 'AI_PROVIDER_EMPTY_RESPONSE') return 'AI_PROVIDER_EMPTY_RESPONSE';
+    return 'AI_PROVIDER_FAILURE';
+}
+
 // Strict Screenshot Analyzer provider call: exact AICREDITS endpoint/model/key, no model or key fallback.
 async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, maxTokens = null, timeoutMs = 25000, topP = null) {
     const isVisionStage = stage === 'vision';
@@ -1038,7 +1052,10 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
     const baseUrl = 'https://api.aicredits.in/v1';
 
     if (!apiKey) {
-        throw new Error(`Missing required Screenshot Analyzer API key for ${stage} stage.`);
+        const err = new Error(`Missing required Screenshot Analyzer API key for ${stage} stage.`);
+        err.code = 'AI_PROVIDER_CONFIG';
+        err.analyzerStage = stage;
+        throw err;
     }
 
     const payload = { model, messages: messagesArray, temperature };
@@ -1070,24 +1087,33 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
 
         const data = await response.json();
         if (data.error) {
-            throw new Error(`Screenshot Analyzer AI API Error: ${data.error.message || JSON.stringify(data.error)}`);
+            const err = new Error(`Screenshot Analyzer AI API Error: ${data.error.message || JSON.stringify(data.error)}`);
+            const numericStatus = Number(data.error.status || data.error.code);
+            if (Number.isFinite(numericStatus) && numericStatus > 0) err.statusCode = numericStatus;
+            throw err;
         }
         if (!data.choices || data.choices.length === 0) {
-            throw new Error(`Screenshot Analyzer AI API returned no choices for ${model}.`);
+            const err = new Error(`Screenshot Analyzer AI API returned no choices for ${model}.`);
+            err.code = 'AI_PROVIDER_EMPTY_RESPONSE';
+            throw err;
         }
 
         const msg = data.choices[0].message;
         const outputContent = typeof msg === 'string' ? msg : (msg ? (msg.content || msg.reasoning || '') : '');
         if (!outputContent) {
-            throw new Error(`Screenshot Analyzer AI API returned empty content for ${model}.`);
+            const err = new Error(`Screenshot Analyzer AI API returned empty content for ${model}.`);
+            err.code = 'AI_PROVIDER_EMPTY_RESPONSE';
+            throw err;
         }
         return outputContent;
     } catch (err) {
         if (err.name === 'AbortError') {
             const timeoutErr = new Error('Analysis timed out. Please try again.');
             timeoutErr.isTimeout = true;
+            timeoutErr.analyzerStage = stage;
             throw timeoutErr;
         }
+        err.analyzerStage = err.analyzerStage || stage;
         throw err;
     } finally {
         if (timer) clearTimeout(timer);
@@ -1815,6 +1841,10 @@ ${formattingRule}`;
         });
     } catch (error) {
         console.error("Pipeline breakdown:", error.message);
+        const analyzerFailureStage = (error && error.analyzerStage) ? error.analyzerStage : 'pipeline';
+        const analyzerFailureCode = analyzerFailureStage === 'pipeline'
+            ? 'ANALYZER_PIPELINE_FAILURE'
+            : getAnalyzerProviderFailureCode(error);
         let currentBal = deduction ? deduction.remainingCredits : 0;
         let releaseSucceeded = false;
         if (deduction && deduction.success && !deduction.duplicate) {
@@ -1838,12 +1868,18 @@ ${formattingRule}`;
             return res.status(504).json({
                 success: false,
                 error: "Analysis timed out. Your credits were restored.",
+                code: analyzerFailureCode,
+                stage: analyzerFailureStage,
+                reqId: reqId,
                 credits: currentBal
             });
         }
         res.status(500).json({
             success: false,
             error: "AI analysis failed. Your credits were restored.",
+            code: analyzerFailureCode,
+            stage: analyzerFailureStage,
+            reqId: reqId,
             credits: currentBal
         });
     } finally {
