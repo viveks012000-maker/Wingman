@@ -16,6 +16,7 @@ const PUBLIC_FILES = [
   'terms.html',
   'privacy.html',
   'refund.html',
+  '404.html',
   'app.js',
   'config.js',
   'accessibility.js',
@@ -186,7 +187,7 @@ function writeSecurityFiles() {
   ].join('\n');
   fs.writeFileSync(path.join(OUT, '_headers'), security, 'utf8');
 
-  fs.writeFileSync(path.join(OUT, '_redirects'), '/app /app.html 200\n', 'utf8');
+  fs.writeFileSync(path.join(OUT, '_redirects'), '# Cloudflare Pages handles clean HTML URLs natively; no /app rewrite is required.\n', 'utf8');
 }
 
 function verifyNoForbiddenFiles() {

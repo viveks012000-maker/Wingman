@@ -96,6 +96,7 @@ app.use((req, res, next) => {
 // 2. Configure Locked CORS Policy
 const productionAllowedOrigins = [
     'https://mywingman.com',
+    'https://mywingman.pages.dev',
     'https://chimerical-granita-c68c5a.netlify.app',
     'https://wondrous-arithmetic-0ece9d.netlify.app',
     'https://joyful-conkies-026a81.netlify.app',
