@@ -40,7 +40,7 @@ jobs:
       - name: Audit current production and annotate every failure
         env:
           SITE: https://soft-sawine-30785c.netlify.app
-          EXPECTED_SHA: 7ec0570a5ea0a69c15328e6f7972f7a3f1ef36b7
+          EXPECTED_SHA: d2a917b0d3ea56b4e19c43b2bd80071f5707b989
         run: |
           set +e
           node scripts/post-mobile-production-audit.js 2>&1 | tee /tmp/post-mobile-audit.log
