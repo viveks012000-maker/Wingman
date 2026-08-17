@@ -1,0 +1,64 @@
+name: Repair mobile menu close state
+
+on:
+  push:
+    branches:
+      - fix/interface-mobile-accessibility-20260817
+    paths:
+      - .github/workflows/mobile-menu-close-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair-and-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Patch menu state and regression
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('index.html')
+          s = p.read_text()
+          old = '''        window.toggleMobileMenu = function () {\n            var menu = document.getElementById("mobileMenu");\n            var icon = document.getElementById("menu-icon");\n            if (!menu || !icon) return;\n            if (menu.classList.contains("opacity-0")) {\n                menu.classList.remove("opacity-0", "pointer-events-none");\n                menu.classList.add("opacity-100", "pointer-events-auto");\n                icon.textContent = "close";\n                document.body.style.overflow = "hidden"; // Prevent background scrolling\n            } else {\n                document.body.style.overflow = "";\n            }\n        };'''
+          new = '''        window.toggleMobileMenu = function () {\n            var menu = document.getElementById("mobileMenu");\n            var icon = document.getElementById("menu-icon");\n            var button = document.getElementById("mobile-menu-btn");\n            if (!menu || !icon) return;\n            if (menu.classList.contains("opacity-0")) {\n                menu.classList.remove("opacity-0", "pointer-events-none");\n                menu.classList.add("opacity-100", "pointer-events-auto");\n                icon.textContent = "close";\n                if (button) {\n                    button.setAttribute("aria-expanded", "true");\n                    button.setAttribute("aria-label", "Close navigation menu");\n                }\n                document.body.style.overflow = "hidden"; // Prevent background scrolling\n            } else {\n                menu.classList.remove("opacity-100", "pointer-events-auto");\n                menu.classList.add("opacity-0", "pointer-events-none");\n                icon.textContent = "menu";\n                if (button) {\n                    button.setAttribute("aria-expanded", "false");\n                    button.setAttribute("aria-label", "Open navigation menu");\n                }\n                document.body.style.overflow = "";\n            }\n        };'''
+          if s.count(old) != 1:
+              raise SystemExit(f'index menu function anchor mismatch: {s.count(old)}')
+          p.write_text(s.replace(old, new))
+
+          p = Path('tests/browser_viewport_live_qa.js')
+          s = p.read_text()
+          needle = '''                    const footerLabel = await page.$eval('footer a[href="index.html"]', el => el.getAttribute('aria-label'));\n                    if (footerLabel !== 'MyWingman home') {\n                        throw new Error(`Footer brand link needs explicit accessible purpose; got ${footerLabel}`);\n                    }\n\n                    await page.evaluate(() => window.openInterstitialModal());'''
+          replacement = '''                    const footerLabel = await page.$eval('footer a[href="index.html"]', el => el.getAttribute('aria-label'));\n                    if (footerLabel !== 'MyWingman home') {\n                        throw new Error(`Footer brand link needs explicit accessible purpose; got ${footerLabel}`);\n                    }\n\n                    // Mobile navigation must be reversible and expose accurate expanded state.\n                    await page.click('#mobile-menu-btn');\n                    let menuState = await page.evaluate(() => ({\n                        open: document.getElementById('mobileMenu').classList.contains('opacity-100'),\n                        blocked: document.getElementById('mobileMenu').classList.contains('pointer-events-none'),\n                        icon: document.getElementById('menu-icon').textContent.trim(),\n                        expanded: document.getElementById('mobile-menu-btn').getAttribute('aria-expanded'),\n                        label: document.getElementById('mobile-menu-btn').getAttribute('aria-label'),\n                        bodyOverflow: document.body.style.overflow\n                    }));\n                    if (!menuState.open || menuState.blocked || menuState.icon !== 'close' || menuState.expanded !== 'true' || menuState.label !== 'Close navigation menu' || menuState.bodyOverflow !== 'hidden') {\n                        throw new Error(`Mobile menu did not enter a correct open state: ${JSON.stringify(menuState)}`);\n                    }\n                    await page.click('#mobile-menu-btn');\n                    menuState = await page.evaluate(() => ({\n                        hidden: document.getElementById('mobileMenu').classList.contains('opacity-0'),\n                        blocked: document.getElementById('mobileMenu').classList.contains('pointer-events-none'),\n                        icon: document.getElementById('menu-icon').textContent.trim(),\n                        expanded: document.getElementById('mobile-menu-btn').getAttribute('aria-expanded'),\n                        label: document.getElementById('mobile-menu-btn').getAttribute('aria-label'),\n                        bodyOverflow: document.body.style.overflow\n                    }));\n                    if (!menuState.hidden || !menuState.blocked || menuState.icon !== 'menu' || menuState.expanded !== 'false' || menuState.label !== 'Open navigation menu' || menuState.bodyOverflow !== '') {\n                        throw new Error(`Mobile menu did not return to a correct closed state: ${JSON.stringify(menuState)}`);\n                    }\n\n                    await page.evaluate(() => window.openInterstitialModal());'''
+          if s.count(needle) != 1:
+              raise SystemExit(f'browser regression anchor mismatch: {s.count(needle)}')
+          p.write_text(s.replace(needle, replacement))
+          PY
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run build:netlify
+      - name: Scope and commit
+        run: |
+          set -euo pipefail
+          git status --short
+          mapfile -t changed < <(git status --porcelain | awk '{print $2}' | grep -v '^netlify-dist/' | sort)
+          expected=(index.html tests/browser_viewport_live_qa.js)
+          if [ "${changed[*]}" != "${expected[*]}" ]; then
+            echo "Unexpected changed files: ${changed[*]}"
+            exit 1
+          fi
+          git config user.name 'viveks012000-maker'
+          git config user.email 'viveks012000@gmail.com'
+          git add index.html tests/browser_viewport_live_qa.js
+          git commit -m 'fix: make mobile navigation fully reversible'
+          git push origin HEAD:fix/interface-mobile-accessibility-20260817
