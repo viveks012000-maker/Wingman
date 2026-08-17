@@ -1,0 +1,72 @@
+EXPECTED_MAIN_SHA=3454220f3dae19befe0d7e393c8ae884538fbd31
+CLOUDFLARE_ROOT=200
+CLOUDFLARE_APP=200
+CLOUDFLARE__server.js=404
+CLOUDFLARE__database.js=404
+CLOUDFLARE__package.json=404
+CLOUDFLARE__package-lock.json=404
+CLOUDFLARE__tests_run_all_tests.js=404
+CLOUDFLARE__middleware_security.js=404
+RAILWAY_HEALTH_CODE=200
+RAILWAY_HEALTH_BODY={"status":"ok","database":"supabase_active","timestamp":"2026-08-17T14:28:54.662Z"}
+CORS_ATTEMPT_1 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_2 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_3 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_4 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_5 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_6 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_7 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_8 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_9 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_10 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_11 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_12 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_13 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_14 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_15 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_16 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_17 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_18 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_19 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_20 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_21 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_22 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_23 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_24 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_25 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_26 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_27 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_28 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_29 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_30 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_31 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_32 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_33 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_34 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_35 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_36 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_37 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_38 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_39 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_40 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_41 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_42 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_43 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_44 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_45 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_46 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_47 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_48 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_49 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_50 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_51 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_52 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_53 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_54 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_55 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_56 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_57 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_58 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_59 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+CORS_ATTEMPT_60 cloudflare_status=204 cloudflare_acao=https://mywingman.pages.dev cloudflare_creds=true netlify_allowed=1
+LAST_NETLIFY=https://soft-sawine-30785c.netlify.app status=204 acao=https://soft-sawine-30785c.netlify.app creds=true; https://joyful-conkies-026a81.netlify.app status=204 acao=https://joyful-conkies-026a81.netlify.app creds=true; https://wondrous-arithmetic-0ece9d.netlify.app status=204 acao=https://wondrous-arithmetic-0ece9d.netlify.app creds=true; https://chimerical-granita-c68c5a.netlify.app status=204 acao=https://chimerical-granita-c68c5a.netlify.app creds=true; 
