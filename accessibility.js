@@ -84,11 +84,7 @@
             states.set(modal, st);
             var target = st.returnFocus;
             st.returnFocus = null;
-            if (target && target.isConnected && typeof target.focus === 'function') {
-                setTimeout(function () {
-                    try { target.focus({ preventScroll: true }); } catch (_) { try { target.focus(); } catch (_) {} }
-                }, 0);
-            }
+            scheduleFocusAfterClose(target);
         } else if (!isVisible(modal)) {
             setModalInteractiveState(modal, false);
         }
@@ -100,6 +96,27 @@
             return (parseInt(getComputedStyle(a).zIndex || '0', 10) || 0) - (parseInt(getComputedStyle(b).zIndex || '0', 10) || 0);
         });
         return open.length ? open[open.length - 1] : null;
+    }
+
+    function focusElement(target) {
+        if (!target || !target.isConnected || typeof target.focus !== 'function') return;
+        try { target.focus({ preventScroll: true }); } catch (_) { try { target.focus(); } catch (_) {} }
+    }
+
+    function scheduleFocusAfterClose(target) {
+        if (!target || !target.isConnected || typeof target.focus !== 'function') return;
+        setTimeout(function () {
+            var activeModal = topOpenModal();
+            if (activeModal) {
+                // A second dialog may have opened immediately after the first closed.
+                // Never let delayed restoration steal focus outside the active modal.
+                if (!activeModal.contains(document.activeElement)) {
+                    focusElement(focusables(activeModal)[0] || activeModal);
+                }
+                return;
+            }
+            focusElement(target);
+        }, 0);
     }
 
     function closeTopModal(modal) {
@@ -177,7 +194,7 @@
                 st.open = true;
                 states.set(modal, st);
                 var first = focusables(modal)[0] || modal;
-                try { first.focus({ preventScroll: true }); } catch (_) { try { first.focus(); } catch (_) {} }
+                focusElement(first);
                 return result;
             };
             wrappedOpen.__wingmanA11yWrapped = true;
@@ -194,11 +211,7 @@
                 st.returnFocus = null;
                 setModalInteractiveState(modal, false);
                 states.set(modal, st);
-                if (target && target.isConnected && typeof target.focus === 'function') {
-                    setTimeout(function () {
-                        try { target.focus({ preventScroll: true }); } catch (_) { try { target.focus(); } catch (_) {} }
-                    }, 0);
-                }
+                scheduleFocusAfterClose(target);
                 return result;
             };
             wrappedClose.__wingmanA11yWrapped = true;
