@@ -12,7 +12,7 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,7 +35,11 @@ jobs:
           old2="""    const off=controls.filter(x=>x.left<-2||x.right>innerWidth+2); if(off.length) fail(`${scope}:${target}`,'controls extend outside viewport',off.slice(0,10));"""
           new2="""    const viewportWidth=await page.evaluate(()=>window.innerWidth);\n    const off=controls.filter(x=>x.left<-2||x.right>viewportWidth+2); if(off.length) fail(`${scope}:${target}`,'controls extend outside viewport',off.slice(0,10));"""
           if s.count(old2)!=1: raise SystemExit(f'viewport patch count={s.count(old2)}')
-          p.write_text(s.replace(old2,new2))
+          s=s.replace(old2,new2)
+          old3='for (let i = 1; i <= 30; i++) {'
+          new3='for (let i = 1; i <= 120; i++) {'
+          if s.count(old3)!=1: raise SystemExit(f'release wait patch count={s.count(old3)}')
+          p.write_text(s.replace(old3,new3))
           PY
       - name: Audit current production and annotate every failure
         env:
@@ -55,6 +59,12 @@ jobs:
             safe=${safe//$'\n'/'%0A'}
             echo "::error title=Production interface audit failure::$safe"
           done < /tmp/fail-lines.txt
+          grep '^Error: Netlify did not reach expected SHA' /tmp/post-mobile-audit.log | while IFS= read -r line; do
+            safe=${line//'%'/'%25'}
+            safe=${safe//$'\r'/'%0D'}
+            safe=${safe//$'\n'/'%0A'}
+            echo "::error title=Audit precondition failure::$safe"
+          done || true
           tail -n 120 /tmp/post-mobile-audit.log > /tmp/audit-tail.txt || true
           echo '=== COMPACT AUDIT TAIL ==='
           cat /tmp/audit-tail.txt
