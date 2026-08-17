@@ -1,0 +1,60 @@
+name: Final Netlify retirement diagnostics v2
+
+on:
+  push:
+    branches:
+      - audit/final-netlify-retirement-v2-20260817
+    paths:
+      - .github/workflows/final-netlify-retirement-diagnostic-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/final-netlify-retirement-v2-20260817
+      - name: Record current production state
+        shell: bash
+        run: |
+          set +e
+          API='https://wingman-production-c6ce.up.railway.app'
+          SITE='https://mywingman.pages.dev'
+          mkdir -p .audit
+          release_body="$(curl -sS --max-time 20 -H 'Cache-Control: no-cache' "${SITE}/release.json?diag=${RANDOM}${RANDOM}" 2>&1)"
+          release_sha="$(printf '%s' "$release_body" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).sourceCommit||'')}catch(e){console.log('PARSE_OR_FETCH_ERROR')}})" 2>/dev/null)"
+          health_code="$(curl -sS --max-time 20 -o /tmp/health -w '%{http_code}' "${API}/api/health" 2>/dev/null)"
+          get_acao() {
+            local origin="$1"
+            curl -sS --max-time 20 -D /tmp/h -o /dev/null -X OPTIONS "${API}/api/chat" \
+              -H "Origin: ${origin}" \
+              -H 'Access-Control-Request-Method: POST' \
+              -H 'Access-Control-Request-Headers: content-type,authorization' 2>/dev/null
+            awk 'BEGIN{IGNORECASE=1} /^access-control-allow-origin:/ {sub(/\r$/,""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' /tmp/h
+          }
+          cf="$(get_acao 'https://mywingman.pages.dev')"
+          soft="$(get_acao 'https://soft-sawine-30785c.netlify.app')"
+          joy="$(get_acao 'https://joyful-conkies-026a81.netlify.app')"
+          wond="$(get_acao 'https://wondrous-arithmetic-0ece9d.netlify.app')"
+          chim="$(get_acao 'https://chimerical-granita-c68c5a.netlify.app')"
+          cat > .audit/final-netlify-retirement-diagnostic-v2.txt <<EOF
+          release_sha=${release_sha}
+          health_code=${health_code}
+          cloudflare_acao=${cf:-NONE}
+          soft_sawine_acao=${soft:-NONE}
+          joyful_conkies_acao=${joy:-NONE}
+          wondrous_arithmetic_acao=${wond:-NONE}
+          chimerical_granita_acao=${chim:-NONE}
+          EOF
+      - name: Commit diagnostics
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .audit/final-netlify-retirement-diagnostic-v2.txt
+          git commit -m "audit: record final Netlify retirement diagnostics v2"
+          git push origin HEAD:audit/final-netlify-retirement-v2-20260817
