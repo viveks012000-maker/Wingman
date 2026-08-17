@@ -1,0 +1,34 @@
+name: Targeted axe detail
+on:
+  push:
+    branches: [audit/post-mobile-repair-20260817]
+    paths:
+      - scripts/targeted-axe-detail.js
+      - .github/workflows/targeted-axe-detail.yml
+permissions:
+  contents: read
+jobs:
+  axe-detail:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false axe-core
+      - run: npx playwright install --with-deps chromium
+      - name: Emit exact axe nodes as annotations
+        run: |
+          set +e
+          node scripts/targeted-axe-detail.js 2>&1 | tee /tmp/axe.log
+          status=${PIPESTATUS[0]}
+          while IFS= read -r line; do
+            safe=${line//'%'/'%25'}
+            safe=${safe//$'\r'/'%0D'}
+            safe=${safe//$'\n'/'%0A'}
+            echo "::error title=Exact axe node::$safe"
+          done < <(grep '^AXE_FAIL ' /tmp/axe.log || true)
+          exit "$status"
