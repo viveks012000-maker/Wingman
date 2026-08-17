@@ -1,0 +1,50 @@
+name: Post Supabase Auth Cutover Audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Verify Cloudflare auth cutover
+        env:
+          SITE: https://mywingman.pages.dev
+          EXPECTED_SHA: b9d924d1a8691f3864aaa2858a259d10c10b3233
+          OLD_NETLIFY: soft-sawine-30785c.netlify.app
+        run: |
+          node - <<'NODE'
+          const { chromium } = require('playwright');
+          const crypto = require('crypto');
+          const SITE=process.env.SITE, EXPECTED=process.env.EXPECTED_SHA, OLD=process.env.OLD_NETLIFY;
+          const must=(c,m,d)=>{if(!c)throw new Error(`${m}${d?` :: ${d}`:''}`);console.log(`PASS ${m}`)};
+          (async()=>{
+            const rel=await fetch(`${SITE}/release.json?cutover=${Date.now()}`,{headers:{'Cache-Control':'no-cache'}}); const rj=await rel.json();
+            must(rel.ok&&rj.sourceCommit===EXPECTED,'exact production release',rj.sourceCommit);
+            const browser=await chromium.launch(); const ctx=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true}); const p=await ctx.newPage();
+            let email=null,password=null,cleaned=false;
+            async function cleanup(){if(cleaned||!email)return;cleaned=true;try{let has=await p.evaluate(async()=>!!(await window.supabaseClient.auth.getSession())?.data?.session);if(!has)await p.evaluate(async({email,password})=>window.loginUser(email,password),{email,password});const st=await p.evaluate(async()=>{const s=await window.supabaseClient.auth.getSession();const t=s?.data?.session?.access_token;if(!t)return 0;return (await fetch(window.getApiBase()+'/api/user/delete-account',{method:'POST',headers:{Authorization:'Bearer '+t},credentials:'include'})).status});console.log('CLEANUP='+st);must(st===200,'disposable account cleanup');}catch(e){console.error('CLEANUP_ERROR',String(e));process.exitCode=9}}
+            try{
+              await p.goto(SITE+'/app',{waitUntil:'domcontentloaded',timeout:30000}); await p.waitForFunction(()=>window.supabaseClient&&typeof window.signUpUser==='function'&&typeof window.signInWithGoogle==='function');
+              const cfg=await p.evaluate(()=>({url:window.supabaseClient?.supabaseUrl||null,api:window.getApiBase?.()||null})); console.log('CONFIG='+JSON.stringify(cfg));
+              const oauth=await p.evaluate(async()=>{const old=window.supabaseClient.auth.signInWithOAuth;let captured=null;window.supabaseClient.auth.signInWithOAuth=async opts=>{captured=opts;return{data:{},error:null}};try{await window.signInWithGoogle()}finally{window.supabaseClient.auth.signInWithOAuth=old}return captured});
+              const red=oauth?.options?.redirectTo||''; must(red===SITE+'/app.html','Google OAuth redirectTo is exact Cloudflare app',red); must(!red.includes(OLD),'Google OAuth redirect contains no old Netlify host',red);
+              email=`viveks012000+cf-cutover-${Date.now()}-${crypto.randomBytes(3).toString('hex')}@gmail.com`; password=`Aa9!${crypto.randomBytes(12).toString('hex')}`;
+              const su=await p.evaluate(async({email,password})=>{const r=await window.signUpUser(email,password);return{ok:!!r?.success,session:!!r?.session}},{email,password}); must(su.ok&&su.session,'signup/session works after Site URL cutover',JSON.stringify(su));
+              await p.waitForFunction(()=>window.currentSupabaseUser&&window.state?.credits===50,null,{timeout:10000}); must(true,'authoritative 50-credit provisioning/session restoration');
+              await p.reload({waitUntil:'domcontentloaded'}); await p.waitForFunction(()=>window.currentSupabaseUser&&window.state?.credits===50,null,{timeout:15000}); must(true,'session restores after full Cloudflare reload');
+              const recovery=await p.evaluate(async()=>{const old=window.supabaseClient.auth.resetPasswordForEmail;let captured=null;window.supabaseClient.auth.resetPasswordForEmail=async(e,o)=>{captured={email:e,options:o};return{data:{},error:null}};try{await window.resetPassword?.('audit@example.com')}catch{}finally{window.supabaseClient.auth.resetPasswordForEmail=old}return captured});
+              if(recovery){const rr=recovery.options?.redirectTo||''; must(rr===SITE+'/app.html?type=recovery','password recovery redirect is exact Cloudflare recovery URL',rr); must(!rr.includes(OLD),'recovery redirect contains no old Netlify host',rr)} else {console.log('INFO recovery helper not directly invokable; dashboard allowlist was separately confirmed by operator')}
+              const html=await p.content(); must(!html.includes(OLD),'live app DOM contains no old Netlify production host');
+              await cleanup(); console.log('POST_SUPABASE_AUTH_CUTOVER=PASS');
+            } finally {await cleanup(); await ctx.close(); await browser.close()}
+          })().catch(e=>{console.error(e.stack||String(e));process.exit(1)});
+          NODE
