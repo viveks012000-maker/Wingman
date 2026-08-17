@@ -9,24 +9,37 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
+    timeout-minutes: 12
     steps:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Report exact live release
+      - name: Wait for exact live release
         run: |
           node - <<'NODE'
           const expected='5b01f27a9f85157e7cf9ad38e79271f6f6fa4ccb';
-          const url='https://soft-sawine-30785c.netlify.app/release.json?oneshot='+Date.now();
-          fetch(url,{headers:{'Cache-Control':'no-cache','Pragma':'no-cache'}})
-            .then(async r=>({status:r.status,text:await r.text()}))
-            .then(({status,text})=>{
-              let actual='UNPARSEABLE';
-              try{actual=JSON.parse(text).sourceCommit||'MISSING';}catch(e){}
-              console.log(`HTTP=${status} ACTUAL=${actual} EXPECTED=${expected}`);
-              console.log(`::notice title=LIVE_NETLIFY_RELEASE::HTTP=${status} actual=${actual} expected=${expected}`);
-              if(status!==200||actual!==expected) process.exitCode=2;
-            })
-            .catch(e=>{console.error(String(e));console.log(`::error title=LIVE_NETLIFY_RELEASE::${String(e)}`);process.exitCode=3;});
+          const base='https://soft-sawine-30785c.netlify.app/release.json';
+          const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+          (async()=>{
+            let last='UNKNOWN';
+            for(let i=1;i<=120;i++){
+              try{
+                const r=await fetch(`${base}?nudgewatch=${Date.now()}-${i}`,{headers:{'Cache-Control':'no-cache','Pragma':'no-cache'}});
+                const text=await r.text();
+                let actual='UNPARSEABLE';
+                try{actual=JSON.parse(text).sourceCommit||'MISSING';}catch(e){}
+                last=actual;
+                console.log(`attempt=${i} http=${r.status} actual=${actual} expected=${expected}`);
+                if(r.status===200&&actual===expected){
+                  console.log(`::notice title=NETLIFY_NUDGE_DEPLOYED::actual=${actual} attempts=${i}`);
+                  return;
+                }
+              }catch(e){
+                console.log(`attempt=${i} error=${String(e)}`);
+              }
+              await sleep(5000);
+            }
+            console.log(`::error title=NETLIFY_NUDGE_STILL_STALE::last=${last} expected=${expected}`);
+            process.exit(2);
+          })().catch(e=>{console.error(e);process.exit(3);});
           NODE
