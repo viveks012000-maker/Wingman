@@ -1,16 +1,17 @@
 const { chromium } = require('playwright');
 const axeSource = require('axe-core').source;
 const SITE = 'https://soft-sawine-30785c.netlify.app';
-const EXPECTED = '2a85dca179d6c8d1f0288b2977de2be93036bb3c';
+const EXPECTED = '261d7a3060ba5868541b653e0697a4667e4fe321';
 
 async function waitRelease() {
-  for (let i=0;i<10;i++) {
+  for (let i=0;i<30;i++) {
     try {
-      const r=await fetch(`${SITE}/release.json?audit=${Date.now()}-${i}`,{headers:{'Cache-Control':'no-cache'}});
+      const r=await fetch(`${SITE}/release.json?audit=${Date.now()}-${i}`,{headers:{'Cache-Control':'no-cache','Pragma':'no-cache'}});
       const j=await r.json();
+      console.log(`release_attempt=${i+1} actual=${j.sourceCommit}`);
       if(j.sourceCommit===EXPECTED)return;
-    } catch(e) {}
-    await new Promise(r=>setTimeout(r,1500));
+    } catch(e) { console.warn(`release_attempt=${i+1} error=${String(e)}`); }
+    await new Promise(r=>setTimeout(r,3000));
   }
   throw new Error('release mismatch');
 }
