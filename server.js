@@ -174,7 +174,9 @@ app.use((err, req, res, next) => {
 });
 app.use('/api/', verifySupabaseToken);
 app.use('/api/', autoProvisionUser);
-app.use(validateImagePayload);
+// Screenshot payload inspection can scan tens of megabytes of attacker-controlled input.
+// Authenticate these protected routes before running the route-specific validator.
+app.use(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, validateImagePayload);
 
 // 4. Block access to sensitive files, sanitize request bodies & enforce CSRF
 app.use(blockSensitiveFiles);
