@@ -62,11 +62,41 @@ async function verifyModal(page, id, openFn, closeFn) {
     await verifyModal(page, 'interstitialModal', 'openInterstitialModal', 'closeInterstitialModal');
     await verifyModal(page, 'authRequiredModal', 'openAuthRequiredModal', 'closeAuthRequiredModal');
 
+    // Regression: closing one dialog and immediately opening another must not let
+    // the first dialog's delayed focus restoration steal focus from the new dialog.
+    await page.evaluate(() => {
+      const trigger = document.getElementById('mobile-menu-btn');
+      if (trigger) trigger.focus();
+      window.openInterstitialModal();
+    });
+    await page.waitForTimeout(10);
+    await page.evaluate(() => {
+      window.closeInterstitialModal();
+      window.openAuthRequiredModal();
+    });
+    await page.waitForTimeout(30);
+    const transition = await page.evaluate(() => {
+      const oldModal = document.getElementById('interstitialModal');
+      const newModal = document.getElementById('authRequiredModal');
+      return {
+        oldHidden: oldModal.getAttribute('aria-hidden'),
+        oldInert: oldModal.inert,
+        newHidden: newModal.getAttribute('aria-hidden'),
+        newInert: newModal.inert,
+        newFocused: newModal.contains(document.activeElement),
+        activeId: document.activeElement && document.activeElement.id
+      };
+    });
+    assert(transition.oldHidden === 'true' && transition.oldInert === true, 'Closed first dialog must remain inert during immediate transition', transition);
+    assert(transition.newHidden === 'false' && transition.newInert === false && transition.newFocused === true, 'Immediate second dialog must retain focus after previous close restoration fires', transition);
+    await page.evaluate(() => window.closeAuthRequiredModal());
+    await page.waitForTimeout(20);
+
     await page.goto(`http://localhost:${PORT}/app.html`, {waitUntil:'domcontentloaded'});
     await page.waitForTimeout(40);
     await verifyModal(page, 'authRequiredModal', 'openAuthRequiredModal', 'closeAuthRequiredModal');
 
-    console.log('✅ Closed dialogs are inert; open dialogs are interactive/focused; closing restores inert.');
+    console.log('✅ Closed dialogs are inert; open dialogs are focused; immediate modal transitions preserve focus in the active dialog.');
     await context.close();
   } finally {
     if (browser) await browser.close();
