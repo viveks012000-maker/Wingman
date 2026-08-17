@@ -124,8 +124,30 @@
     }
 
     function enhanceNonNativeActions() {
+        var focusableSelector = 'button:not([disabled]),a[href],input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
         document.querySelectorAll('[onclick*="openPurchaseModal"]').forEach(function (el) {
             if (/^(BUTTON|A)$/.test(el.tagName)) return;
+
+            var nestedFocusable = el.querySelector(focusableSelector);
+            if (nestedFocusable) {
+                // Do not create an interactive parent around an already-focusable child.
+                // The native child remains the keyboard-accessible purchase action.
+                el.removeAttribute('role');
+                el.removeAttribute('tabindex');
+                el.removeAttribute('aria-label');
+
+                // Avoid calling the same purchase-modal action twice when a nested
+                // purchase control bubbles to the clickable card container.
+                el.querySelectorAll('[onclick*="openPurchaseModal"]').forEach(function (child) {
+                    if (child === el || child.__wingmanPurchaseBubbleGuard) return;
+                    child.__wingmanPurchaseBubbleGuard = true;
+                    child.addEventListener('click', function (event) {
+                        event.stopPropagation();
+                    });
+                });
+                return;
+            }
+
             el.setAttribute('role', 'button');
             if (el.tabIndex < 0) el.tabIndex = 0;
             if (!el.getAttribute('aria-label')) el.setAttribute('aria-label', 'Buy credits');
