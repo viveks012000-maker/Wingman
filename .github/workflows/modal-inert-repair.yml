@@ -1,0 +1,147 @@
+name: Apply modal inert accessibility repair
+
+on:
+  push:
+    branches:
+      - fix/modal-inert-accessibility-20260817
+    paths:
+      - .github/workflows/modal-inert-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply exact inert patch and regressions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def rep(path, old, new, expected=1):
+              p=Path(path); s=p.read_text(); c=s.count(old)
+              if c != expected: raise SystemExit(f'{path}: expected {expected}, found {c} for {old[:90]!r}')
+              p.write_text(s.replace(old,new))
+
+          # Shared state setter: hidden dialogs must be inert; open dialogs must be focusable before focus is moved inside.
+          rep('accessibility.js',
+          """    function enhanceCloseControls(modal, config) {""",
+          """    function setModalInteractiveState(modal, open) {
+        if (open) {
+            modal.inert = false;
+            modal.removeAttribute('inert');
+            modal.setAttribute('aria-hidden', 'false');
+        } else {
+            modal.inert = true;
+            modal.setAttribute('inert', '');
+            modal.setAttribute('aria-hidden', 'true');
+        }
+    }
+
+    function enhanceCloseControls(modal, config) {""")
+
+          rep('accessibility.js', "modal.setAttribute('aria-hidden', 'false');", "setModalInteractiveState(modal, true);", expected=2)
+          rep('accessibility.js', "modal.setAttribute('aria-hidden', 'true');", "setModalInteractiveState(modal, false);", expected=3)
+
+          # The wrapper must remove inert before the page's original open function and before querying/focusing descendants.
+          rep('accessibility.js',
+          """                var result = originalOpen.apply(this, arguments);
+                st.open = true;
+                setModalInteractiveState(modal, true);""",
+          """                setModalInteractiveState(modal, true);
+                var result = originalOpen.apply(this, arguments);
+                st.open = true;""")
+
+          # Permanent browser regressions for app auth modal.
+          rep('tests/browser_viewport_live_qa.js',
+          """                    await page.evaluate(() => window.openAuthRequiredModal());
+                    await page.waitForTimeout(30);""",
+          """                    const appAuthClosedBefore = await page.evaluate(() => {
+                        const m = document.getElementById('authRequiredModal');
+                        return { hidden: m.getAttribute('aria-hidden'), inert: m.inert, inertAttr: m.hasAttribute('inert') };
+                    });
+                    if (appAuthClosedBefore.hidden !== 'true' || !appAuthClosedBefore.inert || !appAuthClosedBefore.inertAttr) throw new Error(`Closed app auth dialog must be aria-hidden and inert: ${JSON.stringify(appAuthClosedBefore)}`);
+                    await page.evaluate(() => window.openAuthRequiredModal());
+                    await page.waitForTimeout(30);""", expected=1)
+
+          rep('tests/browser_viewport_live_qa.js',
+          """                            focused: m.contains(document.activeElement),
+                            close: { w: cr.width, h: cr.height, label: close.getAttribute('aria-label') },""",
+          """                            focused: m.contains(document.activeElement),
+                            inert: m.inert,
+                            inertAttr: m.hasAttribute('inert'),
+                            close: { w: cr.width, h: cr.height, label: close.getAttribute('aria-label') },""", expected=1)
+          rep('tests/browser_viewport_live_qa.js',
+          """                    if (appAuth.role !== 'dialog' || appAuth.modal !== 'true' || !appAuth.labelledby || !appAuth.focused) throw new Error(`App auth dialog semantics/focus invalid: ${JSON.stringify(appAuth)}`);""",
+          """                    if (appAuth.role !== 'dialog' || appAuth.modal !== 'true' || !appAuth.labelledby || !appAuth.focused || appAuth.inert || appAuth.inertAttr) throw new Error(`App auth dialog semantics/focus/inert state invalid: ${JSON.stringify(appAuth)}`);""")
+          rep('tests/browser_viewport_live_qa.js',
+          """                    if (await page.isVisible('#authRequiredModal')) throw new Error('Escape did not close app auth dialog');""",
+          """                    if (await page.isVisible('#authRequiredModal')) throw new Error('Escape did not close app auth dialog');
+                    const appAuthClosedAfter = await page.evaluate(() => {
+                        const m = document.getElementById('authRequiredModal');
+                        return { hidden: m.getAttribute('aria-hidden'), inert: m.inert, inertAttr: m.hasAttribute('inert') };
+                    });
+                    if (appAuthClosedAfter.hidden !== 'true' || !appAuthClosedAfter.inert || !appAuthClosedAfter.inertAttr) throw new Error(`Closed app auth dialog must restore inert: ${JSON.stringify(appAuthClosedAfter)}`);""")
+
+          # Permanent landing regressions for both hidden dialogs.
+          rep('tests/browser_viewport_live_qa.js',
+          """                    await page.evaluate(() => window.openInterstitialModal());
+                    await page.waitForTimeout(20);""",
+          """                    const landingClosedBefore = await page.evaluate(() => ['interstitialModal','authRequiredModal'].map(id => {
+                        const m=document.getElementById(id); return { id, hidden:m.getAttribute('aria-hidden'), inert:m.inert, inertAttr:m.hasAttribute('inert') };
+                    }));
+                    if (landingClosedBefore.some(x => x.hidden !== 'true' || !x.inert || !x.inertAttr)) throw new Error(`Closed landing dialogs must be aria-hidden and inert: ${JSON.stringify(landingClosedBefore)}`);
+                    await page.evaluate(() => window.openInterstitialModal());
+                    await page.waitForTimeout(20);""", expected=1)
+          rep('tests/browser_viewport_live_qa.js',
+          """                        return { role: m.getAttribute('role'), modal: m.getAttribute('aria-modal'), labelledby: m.getAttribute('aria-labelledby'), focused: m.contains(document.activeElement) };""",
+          """                        return { role: m.getAttribute('role'), modal: m.getAttribute('aria-modal'), labelledby: m.getAttribute('aria-labelledby'), focused: m.contains(document.activeElement), inert: m.inert, inertAttr: m.hasAttribute('inert') };""", expected=1)
+          rep('tests/browser_viewport_live_qa.js',
+          """                    if (interstitialSemantics.role !== 'dialog' || interstitialSemantics.modal !== 'true' || !interstitialSemantics.labelledby || !interstitialSemantics.focused) throw new Error(`Interstitial dialog semantics/focus invalid: ${JSON.stringify(interstitialSemantics)}`);""",
+          """                    if (interstitialSemantics.role !== 'dialog' || interstitialSemantics.modal !== 'true' || !interstitialSemantics.labelledby || !interstitialSemantics.focused || interstitialSemantics.inert || interstitialSemantics.inertAttr) throw new Error(`Interstitial dialog semantics/focus/inert invalid: ${JSON.stringify(interstitialSemantics)}`);""")
+          rep('tests/browser_viewport_live_qa.js',
+          """                    await page.evaluate(() => window.closeInterstitialModal());
+
+                    await page.evaluate(() => window.openAuthRequiredModal());""",
+          """                    await page.evaluate(() => window.closeInterstitialModal());
+                    const interstitialClosedAfter = await page.evaluate(() => { const m=document.getElementById('interstitialModal'); return { hidden:m.getAttribute('aria-hidden'), inert:m.inert, inertAttr:m.hasAttribute('inert') }; });
+                    if (interstitialClosedAfter.hidden !== 'true' || !interstitialClosedAfter.inert || !interstitialClosedAfter.inertAttr) throw new Error(`Interstitial did not restore inert after close: ${JSON.stringify(interstitialClosedAfter)}`);
+
+                    await page.evaluate(() => window.openAuthRequiredModal());""")
+          rep('tests/browser_viewport_live_qa.js',
+          """                            modal: { role: modal.getAttribute('role'), ariaModal: modal.getAttribute('aria-modal'), labelledby: modal.getAttribute('aria-labelledby'), focused: modal.contains(document.activeElement) },""",
+          """                            modal: { role: modal.getAttribute('role'), ariaModal: modal.getAttribute('aria-modal'), labelledby: modal.getAttribute('aria-labelledby'), focused: modal.contains(document.activeElement), inert: modal.inert, inertAttr: modal.hasAttribute('inert') },""", expected=1)
+          rep('tests/browser_viewport_live_qa.js',
+          """                    if (authTargets.modal.role !== 'dialog' || authTargets.modal.ariaModal !== 'true' || !authTargets.modal.labelledby || !authTargets.modal.focused) {""",
+          """                    if (authTargets.modal.role !== 'dialog' || authTargets.modal.ariaModal !== 'true' || !authTargets.modal.labelledby || !authTargets.modal.focused || authTargets.modal.inert || authTargets.modal.inertAttr) {""")
+          rep('tests/browser_viewport_live_qa.js',
+          """                    await page.evaluate(() => window.closeAuthRequiredModal());""",
+          """                    await page.evaluate(() => window.closeAuthRequiredModal());
+                    const authClosedAfter = await page.evaluate(() => { const m=document.getElementById('authRequiredModal'); return { hidden:m.getAttribute('aria-hidden'), inert:m.inert, inertAttr:m.hasAttribute('inert') }; });
+                    if (authClosedAfter.hidden !== 'true' || !authClosedAfter.inert || !authClosedAfter.inertAttr) throw new Error(`Landing auth dialog did not restore inert after close: ${JSON.stringify(authClosedAfter)}`);""", expected=1)
+          PY
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run build:netlify
+      - name: Scope and commit green repair
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git status --porcelain | awk '{print $2}' | grep -v '^netlify-dist/' | sort)
+          expected=(accessibility.js tests/browser_viewport_live_qa.js)
+          if [ "${changed[*]}" != "${expected[*]}" ]; then echo "Unexpected changed files: ${changed[*]}"; exit 1; fi
+          git config user.name 'viveks012000-maker'
+          git config user.email 'viveks012000@gmail.com'
+          git add accessibility.js tests/browser_viewport_live_qa.js
+          git commit -m 'fix: make closed dialogs inert'
+          git push origin HEAD:fix/modal-inert-accessibility-20260817
