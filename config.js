@@ -163,13 +163,13 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 /*
  * Account plan badge.
  * "Free Plan" means the account has only ever received the canonical 50 signup credits.
- * "Paid Plan" means the account has ever had credits beyond that signup grant. This is derived
- * from the authenticated user's RLS-protected profile/ledger and remains Paid after credits are spent.
+ * "Paid Plan" means the account has ever had credits beyond that signup grant. The database
+ * persists this monotonic fact on the authenticated user's RLS-protected profile so refreshes
+ * stay O(1) regardless of credit-ledger size.
  */
 (function () {
     'use strict';
 
-    var INITIAL_FREE_CREDITS = 50;
     var refreshTimer = null;
     var authListenerAttached = false;
     var updateCreditsPatched = false;
@@ -198,48 +198,13 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
     async function determinePlan(userId) {
         var profileResult = await window.supabaseClient
             .from('profiles')
-            .select('credits')
+            .select('has_paid_credits')
             .eq('id', userId)
             .maybeSingle();
 
         if (profileResult.error) throw profileResult.error;
-        if (!profileResult.data || typeof profileResult.data.credits !== 'number') return 'unavailable';
-
-        var currentCredits = Number(profileResult.data.credits);
-
-        // Fast path: a balance above the 50-credit signup grant can only be a non-free account.
-        if (currentCredits > INITIAL_FREE_CREDITS) return 'paid';
-
-        // Canonical future path: successful add_credits() calls create completed positive purchase rows.
-        var purchaseResult = await window.supabaseClient
-            .from('credit_transactions')
-            .select('id')
-            .eq('user_id', userId)
-            .eq('status', 'completed')
-            .eq('type', 'purchase')
-            .gt('amount', 0)
-            .limit(1);
-
-        if (purchaseResult.error) throw purchaseResult.error;
-        if (purchaseResult.data && purchaseResult.data.length > 0) return 'paid';
-
-        // Legacy-safe path: some older top-ups were not written as purchase rows.
-        // current balance + all successfully consumed credits reconstructs lifetime granted credits.
-        var usageResult = await window.supabaseClient
-            .from('credit_transactions')
-            .select('amount')
-            .eq('user_id', userId)
-            .eq('status', 'completed')
-            .lt('amount', 0);
-
-        if (usageResult.error) throw usageResult.error;
-
-        var consumedCredits = (usageResult.data || []).reduce(function (sum, row) {
-            var amount = Number(row && row.amount);
-            return Number.isFinite(amount) && amount < 0 ? sum + Math.abs(amount) : sum;
-        }, 0);
-
-        return (currentCredits + consumedCredits) > INITIAL_FREE_CREDITS ? 'paid' : 'free';
+        if (!profileResult.data || typeof profileResult.data.has_paid_credits !== 'boolean') return 'unavailable';
+        return profileResult.data.has_paid_credits ? 'paid' : 'free';
     }
 
     async function refreshPlanBadge() {
