@@ -1,0 +1,111 @@
+name: Main Font Delivery Diagnostic - DO NOT MERGE
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-font-delivery-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-fonts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      EXPECTED_SHA: 7e11383372be5bcc1a479e74d3606513bddb2344
+      FRONTEND: https://mywingman.pages.dev
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install JS deps and locate Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          CHROME_BIN=$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || true)
+          test -n "$CHROME_BIN"
+          echo "CHROME_BIN=$CHROME_BIN" >> "$GITHUB_ENV"
+          "$CHROME_BIN" --version
+      - name: Capture live font request, Google CSS and runtime usage
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p font-audit
+          release=$(curl -fsS "$FRONTEND/release.json")
+          test "$(printf '%s' "$release" | jq -r '.sourceCommit')" = "$EXPECTED_SHA"
+          node <<'NODE'
+          const {chromium}=require('playwright'); const fs=require('fs');
+          (async()=>{const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_BIN});const report={};try{
+            for(const path of ['/','/app']){
+              const c=await browser.newContext({viewport:{width:1440,height:1000}}),page=await c.newPage();
+              const responses=[];page.on('response',r=>{const u=r.url();if(/fonts\.(googleapis|gstatic)\.com/.test(u))responses.push({url:u,status:r.status(),type:r.request().resourceType(),headers:r.headers()})});
+              const r=await page.goto(process.env.FRONTEND+path,{waitUntil:'networkidle',timeout:45000});if(!r||r.status()!==200)throw new Error(`${path} failed`);
+              await page.evaluate(async()=>{await document.fonts.ready});
+              const data=await page.evaluate(()=>{
+                const mainFontLinks=[...document.querySelectorAll('link[rel="stylesheet"][href*="fonts.googleapis.com"]')].map(x=>x.href).filter(x=>!x.includes('Material+Symbols'));
+                const faces=[...document.fonts].map(f=>({family:f.family,style:f.style,weight:f.weight,stretch:f.stretch,status:f.status})).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));
+                const combos=new Map();
+                for(const el of document.querySelectorAll('body *')){
+                  const cs=getComputedStyle(el); if(cs.display==='none') continue;
+                  const key=JSON.stringify([cs.fontFamily,cs.fontWeight,cs.fontStyle]);
+                  combos.set(key,(combos.get(key)||0)+1);
+                }
+                return {mainFontLinks,faces,computedCombos:[...combos].map(([k,count])=>({combo:JSON.parse(k),count})).sort((a,b)=>b.count-a.count),resources:performance.getEntriesByType('resource').filter(x=>/fonts\.(googleapis|gstatic)\.com/.test(x.name)).map(x=>({url:x.name,transferSize:Math.round(x.transferSize||0),encodedBodySize:Math.round(x.encodedBodySize||0),decodedBodySize:Math.round(x.decodedBodySize||0),duration:Math.round(x.duration)}))};
+              });
+              report[path]={...data,responses}; await c.close();
+            }
+          }finally{await browser.close()}fs.writeFileSync('font-audit/runtime.json',JSON.stringify(report,null,2));console.log('RUNTIME_FONT_REPORT='+JSON.stringify(report));})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+
+          font_url=$(jq -r '.["/"].mainFontLinks[0]' font-audit/runtime.json)
+          test -n "$font_url"
+          echo "MAIN_FONT_CSS_URL=$font_url"
+          printf '%s\n' "$font_url" > font-audit/font-css-url.txt
+          curl -fsS -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36' "$font_url" -o font-audit/google-main-fonts.css
+          echo "GOOGLE_CSS_BYTES=$(wc -c < font-audit/google-main-fonts.css | tr -d ' ')"
+          cat font-audit/google-main-fonts.css
+
+          python - <<'PY'
+          import json,re,urllib.parse
+          from pathlib import Path
+          css=Path('font-audit/google-main-fonts.css').read_text()
+          blocks=[]
+          for m in re.finditer(r'@font-face\s*\{(.*?)\}',css,re.S):
+              b=m.group(1)
+              def val(prop):
+                  x=re.search(rf'{re.escape(prop)}\s*:\s*([^;]+);',b)
+                  return x.group(1).strip() if x else None
+              u=re.search(r'url\(([^)]+)\)',b)
+              blocks.append({'family':val('font-family'),'style':val('font-style'),'weight':val('font-weight'),'display':val('font-display'),'url':u.group(1).strip('"\'') if u else None})
+          Path('font-audit/font-faces.json').write_text(json.dumps(blocks,indent=2))
+          print('FONT_FACE_COUNT',len(blocks))
+          print(json.dumps(blocks,indent=2))
+          PY
+
+          python - <<'PY'
+          import json,subprocess
+          from pathlib import Path
+          faces=json.loads(Path('font-audit/font-faces.json').read_text())
+          rows=[]
+          for i,f in enumerate(faces):
+              u=f.get('url')
+              if not u: continue
+              out=Path(f'font-audit/font-{i}.woff2')
+              subprocess.run(['curl','-fsS',u,'-o',str(out)],check=True)
+              rows.append({**f,'bytes':out.stat().st_size,'file':str(out)})
+          Path('font-audit/font-downloads.json').write_text(json.dumps(rows,indent=2))
+          print('FONT_DOWNLOADS='+json.dumps(rows))
+          print('ALL_DECLARED_FONT_BYTES='+str(sum(r['bytes'] for r in rows)))
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: main-font-delivery-diagnostic-${{ github.sha }}
+          path: font-audit/
+          if-no-files-found: warn
+          retention-days: 3
