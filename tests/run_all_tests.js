@@ -46,7 +46,8 @@ const testSuites = [
     { name: '40. Mobile Empty-State WCAG Contrast Guard', file: 'empty_state_mobile_contrast.test.js' },
     { name: '41. Cloudflare Pages Routing, 404 & CORS Cutover Guard', file: 'cloudflare_pages_cutover.test.js' },
     { name: '42. Cloudflare Final Accessibility Guard', file: 'cloudflare_final_accessibility.test.js' },
-    { name: '43. Malformed JWT Fast-Reject & Remote Auth Guard', file: 'malformed_jwt_fast_reject.test.js' }
+    { name: '43. Malformed JWT Fast-Reject & Remote Auth Guard', file: 'malformed_jwt_fast_reject.test.js' },
+    { name: '44. Consent Table Least-Privilege Guard', file: 'user_consents_least_privilege.test.js' }
 ];
 
 console.log('========================================================================');
