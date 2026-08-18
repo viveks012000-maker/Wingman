@@ -95,7 +95,6 @@ app.use((req, res, next) => {
 
 // 2. Configure Locked CORS Policy
 const productionAllowedOrigins = [
-    'https://mywingman.com',
     'https://mywingman.pages.dev'
 ];
 const developmentAllowedOrigins = [
@@ -118,6 +117,7 @@ const rawConfiguredAllowedOrigins = process.env.ALLOWED_ORIGINS
 const configuredAllowedOrigins = rawConfiguredAllowedOrigins.filter(origin => {
     if (!IS_PROD) return true;
     if (origin === '*' || origin === 'null' || origin.includes('*')) return false;
+    if (origin === 'https://mywingman.com') return false;
     if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return false;
     if (/^https:\/\/[^/]+\.netlify\.app$/i.test(origin)) return false;
     return /^https:\/\//i.test(origin);
