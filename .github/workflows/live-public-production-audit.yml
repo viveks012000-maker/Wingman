@@ -1,0 +1,29 @@
+name: Temporary live public production audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tests/live_public_production_probe.js'
+      - '.github/workflows/live-public-production-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-public-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Verify audit checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "audit_checkout=$(git rev-parse HEAD)"
+      - name: Probe real Cloudflare and Railway production
+        run: node tests/live_public_production_probe.js
