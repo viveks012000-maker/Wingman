@@ -1,8 +1,6 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-STALE = 'https://mywingman.com'
-PAGES = 'https://mywingman.pages.dev'
 
 
 def replace_once(path, old, new):
@@ -13,8 +11,6 @@ def replace_once(path, old, new):
         raise SystemExit(f'{path}: expected one anchor, found {count}: {old[:100]!r}')
     p.write_text(text.replace(old, new, 1), encoding='utf-8')
 
-# Inner API CORS policy: Pages is the sole verified production browser origin. Explicitly
-# deny the stale mywingman.com host even if an old Railway ALLOWED_ORIGINS value still lists it.
 replace_once(
     'server.js',
     "const productionAllowedOrigins = [\n    'https://mywingman.com',\n    'https://mywingman.pages.dev'\n];",
@@ -22,12 +18,10 @@ replace_once(
 )
 replace_once(
     'server.js',
-    "        if (origin === '*' || origin === 'null' || origin.includes('*')) return false;\n        if (/^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/i.test(origin)) return false;",
-    "        if (origin === '*' || origin === 'null' || origin.includes('*')) return false;\n        if (origin === 'https://mywingman.com') return false;\n        if (/^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/i.test(origin)) return false;"
+    "    if (origin === '*' || origin === 'null' || origin.includes('*')) return false;\n    if (/^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/i.test(origin)) return false;",
+    "    if (origin === '*' || origin === 'null' || origin.includes('*')) return false;\n    if (origin === 'https://mywingman.com') return false;\n    if (/^https?:\\/\\/(localhost|127\\.0\\.1)(:\\d+)?$/i.test(origin)) return false;"
 )
 
-# Railway admission policy must mirror the inner app exactly so early 401/429 responses cannot
-# grant CORS to a domain that is no longer controlled by this deployment.
 replace_once(
     'railway-server.js',
     "const GATEWAY_PRODUCTION_ALLOWED_ORIGINS = [\n    'https://mywingman.com',\n    'https://mywingman.pages.dev'\n];",
@@ -50,7 +44,6 @@ replace_once(
     'ALLOWED_ORIGINS="https://mywingman.pages.dev"'
 )
 
-# Existing source-level CORS guard now locks the stale domain out, including configured origins.
 replace_once(
     'tests/cors_production_policy.test.js',
     "assert.ok(server.includes(\"'https://mywingman.com'\"), 'Custom production domain must remain allowed');",
@@ -68,24 +61,19 @@ replace_once(
     "assert.ok(envExample.includes('ALLOWED_ORIGINS=\"https://mywingman.pages.dev\"'), 'production origin example must use only the verified Cloudflare Pages origin');\nassert.ok(!envExample.includes('https://mywingman.com'), 'production origin example must not trust the misdirected mywingman.com host');"
 )
 
-# Add behavioral coverage to the Railway gateway test by exercising the exported policy helper
-# with a stale configured origin. This proves an old Railway env value cannot re-enable trust.
 railway_test = ROOT / 'tests' / 'railway_request_admission.test.js'
 text = railway_test.read_text(encoding='utf-8')
 anchor = "process.env.ALLOWED_ORIGINS = originalAllowedOrigins;"
-if anchor not in text:
-    raise SystemExit('railway_request_admission.test.js: ALLOWED_ORIGINS restoration anchor missing')
+if text.count(anchor) != 1:
+    raise SystemExit(f'railway_request_admission.test.js: expected one restore anchor, found {text.count(anchor)}')
 insert = """process.env.ALLOWED_ORIGINS = 'https://mywingman.com,https://preview.mywingman.com';
     const staleConfigured = getGatewayAllowedOrigins();
     assert.strictEqual(staleConfigured.has('https://mywingman.com'), false, 'stale mywingman.com must remain denied even when configured');
     assert.strictEqual(staleConfigured.has('https://preview.mywingman.com'), true, 'other explicit HTTPS configured origins must remain available');
 
     """ + anchor
-if text.count(anchor) != 1:
-    raise SystemExit(f'railway_request_admission.test.js: expected one restore anchor, found {text.count(anchor)}')
 railway_test.write_text(text.replace(anchor, insert, 1), encoding='utf-8')
 
-# Dedicated regression guards both CORS layers independently from the legacy tests.
 new_test = ROOT / 'tests' / 'misdirected_domain_cors.test.js'
 new_test.write_text("""'use strict';
 
