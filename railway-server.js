@@ -16,6 +16,47 @@ const LARGE_BODY_ANALYZER_PATHS = new Set([
     '/api/analyze-chat-screenshot/'
 ]);
 
+const GATEWAY_PRODUCTION_ALLOWED_ORIGINS = [
+    'https://mywingman.com',
+    'https://mywingman.pages.dev'
+];
+const GATEWAY_DEVELOPMENT_ALLOWED_ORIGINS = [
+    'http://localhost:3000',
+    'http://localhost:10000',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:10000'
+];
+
+function getGatewayAllowedOrigins() {
+    const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
+    const defaults = isProduction
+        ? GATEWAY_PRODUCTION_ALLOWED_ORIGINS
+        : [...GATEWAY_PRODUCTION_ALLOWED_ORIGINS, ...GATEWAY_DEVELOPMENT_ALLOWED_ORIGINS];
+    const configured = process.env.ALLOWED_ORIGINS
+        ? process.env.ALLOWED_ORIGINS.split(',').map(value => value.trim()).filter(Boolean)
+        : [];
+
+    const safeConfigured = configured.filter(origin => {
+        if (!isProduction) return true;
+        if (origin === '*' || origin === 'null' || origin.includes('*')) return false;
+        if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return false;
+        if (/^https:\/\/[^/]+\.netlify\.app$/i.test(origin)) return false;
+        return /^https:\/\//i.test(origin);
+    });
+
+    return new Set([...defaults, ...safeConfigured]);
+}
+
+function applyAnalyzerAdmissionCors(req, res) {
+    const origin = req && req.headers ? req.headers.origin : null;
+    if (!origin || !getGatewayAllowedOrigins().has(origin)) return false;
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    if (typeof res.vary === 'function') res.vary('Origin');
+    else res.setHeader('Vary', 'Origin');
+    return true;
+}
+
 // Railway is the backend only. Cloudflare Pages is the sole frontend origin.
 // Keep a tiny root probe for platform/load-balancer diagnostics, but never expose
 // repository files, frontend assets, tests, migrations or build internals from Railway.
@@ -52,6 +93,11 @@ app.use((req, res, next) => {
         return next();
     }
 
+    // Admission can terminate with 401/429 before the mounted application's CORS middleware.
+    // Mirror the same production allowlist here so legitimate Cloudflare/custom-domain browsers
+    // can read those errors, while hostile/retired Netlify origins still receive no CORS grant.
+    applyAnalyzerAdmissionCors(req, res);
+
     return analyzerAdmissionLimiter(req, res, () => {
         return verifySupabaseToken(req, res, () => requireSupabaseAuth(req, res, next));
     });
@@ -68,7 +114,14 @@ async function startRailwayServer() {
     return server;
 }
 
-module.exports = { app, startRailwayServer, LARGE_BODY_ANALYZER_PATHS };
+module.exports = {
+    app,
+    startRailwayServer,
+    LARGE_BODY_ANALYZER_PATHS,
+    GATEWAY_PRODUCTION_ALLOWED_ORIGINS,
+    getGatewayAllowedOrigins,
+    applyAnalyzerAdmissionCors
+};
 
 if (require.main === module) {
     startRailwayServer().catch((error) => {
