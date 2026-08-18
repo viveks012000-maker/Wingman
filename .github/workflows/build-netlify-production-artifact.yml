@@ -49,10 +49,10 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add supabaseClient.js tests/password_recovery_compat.test.js tests/run_all_tests.js .github/workflows/build-netlify-production-artifact.yml .github/workflows/bootstrap-password-recovery-fix.yml .github/apply-password-recovery-fix.py
           git diff --cached --check
-          changed=$(git diff --cached --name-only | sort | tr '\n' ' ')
-          echo "FINAL_PATCH_FILES=$changed"
-          test "$changed" = 'supabaseClient.js tests/password_recovery_compat.test.js tests/run_all_tests.js '
           git commit -m 'Complete Supabase password recovery flow'
+          final_changed=$(git diff --name-only origin/main HEAD | sort | tr '\n' ' ')
+          echo "FINAL_PR_FILES=$final_changed"
+          test "$final_changed" = 'supabaseClient.js tests/password_recovery_compat.test.js tests/run_all_tests.js '
           git push origin HEAD:fix/password-recovery-compat-20260818
 
   build-and-verify:
