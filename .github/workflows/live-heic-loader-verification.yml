@@ -1,0 +1,142 @@
+name: Live Deferred HEIC Loader Verification - DO NOT MERGE
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/live-heic-loader-verification.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-lighthouse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPECTED_SHA: 8258be9611bde67bcd3336595e993bf05daa6cad
+      FRONTEND: https://mywingman.pages.dev
+      BACKEND: https://wingman-production-c6ce.up.railway.app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Wait for exact Cloudflare deployment and verify HTTP artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p live-heic
+          deployed=''
+          for attempt in $(seq 1 30); do
+            release=$(curl --connect-timeout 12 --max-time 30 -fsS "$FRONTEND/release.json" 2>/dev/null || true)
+            deployed=$(printf '%s' "$release" | jq -r '.sourceCommit // empty' 2>/dev/null || true)
+            echo "Cloudflare attempt=$attempt sourceCommit=$deployed"
+            if [ "$deployed" = "$EXPECTED_SHA" ]; then printf '%s\n' "$release" > live-heic/release.json; break; fi
+            sleep 10
+          done
+          test "$deployed" = "$EXPECTED_SHA"
+          curl --retry 5 --retry-all-errors --retry-delay 2 -fsS "$FRONTEND/app" > live-heic/app.html
+          grep -Fq '<script defer src="./vendor/heic2any-loader.js"></script>' live-heic/app.html
+          ! grep -Fq '<script src="./vendor/heic2any-loader.js"></script>' live-heic/app.html
+          ! grep -Fq '<script src="./vendor/heic2any.min.js"></script>' live-heic/app.html
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$FRONTEND/")" = 200
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$FRONTEND/app")" = 200
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$FRONTEND/__heic_live_missing__")" = 404
+          health=$(curl --retry 5 --retry-all-errors --retry-delay 2 -fsS "$BACKEND/api/health")
+          echo "RAILWAY_HEALTH=$health"
+          test "$(printf '%s' "$health" | jq -r .status)" = ok
+          test "$(printf '%s' "$health" | jq -r .database)" = supabase_active
+      - name: Chromium 8-check live matrix
+        run: |
+          node <<'NODE'
+          const {chromium}=require('playwright'), base=process.env.FRONTEND;
+          (async()=>{const browser=await chromium.launch({headless:true});let n=0;try{
+            for(const p of ['/','/app']) for(const w of [320,375,430,1440]){
+              const c=await browser.newContext({viewport:{width:w,height:900}}), page=await c.newPage();
+              const pe=[];page.on('pageerror',e=>pe.push(String(e)));
+              const r=await page.goto(base+p,{waitUntil:'domcontentloaded',timeout:45000});if(!r||r.status()!==200)throw new Error(`${p} ${w} HTTP`);
+              await page.evaluate(async()=>{await document.fonts.ready;await document.fonts.load('24px "Material Symbols Outlined"')});await page.waitForTimeout(600);
+              const d=await page.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:innerWidth,font:document.fonts.check('24px "Material Symbols Outlined"'),sup:!!(window.supabaseClient&&window.supabaseClient.auth),heic:typeof window.heic2any==='function',resources:performance.getEntriesByType('resource').map(x=>x.name),logos:[...document.querySelectorAll('img[src*="logo-384.webp"]')].map(x=>({ok:x.complete,nw:x.naturalWidth,nh:x.naturalHeight}))}));
+              if(d.sw>d.iw+1||!d.font||!d.sup||pe.length)throw new Error(`${p} ${w} runtime failure ${JSON.stringify({d,pe})}`);
+              if(!d.logos.length||d.logos.some(x=>!x.ok||x.nw!==384||x.nh!==384))throw new Error(`${p} ${w} logo regression`);
+              if(p==='/app'){
+                if(!d.heic)throw new Error(`${p} ${w} lazy HEIC wrapper missing`);
+                if(!d.resources.some(x=>/\/vendor\/heic2any-loader\.js(?:\?|$)/.test(x)))throw new Error(`${p} ${w} HEIC loader not requested`);
+                if(d.resources.some(x=>/\/vendor\/heic2any\.min\.js(?:\?|$)/.test(x)))throw new Error(`${p} ${w} real HEIC runtime loaded eagerly`);
+              }
+              console.log(`CHROMIUM ${p} ${w} PASS`);n++;await c.close();
+            }
+          }finally{await browser.close()}console.log(`CHROMIUM_LIVE_PASS=${n}/8`)})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+      - name: Lighthouse post-HEIC measurement
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME_PATH=$(find "$HOME/.cache/ms-playwright" -type f -path '*/chrome-linux64/chrome' | head -n 1)
+          export CHROME_PATH
+          npx --yes lighthouse@12 "$FRONTEND/" --quiet --chrome-flags='--headless --no-sandbox --disable-gpu' --only-categories=performance,accessibility,best-practices,seo --output=json --output-path=live-heic/home.json
+          npx --yes lighthouse@12 "$FRONTEND/app" --quiet --chrome-flags='--headless --no-sandbox --disable-gpu' --only-categories=performance,accessibility,best-practices --output=json --output-path=live-heic/app.json
+          node <<'NODE'
+          const fs=require('fs');const baseline={HOME:{performance:89,FCP_ms:2248,LCP_ms:3018,TBT_ms:19,CLS:.002,SpeedIndex_ms:2337},APP:{performance:84,FCP_ms:2182,LCP_ms:3575,TBT_ms:3,CLS:.001,SpeedIndex_ms:2182}};
+          for(const [label,file] of [['HOME','live-heic/home.json'],['APP','live-heic/app.json']]){
+            const r=JSON.parse(fs.readFileSync(file)),c=r.categories,a=r.audits;
+            const o={performance:Math.round(c.performance.score*100),accessibility:Math.round(c.accessibility.score*100),bestPractices:Math.round(c['best-practices'].score*100),seo:c.seo?Math.round(c.seo.score*100):null,FCP_ms:Math.round(a['first-contentful-paint'].numericValue),LCP_ms:Math.round(a['largest-contentful-paint'].numericValue),TBT_ms:Math.round(a['total-blocking-time'].numericValue),CLS:Number(a['cumulative-layout-shift'].numericValue.toFixed(3)),SpeedIndex_ms:Math.round(a['speed-index'].numericValue)};
+            const b=baseline[label],delta={performance_points:o.performance-b.performance,FCP_ms:o.FCP_ms-b.FCP_ms,LCP_ms:o.LCP_ms-b.LCP_ms,TBT_ms:o.TBT_ms-b.TBT_ms,CLS:Number((o.CLS-b.CLS).toFixed(3)),SpeedIndex_ms:o.SpeedIndex_ms-b.SpeedIndex_ms};
+            console.log(`${label}_POST_HEIC=${JSON.stringify(o)} BASELINE=${JSON.stringify(b)} DELTA=${JSON.stringify(delta)}`);
+            const rb=a['render-blocking-insight']?.details?.items||[];console.log(`${label}_RENDER_BLOCKING=${JSON.stringify(rb)}`);
+            if(label==='APP' && JSON.stringify(rb).includes('heic2any-loader.js'))throw new Error('HEIC loader still appears in render-blocking insight');
+            const net=(a['network-requests']?.details?.items||[]).map(x=>x.url||'');
+            if(label==='APP'&&!net.some(x=>/\/vendor\/heic2any-loader\.js(?:\?|$)/.test(x)))throw new Error('HEIC wrapper missing from APP network');
+            if(label==='APP'&&net.some(x=>/\/vendor\/heic2any\.min\.js(?:\?|$)/.test(x)))throw new Error('real HEIC runtime eagerly loaded in Lighthouse');
+            if(o.accessibility<90||o.bestPractices<90||(o.seo!==null&&o.seo<90))throw new Error(`${label} quality regression`);
+          }
+          NODE
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: live-heic-chromium-lighthouse-${{ github.sha }}
+          path: live-heic/
+          retention-days: 3
+
+  firefox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EXPECTED_SHA: 8258be9611bde67bcd3336595e993bf05daa6cad
+      FRONTEND: https://mywingman.pages.dev
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: '22', cache: npm }
+      - run: |
+          npm ci
+          npx playwright install --with-deps firefox
+      - name: Firefox live matrix
+        run: |
+          node <<'NODE'
+          const {firefox}=require('playwright'),base=process.env.FRONTEND;(async()=>{const rel=await (await fetch(base+'/release.json')).json();if(rel.sourceCommit!==process.env.EXPECTED_SHA)throw new Error('wrong production SHA');const b=await firefox.launch({headless:true});let n=0;try{for(const p of ['/','/app'])for(const w of [320,375,430,1440]){const c=await b.newContext({viewport:{width:w,height:900}}),pg=await c.newPage(),pe=[];pg.on('pageerror',e=>pe.push(String(e)));const r=await pg.goto(base+p,{waitUntil:'domcontentloaded',timeout:45000});await pg.waitForTimeout(600);const d=await pg.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:innerWidth,sup:!!(window.supabaseClient&&window.supabaseClient.auth),heic:typeof window.heic2any==='function',res:performance.getEntriesByType('resource').map(x=>x.name)}));if(!r||r.status()!==200||d.sw>d.iw+1||!d.sup||pe.length)throw new Error(`${p} ${w} runtime`);if(p==='/app'&&(!d.heic||!d.res.some(x=>/heic2any-loader\.js/.test(x))||d.res.some(x=>/heic2any\.min\.js/.test(x))))throw new Error(`${p} ${w} HEIC contract`);console.log(`FIREFOX ${p} ${w} PASS`);n++;await c.close()}}finally{await b.close()}console.log(`FIREFOX_LIVE_PASS=${n}/8`)})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+
+  webkit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EXPECTED_SHA: 8258be9611bde67bcd3336595e993bf05daa6cad
+      FRONTEND: https://mywingman.pages.dev
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: '22', cache: npm }
+      - run: |
+          npm ci
+          npx playwright install --with-deps webkit
+      - name: WebKit live matrix
+        run: |
+          node <<'NODE'
+          const {webkit}=require('playwright'),base=process.env.FRONTEND;(async()=>{const rel=await (await fetch(base+'/release.json')).json();if(rel.sourceCommit!==process.env.EXPECTED_SHA)throw new Error('wrong production SHA');const b=await webkit.launch({headless:true});let n=0;try{for(const p of ['/','/app'])for(const w of [320,375,430,1440]){const c=await b.newContext({viewport:{width:w,height:900}}),pg=await c.newPage(),pe=[];pg.on('pageerror',e=>pe.push(String(e)));const r=await pg.goto(base+p,{waitUntil:'domcontentloaded',timeout:45000});await pg.waitForTimeout(600);const d=await pg.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:innerWidth,sup:!!(window.supabaseClient&&window.supabaseClient.auth),heic:typeof window.heic2any==='function',res:performance.getEntriesByType('resource').map(x=>x.name)}));if(!r||r.status()!==200||d.sw>d.iw+1||!d.sup||pe.length)throw new Error(`${p} ${w} runtime`);if(p==='/app'&&(!d.heic||!d.res.some(x=>/heic2any-loader\.js/.test(x))||d.res.some(x=>/heic2any\.min\.js/.test(x))))throw new Error(`${p} ${w} HEIC contract`);console.log(`WEBKIT ${p} ${w} PASS`);n++;await c.close()}}finally{await b.close()}console.log(`WEBKIT_LIVE_PASS=${n}/8`)})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
