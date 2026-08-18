@@ -1,0 +1,100 @@
+name: Live Inline Style System Chrome - DO NOT MERGE
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/live-inline-style-system-chrome.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  system-chrome:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      EXPECTED_SHA: 7e11383372be5bcc1a479e74d3606513bddb2344
+      FRONTEND: https://mywingman.pages.dev
+      BACKEND: https://wingman-production-c6ce.up.railway.app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install JS dependencies and locate system Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          CHROME_BIN=$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || true)
+          test -n "$CHROME_BIN"
+          echo "CHROME_BIN=$CHROME_BIN" >> "$GITHUB_ENV"
+          "$CHROME_BIN" --version
+      - name: Verify exact deployed artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p live-inline-style-fast
+          release=$(curl --retry 5 --retry-all-errors --retry-delay 2 -fsS "$FRONTEND/release.json")
+          deployed=$(printf '%s' "$release" | jq -r '.sourceCommit // empty')
+          echo "CLOUDFLARE_SOURCE_COMMIT=$deployed"
+          test "$deployed" = "$EXPECTED_SHA"
+          for route in / /app; do
+            file=live-inline-style-fast/$( [ "$route" = / ] && echo index || echo app ).html
+            curl --retry 5 --retry-all-errors --retry-delay 2 -fsS "$FRONTEND$route" > "$file"
+            test "$(grep -Fo 'data-inline-source="style.css"' "$file" | wc -l | tr -d ' ')" = 1
+            ! grep -Fq 'href="style.css"' "$file"
+            ! grep -Fq 'href="/style.css"' "$file"
+          done
+          health=$(curl --retry 5 --retry-all-errors --retry-delay 2 -fsS "$BACKEND/api/health")
+          echo "RAILWAY_HEALTH=$health"
+          test "$(printf '%s' "$health" | jq -r .status)" = ok
+          test "$(printf '%s' "$health" | jq -r .database)" = supabase_active
+      - name: Chromium matrix with system Chrome
+        run: |
+          node <<'NODE'
+          const {chromium}=require('playwright'),base=process.env.FRONTEND;
+          (async()=>{const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_BIN});let n=0;try{
+            for(const p of ['/','/app']) for(const w of [320,375,430,1440]) {
+              const c=await browser.newContext({viewport:{width:w,height:900}}),page=await c.newPage(),pe=[];
+              page.on('pageerror',e=>pe.push(String(e)));
+              const r=await page.goto(base+p,{waitUntil:'domcontentloaded',timeout:45000});if(!r||r.status()!==200)throw new Error(`${p} ${w} HTTP`);
+              await page.waitForTimeout(700);
+              const d=await page.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:innerWidth,sup:!!(window.supabaseClient&&window.supabaseClient.auth),inline:document.querySelectorAll('style[data-inline-source="style.css"]').length,res:performance.getEntriesByType('resource').map(x=>x.name)}));
+              if(d.sw>d.iw+1||!d.sup||pe.length||d.inline!==1)throw new Error(`${p} ${w} runtime ${JSON.stringify({d,pe})}`);
+              if(d.res.some(x=>/\/style\.css(?:\?|$)/.test(x)))throw new Error(`${p} ${w} style.css requested`);
+              console.log(`SYSTEM_CHROME ${p} ${w} PASS styleRequests=0`);n++;await c.close();
+            }
+          }finally{await browser.close()}console.log(`SYSTEM_CHROME_LIVE_PASS=${n}/8`)})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+      - name: Lighthouse measurement with system Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CHROME_PATH="$CHROME_BIN"
+          npx --yes lighthouse@12 "$FRONTEND/" --quiet --chrome-flags='--headless --no-sandbox --disable-gpu' --only-categories=performance,accessibility,best-practices,seo --output=json --output-path=live-inline-style-fast/home.json
+          npx --yes lighthouse@12 "$FRONTEND/app" --quiet --chrome-flags='--headless --no-sandbox --disable-gpu' --only-categories=performance,accessibility,best-practices --output=json --output-path=live-inline-style-fast/app.json
+          node <<'NODE'
+          const fs=require('fs');const baseline={HOME:{performance:88,FCP_ms:2294,LCP_ms:3145,TBT_ms:24,CLS:.002,SpeedIndex_ms:2294},APP:{performance:86,FCP_ms:2190,LCP_ms:3402,TBT_ms:5,CLS:.001,SpeedIndex_ms:2190}};
+          for(const [label,file] of [['HOME','live-inline-style-fast/home.json'],['APP','live-inline-style-fast/app.json']]){
+            const r=JSON.parse(fs.readFileSync(file)),c=r.categories,a=r.audits;
+            const o={performance:Math.round(c.performance.score*100),accessibility:Math.round(c.accessibility.score*100),bestPractices:Math.round(c['best-practices'].score*100),seo:c.seo?Math.round(c.seo.score*100):null,FCP_ms:Math.round(a['first-contentful-paint'].numericValue),LCP_ms:Math.round(a['largest-contentful-paint'].numericValue),TBT_ms:Math.round(a['total-blocking-time'].numericValue),CLS:Number(a['cumulative-layout-shift'].numericValue.toFixed(3)),SpeedIndex_ms:Math.round(a['speed-index'].numericValue)};
+            const b=baseline[label],delta={performance_points:o.performance-b.performance,FCP_ms:o.FCP_ms-b.FCP_ms,LCP_ms:o.LCP_ms-b.LCP_ms,TBT_ms:o.TBT_ms-b.TBT_ms,CLS:Number((o.CLS-b.CLS).toFixed(3)),SpeedIndex_ms:o.SpeedIndex_ms-b.SpeedIndex_ms};
+            const rb=a['render-blocking-insight']?.details?.items||[];
+            const net=(a['network-requests']?.details?.items||[]).map(x=>({url:x.url||'',transferSize:Math.round(x.transferSize||0),resourceSize:Math.round(x.resourceSize||0),mimeType:x.mimeType||''}));
+            console.log(`${label}_POST_INLINE_STYLE=${JSON.stringify(o)} BASELINE=${JSON.stringify(b)} DELTA=${JSON.stringify(delta)}`);
+            console.log(`${label}_RENDER_BLOCKING=${JSON.stringify(rb)}`);
+            console.log(`${label}_TOP_NETWORK=${JSON.stringify(net.slice().sort((x,y)=>y.transferSize-x.transferSize).slice(0,15))}`);
+            if(JSON.stringify(rb).includes('style.css'))throw new Error(`${label}: style.css still render-blocking`);
+            if(net.some(x=>/\/style\.css(?:\?|$)/.test(x.url)))throw new Error(`${label}: style.css requested by Lighthouse`);
+            if(o.accessibility<90||o.bestPractices<90||(o.seo!==null&&o.seo<90))throw new Error(`${label}: category regression`);
+          }
+          NODE
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: live-inline-style-system-chrome-${{ github.sha }}
+          path: live-inline-style-fast/
+          retention-days: 3
