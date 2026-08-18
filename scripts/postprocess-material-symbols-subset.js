@@ -8,7 +8,7 @@ const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'netlify-dist');
 
 // Icons whose names are selected dynamically at runtime rather than appearing as literal
-// material-symbol spans in the static HTML artifact.
+// material-symbol spans or same-variable className/textContent pairs in the public artifact.
 const DYNAMIC_ICONS = Object.freeze([
   'check_circle',
   'close',
@@ -25,6 +25,8 @@ const DYNAMIC_ICONS = Object.freeze([
 
 const MATERIAL_CSS_RE = /https:\/\/fonts\.googleapis\.com\/css2\?family=Material\+Symbols\+Outlined:wght,FILL@100\.\.700,0\.\.1&display=block/g;
 const STATIC_ICON_RE = /class=["'][^"']*material-symbols-outlined[^"']*["'][^>]*>\s*([a-z0-9_]+)\s*</g;
+const PROGRAMMATIC_CLASS_THEN_TEXT_RE = /([A-Za-z_$][\w$]*)\.className\s*=\s*["'][^"']*material-symbols-outlined[^"']*["'][\s\S]{0,600}?\1\.textContent\s*=\s*["']([a-z0-9_]+)["']/g;
+const PROGRAMMATIC_TEXT_THEN_CLASS_RE = /([A-Za-z_$][\w$]*)\.textContent\s*=\s*["']([a-z0-9_]+)["'][\s\S]{0,600}?\1\.className\s*=\s*["'][^"']*material-symbols-outlined[^"']*["']/g;
 
 function sha256(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -38,12 +40,25 @@ function collectStaticIcons(source) {
   return icons;
 }
 
+function collectProgrammaticIcons(source) {
+  const icons = new Set();
+  let match;
+  PROGRAMMATIC_CLASS_THEN_TEXT_RE.lastIndex = 0;
+  while ((match = PROGRAMMATIC_CLASS_THEN_TEXT_RE.exec(source)) !== null) icons.add(match[2]);
+  PROGRAMMATIC_TEXT_THEN_CLASS_RE.lastIndex = 0;
+  while ((match = PROGRAMMATIC_TEXT_THEN_CLASS_RE.exec(source)) !== null) icons.add(match[2]);
+  return icons;
+}
+
 function collectUsedIcons() {
   const icons = new Set(DYNAMIC_ICONS);
-  for (const relative of ['index.html', 'app.html', 'app.js']) {
+  const sources = ['index.html', 'app.html', 'app.js', 'accessibility.js', 'vendor/production-runtime.js'];
+  for (const relative of sources) {
     const file = path.join(OUT, relative);
     if (!fs.existsSync(file)) throw new Error(`[material-symbols-subset] Missing artifact file: ${relative}`);
-    for (const icon of collectStaticIcons(fs.readFileSync(file, 'utf8'))) icons.add(icon);
+    const source = fs.readFileSync(file, 'utf8');
+    for (const icon of collectStaticIcons(source)) icons.add(icon);
+    for (const icon of collectProgrammaticIcons(source)) icons.add(icon);
   }
   return [...icons].sort((a, b) => a.localeCompare(b));
 }
@@ -88,6 +103,7 @@ module.exports = {
   DYNAMIC_ICONS,
   MATERIAL_CSS_RE,
   collectStaticIcons,
+  collectProgrammaticIcons,
   collectUsedIcons,
   run
 };
