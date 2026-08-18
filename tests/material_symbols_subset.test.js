@@ -37,9 +37,14 @@ function getSubsetUrl(html) {
 try {
   buildArtifact();
 
-  const index = fs.readFileSync(path.join(OUT, 'index.html'), 'utf8');
-  const app = fs.readFileSync(path.join(OUT, 'app.html'), 'utf8');
-  const appJs = fs.readFileSync(path.join(OUT, 'app.js'), 'utf8');
+  const sources = [
+    'index.html',
+    'app.html',
+    'app.js',
+    'accessibility.js',
+    'vendor/production-runtime.js'
+  ].map(relative => fs.readFileSync(path.join(OUT, relative), 'utf8'));
+  const [index, app] = sources;
 
   const indexUrl = getSubsetUrl(index);
   const appUrl = getSubsetUrl(app);
@@ -57,11 +62,13 @@ try {
   assert(indexUrl.length < 1900, 'subset URL must remain safely below common URL-length limits');
 
   const expected = new Set(subset.DYNAMIC_ICONS);
-  for (const source of [index, app, appJs]) {
+  for (const source of sources) {
     for (const icon of subset.collectStaticIcons(source)) expected.add(icon);
+    for (const icon of subset.collectProgrammaticIcons(source)) expected.add(icon);
   }
+  assert(expected.has('refresh'), 'programmatic icon discovery must include the dynamically-created refresh icon');
   const missing = [...expected].filter(icon => !names.includes(icon)).sort();
-  assert.deepStrictEqual(missing, [], `subset must include every static/dynamic icon: missing ${missing.join(', ')}`);
+  assert.deepStrictEqual(missing, [], `subset must include every static/programmatic/runtime icon: missing ${missing.join(', ')}`);
 
   const obsoleteFull = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=block';
   assert(!index.includes(obsoleteFull), 'landing must not request the full Material Symbols font');
