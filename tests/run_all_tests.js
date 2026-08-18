@@ -57,7 +57,8 @@ const testSuites = [
     { name: '51. Inlined Cropper CSS Delivery Guard', file: 'inline_cropper_css.test.js' },
     { name: '52. Exact Self-Hosted Material Symbols Delivery Guard', file: 'self_host_material_symbols.test.js' },
     { name: '53. Landing Explicit Favicon Delivery Guard', file: 'landing_favicon_delivery.test.js' },
-    { name: '54. Password Recovery Completion & Strengthened-Password Guard', file: 'password_recovery_compat.test.js' }
+    { name: '54. Password Recovery Completion & Strengthened-Password Guard', file: 'password_recovery_compat.test.js' },
+    { name: '55. Persisted Paid Plan State & O(1) Lookup Guard', file: 'paid_plan_state.test.js' }
 ];
 
 console.log('========================================================================');
