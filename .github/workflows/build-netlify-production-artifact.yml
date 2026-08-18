@@ -15,45 +15,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  bootstrap-weak-password-login-fix:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'fix/login-weak-password-warning-20260818' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-
-      - name: Apply byte-exact login warning patch and focused regression
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m py_compile .github/apply-weak-login-warning.py
-          python3 .github/apply-weak-login-warning.py
-          node -c supabaseClient.js
-          node -c tests/password_recovery_compat.test.js
-          node tests/password_recovery_compat.test.js
-
-      - name: Restore production gate, remove patcher and commit only real changes
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          git checkout origin/main -- .github/workflows/build-netlify-production-artifact.yml
-          rm -f .github/apply-weak-login-warning.py
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add supabaseClient.js tests/password_recovery_compat.test.js .github/workflows/build-netlify-production-artifact.yml .github/apply-weak-login-warning.py
-          git diff --cached --check
-          git commit -m 'Surface Supabase weak-password login warnings'
-          final_changed=$(git diff --name-only origin/main HEAD | sort | tr '\n' ' ')
-          echo "FINAL_PR_FILES=$final_changed"
-          test "$final_changed" = 'supabaseClient.js tests/password_recovery_compat.test.js '
-          git push origin HEAD:fix/login-weak-password-warning-20260818
-
   build-and-verify:
     runs-on: ubuntu-latest
     timeout-minutes: 35
