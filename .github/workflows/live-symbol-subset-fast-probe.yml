@@ -1,0 +1,155 @@
+name: Temporary Parallel Symbol Subset Probe - DO NOT MERGE
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/live-symbol-subset-fast-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-lighthouse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPECTED_SHA: e33f720abc1d215c5caec340132c9c2a08b2928b
+      FRONTEND: https://mywingman.pages.dev
+      BACKEND: https://wingman-production-c6ce.up.railway.app
+      OLD_NETLIFY: https://soft-sawine-30785c.netlify.app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install Chromium runtime
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Verify exact Cloudflare deployment subset backend and retirement
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p fast-live-probe
+          deployed=''
+          for attempt in $(seq 1 36); do
+            release=$(curl --connect-timeout 12 --max-time 30 -fsS "$FRONTEND/release.json" 2>/dev/null || true)
+            deployed=$(printf '%s' "$release" | jq -r '.sourceCommit // empty' 2>/dev/null || true)
+            echo "Cloudflare attempt=$attempt sourceCommit=$deployed"
+            if [ "$deployed" = "$EXPECTED_SHA" ]; then printf '%s\n' "$release" > fast-live-probe/release.json; break; fi
+            sleep 10
+          done
+          test "$deployed" = "$EXPECTED_SHA"
+          curl --retry 5 --retry-all-errors --retry-delay 2 -fsS "$FRONTEND/" > fast-live-probe/index.html
+          curl --retry 5 --retry-all-errors --retry-delay 2 -fsS "$FRONTEND/app" > fast-live-probe/app.html
+          subset_url=$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+          h=Path('fast-live-probe/index.html').read_text(encoding='utf-8')
+          m=re.search(r'https://fonts\.googleapis\.com/css2\?family=Material\+Symbols\+Outlined:[^"\']+icon_names=([^&"\']+)&display=block',h)
+          if not m: raise SystemExit('live subset URL missing')
+          icons=m.group(1).split(',')
+          if len(icons)!=45: raise SystemExit(f'expected 45 icons, got {len(icons)}')
+          print(re.search(r'https://fonts\.googleapis\.com/css2\?family=Material\+Symbols\+Outlined:[^"\']+&display=block',h).group(0))
+          PY
+          )
+          ua='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36'
+          curl -A "$ua" --retry 5 --retry-all-errors --retry-delay 2 -fsS "$subset_url" -o fast-live-probe/material-symbols.css
+          font_url=$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+          css=Path('fast-live-probe/material-symbols.css').read_text(encoding='utf-8')
+          m=re.search(r"src:\s*url\((?:['\"])?(https://fonts\.gstatic\.com/[^)'\"]+)(?:['\"])?\)\s*format\(['\"]woff2['\"]\)",css)
+          if not m: raise SystemExit('font URL missing')
+          print(m.group(1))
+          PY
+          )
+          curl -A "$ua" --retry 5 --retry-all-errors --retry-delay 2 -fsS "$font_url" -o fast-live-probe/material-symbols.woff2
+          bytes=$(wc -c < fast-live-probe/material-symbols.woff2 | tr -d ' ')
+          echo "LIVE_MATERIAL_SYMBOLS_WOFF2_BYTES=$bytes"
+          test "$bytes" -gt 1000
+          test "$bytes" -lt 300000
+          test "$(curl --retry 5 --retry-all-errors --retry-delay 2 -sS -o /dev/null -w '%{http_code}' "$FRONTEND/")" = 200
+          test "$(curl --retry 5 --retry-all-errors --retry-delay 2 -sS -o /dev/null -w '%{http_code}' "$FRONTEND/app")" = 200
+          test "$(curl --retry 5 --retry-all-errors --retry-delay 2 -sS -o /dev/null -w '%{http_code}' "$FRONTEND/__fast_probe_missing__")" = 404
+          health=$(curl --retry 5 --retry-all-errors --retry-delay 2 -fsS "$BACKEND/api/health")
+          test "$(printf '%s' "$health" | jq -r .status)" = ok
+          test "$(printf '%s' "$health" | jq -r .database)" = supabase_active
+          cf=$(curl --retry 5 --retry-all-errors --retry-delay 2 -sS -D - -o /dev/null -X OPTIONS -H 'Origin: https://mywingman.pages.dev' -H 'Access-Control-Request-Method: GET' "$BACKEND/api/health" | tr -d '\r')
+          printf '%s' "$cf" | grep -Eqi '^access-control-allow-origin:[[:space:]]*https://mywingman\.pages\.dev$'
+          old=$(curl --retry 5 --retry-all-errors --retry-delay 2 -sS -D - -o /dev/null -X OPTIONS -H 'Origin: https://soft-sawine-30785c.netlify.app' -H 'Access-Control-Request-Method: GET' "$BACKEND/api/health" | tr -d '\r')
+          if printf '%s' "$old" | grep -Eqi '^access-control-allow-origin:'; then exit 1; fi
+          set +e
+          old_code=$(curl --connect-timeout 12 --max-time 25 -sS -o /dev/null -w '%{http_code}' "$OLD_NETLIFY/")
+          old_rc=$?
+          set -e
+          if [ "$old_rc" -eq 0 ]; then test "$old_code" = 404; fi
+      - name: Chromium 8-check live matrix
+        run: |
+          node <<'NODE'
+          const {chromium}=require('playwright');
+          const base=process.env.FRONTEND;
+          (async()=>{const browser=await chromium.launch({headless:true});let n=0;try{for(const p of ['/','/app'])for(const w of [320,375,430,1440]){const c=await browser.newContext({viewport:{width:w,height:900}}),page=await c.newPage();const pe=[];page.on('pageerror',e=>pe.push(String(e)));const r=await page.goto(base+p,{waitUntil:'domcontentloaded',timeout:45000});if(!r||r.status()!==200)throw new Error(`${p} ${w} HTTP`);await page.evaluate(async()=>{await document.fonts.ready;await document.fonts.load('24px "Material Symbols Outlined"')});await page.waitForTimeout(600);const d=await page.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:innerWidth,font:document.fonts.check('24px "Material Symbols Outlined"'),sup:!!(window.supabaseClient&&window.supabaseClient.auth),icons:[...document.querySelectorAll('.material-symbols-outlined')].filter(x=>x.offsetParent!==null).map(x=>({t:(x.textContent||'').trim(),w:x.getBoundingClientRect().width,f:getComputedStyle(x).fontFamily}))}));if(d.sw>d.iw+1||!d.font||!d.sup||pe.length)throw new Error(`${p} ${w} runtime failure`);for(const i of d.icons){if(!/Material Symbols Outlined/i.test(i.f)||i.w>40)throw new Error(`${p} ${w} icon ${i.t} failed`)}n++;await c.close()}}finally{await browser.close()}console.log(`CHROMIUM_LIVE_PASS=${n}/8`)})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+      - name: Lighthouse after symbol subset
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME_PATH=$(find "$HOME/.cache/ms-playwright" -type f -path '*/chrome-linux64/chrome' | head -n 1)
+          export CHROME_PATH
+          npx --yes lighthouse@12 "$FRONTEND/" --quiet --chrome-flags='--headless --no-sandbox --disable-gpu' --only-categories=performance,accessibility,best-practices,seo --output=json --output-path=fast-live-probe/home.json
+          npx --yes lighthouse@12 "$FRONTEND/app" --quiet --chrome-flags='--headless --no-sandbox --disable-gpu' --only-categories=performance,accessibility,best-practices --output=json --output-path=fast-live-probe/app.json
+          node <<'NODE'
+          const fs=require('fs');const b={HOME:{performance:57,FCP_ms:8321,LCP_ms:10721},APP:{performance:57,FCP_ms:8312,LCP_ms:10862}};
+          for(const [label,file] of [['HOME','fast-live-probe/home.json'],['APP','fast-live-probe/app.json']]){const r=JSON.parse(fs.readFileSync(file)),c=r.categories,a=r.audits;const o={performance:Math.round(c.performance.score*100),accessibility:Math.round(c.accessibility.score*100),bestPractices:Math.round(c['best-practices'].score*100),seo:c.seo?Math.round(c.seo.score*100):null,FCP_ms:Math.round(a['first-contentful-paint'].numericValue),LCP_ms:Math.round(a['largest-contentful-paint'].numericValue),TBT_ms:Math.round(a['total-blocking-time'].numericValue),CLS:Number(a['cumulative-layout-shift'].numericValue.toFixed(3)),SpeedIndex_ms:Math.round(a['speed-index'].numericValue)};const d={performance_points:o.performance-b[label].performance,FCP_ms:o.FCP_ms-b[label].FCP_ms,LCP_ms:o.LCP_ms-b[label].LCP_ms};const net=a['network-requests']?.details?.items||[];const fonts=net.filter(x=>/fonts\.(googleapis|gstatic)\.com/.test(x.url||'')).map(x=>({url:x.url,transferSize:Math.round(x.transferSize||0)})).sort((x,y)=>y.transferSize-x.transferSize);console.log(`${label}_POST_SUBSET=${JSON.stringify(o)} BASELINE=${JSON.stringify(b[label])} DELTA=${JSON.stringify(d)}`);console.log(`${label}_GOOGLE_FONT_TRANSFERS=${JSON.stringify(fonts.slice(0,12))}`);if(o.accessibility<90||o.bestPractices<90||(o.seo!==null&&o.seo<90))process.exitCode=1}
+          NODE
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: fast-symbol-subset-live-${{ github.sha }}
+          path: fast-live-probe/
+          if-no-files-found: warn
+          retention-days: 3
+
+  firefox-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FRONTEND: https://mywingman.pages.dev
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: |
+          npm ci
+          npx playwright install --with-deps firefox
+      - name: Firefox 8-check live matrix
+        run: |
+          ENGINE=firefox node <<'NODE'
+          const {firefox}=require('playwright');const base=process.env.FRONTEND;(async()=>{const browser=await firefox.launch({headless:true});let n=0;try{for(const p of ['/','/app'])for(const w of [320,375,430,1440]){const c=await browser.newContext({viewport:{width:w,height:900}}),page=await c.newPage();const pe=[];page.on('pageerror',e=>pe.push(String(e)));const r=await page.goto(base+p,{waitUntil:'domcontentloaded',timeout:45000});if(!r||r.status()!==200)throw new Error(`${p} ${w} HTTP`);await page.evaluate(async()=>{await document.fonts.ready;await document.fonts.load('24px "Material Symbols Outlined"')});await page.waitForTimeout(600);const d=await page.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:innerWidth,font:document.fonts.check('24px "Material Symbols Outlined"'),sup:!!(window.supabaseClient&&window.supabaseClient.auth)}));if(d.sw>d.iw+1||!d.font||!d.sup||pe.length)throw new Error(`${p} ${w} runtime failure`);n++;await c.close()}}finally{await browser.close()}console.log(`FIREFOX_LIVE_PASS=${n}/8`)})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+
+  webkit-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FRONTEND: https://mywingman.pages.dev
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: |
+          npm ci
+          npx playwright install --with-deps webkit
+      - name: WebKit 8-check live matrix
+        run: |
+          node <<'NODE'
+          const {webkit}=require('playwright');const base=process.env.FRONTEND;(async()=>{const browser=await webkit.launch({headless:true});let n=0;try{for(const p of ['/','/app'])for(const w of [320,375,430,1440]){const c=await browser.newContext({viewport:{width:w,height:900}}),page=await c.newPage();const pe=[];page.on('pageerror',e=>pe.push(String(e)));const r=await page.goto(base+p,{waitUntil:'domcontentloaded',timeout:45000});if(!r||r.status()!==200)throw new Error(`${p} ${w} HTTP`);await page.evaluate(async()=>{await document.fonts.ready;await document.fonts.load('24px "Material Symbols Outlined"')});await page.waitForTimeout(600);const d=await page.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:innerWidth,font:document.fonts.check('24px "Material Symbols Outlined"'),sup:!!(window.supabaseClient&&window.supabaseClient.auth)}));if(d.sw>d.iw+1||!d.font||!d.sup||pe.length)throw new Error(`${p} ${w} runtime failure`);n++;await c.close()}}finally{await browser.close()}console.log(`WEBKIT_LIVE_PASS=${n}/8`)})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
