@@ -1,0 +1,255 @@
+name: Separated CSS Artifact Simulation - DO NOT MERGE
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/css-separated-artifact-simulation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  simulate-separated-css:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install exact dependencies and browsers
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium firefox webkit
+
+      - name: Build current committed-CSS baseline artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build:netlify
+          rm -rf /tmp/baseline-dist
+          cp -a netlify-dist /tmp/baseline-dist
+          echo "BASELINE_OUTPUT_SHA=$(sha256sum output.css | awk '{print $1}')"
+          echo "BASELINE_OUTPUT_BYTES=$(wc -c < output.css | tr -d ' ')"
+          echo "BASELINE_STYLE_SHA=$(sha256sum style.css | awk '{print $1}')"
+
+      - name: Generate separated Tailwind-only output.css in ephemeral checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp input.css /tmp/input.css.original
+          cp style.css /tmp/style.css.original
+
+          node <<'NODE'
+          const fs = require('fs');
+          const file = 'input.css';
+          const source = fs.readFileSync(file, 'utf8');
+          const exact = '@import "./style.css";';
+          const count = source.split(exact).length - 1;
+          if (count !== 1) throw new Error(`Expected exactly one ${exact} in input.css; found ${count}`);
+          fs.writeFileSync(file, source.replace(exact, '/* style.css is delivered separately by the artifact postprocessor */'), 'utf8');
+          NODE
+
+          npm run build:css
+
+          test "$(grep -Fc '.terms-shake-pulse' output.css || true)" = 0
+          test "$(grep -Fc '.custom-scrollbar::-webkit-scrollbar' output.css || true)" = 0
+          cmp -s style.css /tmp/style.css.original
+
+          candidate_hash=$(sha256sum output.css | awk '{print $1}')
+          candidate_bytes=$(wc -c < output.css | tr -d ' ')
+          echo "CANDIDATE_OUTPUT_SHA=$candidate_hash"
+          echo "CANDIDATE_OUTPUT_BYTES=$candidate_bytes"
+
+          node <<'NODE'
+          const fs = require('fs');
+          const zlib = require('zlib');
+          const data = fs.readFileSync('output.css');
+          const br = zlib.brotliCompressSync(data, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11 } });
+          console.log(`CANDIDATE_BROTLI_Q11_BYTES=${br.length}`);
+          NODE
+
+      - name: Run full regression and dependency gate against candidate CSS
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test
+          npm audit --omit=dev --audit-level=high
+
+      - name: Build candidate strict artifact and verify CSS separation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf netlify-dist
+          npm run build:netlify
+
+          for page in index.html app.html 404.html; do
+            test "$(grep -Fo 'data-inline-source="style.css"' "netlify-dist/$page" | wc -l | tr -d ' ')" = 1
+            ! grep -Eq 'href="/?style\.css"' "netlify-dist/$page"
+          done
+
+          for page in terms.html privacy.html refund.html; do
+            test -f "netlify-dist/$page"
+            test "$(grep -Fo 'data-inline-source="style.css"' "netlify-dist/$page" | wc -l | tr -d ' ')" = 0
+            ! grep -Eq 'href="/?style\.css"' "netlify-dist/$page"
+            grep -Eq 'href="/?output\.css"' "netlify-dist/$page"
+          done
+
+          test "$(grep -Fc '.terms-shake-pulse' netlify-dist/output.css || true)" = 0
+          test "$(grep -Fc '.custom-scrollbar::-webkit-scrollbar' netlify-dist/output.css || true)" = 0
+          grep -Fq '.terms-shake-pulse' netlify-dist/index.html
+          grep -Fq '.terms-shake-pulse' netlify-dist/app.html
+          grep -Fq '.terms-shake-pulse' netlify-dist/404.html
+
+          rm -rf /tmp/candidate-dist
+          cp -a netlify-dist /tmp/candidate-dist
+          echo "CANDIDATE_ARTIFACT_OUTPUT_BYTES=$(wc -c < /tmp/candidate-dist/output.css | tr -d ' ')"
+
+      - name: Compare baseline and candidate computed layout in three engines
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { chromium, firefox, webkit } = require('playwright');
+          const http = require('http');
+          const fs = require('fs');
+          const path = require('path');
+
+          function serve(root) {
+            const types = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'application/javascript; charset=utf-8', '.png':'image/png', '.svg':'image/svg+xml', '.woff2':'font/woff2', '.json':'application/json' };
+            return new Promise(resolve => {
+              const server = http.createServer((req, res) => {
+                const u = new URL(req.url, 'http://local');
+                let rel = decodeURIComponent(u.pathname);
+                if (rel === '/') rel = '/index.html';
+                if (rel === '/app') rel = '/app.html';
+                let file = path.join(root, rel.replace(/^\/+/, ''));
+                if (!file.startsWith(root)) { res.writeHead(403); return res.end('forbidden'); }
+                if (!fs.existsSync(file) || !fs.statSync(file).isFile()) {
+                  file = path.join(root, '404.html');
+                  res.writeHead(404, { 'content-type':'text/html; charset=utf-8' });
+                  return res.end(fs.readFileSync(file));
+                }
+                res.writeHead(200, { 'content-type': types[path.extname(file)] || 'application/octet-stream' });
+                res.end(fs.readFileSync(file));
+              });
+              server.listen(0, '127.0.0.1', () => resolve(server));
+            });
+          }
+
+          function port(server) { return server.address().port; }
+
+          async function snapshot(page) {
+            await page.evaluate(() => document.fonts && document.fonts.ready);
+            return page.evaluate(() => {
+              const props = [
+                'display','position','visibility','opacity','boxSizing',
+                'width','height','minWidth','minHeight','maxWidth','maxHeight',
+                'marginTop','marginRight','marginBottom','marginLeft',
+                'paddingTop','paddingRight','paddingBottom','paddingLeft',
+                'fontFamily','fontSize','fontWeight','lineHeight','letterSpacing','textAlign',
+                'color','backgroundColor','backgroundImage',
+                'borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth',
+                'borderTopColor','borderRightColor','borderBottomColor','borderLeftColor',
+                'borderRadius','overflowX','overflowY','transform','flexDirection','justifyContent','alignItems','gap'
+              ];
+              const nodes = [...document.querySelectorAll('*')];
+              return {
+                title: document.title,
+                htmlScrollWidth: document.documentElement.scrollWidth,
+                bodyScrollWidth: document.body ? document.body.scrollWidth : 0,
+                htmlScrollHeight: document.documentElement.scrollHeight,
+                nodeCount: nodes.length,
+                nodes: nodes.map((el, i) => {
+                  const cs = getComputedStyle(el);
+                  const r = el.getBoundingClientRect();
+                  return {
+                    i,
+                    tag: el.tagName,
+                    id: el.id || '',
+                    className: typeof el.className === 'string' ? el.className : '',
+                    rect: [r.x,r.y,r.width,r.height].map(v => Math.round(v * 100) / 100),
+                    styles: props.map(p => cs[p])
+                  };
+                })
+              };
+            });
+          }
+
+          function firstDiff(a, b) {
+            if (a.title !== b.title) return `title ${a.title} != ${b.title}`;
+            if (a.htmlScrollWidth !== b.htmlScrollWidth) return `htmlScrollWidth ${a.htmlScrollWidth} != ${b.htmlScrollWidth}`;
+            if (a.bodyScrollWidth !== b.bodyScrollWidth) return `bodyScrollWidth ${a.bodyScrollWidth} != ${b.bodyScrollWidth}`;
+            if (a.htmlScrollHeight !== b.htmlScrollHeight) return `htmlScrollHeight ${a.htmlScrollHeight} != ${b.htmlScrollHeight}`;
+            if (a.nodeCount !== b.nodeCount) return `nodeCount ${a.nodeCount} != ${b.nodeCount}`;
+            const aj = JSON.stringify(a.nodes), bj = JSON.stringify(b.nodes);
+            if (aj === bj) return null;
+            for (let i = 0; i < Math.min(a.nodes.length, b.nodes.length); i++) {
+              const x = JSON.stringify(a.nodes[i]), y = JSON.stringify(b.nodes[i]);
+              if (x !== y) return `node ${i} baseline=${x.slice(0,1200)} candidate=${y.slice(0,1200)}`;
+            }
+            return 'node snapshots differ';
+          }
+
+          (async () => {
+            const baselineRoot = path.resolve('/tmp/baseline-dist');
+            const candidateRoot = path.resolve('/tmp/candidate-dist');
+            const baselineServer = await serve(baselineRoot);
+            const candidateServer = await serve(candidateRoot);
+            const routes = ['/', '/app.html', '/terms.html', '/privacy.html', '/refund.html', '/404.html'];
+            const widths = [320, 375, 430, 1440];
+            const engines = [['chromium', chromium], ['firefox', firefox], ['webkit', webkit]];
+            try {
+              for (const [name, engine] of engines) {
+                const browser = await engine.launch({ headless: true });
+                try {
+                  let passes = 0;
+                  for (const route of routes) {
+                    for (const width of widths) {
+                      const opts = { viewport: { width, height: 900 }, javaScriptEnabled: false };
+                      const aCtx = await browser.newContext(opts);
+                      const bCtx = await browser.newContext(opts);
+                      const aPage = await aCtx.newPage();
+                      const bPage = await bCtx.newPage();
+                      const aResp = await aPage.goto(`http://127.0.0.1:${port(baselineServer)}${route}`, { waitUntil:'load', timeout:30000 });
+                      const bResp = await bPage.goto(`http://127.0.0.1:${port(candidateServer)}${route}`, { waitUntil:'load', timeout:30000 });
+                      if (!aResp || !bResp || aResp.status() !== bResp.status()) throw new Error(`${name} ${route} ${width}: HTTP mismatch`);
+                      const a = await snapshot(aPage);
+                      const b = await snapshot(bPage);
+                      if (a.htmlScrollWidth > width + 1 || b.htmlScrollWidth > width + 1) throw new Error(`${name} ${route} ${width}: horizontal overflow baseline=${a.htmlScrollWidth} candidate=${b.htmlScrollWidth}`);
+                      const diff = firstDiff(a, b);
+                      if (diff) throw new Error(`${name} ${route} ${width}: computed-layout regression: ${diff}`);
+                      console.log(`${name} ${route} ${width} IDENTICAL`);
+                      passes++;
+                      await aCtx.close();
+                      await bCtx.close();
+                    }
+                  }
+                  console.log(`${name.toUpperCase()}_CSS_LAYOUT_IDENTICAL=${passes}/${routes.length * widths.length}`);
+                } finally {
+                  await browser.close();
+                }
+              }
+            } finally {
+              baselineServer.close();
+              candidateServer.close();
+            }
+          })().catch(err => { console.error(err); process.exit(1); });
+          NODE
+
+      - name: Restore checkout and prove diagnostic made no persistent source edits
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp /tmp/input.css.original input.css
+          git checkout -- output.css
+          test -z "$(git status --porcelain -- input.css output.css style.css)"
+          echo 'EPHEMERAL_SOURCE_RESTORED=yes'
