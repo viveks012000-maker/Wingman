@@ -59,15 +59,20 @@ jobs:
           grep -Fq "font-family: 'Material Symbols Outlined'" material-symbols-validation/material-symbols.css
           grep -Eq 'font-weight:[[:space:]]*100 700' material-symbols-validation/material-symbols.css
           grep -Eq 'font-feature-settings:[[:space:]]*.*liga' material-symbols-validation/material-symbols.css
+          echo 'GOOGLE_FONTS_CSS_BEGIN'
+          cat material-symbols-validation/material-symbols.css
+          echo 'GOOGLE_FONTS_CSS_END'
 
           font_url=$(python3 - <<'PY'
           import re
           from pathlib import Path
           css = Path('material-symbols-validation/material-symbols.css').read_text(encoding='utf-8')
-          urls = re.findall(r'url\((https://fonts\.gstatic\.com/[^)]+\.woff2)\)', css)
-          if not urls:
-              raise SystemExit('WOFF2 URL not found in Google Fonts CSS')
-          print(urls[0])
+          # Google Fonts may serve a .woff2 path OR a query-style /l/font?kit=... URL.
+          # The authoritative contract is the CSS declaration's format('woff2'), not the URL suffix.
+          m = re.search(r"src:\s*url\((?:['\"])?(https://fonts\.gstatic\.com/[^)'\"]+)(?:['\"])?\)\s*format\(['\"]woff2['\"]\)", css)
+          if not m:
+              raise SystemExit('WOFF2 source URL not found in Google Fonts CSS')
+          print(m.group(1))
           PY
           )
           printf '%s\n' "$font_url" | tee material-symbols-validation/font-url.txt
@@ -94,7 +99,6 @@ jobs:
           node <<'NODE'
           const fs = require('fs');
           const http = require('http');
-          const path = require('path');
           const { chromium } = require('playwright');
 
           const subsetUrl = fs.readFileSync('material-symbols-validation/subset-url.txt', 'utf8').trim();
