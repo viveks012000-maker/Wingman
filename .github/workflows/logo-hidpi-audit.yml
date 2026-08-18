@@ -1,0 +1,114 @@
+name: Logo high-DPI audit (DO NOT MERGE)
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hidpi-logo:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'audit/logo-asset-candidates-20260818'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install Pillow
+        run: python -m pip install --disable-pip-version-check pillow
+
+      - name: Simulate high-DPI rendering
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p logo-hidpi-artifacts
+          python - <<'PY'
+          from PIL import Image, ImageChops, ImageDraw
+          from pathlib import Path
+          import json, math
+
+          out = Path('logo-hidpi-artifacts')
+          source = Image.open('logo.png').convert('RGBA')
+
+          def resize(img, px):
+              return img.resize((px, px), Image.Resampling.LANCZOS)
+
+          specs = [
+              ('256-lossless', 256, dict(lossless=True, method=6)),
+              ('256-q95', 256, dict(quality=95, method=6)),
+              ('256-q90', 256, dict(quality=90, method=6)),
+              ('384-q95', 384, dict(quality=95, method=6)),
+              ('384-q90', 384, dict(quality=90, method=6)),
+          ]
+          candidates = []
+          for label, px, params in specs:
+              p = out / f'logo-{label}.webp'
+              resize(source, px).save(p, 'WEBP', **params)
+              candidates.append((label, Image.open(p).convert('RGBA'), p.stat().st_size))
+
+          bgs = {'dark': (9,13,22,255), 'white': (255,255,255,255)}
+          scenarios = {
+              'footer-128css-2x': 256,
+              'footer-128css-3x': 384,
+              'footer-mobile-112css-3x': 336,
+              'nav-64css-3x': 192,
+          }
+
+          def comp(img, bg):
+              c = Image.new('RGBA', img.size, bg)
+              c.alpha_composite(img)
+              return c.convert('RGB')
+
+          def metrics(a,b):
+              d=ImageChops.difference(a,b)
+              h=d.histogram(); n=a.width*a.height*3
+              abs_sum=sum((i%256)*count for i,count in enumerate(h))
+              sq_sum=sum(((i%256)**2)*count for i,count in enumerate(h))
+              mae=abs_sum/n; rmse=math.sqrt(sq_sum/n)
+              psnr=float('inf') if rmse==0 else 20*math.log10(255/rmse)
+              return {'mae':round(mae,6),'rmse':round(rmse,6),'psnr_db':None if math.isinf(psnr) else round(psnr,4),'max_channel_diff':max(v[1] for v in d.getextrema())}
+
+          report={}
+          for scenario,target in scenarios.items():
+              ref=resize(source,target)
+              report[scenario]={'device_px':target,'candidates':{}}
+              for label,img,size in candidates:
+                  rendered=resize(img,target) if img.size!=(target,target) else img
+                  report[scenario]['candidates'][label]={'bytes':size}
+                  for bgname,bg in bgs.items():
+                      report[scenario]['candidates'][label][bgname]=metrics(comp(ref,bg),comp(rendered,bg))
+
+              # source + selected candidates on dark/white, at the exact device-pixel target.
+              previews=[('source',ref)] + [(label, resize(img,target) if img.size!=(target,target) else img) for label,img,_ in candidates]
+              cell=target+40; h=target+56
+              sheet=Image.new('RGB',(cell*len(previews),h*2),(32,32,32)); draw=ImageDraw.Draw(sheet)
+              for col,(label,img) in enumerate(previews):
+                  for row,(bgname,bg) in enumerate(bgs.items()):
+                      local=Image.new('RGBA',(cell,h),bg)
+                      local.alpha_composite(img,(20,24))
+                      x=col*cell; y=row*h
+                      sheet.paste(local.convert('RGB'),(x,y))
+                      fg=(255,255,255) if bgname=='dark' else (0,0,0)
+                      draw.text((x+5,y+5),label,fill=fg)
+                      draw.text((x+5,y+h-18),bgname,fill=fg)
+              sheet.save(out/f'{scenario}.png',optimize=True)
+
+          (out/'hidpi-metrics.json').write_text(json.dumps(report,indent=2))
+          for scenario,data in report.items():
+              print('SCENARIO', scenario, 'device_px', data['device_px'])
+              for label,values in data['candidates'].items():
+                  print(json.dumps({'label':label, **values}, sort_keys=True))
+          PY
+
+      - name: Upload high-DPI evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: logo-hidpi-audit
+          path: logo-hidpi-artifacts/
+          if-no-files-found: error
+          retention-days: 7
