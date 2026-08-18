@@ -129,16 +129,17 @@ async function verifyBrowserDelivery() {
           const result = {
             minWidth: style.minWidth,
             minHeight: style.minHeight,
-            display: style.display,
             overflow: document.documentElement.scrollWidth - window.innerWidth
           };
           element.remove();
           return result;
         });
 
+        // These dimensions come from style.css and are intentionally not overridden by
+        // page-specific inline rules. Some pages do override display:flex later in the
+        // cascade, so display is not a valid invariant for proving this stylesheet applied.
         assert.strictEqual(probe.minWidth, '44px', `${routePath} must apply inlined style.css min-width contract`);
         assert.strictEqual(probe.minHeight, '44px', `${routePath} must apply inlined style.css min-height contract`);
-        assert.strictEqual(probe.display, 'inline-flex', `${routePath} must apply inlined style.css display contract`);
         assert(probe.overflow <= 1, `${routePath} must not introduce horizontal overflow`);
         assert(!requested.some(url => /\/style\.css(?:\?|$)/.test(url)), `${routePath} browser must not request style.css`);
 
