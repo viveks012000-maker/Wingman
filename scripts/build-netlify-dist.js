@@ -26,6 +26,7 @@ const PUBLIC_FILES = [
   'robots.txt',
   'sitemap.xml',
   'logo.png',
+  'logo-384.webp',
   'maeve.jpg'
 ];
 const PUBLIC_DIRS = ['vendor'];
