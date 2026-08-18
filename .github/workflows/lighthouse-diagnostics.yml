@@ -1,0 +1,230 @@
+name: Temporary Lighthouse Diagnostics - DO NOT MERGE
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/lighthouse-diagnostics.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  lighthouse-diagnostics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPECTED_PRODUCTION_SHA: 68d1fe436443e174389df884e15898ba10f61022
+      FRONTEND: https://mywingman.pages.dev
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install diagnostics runtime
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Verify exact production deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p lighthouse-diagnostics
+          release=$(curl --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 45 -fsS "$FRONTEND/release.json")
+          printf '%s\n' "$release" > lighthouse-diagnostics/release.json
+          deployed=$(printf '%s' "$release" | jq -r '.sourceCommit // empty')
+          echo "Cloudflare production sourceCommit=$deployed"
+          test "$deployed" = "$EXPECTED_PRODUCTION_SHA"
+
+      - name: Capture Lighthouse JSON
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME_PATH=$(find "$HOME/.cache/ms-playwright" -type f -path '*/chrome-linux64/chrome' | head -n 1)
+          test -n "$CHROME_PATH"
+          export CHROME_PATH
+
+          npx --yes lighthouse@12 "$FRONTEND/" \
+            --quiet \
+            --chrome-flags='--headless --no-sandbox --disable-gpu' \
+            --only-categories=performance,accessibility,best-practices,seo \
+            --output=json \
+            --output-path=lighthouse-diagnostics/home.json
+
+          npx --yes lighthouse@12 "$FRONTEND/app" \
+            --quiet \
+            --chrome-flags='--headless --no-sandbox --disable-gpu' \
+            --only-categories=performance,accessibility,best-practices \
+            --output=json \
+            --output-path=lighthouse-diagnostics/app.json
+
+      - name: Print exact performance bottlenecks
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+
+          function round(value) {
+            return Number.isFinite(value) ? Math.round(value) : null;
+          }
+
+          function compact(value, max = 220) {
+            if (value == null) return null;
+            const text = String(value).replace(/\s+/g, ' ').trim();
+            return text.length > max ? text.slice(0, max - 1) + '…' : text;
+          }
+
+          function auditSummary(audit) {
+            if (!audit) return null;
+            return {
+              score: audit.score,
+              displayValue: audit.displayValue || null,
+              numericValue: round(audit.numericValue),
+              numericUnit: audit.numericUnit || null,
+              description: compact(audit.description, 180)
+            };
+          }
+
+          function itemText(item) {
+            if (!item || typeof item !== 'object') return compact(item);
+            const node = item.node || {};
+            const url = item.url || item.source || item.request?.url || null;
+            const selector = node.selector || node.snippet || item.selector || null;
+            const text = node.nodeLabel || node.explanation || item.label || item.entity || null;
+            return {
+              url: compact(url, 180),
+              selector: compact(selector, 180),
+              text: compact(text, 180),
+              transferSize: round(item.transferSize),
+              resourceSize: round(item.resourceSize),
+              totalBytes: round(item.totalBytes),
+              wastedBytes: round(item.wastedBytes),
+              wastedMs: round(item.wastedMs),
+              duration: round(item.duration),
+              startTime: round(item.startTime),
+              protocol: item.protocol || null,
+              resourceType: item.resourceType || item.mimeType || null
+            };
+          }
+
+          function printItems(label, audit, limit = 12, sorter = null) {
+            const items = audit?.details?.items;
+            if (!Array.isArray(items) || !items.length) {
+              console.log(`${label}: no itemized data`);
+              return;
+            }
+            const copy = [...items];
+            if (sorter) copy.sort(sorter);
+            console.log(`${label} ITEMS (${items.length} total, showing ${Math.min(limit, items.length)}):`);
+            copy.slice(0, limit).forEach((item, i) => console.log(`  ${i + 1}. ${JSON.stringify(itemText(item))}`));
+          }
+
+          function printInsight(audits, ids) {
+            for (const id of ids) {
+              const a = audits[id];
+              if (!a) continue;
+              console.log(`AUDIT ${id}: ${JSON.stringify(auditSummary(a))}`);
+              if (a.details?.items?.length) printItems(`  ${id}`, a, 10);
+            }
+          }
+
+          function analyze(file, label) {
+            const r = JSON.parse(fs.readFileSync(file, 'utf8'));
+            const a = r.audits || {};
+            const c = r.categories || {};
+            console.log('\n================================================================');
+            console.log(`${label} LIGHTHOUSE BOTTLENECK DIAGNOSTICS`);
+            console.log('================================================================');
+            console.log('CATEGORIES', JSON.stringify({
+              performance: round((c.performance?.score ?? 0) * 100),
+              accessibility: round((c.accessibility?.score ?? 0) * 100),
+              bestPractices: round((c['best-practices']?.score ?? 0) * 100),
+              seo: c.seo ? round(c.seo.score * 100) : null
+            }));
+            console.log('CORE', JSON.stringify({
+              FCP_ms: round(a['first-contentful-paint']?.numericValue),
+              LCP_ms: round(a['largest-contentful-paint']?.numericValue),
+              SpeedIndex_ms: round(a['speed-index']?.numericValue),
+              TBT_ms: round(a['total-blocking-time']?.numericValue),
+              CLS: a['cumulative-layout-shift']?.numericValue ?? null,
+              TTI_ms: round(a['interactive']?.numericValue),
+              ServerResponse_ms: round(a['server-response-time']?.numericValue),
+              TotalByteWeight_bytes: round(a['total-byte-weight']?.numericValue)
+            }));
+
+            const perfRefs = c.performance?.auditRefs || [];
+            const failed = perfRefs
+              .map(ref => ({ id: ref.id, weight: ref.weight, audit: a[ref.id] }))
+              .filter(x => x.audit && x.audit.score != null && x.audit.score < 1)
+              .sort((x, y) => (y.weight || 0) - (x.weight || 0));
+            console.log('FAILED/IMPERFECT PERFORMANCE AUDITS:');
+            for (const x of failed) {
+              console.log(`  ${x.id} weight=${x.weight} ${JSON.stringify(auditSummary(x.audit))}`);
+            }
+
+            printInsight(a, [
+              'largest-contentful-paint-element',
+              'lcp-breakdown',
+              'lcp-discovery-insight',
+              'lcp-breakdown-insight',
+              'render-blocking-resources',
+              'render-blocking-insight',
+              'server-response-time',
+              'unused-css-rules',
+              'unused-javascript',
+              'uses-long-cache-ttl',
+              'cache-insight',
+              'font-display',
+              'font-display-insight',
+              'third-party-summary',
+              'third-parties-insight',
+              'network-dependency-tree-insight',
+              'critical-request-chains',
+              'mainthread-work-breakdown',
+              'bootup-time',
+              'dom-size',
+              'total-byte-weight'
+            ]);
+
+            const network = a['network-requests'];
+            if (Array.isArray(network?.details?.items)) {
+              const items = [...network.details.items];
+              items.sort((x, y) => (y.transferSize || 0) - (x.transferSize || 0));
+              console.log(`LARGEST NETWORK TRANSFERS (${items.length} requests, top 20):`);
+              items.slice(0, 20).forEach((item, i) => console.log(`  ${i + 1}. ${JSON.stringify(itemText(item))}`));
+            } else {
+              console.log('LARGEST NETWORK TRANSFERS: unavailable');
+            }
+
+            const resource = a['resource-summary'];
+            if (Array.isArray(resource?.details?.items)) {
+              console.log('RESOURCE SUMMARY:');
+              for (const item of resource.details.items) {
+                console.log(`  ${JSON.stringify(item)}`);
+              }
+            }
+
+            const lcp = a['largest-contentful-paint-element'];
+            if (lcp?.details?.items?.length) {
+              console.log('LCP ELEMENT RAW:');
+              lcp.details.items.slice(0, 5).forEach((item, i) => console.log(`  ${i + 1}. ${JSON.stringify(item)}`));
+            }
+          }
+
+          analyze('lighthouse-diagnostics/home.json', 'HOME');
+          analyze('lighthouse-diagnostics/app.json', 'APP');
+          NODE
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: lighthouse-diagnostics-${{ github.sha }}
+          path: lighthouse-diagnostics/
+          if-no-files-found: warn
+          retention-days: 3
