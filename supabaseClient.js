@@ -222,6 +222,11 @@
                     window.currentSupabaseSession = session;
                     window.currentSupabaseUser = session ? session.user : null;
 
+                    if (event === 'PASSWORD_RECOVERY') {
+                        setPasswordRecoveryActive(true);
+                        showPasswordRecoveryDialog();
+                    }
+
                     if (session && session.user && session.access_token) {
                         safeSet('wingman_authenticated', 'true');
                         safeSet('wingman_login_agreed', 'true');
@@ -251,6 +256,10 @@
                     window.currentSupabaseSession = sessionResp.data.session;
                     window.currentSupabaseUser = sessionResp.data.session.user;
                     updateAuthUIState(window.currentSupabaseUser);
+                    if (passwordRecoveryActive || hasPasswordRecoveryUrlMarker()) {
+                        setPasswordRecoveryActive(true);
+                        showPasswordRecoveryDialog();
+                    }
                 } else if (window.location.hash && window.location.hash.includes('access_token')) {
                     setTimeout(async function () {
                         var s = await window.supabaseClient.auth.getSession();
@@ -343,6 +352,221 @@
         }
     }
 
+    var passwordRecoveryActive = safeGet('wingman_password_recovery_active') === 'true';
+    var recoveryBodyOverflow = null;
+
+    function authErrorCode(error) {
+        return error && error.code ? String(error.code) : '';
+    }
+
+    function authErrorReasons(error) {
+        return (error && Array.isArray(error.reasons)) ? error.reasons.map(function (reason) {
+            return String(reason || '').toLowerCase();
+        }) : [];
+    }
+
+    function formatAuthError(error, fallbackMessage) {
+        var code = authErrorCode(error).toLowerCase();
+        var name = error && error.name ? String(error.name).toLowerCase() : '';
+        var reasons = authErrorReasons(error);
+        var isWeakPassword = code === 'weak_password' || name.indexOf('weakpassword') !== -1 || name.indexOf('weak_password') !== -1;
+
+        if (isWeakPassword) {
+            if (reasons.indexOf('leaked_password') !== -1 || reasons.indexOf('pwned') !== -1) {
+                return 'This password has appeared in known data breaches. Choose a different password that you do not reuse elsewhere.';
+            }
+            return 'This password does not meet the current security requirements. Choose a stronger password and try again.';
+        }
+
+        if (error && error.message) return String(error.message);
+        return fallbackMessage || 'Authentication request failed.';
+    }
+
+    function hasPasswordRecoveryUrlMarker() {
+        try {
+            var search = window.location && window.location.search ? String(window.location.search) : '';
+            if (typeof URLSearchParams !== 'undefined') {
+                var params = new URLSearchParams(search);
+                if (params.get('type') === 'recovery') return true;
+            } else if (/(?:^|[?&])type=recovery(?:&|$)/.test(search)) {
+                return true;
+            }
+            var hash = window.location && window.location.hash ? String(window.location.hash) : '';
+            return /(?:^|[&#])type=recovery(?:&|$)/.test(hash);
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function setPasswordRecoveryActive(active) {
+        passwordRecoveryActive = active === true;
+        if (passwordRecoveryActive) safeSet('wingman_password_recovery_active', 'true');
+        else safeRemove('wingman_password_recovery_active');
+    }
+
+    function cleanPasswordRecoveryUrl() {
+        try {
+            var pathname = (window.location && window.location.pathname) ? String(window.location.pathname) : '/app.html';
+            var search = (window.location && window.location.search) ? String(window.location.search) : '';
+            var cleanSearch = '';
+            if (typeof URLSearchParams !== 'undefined') {
+                var params = new URLSearchParams(search);
+                params.delete('type');
+                var encoded = params.toString();
+                cleanSearch = encoded ? ('?' + encoded) : '';
+            } else {
+                cleanSearch = search.replace(/([?&])type=recovery(&|$)/, function (_, lead, tail) {
+                    if (lead === '?' && tail === '&') return '?';
+                    if (lead === '&' && tail === '&') return '&';
+                    return '';
+                }).replace(/[?&]$/, '');
+            }
+            if (window.history && typeof window.history.replaceState === 'function') {
+                window.history.replaceState({}, document.title, pathname + cleanSearch);
+            }
+        } catch (e) {}
+    }
+
+    function removePasswordRecoveryDialog() {
+        try {
+            var overlay = document.getElementById('wingmanPasswordRecoveryOverlay');
+            if (overlay && typeof overlay.remove === 'function') overlay.remove();
+            else if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        } catch (e) {}
+        try {
+            if (document.body && document.body.style && recoveryBodyOverflow !== null) {
+                document.body.style.overflow = recoveryBodyOverflow;
+            }
+        } catch (e) {}
+        recoveryBodyOverflow = null;
+    }
+
+    function createRecoveryElement(tag, attributes, text) {
+        var el = document.createElement(tag);
+        Object.keys(attributes || {}).forEach(function (key) {
+            if (key === 'style') el.style.cssText = attributes[key];
+            else if (key === 'className') el.className = attributes[key];
+            else if (key === 'type') el.type = attributes[key];
+            else if (key === 'id') el.id = attributes[key];
+            else if (key === 'disabled') el.disabled = attributes[key];
+            else el.setAttribute(key, attributes[key]);
+        });
+        if (text !== undefined && text !== null) el.textContent = text;
+        return el;
+    }
+
+    function showPasswordRecoveryDialog() {
+        if (!passwordRecoveryActive && !hasPasswordRecoveryUrlMarker()) return;
+        if (!document || !document.body) {
+            if (document && typeof document.addEventListener === 'function') {
+                document.addEventListener('DOMContentLoaded', showPasswordRecoveryDialog, { once: true });
+            }
+            return;
+        }
+        if (document.getElementById('wingmanPasswordRecoveryOverlay')) return;
+
+        setPasswordRecoveryActive(true);
+        recoveryBodyOverflow = document.body.style ? (document.body.style.overflow || '') : '';
+        if (document.body.style) document.body.style.overflow = 'hidden';
+
+        var overlay = createRecoveryElement('div', {
+            id: 'wingmanPasswordRecoveryOverlay',
+            role: 'dialog',
+            'aria-modal': 'true',
+            'aria-labelledby': 'wingmanPasswordRecoveryTitle',
+            'aria-describedby': 'wingmanPasswordRecoveryDescription',
+            style: 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.92);backdrop-filter:blur(14px);font-family:Inter,system-ui,sans-serif;'
+        });
+        var panel = createRecoveryElement('div', {
+            style: 'width:min(100%,430px);border:1px solid rgba(139,92,246,.55);border-radius:18px;padding:24px;background:#0b0b12;box-shadow:0 24px 80px rgba(0,0,0,.7);color:#fff;'
+        });
+        var title = createRecoveryElement('h2', { id: 'wingmanPasswordRecoveryTitle', style: 'margin:0 0 8px;font-size:22px;line-height:1.25;font-weight:800;' }, 'Choose a new password');
+        var description = createRecoveryElement('p', { id: 'wingmanPasswordRecoveryDescription', style: 'margin:0 0 18px;color:#cbd5e1;font-size:14px;line-height:1.5;' }, 'Your recovery link is verified. Set a new password to finish securing your account.');
+        var form = createRecoveryElement('form', { id: 'wingmanPasswordRecoveryForm', novalidate: 'novalidate' });
+        var label1 = createRecoveryElement('label', { for: 'wingmanRecoveryNewPassword', style: 'display:block;margin:0 0 6px;color:#e2e8f0;font-size:13px;font-weight:700;' }, 'New password');
+        var input1 = createRecoveryElement('input', {
+            id: 'wingmanRecoveryNewPassword', type: 'password', autocomplete: 'new-password', minlength: '8', required: 'required',
+            style: 'width:100%;box-sizing:border-box;margin:0 0 14px;padding:12px 14px;border:1px solid rgba(255,255,255,.18);border-radius:10px;background:#050508;color:#fff;font-size:16px;outline:none;'
+        });
+        var label2 = createRecoveryElement('label', { for: 'wingmanRecoveryConfirmPassword', style: 'display:block;margin:0 0 6px;color:#e2e8f0;font-size:13px;font-weight:700;' }, 'Confirm new password');
+        var input2 = createRecoveryElement('input', {
+            id: 'wingmanRecoveryConfirmPassword', type: 'password', autocomplete: 'new-password', minlength: '8', required: 'required',
+            style: 'width:100%;box-sizing:border-box;margin:0 0 14px;padding:12px 14px;border:1px solid rgba(255,255,255,.18);border-radius:10px;background:#050508;color:#fff;font-size:16px;outline:none;'
+        });
+        var error = createRecoveryElement('div', { id: 'wingmanRecoveryError', role: 'alert', 'aria-live': 'assertive', style: 'display:none;margin:0 0 12px;padding:10px 12px;border:1px solid rgba(248,113,113,.4);border-radius:9px;background:rgba(127,29,29,.35);color:#fecaca;font-size:13px;line-height:1.4;' });
+        var submit = createRecoveryElement('button', { id: 'wingmanRecoverySubmit', type: 'submit', style: 'width:100%;min-height:46px;border:0;border-radius:10px;background:#7c3aed;color:#fff;font-size:15px;font-weight:800;cursor:pointer;' }, 'Update password');
+
+        form.appendChild(label1);
+        form.appendChild(input1);
+        form.appendChild(label2);
+        form.appendChild(input2);
+        form.appendChild(error);
+        form.appendChild(submit);
+        panel.appendChild(title);
+        panel.appendChild(description);
+        panel.appendChild(form);
+        overlay.appendChild(panel);
+        document.body.appendChild(overlay);
+
+        form.addEventListener('submit', async function (event) {
+            if (event && typeof event.preventDefault === 'function') event.preventDefault();
+            error.style.display = 'none';
+            error.textContent = '';
+            submit.disabled = true;
+            submit.textContent = 'Updating…';
+            var result = await window.completePasswordRecovery(input1.value || '', input2.value || '');
+            if (!result || !result.success) {
+                error.textContent = (result && result.error) ? result.error : 'Unable to update password. Please try again.';
+                error.style.display = 'block';
+                submit.disabled = false;
+                submit.textContent = 'Update password';
+            }
+        });
+
+        try { input1.focus(); } catch (e) {}
+    }
+
+    window.completePasswordRecovery = async function (newPassword, confirmPassword) {
+        var password = String(newPassword || '');
+        var confirmation = String(confirmPassword || '');
+        if (!passwordRecoveryActive && !hasPasswordRecoveryUrlMarker()) {
+            return { success: false, error: 'No active password recovery request.' };
+        }
+        if (password.length < 8) {
+            return { success: false, error: 'Password must be at least 8 characters long.' };
+        }
+        if (password !== confirmation) {
+            return { success: false, error: 'Passwords do not match.' };
+        }
+
+        var client = await initSupabase();
+        if (!client || !client.auth) {
+            return { success: false, error: 'Authentication service is initializing. Please try again.' };
+        }
+
+        try {
+            var sessionResp = await client.auth.getSession();
+            var session = sessionResp && sessionResp.data ? sessionResp.data.session : null;
+            if (!session || !session.user) {
+                return { success: false, error: 'This recovery session is missing or expired. Request a new password reset link.' };
+            }
+
+            var resp = await client.auth.updateUser({ password: password });
+            if (resp.error) {
+                var message = formatAuthError(resp.error, 'Unable to update password.');
+                return { success: false, error: message, code: authErrorCode(resp.error), reasons: authErrorReasons(resp.error) };
+            }
+
+            setPasswordRecoveryActive(false);
+            cleanPasswordRecoveryUrl();
+            removePasswordRecoveryDialog();
+            notifyUser('Password updated successfully.', 'success');
+            return { success: true, user: resp.data && resp.data.user ? resp.data.user : null };
+        } catch (err) {
+            return { success: false, error: formatAuthError(err, 'Unable to update password.'), code: authErrorCode(err), reasons: authErrorReasons(err) };
+        }
+    };
+
     var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     // 1. Email/Password Signup
@@ -373,9 +597,10 @@
             });
 
             if (resp.error) {
-                console.warn('Supabase Signup Error:', resp.error.message);
-                notifyUser(resp.error.message, 'warning');
-                return { success: false, error: resp.error.message };
+                var signupMessage = formatAuthError(resp.error, 'Sign up failed.');
+                console.warn('Supabase Signup Error:', authErrorCode(resp.error) || resp.error.message);
+                notifyUser(signupMessage, 'warning');
+                return { success: false, error: signupMessage, code: authErrorCode(resp.error), reasons: authErrorReasons(resp.error) };
             }
 
             if (resp.data && resp.data.user) {
@@ -429,9 +654,10 @@
             });
 
             if (resp.error) {
-                console.warn('Supabase Login Error:', resp.error.message);
-                notifyUser(resp.error.message, 'warning');
-                return { success: false, error: resp.error.message };
+                var loginMessage = formatAuthError(resp.error, 'Login failed.');
+                console.warn('Supabase Login Error:', authErrorCode(resp.error) || resp.error.message);
+                notifyUser(loginMessage, 'warning');
+                return { success: false, error: loginMessage, code: authErrorCode(resp.error), reasons: authErrorReasons(resp.error) };
             }
 
             if (resp.data && resp.data.user) {
