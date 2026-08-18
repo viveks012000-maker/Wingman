@@ -1,0 +1,229 @@
+name: CSS Regression Root Cause - DO NOT MERGE
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/css-regression-root-cause.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-css-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install exact dependencies and Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Build baseline and regenerated candidate CSS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp output.css /tmp/output-baseline.css
+          cp input.css /tmp/input-original.css
+          node <<'NODE'
+          const fs = require('fs');
+          const p = 'input.css';
+          const s = fs.readFileSync(p, 'utf8');
+          const needle = '@import "./style.css";';
+          if ((s.split(needle).length - 1) !== 1) throw new Error('unexpected style.css import count');
+          fs.writeFileSync(p, s.replace(needle, '/* diagnostic: custom style.css remains separately loaded */'));
+          NODE
+          npm run build:css
+          cp output.css /tmp/output-candidate.css
+          cp /tmp/output-baseline.css output.css
+          cp /tmp/input-original.css input.css
+          echo "BASELINE_SHA=$(sha256sum /tmp/output-baseline.css | awk '{print $1}')"
+          echo "CANDIDATE_SHA=$(sha256sum /tmp/output-candidate.css | awk '{print $1}')"
+          echo "BASELINE_BYTES=$(wc -c < /tmp/output-baseline.css | tr -d ' ')"
+          echo "CANDIDATE_BYTES=$(wc -c < /tmp/output-candidate.css | tr -d ' ')"
+
+      - name: Compare 360px app overflow and matched rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { chromium } = require('playwright');
+          const http = require('http');
+          const fs = require('fs');
+          const path = require('path');
+          const root = process.cwd();
+          const baselineCss = fs.readFileSync('/tmp/output-baseline.css');
+          const candidateCss = fs.readFileSync('/tmp/output-candidate.css');
+          let mode = 'baseline';
+
+          const mime = {'.html':'text/html; charset=utf-8','.js':'application/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.woff2':'font/woff2','.png':'image/png'};
+          const server = http.createServer((req,res) => {
+            const url = new URL(req.url, 'http://local');
+            if (url.pathname === '/output.css') {
+              res.writeHead(200, {'content-type':'text/css; charset=utf-8'});
+              return res.end(mode === 'baseline' ? baselineCss : candidateCss);
+            }
+            let rel = decodeURIComponent(url.pathname);
+            if (rel === '/') rel = '/index.html';
+            const file = path.join(root, rel.replace(/^\/+/,''));
+            if (!file.startsWith(root) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+              res.writeHead(404, {'content-type':'text/plain'}); return res.end('Not Found');
+            }
+            res.writeHead(200, {'content-type': mime[path.extname(file)] || 'application/octet-stream'});
+            res.end(fs.readFileSync(file));
+          });
+
+          function listen() { return new Promise(resolve => server.listen(0,'127.0.0.1',resolve)); }
+
+          async function capture(browser, which) {
+            mode = which;
+            const context = await browser.newContext({viewport:{width:360,height:800}});
+            const page = await context.newPage();
+            await page.route('**/*', async route => {
+              const u = new URL(route.request().url());
+              if (u.hostname === '127.0.0.1') return route.continue();
+              return route.abort();
+            });
+            await page.goto(`http://127.0.0.1:${server.address().port}/app.html?mode=${which}`, {waitUntil:'domcontentloaded', timeout:30000});
+            await page.waitForTimeout(150);
+            const result = await page.evaluate(() => {
+              function descriptor(el) {
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                const cs = getComputedStyle(el);
+                return {
+                  tag: el.tagName,
+                  id: el.id || '',
+                  cls: typeof el.className === 'string' ? el.className : '',
+                  text: (el.textContent || '').trim().replace(/\s+/g,' ').slice(0,120),
+                  rect: {x:r.x,y:r.y,w:r.width,h:r.height,right:r.right,bottom:r.bottom},
+                  scrollWidth: el.scrollWidth,
+                  clientWidth: el.clientWidth,
+                  styles: {
+                    display:cs.display, position:cs.position, width:cs.width, minWidth:cs.minWidth, maxWidth:cs.maxWidth,
+                    marginLeft:cs.marginLeft, marginRight:cs.marginRight, paddingLeft:cs.paddingLeft, paddingRight:cs.paddingRight,
+                    gap:cs.gap, columnGap:cs.columnGap, rowGap:cs.rowGap,
+                    flex:cs.flex, flexGrow:cs.flexGrow, flexShrink:cs.flexShrink, flexBasis:cs.flexBasis,
+                    justifyContent:cs.justifyContent, alignItems:cs.alignItems, overflowX:cs.overflowX,
+                    fontSize:cs.fontSize, lineHeight:cs.lineHeight, boxSizing:cs.boxSizing,
+                    transform:cs.transform
+                  }
+                };
+              }
+
+              function pathFor(el) {
+                const out=[]; let n=el;
+                while(n && n.nodeType===1 && out.length<8) {
+                  let p=n.tagName.toLowerCase(); if(n.id) p += '#'+n.id;
+                  else if(typeof n.className==='string' && n.className.trim()) p += '.'+n.className.trim().split(/\s+/).slice(0,4).join('.');
+                  out.unshift(p); n=n.parentElement;
+                }
+                return out.join(' > ');
+              }
+
+              function collectMatchedRules(el) {
+                const out=[];
+                function visit(rules, sheetLabel, media='') {
+                  for (const rule of [...rules]) {
+                    if (rule.type === CSSRule.STYLE_RULE) {
+                      let yes=false; try { yes=el.matches(rule.selectorText); } catch {}
+                      if (yes) out.push({sheet:sheetLabel, media, selector:rule.selectorText, css:rule.style.cssText});
+                    } else if (rule.cssRules) {
+                      let nextMedia=media;
+                      if (rule.type === CSSRule.MEDIA_RULE) nextMedia = rule.conditionText || rule.media?.mediaText || '';
+                      visit(rule.cssRules, sheetLabel, nextMedia);
+                    }
+                  }
+                }
+                for (const sheet of [...document.styleSheets]) {
+                  let rules; try { rules=sheet.cssRules; } catch { continue; }
+                  visit(rules, sheet.href || 'INLINE');
+                }
+                return out;
+              }
+
+              const all=[...document.querySelectorAll('*')];
+              const overflow = all.filter(el => {
+                const r=el.getBoundingClientRect();
+                return r.right > innerWidth + 1 || el.scrollWidth > innerWidth + 1;
+              });
+              const target = all.find(el => typeof el.className==='string' && el.className.includes('flex items-center gap-1 sm:gap-2 shrink-0')) || overflow.find(el => el.tagName==='DIV') || null;
+              const chain=[]; let n=target;
+              for(let i=0;n&&i<5;i++,n=n.parentElement) chain.push(descriptor(n));
+              const children=target ? [...target.children].map(descriptor) : [];
+              return {
+                doc:{innerWidth,htmlScrollWidth:document.documentElement.scrollWidth,bodyScrollWidth:document.body.scrollWidth},
+                overflow:overflow.slice(0,12).map(el=>({path:pathFor(el),...descriptor(el)})),
+                target:descriptor(target),
+                chain,
+                children,
+                matchedRules: target ? collectMatchedRules(target) : []
+              };
+            });
+            await context.close();
+            return result;
+          }
+
+          function diffObj(a,b,prefix='') {
+            const out=[]; const keys=new Set([...Object.keys(a||{}),...Object.keys(b||{})]);
+            for(const k of keys) {
+              const av=a?.[k], bv=b?.[k], p=prefix?`${prefix}.${k}`:k;
+              if(av && bv && typeof av==='object' && typeof bv==='object' && !Array.isArray(av) && !Array.isArray(bv)) out.push(...diffObj(av,bv,p));
+              else if(JSON.stringify(av)!==JSON.stringify(bv)) out.push({path:p,baseline:av,candidate:bv});
+            }
+            return out;
+          }
+
+          (async()=>{
+            await listen();
+            const browser=await chromium.launch({headless:true});
+            try {
+              const baseline=await capture(browser,'baseline');
+              const candidate=await capture(browser,'candidate');
+              console.log('BASELINE_DOC='+JSON.stringify(baseline.doc));
+              console.log('CANDIDATE_DOC='+JSON.stringify(candidate.doc));
+              console.log('BASELINE_OVERFLOW='+JSON.stringify(baseline.overflow));
+              console.log('CANDIDATE_OVERFLOW='+JSON.stringify(candidate.overflow));
+              console.log('TARGET_DIFFS='+JSON.stringify(diffObj(baseline.target,candidate.target)));
+              console.log('CHAIN_DIFFS='+JSON.stringify(diffObj(baseline.chain,candidate.chain).slice(0,120)));
+              console.log('CHILD_DIFFS='+JSON.stringify(diffObj(baseline.children,candidate.children).slice(0,120)));
+
+              const br = new Map(baseline.matchedRules.map(x=>[`${x.sheet}|${x.media}|${x.selector}|${x.css}`,x]));
+              const cr = new Map(candidate.matchedRules.map(x=>[`${x.sheet}|${x.media}|${x.selector}|${x.css}`,x]));
+              console.log('TARGET_RULES_BASELINE_ONLY='+JSON.stringify([...br.keys()].filter(k=>!cr.has(k)).map(k=>br.get(k))));
+              console.log('TARGET_RULES_CANDIDATE_ONLY='+JSON.stringify([...cr.keys()].filter(k=>!br.has(k)).map(k=>cr.get(k))));
+            } finally { await browser.close(); server.close(); }
+          })().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+
+      - name: Compare class-token rule presence in baseline and candidate CSS
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs');
+          const b=fs.readFileSync('/tmp/output-baseline.css','utf8');
+          const c=fs.readFileSync('/tmp/output-candidate.css','utf8');
+          const tokens=['flex','items-center','gap-1','sm:gap-2','shrink-0','w-8','h-8','rounded-full','bg-neutral-900/90','border','border-white/20','text-slate-200','text-[18px]','text-violet-300'];
+          function esc(s){return s.replace(/[^a-zA-Z0-9_-]/g,ch=>'\\'+ch.charCodeAt(0).toString(16)+' ')}
+          for(const t of tokens){
+            const selector='.'+esc(t);
+            console.log(`TOKEN ${t} selector=${selector} baseline=${b.includes(selector)} candidate=${c.includes(selector)}`);
+          }
+          NODE
+
+      - name: Prove working tree source restored
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short
+          test -z "$(git status --porcelain -- input.css output.css style.css)"
