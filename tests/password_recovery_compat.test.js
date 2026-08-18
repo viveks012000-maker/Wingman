@@ -177,6 +177,50 @@ function createEnvironment(options = {}) {
   assert.strictEqual(loginEnv.localStore.get('wingman_authenticated'), undefined);
   console.log('✓ weak-password sign-in response cannot falsely authenticate the UI');
 
+  const existingUser = { id: 'existing-user', email: 'existing@example.com' };
+  const existingSession = { user: existingUser, access_token: 'existing-access-token' };
+  const pwnedWarning = { message: 'This password is known to be compromised.', reasons: ['pwned'] };
+  const successfulWeakLoginEnv = createEnvironment({
+    signInResponse: { data: { user: existingUser, session: existingSession, weakPassword: pwnedWarning }, error: null }
+  });
+  const successfulWeakLogin = await successfulWeakLoginEnv.window.loginUser('existing@example.com', 'Password123!');
+  assert.strictEqual(successfulWeakLogin.success, true, 'Supabase successful weak-password login must remain authenticated');
+  assert.strictEqual(successfulWeakLogin.user.id, 'existing-user');
+  assert.strictEqual(successfulWeakLogin.session.access_token, 'existing-access-token');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(successfulWeakLogin.weakPassword)), {
+    message: 'This password is known to be compromised.',
+    reasons: ['pwned']
+  });
+  assert.strictEqual(successfulWeakLoginEnv.localStore.get('wingman_authenticated'), 'true');
+  assert.strictEqual(successfulWeakLoginEnv.localStore.get('wingman_user_authenticated'), 'true');
+  assert.strictEqual(successfulWeakLoginEnv.calls.toasts.length > 0, true);
+  const pwnedToast = successfulWeakLoginEnv.calls.toasts[successfulWeakLoginEnv.calls.toasts.length - 1];
+  assert.strictEqual(pwnedToast.type, 'warning');
+  assert(pwnedToast.msg.includes('known data breaches'));
+  assert(!successfulWeakLoginEnv.calls.toasts.some(t => t.type === 'success' && t.msg === 'Signed in successfully!'), 'Compromised-password login must not hide the warning behind a generic success toast');
+  console.log('✓ successful pwned-password login preserves the session and surfaces the breach warning');
+
+  const genericWeakWarning = { message: 'Password is too short.', reasons: ['length'] };
+  const genericWeakLoginEnv = createEnvironment({
+    signInResponse: { data: { user: existingUser, session: existingSession, weakPassword: genericWeakWarning }, error: null }
+  });
+  const genericWeakLogin = await genericWeakLoginEnv.window.loginUser('existing@example.com', 'Password123!');
+  assert.strictEqual(genericWeakLogin.success, true);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(genericWeakLogin.weakPassword.reasons)), ['length']);
+  const genericToast = genericWeakLoginEnv.calls.toasts[genericWeakLoginEnv.calls.toasts.length - 1];
+  assert.strictEqual(genericToast.type, 'warning');
+  assert(genericToast.msg.includes('latest security requirements'));
+  console.log('✓ successful non-pwned weak-password login preserves auth and surfaces generic remediation');
+
+  const normalLoginEnv = createEnvironment({
+    signInResponse: { data: { user: existingUser, session: existingSession }, error: null }
+  });
+  const normalLogin = await normalLoginEnv.window.loginUser('existing@example.com', 'StrongPassword123!');
+  assert.strictEqual(normalLogin.success, true);
+  assert.strictEqual(normalLogin.weakPassword, null);
+  assert(normalLoginEnv.calls.toasts.some(t => t.type === 'success' && t.msg === 'Signed in successfully!'));
+  console.log('✓ ordinary successful password login keeps the existing success behavior');
+
   const resetEnv = createEnvironment();
   const reset = await resetEnv.window.resetPasswordForEmail('test@example.com');
   assert.strictEqual(reset.success, true);

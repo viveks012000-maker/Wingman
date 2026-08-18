@@ -391,6 +391,23 @@
         return fallbackMessage || 'Authentication request failed.';
     }
 
+    function normalizeWeakPasswordWarning(warning) {
+        if (!warning || typeof warning !== 'object') return null;
+        return {
+            message: warning.message ? String(warning.message) : '',
+            reasons: authErrorReasons(warning)
+        };
+    }
+
+    function formatWeakPasswordWarning(warning) {
+        var normalized = normalizeWeakPasswordWarning(warning);
+        if (!normalized) return '';
+        if (normalized.reasons.indexOf('pwned') !== -1 || normalized.reasons.indexOf('leaked_password') !== -1) {
+            return 'Signed in, but this password has appeared in known data breaches. Change it now and do not reuse it elsewhere.';
+        }
+        return 'Signed in, but your current password no longer meets the latest security requirements. Change it to a stronger password.';
+    }
+
     function hasPasswordRecoveryUrlMarker() {
         try {
             var search = window.location && window.location.search ? String(window.location.search) : '';
@@ -684,8 +701,13 @@
                     safeSet('wingman_user_authenticated', 'true');
                     safeSet('wingman_user_email', resp.data.user.email || email);
                     updateAuthUIState(resp.data.user);
-                    notifyUser('Signed in successfully!', 'success');
-                    return { success: true, user: resp.data.user, session: resp.data.session };
+                    var weakPassword = normalizeWeakPasswordWarning(resp.data.weakPassword);
+                    if (weakPassword) {
+                        notifyUser(formatWeakPasswordWarning(weakPassword), 'warning');
+                    } else {
+                        notifyUser('Signed in successfully!', 'success');
+                    }
+                    return { success: true, user: resp.data.user, session: resp.data.session, weakPassword: weakPassword };
                 } else {
                     notifyUser('Please check your email to confirm your account before signing in.', 'warning');
                     return { success: false, error: 'Email confirmation required.', confirmationRequired: true };
