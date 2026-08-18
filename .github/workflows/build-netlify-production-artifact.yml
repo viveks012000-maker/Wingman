@@ -19,7 +19,7 @@ on:
       - 'logo.png'
       - 'maeve.jpg'
       - 'vendor/**'
-      - 'scripts/build-netlify-dist.js'
+      - 'scripts/**'
       - 'netlify.toml'
       - 'package.json'
       - 'package-lock.json'
@@ -43,7 +43,7 @@ on:
       - 'logo.png'
       - 'maeve.jpg'
       - 'vendor/**'
-      - 'scripts/build-netlify-dist.js'
+      - 'scripts/**'
       - 'netlify.toml'
       - 'package.json'
       - 'package-lock.json'
@@ -114,6 +114,10 @@ jobs:
           grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/app.html
           grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/_headers
           grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/config.js
+          grep -q '<script src="./vendor/heic2any-loader.js"></script>' netlify-dist/app.html
+          ! grep -q '<script src="./vendor/heic2any.min.js"></script>' netlify-dist/app.html
+          test -f netlify-dist/vendor/heic2any-loader.js
+          test -f netlify-dist/vendor/heic2any.min.js
           for forbidden in server.js database.js package.json package-lock.json PROMPT_SYSTEM_MEMORY.json PROJECT_MASTER_SPECIFICATION.md API_DOCUMENTATION.md; do
             if [ -e "netlify-dist/$forbidden" ]; then echo "FORBIDDEN $forbidden" >&2; exit 1; fi
           done
