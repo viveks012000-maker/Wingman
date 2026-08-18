@@ -1,0 +1,64 @@
+name: Material Symbols Self-Host Diagnostic - DO NOT MERGE
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/material-symbols-selfhost-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: '22', cache: npm }
+      - name: Build exact production artifact
+        run: |
+          npm ci
+          npm run build:netlify
+      - name: Pin Material Symbols CSS, subset font and official license
+        shell: bash
+        env:
+          LICENSE_COMMIT: e083cc60a0828fdd3b404cea0cb8a5b900e9c23e
+        run: |
+          set -euo pipefail
+          node <<'NODE' > /tmp/material-url.txt
+          const fs=require('fs');
+          const h=fs.readFileSync('netlify-dist/app.html','utf8');
+          const m=h.match(/https:\/\/fonts\.googleapis\.com\/css2\?family=Material\+Symbols\+Outlined[^"']+/);
+          if(!m) throw new Error('Material Symbols stylesheet URL missing from built app');
+          process.stdout.write(m[0].replaceAll('&amp;','&'));
+          NODE
+          URL=$(cat /tmp/material-url.txt)
+          echo "MATERIAL_CSS_URL=$URL"
+          curl --fail --silent --show-error --location --user-agent 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/151 Safari/537.36' "$URL" -o /tmp/material.css
+          CSS_BYTES=$(wc -c < /tmp/material.css | tr -d ' ')
+          CSS_SHA=$(sha256sum /tmp/material.css | awk '{print $1}')
+          echo "MATERIAL_CSS_BYTES=$CSS_BYTES"
+          echo "MATERIAL_CSS_SHA256=$CSS_SHA"
+          echo '----- MATERIAL_CSS_BEGIN -----'
+          cat /tmp/material.css
+          echo
+          echo '----- MATERIAL_CSS_END -----'
+          FONT_URL=$(grep -Eo 'https://fonts\.gstatic\.com/[^)]+' /tmp/material.css | head -n1)
+          test -n "$FONT_URL"
+          echo "MATERIAL_FONT_URL=$FONT_URL"
+          curl --fail --silent --show-error --location "$FONT_URL" -o /tmp/material-symbols-outlined-subset.woff2
+          FONT_BYTES=$(wc -c < /tmp/material-symbols-outlined-subset.woff2 | tr -d ' ')
+          FONT_SHA=$(sha256sum /tmp/material-symbols-outlined-subset.woff2 | awk '{print $1}')
+          echo "MATERIAL_FONT_BYTES=$FONT_BYTES"
+          echo "MATERIAL_FONT_SHA256=$FONT_SHA"
+          curl --fail --silent --show-error --location "https://raw.githubusercontent.com/google/material-design-icons/$LICENSE_COMMIT/LICENSE" -o /tmp/material-symbols-LICENSE.txt
+          LICENSE_BYTES=$(wc -c < /tmp/material-symbols-LICENSE.txt | tr -d ' ')
+          LICENSE_SHA=$(sha256sum /tmp/material-symbols-LICENSE.txt | awk '{print $1}')
+          echo "MATERIAL_LICENSE_COMMIT=$LICENSE_COMMIT"
+          echo "MATERIAL_LICENSE_BYTES=$LICENSE_BYTES"
+          echo "MATERIAL_LICENSE_SHA256=$LICENSE_SHA"
+          grep -q 'Apache License' /tmp/material-symbols-LICENSE.txt
+          test "$FONT_BYTES" -lt 50000
+          test "$CSS_BYTES" -lt 10000
