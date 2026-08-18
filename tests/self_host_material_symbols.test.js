@@ -55,14 +55,22 @@ function verifyArtifact() {
     const html = fs.readFileSync(file, 'utf8');
     assert.strictEqual((html.match(new RegExp(material.INLINE_MARKER, 'g')) || []).length, 1, `${target} must contain exactly one local Material Symbols style`);
     assert(html.includes(material.LOCAL_CSS), `${target} must inline the deterministic local Material Symbols CSS`);
-    assert(!/fonts\.googleapis\.com\/css2\?family=Material\+Symbols\+Outlined/i.test(html), `${target} must not request Google Material Symbols CSS`);
-    assert(!/fonts\.gstatic\.com/i.test(html), `${target} must not contain a gstatic Material Symbols dependency`);
+    assert(!/fonts\.googleapis\.com/i.test(html), `${target} must contain no obsolete Google Fonts stylesheet/CSP host`);
+    assert(!/fonts\.gstatic\.com/i.test(html), `${target} must contain no obsolete gstatic font/CSP host`);
   }
+
+  const headersPath = path.join(OUT, '_headers');
+  const headers = fs.readFileSync(headersPath, 'utf8');
+  assert(!/fonts\.googleapis\.com/i.test(headers), 'final _headers CSP must not allow obsolete Google Fonts stylesheet host');
+  assert(!/fonts\.gstatic\.com/i.test(headers), 'final _headers CSP must not allow obsolete Google Fonts asset host');
+  assert(headers.includes("style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com"), 'style-src must preserve non-font CSS policy while removing Google Fonts');
+  assert(headers.includes("font-src 'self' data:"), 'font-src must become local/data only after all fonts are self-hosted');
 
   const release = JSON.parse(fs.readFileSync(path.join(OUT, 'release.json'), 'utf8'));
   assert.strictEqual(release.files[material.FONT_REL], sha256(font), 'release manifest must hash pinned Material Symbols font');
   assert.strictEqual(release.files[material.LICENSE_REL], sha256(license), 'release manifest must hash Material Symbols license');
   for (const target of material.TARGETS) assert.strictEqual(release.files[target], sha256(path.join(OUT, target)), `release manifest must hash final ${target}`);
+  assert.strictEqual(release.files['_headers'], sha256(headersPath), 'release manifest must hash tightened final _headers');
 }
 
 function contentType(file) {
@@ -115,7 +123,7 @@ async function verifyBrowserDelivery() {
         const errors = [];
         page.on('request', request => {
           const url = request.url();
-          if (/fonts\.googleapis\.com\/.*Material|fonts\.gstatic\.com/i.test(url)) externalMaterial.push(url);
+          if (/fonts\.googleapis\.com|fonts\.gstatic\.com/i.test(url)) externalMaterial.push(url);
         });
         page.on('pageerror', error => errors.push(String(error)));
         await page.route('https://**/*', routeRequest => routeRequest.abort());
@@ -148,7 +156,7 @@ async function verifyBrowserDelivery() {
         assert.strictEqual(probe.display, 'inline-block', `${route} icon display semantics must be preserved`);
         assert(probe.width > 0 && probe.width < 100, `${route} rendered icon width must be plausible`);
         assert(probe.overflow <= 1, `${route} must not introduce horizontal overflow`);
-        assert.strictEqual(externalMaterial.length, 0, `${route} must make zero external Material Symbols requests`);
+        assert.strictEqual(externalMaterial.length, 0, `${route} must make zero external Google font requests`);
         assert.strictEqual(errors.length, 0, `${route} must have zero page errors: ${errors.join('; ')}`);
         await context.close();
       }
@@ -165,7 +173,7 @@ async function verifyBrowserDelivery() {
     verifyArtifact();
     await verifyBrowserDelivery();
     console.log('✅ Material Symbols 45-icon subset is self-hosted with exact pinned font/license bytes.');
-    console.log('✅ Chromium loads the local icon font on landing and app with zero external Material Symbols requests.');
+    console.log('✅ Chromium loads the local icon font on landing and app with zero external Google font requests; obsolete Google Fonts CSP origins are removed.');
   } finally {
     fs.rmSync(OUT, { recursive: true, force: true });
   }
