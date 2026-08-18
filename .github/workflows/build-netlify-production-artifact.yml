@@ -42,21 +42,23 @@ jobs:
           grep -iq '^x-robots-tag: noindex, nofollow, noarchive' /tmp/app.headers
           grep -Fq 'name="robots" content="noindex, nofollow, noarchive"' /tmp/app.html
 
-          # /404.html itself normalizes with HTTP 308 on Cloudflare. Verify its response headers,
-          # then verify the actual custom 404 body using a real missing path.
           status404doc=$(curl --silent --show-error -D /tmp/404doc.headers -o /dev/null -w '%{http_code}' "$FRONTEND/404.html")
           echo "404_document_status=$status404doc"
           test "$status404doc" = '308'
           grep -iq '^content-security-policy:' /tmp/404doc.headers
           grep -iq '^x-robots-tag: noindex, nofollow' /tmp/404doc.headers
 
+          # Cloudflare serves the custom 404 body at the originally requested unknown URL,
+          # so /404.html-specific response headers do not match that request. The body itself
+          # must therefore carry the restrictive document CSP and noindex metadata.
           random_path="audit-not-found-${RANDOM}-${RANDOM}"
           missing_status=$(curl --silent --show-error -D /tmp/missing.headers -o /tmp/missing.html -w '%{http_code}' "$FRONTEND/$random_path")
           echo "random_404_status=$missing_status"
           test "$missing_status" = '404'
-          grep -iq '^content-security-policy:' /tmp/missing.headers
           grep -Fq 'Page Not Found | MyWingman' /tmp/missing.html
           grep -Fq "script-src 'none'" /tmp/missing.html
+          grep -Fq "connect-src 'none'" /tmp/missing.html
+          grep -Fq "object-src 'none'" /tmp/missing.html
           grep -Fq 'name="robots" content="noindex, nofollow"' /tmp/missing.html
 
           curl --fail --silent --show-error "$BACKEND/" | jq -e '.status == "ok" and .service == "mywingman-api"' >/dev/null
