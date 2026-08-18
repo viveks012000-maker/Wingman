@@ -105,3 +105,76 @@ jobs:
           path: wingman-production.zip
           if-no-files-found: error
           retention-days: 7
+
+  live-seo-verification-do-not-merge:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Verify deployed SEO/indexing/security state
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET_SHA='df35f434355bd4ea23fc29508a179a2d8c7cdcc7'
+          FRONTEND='https://mywingman.pages.dev'
+          BACKEND='https://wingman-production-c6ce.up.railway.app'
+          OLD_NETLIFY='https://soft-sawine-30785c.netlify.app'
+
+          deployed=''
+          for attempt in $(seq 1 60); do
+            deployed=$(curl --fail --silent --show-error --retry 2 --retry-all-errors "$FRONTEND/release.json" | jq -r '.sourceCommit // empty' || true)
+            [ "$deployed" = "$TARGET_SHA" ] && break
+            echo "waiting_for_release attempt=$attempt observed=$deployed"
+            sleep 3
+          done
+          echo "live_release=$deployed expected=$TARGET_SHA"
+          test "$deployed" = "$TARGET_SHA"
+
+          curl --fail --silent --show-error -D /tmp/index.headers "$FRONTEND/" -o /tmp/index.html
+          grep -Fq '<link rel="canonical" href="https://mywingman.pages.dev/"' /tmp/index.html
+          grep -Fq 'property="og:url" content="https://mywingman.pages.dev/"' /tmp/index.html
+          grep -Fq 'property="og:image" content="https://mywingman.pages.dev/logo-384.webp"' /tmp/index.html
+          grep -Fq 'name="twitter:image" content="https://mywingman.pages.dev/logo-384.webp"' /tmp/index.html
+          ! grep -Fq 'https://mywingman.com' /tmp/index.html
+
+          curl --fail --silent --show-error "$FRONTEND/robots.txt" -o /tmp/robots.txt
+          grep -Fq 'Sitemap: https://mywingman.pages.dev/sitemap.xml' /tmp/robots.txt
+          ! grep -Fq 'mywingman.com' /tmp/robots.txt
+
+          curl --fail --silent --show-error "$FRONTEND/sitemap.xml" -o /tmp/sitemap.xml
+          grep -Fq '<loc>https://mywingman.pages.dev/</loc>' /tmp/sitemap.xml
+          ! grep -Fq 'https://mywingman.com' /tmp/sitemap.xml
+          ! grep -Fq '/app' /tmp/sitemap.xml
+
+          curl --fail --silent --show-error -D /tmp/app.headers "$FRONTEND/app" -o /tmp/app.html
+          grep -iq '^x-robots-tag: noindex, nofollow, noarchive' /tmp/app.headers
+          grep -Fq '<meta name="robots" content="noindex, nofollow, noarchive"' /tmp/app.html
+
+          curl --fail --silent --show-error -D /tmp/404doc.headers "$FRONTEND/404.html" -o /tmp/404doc.html
+          grep -iq '^content-security-policy:' /tmp/404doc.headers
+          grep -iq '^x-robots-tag: noindex, nofollow' /tmp/404doc.headers
+          grep -Fq "script-src 'none'" /tmp/404doc.html
+          grep -Fq 'name="robots" content="noindex, nofollow"' /tmp/404doc.html
+
+          random_path="audit-not-found-${RANDOM}-${RANDOM}"
+          missing_status=$(curl --silent --show-error -D /tmp/missing.headers -o /tmp/missing.html -w '%{http_code}' "$FRONTEND/$random_path")
+          echo "random_404_status=$missing_status"
+          test "$missing_status" = '404'
+          grep -Fq 'Page Not Found | MyWingman' /tmp/missing.html
+
+          for file in index.html app.html robots.txt sitemap.xml 404.html scripts/build-netlify-dist.js scripts/postprocess-self-host-material-symbols.js; do
+            git show "$TARGET_SHA:$file" > "/tmp/git-$(basename "$file")"
+          done
+
+          curl --fail --silent --show-error "$BACKEND/" | jq -e '.status == "ok" and .service == "mywingman-api"' >/dev/null
+          curl --silent --show-error -D /tmp/cf-cors.txt -o /dev/null -X OPTIONS -H 'Origin: https://mywingman.pages.dev' -H 'Access-Control-Request-Method: POST' "$BACKEND/api/credits"
+          grep -iq '^access-control-allow-origin: https://mywingman.pages.dev' /tmp/cf-cors.txt
+          curl --silent --show-error -D /tmp/old-cors.txt -o /dev/null -X OPTIONS -H 'Origin: https://soft-sawine-30785c.netlify.app' -H 'Access-Control-Request-Method: POST' "$BACKEND/api/credits"
+          ! grep -iq '^access-control-allow-origin: https://soft-sawine-30785c.netlify.app' /tmp/old-cors.txt
+          test "$(curl --silent --show-error -o /dev/null -w '%{http_code}' "$OLD_NETLIFY/")" = '404'
+
+          echo 'LIVE_SEO_HARDENING_VERIFICATION=PASS'
