@@ -1,0 +1,200 @@
+name: Temporary Post-Defer Live Probe - DO NOT MERGE
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/live-performance-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  live-performance-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      EXPECTED_PRODUCTION_SHA: 68d1fe436443e174389df884e15898ba10f61022
+      FRONTEND: https://mywingman.pages.dev
+      BACKEND: https://wingman-production-c6ce.up.railway.app
+      OLD_NETLIFY: https://soft-sawine-30785c.netlify.app
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install live probe runtime
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium firefox webkit
+
+      - name: Wait for exact Cloudflare deployment and verify deferred artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p live-probe
+          deployed=''
+          for attempt in $(seq 1 36); do
+            if release=$(curl --connect-timeout 12 --max-time 30 -fsS "$FRONTEND/release.json" 2>/dev/null); then
+              deployed=$(printf '%s' "$release" | jq -r '.sourceCommit // empty')
+              echo "Cloudflare attempt=$attempt sourceCommit=$deployed"
+              if [ "$deployed" = "$EXPECTED_PRODUCTION_SHA" ]; then
+                printf '%s\n' "$release" > live-probe/release.json
+                break
+              fi
+            fi
+            sleep 10
+          done
+          test "$deployed" = "$EXPECTED_PRODUCTION_SHA"
+
+          curl --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 45 -fsS "$FRONTEND/" > live-probe/index.html
+          curl --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 45 -fsS "$FRONTEND/app" > live-probe/app.html
+
+          for src in 'config.js' 'vendor/supabase.min.js' 'supabaseClient.js' 'accessibility.js'; do
+            grep -Fq "<script defer src=\"$src\"></script>" live-probe/index.html
+          done
+          for src in './vendor/cropperjs/cropper.min.js' 'config.js' 'vendor/supabase.min.js' 'supabaseClient.js' 'app.js' 'accessibility.js'; do
+            grep -Fq "<script defer src=\"$src\"></script>" live-probe/app.html
+          done
+          ! grep -Fq '<script src="vendor/supabase.min.js"></script>' live-probe/index.html
+          ! grep -Fq '<script src="vendor/supabase.min.js"></script>' live-probe/app.html
+          echo 'Exact Cloudflare SHA + deferred production artifact: PASS'
+
+      - name: Re-verify routes security Railway and Netlify retirement
+        shell: bash
+        run: |
+          set -euo pipefail
+          retry_curl() { curl --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 45 "$@"; }
+
+          root_code=$(retry_curl -sS -o /dev/null -w '%{http_code}' "$FRONTEND/")
+          app_code=$(retry_curl -sS -o /dev/null -w '%{http_code}' "$FRONTEND/app")
+          missing_code=$(retry_curl -sS -o /dev/null -w '%{http_code}' "$FRONTEND/__post_defer_missing__")
+          test "$root_code" = 200
+          test "$app_code" = 200
+          test "$missing_code" = 404
+
+          retry_curl -sS -D live-probe/frontend-headers.txt -o /dev/null "$FRONTEND/"
+          tr -d '\r' < live-probe/frontend-headers.txt > live-probe/frontend-headers-clean.txt
+          grep -Eqi '^strict-transport-security:[[:space:]]*max-age=31536000' live-probe/frontend-headers-clean.txt
+          grep -Eqi '^content-security-policy:' live-probe/frontend-headers-clean.txt
+          grep -Eqi '^x-content-type-options:[[:space:]]*nosniff' live-probe/frontend-headers-clean.txt
+
+          health_code=$(retry_curl -sS -o live-probe/railway-health.json -w '%{http_code}' "$BACKEND/api/health")
+          test "$health_code" = 200
+          test "$(jq -r '.status' live-probe/railway-health.json)" = ok
+          test "$(jq -r '.database' live-probe/railway-health.json)" = supabase_active
+
+          retry_curl -sS -D live-probe/cors-cloudflare.txt -o /dev/null -X OPTIONS \
+            -H 'Origin: https://mywingman.pages.dev' -H 'Access-Control-Request-Method: GET' "$BACKEND/api/health"
+          tr -d '\r' < live-probe/cors-cloudflare.txt | grep -Eqi '^access-control-allow-origin:[[:space:]]*https://mywingman\.pages\.dev$'
+
+          retry_curl -sS -D live-probe/cors-old-netlify.txt -o /dev/null -X OPTIONS \
+            -H 'Origin: https://soft-sawine-30785c.netlify.app' -H 'Access-Control-Request-Method: GET' "$BACKEND/api/health"
+          if tr -d '\r' < live-probe/cors-old-netlify.txt | grep -Eqi '^access-control-allow-origin:'; then
+            echo 'Retired Netlify origin unexpectedly received ACAO' >&2
+            exit 1
+          fi
+
+          set +e
+          old_code=$(curl --connect-timeout 12 --max-time 25 -sS -o /dev/null -w '%{http_code}' "$OLD_NETLIFY/")
+          old_rc=$?
+          set -e
+          if [ "$old_rc" -eq 0 ]; then test "$old_code" = 404; fi
+          echo 'Production route/security/backend/retirement recheck: PASS'
+
+      - name: Live three-browser regression matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { chromium, firefox, webkit } = require('playwright');
+          const frontend = process.env.FRONTEND;
+          const engines = { chromium, firefox, webkit };
+          const widths = [320, 375, 430, 1440];
+          (async () => {
+            let checks = 0;
+            for (const [name, launcher] of Object.entries(engines)) {
+              const browser = await launcher.launch({ headless: true });
+              try {
+                for (const pathname of ['/', '/app']) {
+                  for (const width of widths) {
+                    const context = await browser.newContext({ viewport: { width, height: width === 1440 ? 900 : 900 } });
+                    const page = await context.newPage();
+                    const pageErrors = [];
+                    const consoleErrors = [];
+                    page.on('pageerror', e => pageErrors.push(String(e)));
+                    page.on('console', m => { if (m.type() === 'error') consoleErrors.push(m.text()); });
+                    const response = await page.goto(frontend + pathname, { waitUntil: 'domcontentloaded', timeout: 45000 });
+                    if (!response || response.status() !== 200) throw new Error(`${name} ${pathname} ${width}: HTTP ${response && response.status()}`);
+                    await page.waitForTimeout(1500);
+                    const data = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, supabase: !!(window.supabaseClient && window.supabaseClient.auth) }));
+                    if (data.sw > data.iw + 1) throw new Error(`${name} ${pathname} ${width}: overflow ${data.sw}>${data.iw}`);
+                    if (!data.supabase) throw new Error(`${name} ${pathname} ${width}: Supabase runtime not initialized after defer`);
+                    if (pageErrors.length) throw new Error(`${name} ${pathname} ${width}: pageerror ${pageErrors.join(' | ')}`);
+                    const material = consoleErrors.filter(x => !/favicon|Failed to load resource.*404/i.test(x));
+                    if (material.length) throw new Error(`${name} ${pathname} ${width}: console ${material.join(' | ')}`);
+                    checks++;
+                    await context.close();
+                  }
+                }
+              } finally { await browser.close(); }
+            }
+            console.log(`POST-DEFER BROWSER MATRIX PASS ${checks}/24`);
+          })().catch(e => { console.error(e); process.exit(1); });
+          NODE
+
+      - name: Re-measure Lighthouse mobile against baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME_PATH=$(find "$HOME/.cache/ms-playwright" -type f -path '*/chrome-linux64/chrome' | head -n 1)
+          test -n "$CHROME_PATH"
+          export CHROME_PATH
+          npx --yes lighthouse@12 "$FRONTEND/" --quiet --chrome-flags='--headless --no-sandbox --disable-gpu' \
+            --only-categories=performance,accessibility,best-practices,seo --output=json --output-path=live-probe/lighthouse-home.json
+          npx --yes lighthouse@12 "$FRONTEND/app" --quiet --chrome-flags='--headless --no-sandbox --disable-gpu' \
+            --only-categories=performance,accessibility,best-practices --output=json --output-path=live-probe/lighthouse-app.json
+          node <<'NODE'
+          const fs = require('fs');
+          const baselines = {
+            HOME: { performance: 57, FCP_ms: 8477, LCP_ms: 10877 },
+            APP: { performance: 57, FCP_ms: 8646, LCP_ms: 11196 }
+          };
+          function read(file, label) {
+            const r = JSON.parse(fs.readFileSync(file, 'utf8'));
+            const c = r.categories, a = r.audits;
+            const out = {
+              performance: Math.round((c.performance?.score ?? 0) * 100),
+              accessibility: Math.round((c.accessibility?.score ?? 0) * 100),
+              bestPractices: Math.round((c['best-practices']?.score ?? 0) * 100),
+              seo: c.seo ? Math.round(c.seo.score * 100) : null,
+              FCP_ms: Math.round(a['first-contentful-paint']?.numericValue ?? 0),
+              LCP_ms: Math.round(a['largest-contentful-paint']?.numericValue ?? 0),
+              TBT_ms: Math.round(a['total-blocking-time']?.numericValue ?? 0),
+              CLS: Number((a['cumulative-layout-shift']?.numericValue ?? 0).toFixed(3)),
+              speedIndex_ms: Math.round(a['speed-index']?.numericValue ?? 0)
+            };
+            const b = baselines[label];
+            const delta = {
+              performance_points: out.performance - b.performance,
+              FCP_ms: out.FCP_ms - b.FCP_ms,
+              LCP_ms: out.LCP_ms - b.LCP_ms
+            };
+            console.log(`${label} POST_DEFER ${JSON.stringify(out)} BASELINE ${JSON.stringify(b)} DELTA ${JSON.stringify(delta)}`);
+            if (out.accessibility < 90 || out.bestPractices < 90 || (out.seo !== null && out.seo < 90)) process.exitCode = 1;
+          }
+          read('live-probe/lighthouse-home.json', 'HOME');
+          read('live-probe/lighthouse-app.json', 'APP');
+          NODE
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: post-defer-live-probe-${{ github.sha }}
+          path: live-probe/
+          if-no-files-found: warn
+          retention-days: 3
