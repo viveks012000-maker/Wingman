@@ -7,6 +7,7 @@ const request = require('supertest');
 delete process.env.RAILWAY_ENVIRONMENT;
 delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 delete process.env.ENABLE_MOCK_AUTH;
+delete process.env.ALLOWED_ORIGINS;
 process.env.NODE_ENV = 'test';
 
 const {
@@ -15,7 +16,12 @@ const {
   getApiRateLimitKey
 } = require('../middleware/security');
 const { verifySupabaseToken } = require('../middleware/supabaseAuth');
-const { app, LARGE_BODY_ANALYZER_PATHS } = require('../railway-server');
+const {
+  app,
+  LARGE_BODY_ANALYZER_PATHS,
+  GATEWAY_PRODUCTION_ALLOWED_ORIGINS,
+  getGatewayAllowedOrigins
+} = require('../railway-server');
 
 function mockReq({ ip = '198.51.100.9', realIp, remoteAddress = '10.0.0.7', user } = {}) {
   const headers = {};
@@ -60,7 +66,23 @@ async function runVerify(req) {
   assert.strictEqual(ipv6A, ipv6B, 'IPv6 addresses in the same /56 must share a normalized limiter key');
   assert.notStrictEqual(ipv6A, '2001:db8:abcd:1200::1', 'IPv6 limiter key must not use the raw rotating address');
 
+  // Early admission CORS must mirror the inner production policy, including configured HTTPS
+  // origins while continuing to reject wildcard, localhost and retired Netlify origins.
+  process.env.ALLOWED_ORIGINS = [
+    'https://preview.example.com',
+    'https://soft-sawine-30785c.netlify.app',
+    'http://localhost:9999',
+    '*'
+  ].join(',');
+  let allowed = getGatewayAllowedOrigins();
+  assert(GATEWAY_PRODUCTION_ALLOWED_ORIGINS.every(origin => allowed.has(origin)), 'canonical production origins must remain allowed');
+  assert(allowed.has('https://preview.example.com'), 'explicit safe HTTPS configured origin must remain allowed');
+  assert(!allowed.has('https://soft-sawine-30785c.netlify.app'), 'retired Netlify origins must remain rejected');
+  assert(!allowed.has('http://localhost:9999'), 'localhost configured origin must be rejected in production');
+  assert(!allowed.has('*'), 'wildcard configured origin must be rejected in production');
+
   delete process.env.RAILWAY_ENVIRONMENT;
+  delete process.env.ALLOWED_ORIGINS;
   assert.strictEqual(
     getRateLimitClientIp(mockReq({ realIp: '203.0.113.41' })),
     '198.51.100.9',
@@ -94,29 +116,46 @@ async function runVerify(req) {
 
   // Missing/malformed auth must be rejected BEFORE the 38 MB Analyzer JSON parser. Invalid
   // JSON would be a 400 parser error if parsing happened first; the correct gateway result is 401.
+  // Because this response terminates before the inner CORS middleware, the gateway itself must
+  // grant the legitimate Cloudflare origin permission to read the 401.
   let response = await request(app)
     .post('/api/analyze')
+    .set('Origin', 'https://mywingman.pages.dev')
     .set('Content-Type', 'application/json')
     .send('{"broken":');
   assert.strictEqual(response.status, 401, 'unauthenticated Analyzer malformed JSON must be rejected before parsing');
+  assert.strictEqual(response.headers['access-control-allow-origin'], 'https://mywingman.pages.dev', 'early 401 must remain readable by Cloudflare');
+  assert.strictEqual(response.headers['access-control-allow-credentials'], 'true', 'early 401 must preserve credentialed CORS semantics');
 
   const beforeMalformedJwt = remoteFetchCalls;
   response = await request(app)
     .post('/api/analyze-chat-screenshot/')
+    .set('Origin', 'https://soft-sawine-30785c.netlify.app')
     .set('Authorization', 'Bearer not-a-jwt')
     .set('Content-Type', 'application/json')
     .send('{"broken":');
   assert.strictEqual(response.status, 401, 'malformed JWT must be rejected before the large parser');
   assert.strictEqual(remoteFetchCalls, beforeMalformedJwt, 'malformed JWT must not trigger remote Supabase verification');
+  assert.strictEqual(response.headers['access-control-allow-origin'], undefined, 'retired Netlify origin must receive no early CORS permission');
+
+  response = await request(app)
+    .post('/api/analyze')
+    .set('Origin', 'https://attacker.example')
+    .set('Content-Type', 'application/json')
+    .send('{"broken":');
+  assert.strictEqual(response.status, 401, 'hostile-origin unauthenticated Analyzer request must still fail auth');
+  assert.strictEqual(response.headers['access-control-allow-origin'], undefined, 'hostile origin must receive no early CORS permission');
 
   // Once outer auth succeeds, parsing proceeds normally. This proves the gate protects only
   // admission and does not bypass the existing body validator/parser for authenticated users.
   response = await request(app)
     .post('/api/analyze')
+    .set('Origin', 'https://mywingman.pages.dev')
     .set('x-mock-auth', 'true')
     .set('Content-Type', 'application/json')
     .send('{"broken":');
   assert.strictEqual(response.status, 400, 'authenticated malformed JSON must reach the normal parser and fail as bad JSON');
+  assert.strictEqual(response.headers['access-control-allow-origin'], 'https://mywingman.pages.dev', 'authenticated parser errors must remain readable by Cloudflare');
 
   // Preflight must bypass admission auth and be answered by the existing inner CORS middleware.
   response = await request(app)
@@ -135,7 +174,7 @@ async function runVerify(req) {
   assert.strictEqual(response.status, 400, 'unrelated API route behavior must remain unchanged');
 
   global.fetch = originalFetch;
-  console.log('✅ Railway request admission, pre-body Analyzer auth, and real-client IP limiter guard passed.');
+  console.log('✅ Railway request admission, early-error CORS, pre-body auth, and real-client IP limiter guard passed.');
 })().catch((error) => {
   console.error(error);
   process.exit(1);
