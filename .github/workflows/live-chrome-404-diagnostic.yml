@@ -1,0 +1,62 @@
+name: Live Chrome 404 Diagnostic - DO NOT MERGE
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/live-chrome-404-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      FRONTEND: https://mywingman.pages.dev
+      EXPECTED_SHA: 3be74334f5a0a402682f35a87f50ddea2f84afca
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install JS deps and locate Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          CHROME_BIN=$(command -v google-chrome-stable || command -v google-chrome)
+          echo "CHROME_BIN=$CHROME_BIN" >> "$GITHUB_ENV"
+          "$CHROME_BIN" --version
+      - name: Identify every failing response/request and console error
+        run: |
+          node <<'NODE'
+          const {chromium}=require('playwright');
+          (async()=>{
+            const release=await (await fetch(`${process.env.FRONTEND}/release.json`)).json();
+            console.log(`SOURCE_COMMIT=${release.sourceCommit}`);
+            if(release.sourceCommit!==process.env.EXPECTED_SHA) throw new Error('wrong production SHA');
+            const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_BIN});
+            try {
+              for(const path of ['/','/app']) {
+                const context=await browser.newContext({viewport:{width:320,height:900}});
+                const page=await context.newPage();
+                const bad=[]; const failed=[]; const consoleErrors=[];
+                page.on('response',r=>{if(r.status()>=400) bad.push({status:r.status(),url:r.url(),type:r.request().resourceType()})});
+                page.on('requestfailed',r=>failed.push({url:r.url(),type:r.resourceType(),failure:r.failure()}));
+                page.on('console',m=>{if(m.type()==='error') consoleErrors.push(m.text())});
+                const response=await page.goto(process.env.FRONTEND+path,{waitUntil:'networkidle',timeout:45000});
+                await page.waitForTimeout(1000);
+                console.log(`${path} MAIN_HTTP=${response&&response.status()}`);
+                console.log(`${path} BAD_RESPONSES=${JSON.stringify(bad)}`);
+                console.log(`${path} FAILED_REQUESTS=${JSON.stringify(failed)}`);
+                console.log(`${path} CONSOLE_ERRORS=${JSON.stringify(consoleErrors)}`);
+                const resources=await page.evaluate(()=>performance.getEntriesByType('resource').map(x=>x.name));
+                console.log(`${path} LOGO_RESOURCES=${JSON.stringify(resources.filter(x=>/logo/i.test(x)))}`);
+                await context.close();
+              }
+            } finally { await browser.close(); }
+          })().catch(e=>{console.error(e);process.exit(1)});
+          NODE
