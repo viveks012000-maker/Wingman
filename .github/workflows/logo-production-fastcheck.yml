@@ -1,0 +1,35 @@
+name: Logo production fast check (DO NOT MERGE)
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  logo-fastcheck:
+    if: github.head_ref == 'audit/logo-production-fastcheck-20260818'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Run logo-specific regression
+        run: node tests/logo_delivery_optimization.test.js
+      - name: Build exact production artifact
+        run: npm run build:netlify
+      - name: Verify optimized request path
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f netlify-dist/logo-384.webp
+          test "$(stat -c%s netlify-dist/logo-384.webp)" -lt 40000
+          ! grep -R -E 'src=["'"']/?logo\.png["'"']|this\.src=["'"']logo\.png["'"']' netlify-dist/*.html
+          grep -q 'logo-384.webp' netlify-dist/index.html
+          grep -q 'logo-384.webp' netlify-dist/app.html
+          test "$(jq -r '.files["logo-384.webp"]' netlify-dist/release.json)" = "$(sha256sum netlify-dist/logo-384.webp | awk '{print $1}')"
