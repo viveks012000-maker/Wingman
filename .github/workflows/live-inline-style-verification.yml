@@ -1,0 +1,203 @@
+name: Live Inline Style Verification - DO NOT MERGE
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/live-inline-style-verification.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-lighthouse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPECTED_SHA: 7e11383372be5bcc1a479e74d3606513bddb2344
+      FRONTEND: https://mywingman.pages.dev
+      BACKEND: https://wingman-production-c6ce.up.railway.app
+      OLD_NETLIFY: https://soft-sawine-30785c.netlify.app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install Chromium runtime
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Verify exact Cloudflare deployment and HTTP state
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p live-inline-style
+          deployed=''
+          for attempt in $(seq 1 30); do
+            release=$(curl --connect-timeout 12 --max-time 30 -fsS "$FRONTEND/release.json" 2>/dev/null || true)
+            deployed=$(printf '%s' "$release" | jq -r '.sourceCommit // empty' 2>/dev/null || true)
+            echo "Cloudflare attempt=$attempt sourceCommit=$deployed"
+            if [ "$deployed" = "$EXPECTED_SHA" ]; then
+              printf '%s\n' "$release" > live-inline-style/release.json
+              break
+            fi
+            sleep 10
+          done
+          test "$deployed" = "$EXPECTED_SHA"
+
+          curl --retry 5 --retry-all-errors --retry-delay 2 -fsS "$FRONTEND/" > live-inline-style/index.html
+          curl --retry 5 --retry-all-errors --retry-delay 2 -fsS "$FRONTEND/app" > live-inline-style/app.html
+          for page in index.html app.html; do
+            test "$(grep -Fo 'data-inline-source="style.css"' "live-inline-style/$page" | wc -l | tr -d ' ')" = 1
+            ! grep -Fq 'href="style.css"' "live-inline-style/$page"
+            ! grep -Fq 'href="/style.css"' "live-inline-style/$page"
+          done
+
+          home=$(curl -sS -o /dev/null -w '%{http_code}' "$FRONTEND/")
+          app=$(curl -sS -o /dev/null -w '%{http_code}' "$FRONTEND/app")
+          missing=$(curl -sS -o /dev/null -w '%{http_code}' "$FRONTEND/__inline_style_missing__")
+          echo "HOME_HTTP=$home APP_HTTP=$app MISSING_HTTP=$missing"
+          test "$home" = 200
+          test "$app" = 200
+          test "$missing" = 404
+
+          health=$(curl --retry 5 --retry-all-errors --retry-delay 2 -fsS "$BACKEND/api/health")
+          echo "RAILWAY_HEALTH=$health"
+          test "$(printf '%s' "$health" | jq -r .status)" = ok
+          test "$(printf '%s' "$health" | jq -r .database)" = supabase_active
+
+          cf=$(curl -sS -D - -o /dev/null -X OPTIONS -H 'Origin: https://mywingman.pages.dev' -H 'Access-Control-Request-Method: GET' "$BACKEND/api/health" | tr -d '\r')
+          printf '%s\n' "$cf" | grep -Eqi '^access-control-allow-origin:[[:space:]]*https://mywingman\.pages\.dev$'
+          old=$(curl -sS -D - -o /dev/null -X OPTIONS -H 'Origin: https://soft-sawine-30785c.netlify.app' -H 'Access-Control-Request-Method: GET' "$BACKEND/api/health" | tr -d '\r')
+          if printf '%s\n' "$old" | grep -Eqi '^access-control-allow-origin:'; then
+            echo 'old Netlify origin unexpectedly allowed' >&2
+            exit 1
+          fi
+
+          set +e
+          old_code=$(curl --connect-timeout 12 --max-time 25 -sS -o /dev/null -w '%{http_code}' "$OLD_NETLIFY/")
+          old_rc=$?
+          set -e
+          echo "OLD_NETLIFY_RC=$old_rc HTTP=$old_code"
+          if [ "$old_rc" -eq 0 ]; then test "$old_code" = 404; fi
+
+      - name: Chromium 8-check live matrix
+        run: |
+          node <<'NODE'
+          const {chromium}=require('playwright');
+          const base=process.env.FRONTEND;
+          (async()=>{
+            const browser=await chromium.launch({headless:true}); let n=0;
+            try {
+              for(const p of ['/','/app']) for(const w of [320,375,430,1440]) {
+                const context=await browser.newContext({viewport:{width:w,height:900}});
+                const page=await context.newPage();
+                const pageErrors=[]; const consoleErrors=[];
+                page.on('pageerror',e=>pageErrors.push(String(e)));
+                page.on('console',m=>{if(m.type()==='error') consoleErrors.push(m.text())});
+                const response=await page.goto(base+p,{waitUntil:'domcontentloaded',timeout:45000});
+                if(!response||response.status()!==200) throw new Error(`${p} ${w} HTTP failure`);
+                await page.evaluate(async()=>{await document.fonts.ready;await document.fonts.load('24px "Material Symbols Outlined"')});
+                await page.waitForTimeout(700);
+                const d=await page.evaluate(()=>({
+                  sw:document.documentElement.scrollWidth, iw:innerWidth,
+                  font:document.fonts.check('24px "Material Symbols Outlined"'),
+                  sup:!!(window.supabaseClient&&window.supabaseClient.auth),
+                  heic:typeof window.heic2any==='function',
+                  logos:[...document.querySelectorAll('img[src*="logo-384.webp"]')].map(x=>({complete:x.complete,nw:x.naturalWidth,nh:x.naturalHeight})),
+                  resources:performance.getEntriesByType('resource').map(x=>x.name),
+                  inlineStyles:[...document.querySelectorAll('style[data-inline-source="style.css"]')].length
+                }));
+                if(d.sw>d.iw+1||!d.font||!d.sup||pageErrors.length||consoleErrors.length) throw new Error(`${p} ${w} runtime failure ${JSON.stringify({d,pageErrors,consoleErrors})}`);
+                if(d.inlineStyles!==1) throw new Error(`${p} ${w} missing/duplicate inline style marker`);
+                if(d.resources.some(x=>/\/style\.css(?:\?|$)/.test(x))) throw new Error(`${p} ${w} style.css was still requested`);
+                if(!d.logos.length||d.logos.some(x=>!x.complete||x.nw!==384||x.nh!==384)) throw new Error(`${p} ${w} logo regression`);
+                if(d.resources.some(x=>/\/logo\.png(?:\?|$)/.test(x))) throw new Error(`${p} ${w} oversized logo.png requested`);
+                if(p==='/app') {
+                  if(!d.heic) throw new Error(`${p} ${w} HEIC wrapper missing`);
+                  if(d.resources.some(x=>/\/vendor\/heic2any\.min\.js(?:\?|$)/.test(x))) throw new Error(`${p} ${w} real HEIC runtime loaded eagerly`);
+                }
+                console.log(`CHROMIUM ${p} ${w} PASS styleRequests=0`); n++;
+                await context.close();
+              }
+            } finally { await browser.close(); }
+            console.log(`CHROMIUM_LIVE_PASS=${n}/8`);
+          })().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+
+      - name: Lighthouse post-inline-style measurement
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME_PATH=$(find "$HOME/.cache/ms-playwright" -type f -path '*/chrome-linux64/chrome' | head -n 1)
+          export CHROME_PATH
+          npx --yes lighthouse@12 "$FRONTEND/" --quiet --chrome-flags='--headless --no-sandbox --disable-gpu' --only-categories=performance,accessibility,best-practices,seo --output=json --output-path=live-inline-style/home.json
+          npx --yes lighthouse@12 "$FRONTEND/app" --quiet --chrome-flags='--headless --no-sandbox --disable-gpu' --only-categories=performance,accessibility,best-practices --output=json --output-path=live-inline-style/app.json
+          node <<'NODE'
+          const fs=require('fs');
+          const baseline={HOME:{performance:88,FCP_ms:2294,LCP_ms:3145,TBT_ms:24,CLS:.002,SpeedIndex_ms:2294},APP:{performance:86,FCP_ms:2190,LCP_ms:3402,TBT_ms:5,CLS:.001,SpeedIndex_ms:2190}};
+          for(const [label,file] of [['HOME','live-inline-style/home.json'],['APP','live-inline-style/app.json']]) {
+            const r=JSON.parse(fs.readFileSync(file)), c=r.categories, a=r.audits;
+            const o={performance:Math.round(c.performance.score*100),accessibility:Math.round(c.accessibility.score*100),bestPractices:Math.round(c['best-practices'].score*100),seo:c.seo?Math.round(c.seo.score*100):null,FCP_ms:Math.round(a['first-contentful-paint'].numericValue),LCP_ms:Math.round(a['largest-contentful-paint'].numericValue),TBT_ms:Math.round(a['total-blocking-time'].numericValue),CLS:Number(a['cumulative-layout-shift'].numericValue.toFixed(3)),SpeedIndex_ms:Math.round(a['speed-index'].numericValue)};
+            const b=baseline[label];
+            const delta={performance_points:o.performance-b.performance,FCP_ms:o.FCP_ms-b.FCP_ms,LCP_ms:o.LCP_ms-b.LCP_ms,TBT_ms:o.TBT_ms-b.TBT_ms,CLS:Number((o.CLS-b.CLS).toFixed(3)),SpeedIndex_ms:o.SpeedIndex_ms-b.SpeedIndex_ms};
+            const rb=a['render-blocking-insight']?.details?.items||[];
+            const net=(a['network-requests']?.details?.items||[]).map(x=>({url:x.url||'',transferSize:Math.round(x.transferSize||0),resourceSize:Math.round(x.resourceSize||0),mimeType:x.mimeType||''}));
+            const top=net.slice().sort((x,y)=>y.transferSize-x.transferSize).slice(0,15);
+            console.log(`${label}_POST_INLINE_STYLE=${JSON.stringify(o)} BASELINE=${JSON.stringify(b)} DELTA=${JSON.stringify(delta)}`);
+            console.log(`${label}_RENDER_BLOCKING=${JSON.stringify(rb)}`);
+            console.log(`${label}_TOP_NETWORK=${JSON.stringify(top)}`);
+            if(JSON.stringify(rb).includes('style.css')) throw new Error(`${label}: style.css still appears in render-blocking insight`);
+            if(net.some(x=>/\/style\.css(?:\?|$)/.test(x.url))) throw new Error(`${label}: Lighthouse still requested style.css`);
+            if(o.accessibility<90||o.bestPractices<90||(o.seo!==null&&o.seo<90)) throw new Error(`${label}: quality category regression`);
+          }
+          NODE
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: live-inline-style-chromium-${{ github.sha }}
+          path: live-inline-style/
+          if-no-files-found: warn
+          retention-days: 3
+
+  firefox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EXPECTED_SHA: 7e11383372be5bcc1a479e74d3606513bddb2344
+      FRONTEND: https://mywingman.pages.dev
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: '22', cache: npm }
+      - run: |
+          npm ci
+          npx playwright install --with-deps firefox
+      - name: Firefox 8-check live matrix
+        run: |
+          node <<'NODE'
+          const {firefox}=require('playwright'),base=process.env.FRONTEND;
+          (async()=>{const rel=await (await fetch(base+'/release.json')).json();if(rel.sourceCommit!==process.env.EXPECTED_SHA)throw new Error(`wrong production SHA ${rel.sourceCommit}`);const b=await firefox.launch({headless:true});let n=0;try{for(const p of ['/','/app'])for(const w of [320,375,430,1440]){const c=await b.newContext({viewport:{width:w,height:900}}),pg=await c.newPage(),pe=[];pg.on('pageerror',e=>pe.push(String(e)));const r=await pg.goto(base+p,{waitUntil:'domcontentloaded',timeout:45000});await pg.waitForTimeout(700);const d=await pg.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:innerWidth,sup:!!(window.supabaseClient&&window.supabaseClient.auth),heic:typeof window.heic2any==='function',inline:[...document.querySelectorAll('style[data-inline-source="style.css"]')].length,res:performance.getEntriesByType('resource').map(x=>x.name),logos:[...document.querySelectorAll('img[src*="logo-384.webp"]')].map(x=>({ok:x.complete,nw:x.naturalWidth,nh:x.naturalHeight}))}));if(!r||r.status()!==200||d.sw>d.iw+1||!d.sup||pe.length)throw new Error(`${p} ${w} runtime`);if(d.inline!==1||d.res.some(x=>/\/style\.css(?:\?|$)/.test(x)))throw new Error(`${p} ${w} style delivery`);if(!d.logos.length||d.logos.some(x=>!x.ok||x.nw!==384||x.nh!==384)||d.res.some(x=>/\/logo\.png(?:\?|$)/.test(x)))throw new Error(`${p} ${w} logo regression`);if(p==='/app'&&(!d.heic||d.res.some(x=>/\/vendor\/heic2any\.min\.js(?:\?|$)/.test(x))))throw new Error(`${p} ${w} HEIC regression`);console.log(`FIREFOX ${p} ${w} PASS styleRequests=0`);n++;await c.close()}}finally{await b.close()}console.log(`FIREFOX_LIVE_PASS=${n}/8`)})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+
+  webkit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EXPECTED_SHA: 7e11383372be5bcc1a479e74d3606513bddb2344
+      FRONTEND: https://mywingman.pages.dev
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: '22', cache: npm }
+      - run: |
+          npm ci
+          npx playwright install --with-deps webkit
+      - name: WebKit 8-check live matrix
+        run: |
+          node <<'NODE'
+          const {webkit}=require('playwright'),base=process.env.FRONTEND;
+          (async()=>{const rel=await (await fetch(base+'/release.json')).json();if(rel.sourceCommit!==process.env.EXPECTED_SHA)throw new Error(`wrong production SHA ${rel.sourceCommit}`);const b=await webkit.launch({headless:true});let n=0;try{for(const p of ['/','/app'])for(const w of [320,375,430,1440]){const c=await b.newContext({viewport:{width:w,height:900}}),pg=await c.newPage(),pe=[];pg.on('pageerror',e=>pe.push(String(e)));const r=await pg.goto(base+p,{waitUntil:'domcontentloaded',timeout:45000});await pg.waitForTimeout(700);const d=await pg.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:innerWidth,sup:!!(window.supabaseClient&&window.supabaseClient.auth),heic:typeof window.heic2any==='function',inline:[...document.querySelectorAll('style[data-inline-source="style.css"]')].length,res:performance.getEntriesByType('resource').map(x=>x.name),logos:[...document.querySelectorAll('img[src*="logo-384.webp"]')].map(x=>({ok:x.complete,nw:x.naturalWidth,nh:x.naturalHeight}))}));if(!r||r.status()!==200||d.sw>d.iw+1||!d.sup||pe.length)throw new Error(`${p} ${w} runtime`);if(d.inline!==1||d.res.some(x=>/\/style\.css(?:\?|$)/.test(x)))throw new Error(`${p} ${w} style delivery`);if(!d.logos.length||d.logos.some(x=>!x.ok||x.nw!==384||x.nh!==384)||d.res.some(x=>/\/logo\.png(?:\?|$)/.test(x)))throw new Error(`${p} ${w} logo regression`);if(p==='/app'&&(!d.heic||d.res.some(x=>/\/vendor\/heic2any\.min\.js(?:\?|$)/.test(x))))throw new Error(`${p} ${w} HEIC regression`);console.log(`WEBKIT ${p} ${w} PASS styleRequests=0`);n++;await c.close()}}finally{await b.close()}console.log(`WEBKIT_LIVE_PASS=${n}/8`)})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
