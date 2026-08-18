@@ -105,3 +105,57 @@ jobs:
           path: wingman-production.zip
           if-no-files-found: error
           retention-days: 7
+
+      - name: TEMPORARY post-merge live verification - DO NOT MERGE
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET_SHA='a936692d66ca79571755942c190fa338bed8a8ea'
+          FRONTEND='https://mywingman.pages.dev'
+          BACKEND='https://wingman-production-c6ce.up.railway.app'
+          OLD_NETLIFY='https://soft-sawine-30785c.netlify.app'
+
+          deployed=''
+          for attempt in $(seq 1 60); do
+            deployed=$(curl --fail --silent --show-error --retry 2 --retry-all-errors "$FRONTEND/release.json" | jq -r '.sourceCommit // empty' || true)
+            if [ "$deployed" = "$TARGET_SHA" ]; then break; fi
+            echo "waiting_for_release attempt=$attempt observed=$deployed"
+            sleep 3
+          done
+          echo "live_release=$deployed expected=$TARGET_SHA"
+          test "$deployed" = "$TARGET_SHA"
+
+          test "$(curl --fail --silent --show-error -o /dev/null -w '%{http_code}' "$FRONTEND/")" = '200'
+          test "$(curl --fail --silent --show-error -o /dev/null -w '%{http_code}' "$FRONTEND/app")" = '200'
+          random_path="audit-not-found-${RANDOM}-${RANDOM}"
+          test "$(curl --silent --show-error -o /dev/null -w '%{http_code}' "$FRONTEND/$random_path")" = '404'
+
+          curl --fail --silent --show-error "$FRONTEND/supabaseClient.js" -o /tmp/live-supabaseClient.js
+          git show "$TARGET_SHA:supabaseClient.js" > /tmp/git-supabaseClient.js
+          live_hash=$(sha256sum /tmp/live-supabaseClient.js | awk '{print $1}')
+          git_hash=$(sha256sum /tmp/git-supabaseClient.js | awk '{print $1}')
+          echo "live_supabase_hash=$live_hash git_supabase_hash=$git_hash"
+          test "$live_hash" = "$git_hash"
+          grep -q 'resp.data.weakPassword' /tmp/live-supabaseClient.js
+          grep -q 'known data breaches' /tmp/live-supabaseClient.js
+
+          curl --fail --silent --show-error "$BACKEND/" -o /tmp/backend-root.json
+          jq -e '.status == "ok" and .service == "mywingman-api"' /tmp/backend-root.json >/dev/null
+
+          curl --silent --show-error -D /tmp/cf-cors.txt -o /tmp/cf-cors-body.txt -X OPTIONS \
+            -H 'Origin: https://mywingman.pages.dev' \
+            -H 'Access-Control-Request-Method: POST' \
+            "$BACKEND/api/credits"
+          grep -iq '^access-control-allow-origin: https://mywingman.pages.dev' /tmp/cf-cors.txt
+
+          curl --silent --show-error -D /tmp/old-cors.txt -o /tmp/old-cors-body.txt -X OPTIONS \
+            -H 'Origin: https://soft-sawine-30785c.netlify.app' \
+            -H 'Access-Control-Request-Method: POST' \
+            "$BACKEND/api/credits"
+          ! grep -iq '^access-control-allow-origin: https://soft-sawine-30785c.netlify.app' /tmp/old-cors.txt
+
+          old_status=$(curl --silent --show-error -o /dev/null -w '%{http_code}' "$OLD_NETLIFY/")
+          echo "retired_netlify_status=$old_status"
+          test "$old_status" = '404'
+          echo 'POST_MERGE_LIVE_VERIFICATION=PASS'
