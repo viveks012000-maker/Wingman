@@ -1,61 +1,17 @@
-name: Build verified Netlify production artifact
+name: MyWingman Production Verification Gate
 
 on:
   push:
     branches: [main]
-    paths:
-      - 'index.html'
-      - 'app.html'
-      - 'app.js'
-      - 'config.js'
-      - 'supabaseClient.js'
-      - 'style.css'
-      - 'output.css'
-      - 'privacy.html'
-      - 'terms.html'
-      - 'refund.html'
-      - 'robots.txt'
-      - 'sitemap.xml'
-      - 'logo.png'
-      - 'maeve.jpg'
-      - 'vendor/**'
-      - 'scripts/**'
-      - 'netlify.toml'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'tests/**'
-      - '.github/workflows/build-netlify-production-artifact.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'index.html'
-      - 'app.html'
-      - 'app.js'
-      - 'config.js'
-      - 'supabaseClient.js'
-      - 'style.css'
-      - 'output.css'
-      - 'privacy.html'
-      - 'terms.html'
-      - 'refund.html'
-      - 'robots.txt'
-      - 'sitemap.xml'
-      - 'logo.png'
-      - 'maeve.jpg'
-      - 'vendor/**'
-      - 'scripts/**'
-      - 'netlify.toml'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'tests/**'
-      - '.github/workflows/build-netlify-production-artifact.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: netlify-artifact-${{ github.ref }}
+  group: production-gate-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -127,19 +83,19 @@ jobs:
           ! find netlify-dist -type f | grep -E '\.(sql|sqlite|db|md|ps1|bat|vbs)$'
           echo "PUBLIC_FILE_COUNT=$(find netlify-dist -type f | wc -l)"
 
-      - name: Create exact drag-and-drop deployment ZIP
+      - name: Create exact public deployment ZIP
         shell: bash
         run: |
           set -euo pipefail
-          rm -f wingman-netlify-production.zip
-          (cd netlify-dist && zip -qr ../wingman-netlify-production.zip .)
-          unzip -l wingman-netlify-production.zip
-          sha256sum wingman-netlify-production.zip
+          rm -f wingman-production.zip
+          (cd netlify-dist && zip -qr ../wingman-production.zip .)
+          unzip -l wingman-production.zip
+          sha256sum wingman-production.zip
 
       - uses: actions/upload-artifact@v7
         if: github.event_name != 'pull_request'
         with:
-          name: wingman-netlify-production-${{ github.sha }}
-          path: wingman-netlify-production.zip
+          name: wingman-production-${{ github.sha }}
+          path: wingman-production.zip
           if-no-files-found: error
           retention-days: 7
