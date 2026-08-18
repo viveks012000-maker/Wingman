@@ -54,7 +54,8 @@ const testSuites = [
     { name: '48. Optimized Responsive Logo Delivery Guard', file: 'logo_delivery_optimization.test.js' },
     { name: '49. Inlined Critical Custom Stylesheet Guard', file: 'inline_critical_css.test.js' },
     { name: '50. Exact Self-Hosted Main Font Delivery Guard', file: 'self_host_main_fonts.test.js' },
-    { name: '51. Inlined Cropper CSS Delivery Guard', file: 'inline_cropper_css.test.js' }
+    { name: '51. Inlined Cropper CSS Delivery Guard', file: 'inline_cropper_css.test.js' },
+    { name: '52. Exact Self-Hosted Material Symbols Delivery Guard', file: 'self_host_material_symbols.test.js' }
 ];
 
 console.log('========================================================================');
