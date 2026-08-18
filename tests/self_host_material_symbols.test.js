@@ -137,10 +137,12 @@ async function verifyBrowserDelivery() {
         assert(fontLoaded, `${route} must load the local Material Symbols font`);
 
         const probe = await page.evaluate(() => {
+          const wrapper = document.createElement('div');
           const el = document.createElement('span');
           el.className = 'material-symbols-outlined';
           el.textContent = 'home';
-          document.body.appendChild(el);
+          wrapper.appendChild(el);
+          document.body.appendChild(wrapper);
           const cs = getComputedStyle(el);
           const out = {
             family: cs.fontFamily,
@@ -149,7 +151,7 @@ async function verifyBrowserDelivery() {
             width: el.getBoundingClientRect().width,
             overflow: document.documentElement.scrollWidth - window.innerWidth
           };
-          el.remove();
+          wrapper.remove();
           return out;
         });
         assert(probe.family.includes('Material Symbols Outlined'), `${route} icon must resolve to Material Symbols font`);
