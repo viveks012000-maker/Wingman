@@ -68,6 +68,17 @@ function verifyLocalCss() {
   if (/fonts\.(?:googleapis|gstatic)\.com/i.test(LOCAL_CSS)) fail('Local CSS must not depend on Google font hosts');
 }
 
+function removeGoogleFontPreconnects(text, label) {
+  const tags = text.match(/<link\b[^>]*>/gi) || [];
+  const apis = tags.filter(tag => /\brel=["']preconnect["']/i.test(tag) && /\bhref=["']https:\/\/fonts\.googleapis\.com\/?["']/i.test(tag));
+  const gstatic = tags.filter(tag => /\brel=["']preconnect["']/i.test(tag) && /\bhref=["']https:\/\/fonts\.gstatic\.com\/?["']/i.test(tag));
+  if (apis.length !== 1 || gstatic.length !== 1) fail(`${label} Google Fonts preconnect drift: googleapis=${apis.length}, gstatic=${gstatic.length}`);
+  let cleaned = text.replace(apis[0], '').replace(gstatic[0], '');
+  const remainingPreconnect = (cleaned.match(/<link\b[^>]*>/gi) || []).filter(tag => /\brel=["']preconnect["']/i.test(tag) && /fonts\.(?:googleapis|gstatic)\.com/i.test(tag));
+  if (remainingPreconnect.length) fail(`${label} still contains Google Fonts preconnects after removal`);
+  return cleaned;
+}
+
 function removeGoogleFontCspHosts(text, label, expectedEach) {
   const googleApisCount = (text.match(/https:\/\/fonts\.googleapis\.com/g) || []).length;
   const gstaticCount = (text.match(/https:\/\/fonts\.gstatic\.com/g) || []).length;
@@ -97,7 +108,9 @@ function replaceExternalLink(relativeFile) {
 
   html = html.replace(tag, `<style ${INLINE_MARKER}>\n${LOCAL_CSS}\n</style>`);
   if (/fonts\.googleapis\.com\/css2\?family=Material\+Symbols\+Outlined/i.test(html)) fail(`${relativeFile} still contains external Material Symbols CSS`);
+  html = removeGoogleFontPreconnects(html, relativeFile);
   html = removeGoogleFontCspHosts(html, relativeFile, 1);
+  if (/fonts\.(?:googleapis|gstatic)\.com/i.test(html)) fail(`${relativeFile} still contains a Google Fonts dependency after self-hosting`);
   if ((html.match(new RegExp(INLINE_MARKER, 'g')) || []).length !== 1) fail(`${relativeFile} local Material Symbols marker count is not 1`);
   fs.writeFileSync(file, html, 'utf8');
 }
@@ -123,7 +136,7 @@ function run() {
   manifest.files['_headers'] = sha256(path.join(OUT, '_headers'));
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
 
-  console.log(`[self-host-material-symbols] Replaced external Material Symbols CSS with pinned local 45-icon subset on ${TARGETS.join(', ')} and removed obsolete Google Fonts CSP origins.`);
+  console.log(`[self-host-material-symbols] Replaced external Material Symbols CSS with pinned local 45-icon subset on ${TARGETS.join(', ')}, removed obsolete Google Fonts preconnects, and tightened CSP.`);
 }
 
 if (require.main === module) run();
