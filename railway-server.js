@@ -17,7 +17,6 @@ const LARGE_BODY_ANALYZER_PATHS = new Set([
 ]);
 
 const GATEWAY_PRODUCTION_ALLOWED_ORIGINS = [
-    'https://mywingman.com',
     'https://mywingman.pages.dev'
 ];
 const GATEWAY_DEVELOPMENT_ALLOWED_ORIGINS = [
@@ -39,6 +38,7 @@ function getGatewayAllowedOrigins() {
     const safeConfigured = configured.filter(origin => {
         if (!isProduction) return true;
         if (origin === '*' || origin === 'null' || origin.includes('*')) return false;
+        if (origin === 'https://mywingman.com') return false;
         if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return false;
         if (/^https:\/\/[^/]+\.netlify\.app$/i.test(origin)) return false;
         return /^https:\/\//i.test(origin);
@@ -94,8 +94,8 @@ app.use((req, res, next) => {
     }
 
     // Admission can terminate with 401/429 before the mounted application's CORS middleware.
-    // Mirror the same production allowlist here so legitimate Cloudflare/custom-domain browsers
-    // can read those errors, while hostile/retired Netlify origins still receive no CORS grant.
+    // Mirror the same production allowlist here so the verified Cloudflare browser origin
+    // can read those errors, while stale/retired origins still receive no CORS grant.
     applyAnalyzerAdmissionCors(req, res);
 
     return analyzerAdmissionLimiter(req, res, () => {

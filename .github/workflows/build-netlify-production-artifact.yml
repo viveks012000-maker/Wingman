@@ -15,39 +15,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  bootstrap-cors-revocation:
-    if: github.event_name == 'pull_request' && github.head_ref == 'fix/revoke-misdirected-domain-cors-20260818'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 0
-      - name: Apply deterministic CORS revocation and self-clean
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          python .github/apply-revoke-misdirected-cors.py
-          npm ci --ignore-scripts
-          node tests/cors_production_policy.test.js
-          node tests/railway_request_admission.test.js
-          node tests/runtime_startup_csp_hardening.test.js
-          node tests/misdirected_domain_cors.test.js
-          rm .github/apply-revoke-misdirected-cors.py
-          git checkout origin/main -- .github/workflows/build-netlify-production-artifact.yml
-          test ! -e .github/apply-revoke-misdirected-cors.py
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git diff --cached --check
-          echo 'Final branch changes relative to main:'
-          git diff --cached --name-only
-          git commit -m 'Revoke stale custom-domain CORS trust'
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
-
   build-and-verify:
     runs-on: ubuntu-latest
     timeout-minutes: 35
