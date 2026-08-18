@@ -68,6 +68,19 @@ function verifyLocalCss() {
   if (/fonts\.(?:googleapis|gstatic)\.com/i.test(LOCAL_CSS)) fail('Local CSS must not depend on Google font hosts');
 }
 
+function removeGoogleFontCspHosts(text, label, expectedEach) {
+  const googleApisCount = (text.match(/https:\/\/fonts\.googleapis\.com/g) || []).length;
+  const gstaticCount = (text.match(/https:\/\/fonts\.gstatic\.com/g) || []).length;
+  if (googleApisCount !== expectedEach || gstaticCount !== expectedEach) {
+    fail(`${label} Google Fonts CSP allowlist drift: googleapis=${googleApisCount}, gstatic=${gstaticCount}, expected=${expectedEach}`);
+  }
+  const tightened = text
+    .replace(/ https:\/\/fonts\.googleapis\.com/g, '')
+    .replace(/ https:\/\/fonts\.gstatic\.com/g, '');
+  if (/https:\/\/fonts\.(?:googleapis|gstatic)\.com/i.test(tightened)) fail(`${label} still contains Google Fonts hosts after CSP tightening`);
+  return tightened;
+}
+
 function replaceExternalLink(relativeFile) {
   const file = path.join(OUT, relativeFile);
   let html = fs.readFileSync(file, 'utf8');
@@ -84,24 +97,33 @@ function replaceExternalLink(relativeFile) {
 
   html = html.replace(tag, `<style ${INLINE_MARKER}>\n${LOCAL_CSS}\n</style>`);
   if (/fonts\.googleapis\.com\/css2\?family=Material\+Symbols\+Outlined/i.test(html)) fail(`${relativeFile} still contains external Material Symbols CSS`);
-  if (/fonts\.gstatic\.com/i.test(html)) fail(`${relativeFile} unexpectedly contains gstatic after Material Symbols self-hosting`);
+  html = removeGoogleFontCspHosts(html, relativeFile, 1);
   if ((html.match(new RegExp(INLINE_MARKER, 'g')) || []).length !== 1) fail(`${relativeFile} local Material Symbols marker count is not 1`);
   fs.writeFileSync(file, html, 'utf8');
+}
+
+function tightenHeadersCsp() {
+  const file = path.join(OUT, '_headers');
+  if (!fs.existsSync(file)) fail('_headers is missing');
+  const headers = removeGoogleFontCspHosts(fs.readFileSync(file, 'utf8'), '_headers', 7);
+  fs.writeFileSync(file, headers, 'utf8');
 }
 
 function run() {
   verifyAndCopyAssets();
   verifyLocalCss();
   for (const target of TARGETS) replaceExternalLink(target);
+  tightenHeadersCsp();
 
   const manifestPath = path.join(OUT, 'release.json');
   if (!fs.existsSync(manifestPath)) fail('release.json is missing');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   for (const rel of Object.keys(ASSETS)) manifest.files[rel] = sha256(path.join(OUT, rel));
   for (const target of TARGETS) manifest.files[target] = sha256(path.join(OUT, target));
+  manifest.files['_headers'] = sha256(path.join(OUT, '_headers'));
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
 
-  console.log(`[self-host-material-symbols] Replaced external Material Symbols CSS with pinned local 45-icon subset on ${TARGETS.join(', ')}.`);
+  console.log(`[self-host-material-symbols] Replaced external Material Symbols CSS with pinned local 45-icon subset on ${TARGETS.join(', ')} and removed obsolete Google Fonts CSP origins.`);
 }
 
 if (require.main === module) run();
