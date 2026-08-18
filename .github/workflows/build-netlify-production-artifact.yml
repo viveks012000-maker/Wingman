@@ -1,107 +1,66 @@
 name: MyWingman Production Verification Gate
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: production-gate-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  build-and-verify:
+  live-cors-revocation-do-not-merge:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: npm
-
-      - name: Require production manual builds to target main
-        if: github.event_name == 'workflow_dispatch'
+      - name: Verify exact deployed release and Railway CORS policy
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = 'refs/heads/main'
+          TARGET_SHA='a15dd415973ef96c3bb6101250ebc095f472992d'
+          FRONTEND='https://mywingman.pages.dev'
+          BACKEND='https://wingman-production-c6ce.up.railway.app'
+          OLD_NETLIFY='https://soft-sawine-30785c.netlify.app'
 
-      - name: Verify checkout matches triggering SHA
-        shell: bash
-        run: |
-          set -euo pipefail
-          actual=$(git rev-parse HEAD)
-          echo "checkout=$actual event_sha=$GITHUB_SHA"
-          test "$actual" = "$GITHUB_SHA"
-
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-
-      - name: Full regression and production dependency gate
-        run: |
-          npm test
-          npm audit --omit=dev --audit-level=high
-
-      - name: Build strict public artifact
-        run: npm run build:netlify
-
-      - name: Verify release truth, API path and public allowlist
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f netlify-dist/index.html
-          test -f netlify-dist/app.html
-          test -f netlify-dist/app.js
-          test -f netlify-dist/config.js
-          test -f netlify-dist/supabaseClient.js
-          test -f netlify-dist/style.css
-          test -f netlify-dist/_headers
-          test -f netlify-dist/_redirects
-          test -f netlify-dist/release.json
-          test "$(jq -r .sourceCommit netlify-dist/release.json)" = "$GITHUB_SHA"
-          grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/app.html
-          grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/_headers
-          grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/config.js
-          grep -q '<script defer src="./vendor/heic2any-loader.js"></script>' netlify-dist/app.html
-          ! grep -q '<script src="./vendor/heic2any-loader.js"></script>' netlify-dist/app.html
-          ! grep -q '<script src="./vendor/heic2any.min.js"></script>' netlify-dist/app.html
-          test -f netlify-dist/vendor/heic2any-loader.js
-          test -f netlify-dist/vendor/heic2any.min.js
-          for page in index.html app.html 404.html; do
-            test "$(grep -Fo 'data-inline-source="style.css"' "netlify-dist/$page" | wc -l | tr -d ' ')" = 1
-            ! grep -Eq 'href="/?style\.css"' "netlify-dist/$page"
+          deployed=''
+          for attempt in $(seq 1 80); do
+            deployed=$(curl --fail --silent --show-error --retry 2 --retry-all-errors "$FRONTEND/release.json" | jq -r '.sourceCommit // empty' || true)
+            [ "$deployed" = "$TARGET_SHA" ] && break
+            echo "waiting_for_cloudflare attempt=$attempt observed=$deployed"
+            sleep 3
           done
-          for forbidden in server.js database.js package.json package-lock.json PROMPT_SYSTEM_MEMORY.json PROJECT_MASTER_SPECIFICATION.md API_DOCUMENTATION.md; do
-            if [ -e "netlify-dist/$forbidden" ]; then echo "FORBIDDEN $forbidden" >&2; exit 1; fi
-          done
-          for forbidden_dir in middleware migrations tests config utilities scripts .github; do
-            if [ -e "netlify-dist/$forbidden_dir" ]; then echo "FORBIDDEN $forbidden_dir" >&2; exit 1; fi
-          done
-          ! find netlify-dist -type f | grep -E '\.(sql|sqlite|db|md|ps1|bat|vbs)$'
-          echo "PUBLIC_FILE_COUNT=$(find netlify-dist -type f | wc -l)"
+          echo "live_release=$deployed expected=$TARGET_SHA"
+          test "$deployed" = "$TARGET_SHA"
 
-      - name: Create exact public deployment ZIP
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -f wingman-production.zip
-          (cd netlify-dist && zip -qr ../wingman-production.zip .)
-          unzip -l wingman-production.zip
-          sha256sum wingman-production.zip
+          curl --fail --silent --show-error "$BACKEND/" | jq -e '.status == "ok" and .service == "mywingman-api"' >/dev/null
 
-      - uses: actions/upload-artifact@v7
-        if: github.event_name != 'pull_request'
-        with:
-          name: wingman-production-${{ github.sha }}
-          path: wingman-production.zip
-          if-no-files-found: error
-          retention-days: 7
+          probe_cors() {
+            local origin="$1"
+            local file="$2"
+            curl --silent --show-error -D "$file" -o /dev/null -X OPTIONS \
+              -H "Origin: $origin" \
+              -H 'Access-Control-Request-Method: POST' \
+              "$BACKEND/api/credits"
+            grep -i '^access-control-allow-origin:' "$file" | tr -d '\r' || true
+          }
+
+          echo '--- Pages CORS ---'
+          probe_cors 'https://mywingman.pages.dev' /tmp/pages.headers
+          grep -iq '^access-control-allow-origin: https://mywingman.pages.dev' /tmp/pages.headers
+
+          echo '--- Misdirected custom domain CORS ---'
+          probe_cors 'https://mywingman.com' /tmp/stale.headers
+          ! grep -iq '^access-control-allow-origin: https://mywingman.com' /tmp/stale.headers
+
+          echo '--- Retired Netlify CORS ---'
+          probe_cors 'https://soft-sawine-30785c.netlify.app' /tmp/netlify.headers
+          ! grep -iq '^access-control-allow-origin: https://soft-sawine-30785c.netlify.app' /tmp/netlify.headers
+
+          echo '--- Null/wildcard sanity ---'
+          probe_cors 'null' /tmp/null.headers
+          ! grep -iq '^access-control-allow-origin:' /tmp/null.headers
+
+          test "$(curl --silent --show-error -o /dev/null -w '%{http_code}' "$OLD_NETLIFY/")" = '404'
+          test "$(curl --fail --silent --show-error -o /dev/null -w '%{http_code}' "$FRONTEND/")" = '200'
+          test "$(curl --fail --silent --show-error -o /dev/null -w '%{http_code}' "$FRONTEND/app")" = '200'
+
+          echo 'LIVE_CORS_REVOCATION_VERIFICATION=PASS'
