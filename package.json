@@ -10,7 +10,7 @@
     "build:css": "npx @tailwindcss/cli -i ./input.css -o ./output.css --minify",
     "build:netlify": "node scripts/build-netlify-dist.js && node scripts/postprocess-lazy-heic.js && node scripts/postprocess-deferred-media.js",
     "watch:css": "npx @tailwindcss/cli -i ./input.css -o ./output.css --watch",
-    "test": "node tests/run_all_tests.js && node tests/production_blocker_runtime.test.js && node tests/analyzer_transport_retry.test.js && node tests/railway_api_surface.test.js && node tests/credit_settlement_resilience.test.js && node tests/heic_lazy_loading.test.js && node tests/deferred_media_loading.test.js"
+    "test": "node tests/run_all_tests.js && node tests/production_blocker_runtime.test.js && node tests/analyzer_transport_retry.test.js && node tests/railway_api_surface.test.js && node tests/credit_settlement_resilience.test.js && node tests/heic_lazy_loading.test.js && node tests/deferred_media_loading.test.js && node tests/vendor_asset_dedup.test.js"
   },
   "keywords": [],
   "author": "",
