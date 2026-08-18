@@ -246,6 +246,10 @@
                         safeRemove('wingman_authenticated');
                         safeRemove('wingman_user_authenticated');
                         safeRemove('wingman_user_email');
+                        if (passwordRecoveryActive) {
+                            setPasswordRecoveryActive(false);
+                            removePasswordRecoveryDialog();
+                        }
                         updateAuthUIState(null);
                     }
                 });
@@ -352,7 +356,12 @@
         }
     }
 
-    var passwordRecoveryActive = safeGet('wingman_password_recovery_active') === 'true';
+    var passwordRecoveryActive = false;
+    try {
+        passwordRecoveryActive = !!(window.sessionStorage && sessionStorage.getItem('wingman_password_recovery_active') === 'true');
+    } catch (e) {
+        passwordRecoveryActive = !!(window.__memoryStore && window.__memoryStore.wingman_password_recovery_active === 'true');
+    }
     var recoveryBodyOverflow = null;
 
     function authErrorCode(error) {
@@ -400,8 +409,16 @@
 
     function setPasswordRecoveryActive(active) {
         passwordRecoveryActive = active === true;
-        if (passwordRecoveryActive) safeSet('wingman_password_recovery_active', 'true');
-        else safeRemove('wingman_password_recovery_active');
+        try {
+            if (window.sessionStorage) {
+                if (passwordRecoveryActive) sessionStorage.setItem('wingman_password_recovery_active', 'true');
+                else sessionStorage.removeItem('wingman_password_recovery_active');
+            }
+        } catch (e) {}
+        if (window.__memoryStore) {
+            if (passwordRecoveryActive) window.__memoryStore.wingman_password_recovery_active = 'true';
+            else delete window.__memoryStore.wingman_password_recovery_active;
+        }
     }
 
     function cleanPasswordRecoveryUrl() {

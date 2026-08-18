@@ -22,7 +22,8 @@ class ClassList {
 function createEnvironment(options = {}) {
   const elements = new Map();
   const listeners = new Map();
-  const storage = new Map();
+  const localStore = new Map();
+  const sessionStore = new Map();
   const calls = { signUp: [], signIn: [], reset: [], update: [], toasts: [], history: [] };
   let authCallback = null;
   let updateError = options.updateError || null;
@@ -64,12 +65,16 @@ function createEnvironment(options = {}) {
     addEventListener(type, fn) { if (!listeners.has(type)) listeners.set(type, []); listeners.get(type).push(fn); }
   };
 
-  const localStorage = {
-    getItem: key => storage.has(key) ? storage.get(key) : null,
-    setItem: (key, value) => storage.set(key, String(value)),
-    removeItem: key => storage.delete(key),
-    clear: () => storage.clear()
-  };
+  function makeStorage(store) {
+    return {
+      getItem: key => store.has(key) ? store.get(key) : null,
+      setItem: (key, value) => store.set(key, String(value)),
+      removeItem: key => store.delete(key),
+      clear: () => store.clear()
+    };
+  }
+  const localStorage = makeStorage(localStore);
+  const sessionStorage = makeStorage(sessionStore);
 
   const client = {
     auth: {
@@ -113,13 +118,13 @@ function createEnvironment(options = {}) {
   window.window = window;
   window.document = document;
   window.localStorage = localStorage;
-  window.sessionStorage = localStorage;
+  window.sessionStorage = sessionStorage;
 
   const sandbox = {
     window,
     document,
     localStorage,
-    sessionStorage: localStorage,
+    sessionStorage,
     URLSearchParams,
     console,
     setTimeout: fn => { fn(); return 1; },
@@ -143,7 +148,8 @@ function createEnvironment(options = {}) {
     window,
     document,
     calls,
-    storage,
+    localStore,
+    sessionStore,
     client,
     setUpdateError(value) { updateError = value; },
     setSession(value) { session = value; },
@@ -160,7 +166,7 @@ function createEnvironment(options = {}) {
   assert.strictEqual(signup.success, false);
   assert.strictEqual(signup.code, 'weak_password');
   assert(signup.error.includes('known data breaches'));
-  assert.strictEqual(signupEnv.storage.get('wingman_authenticated'), undefined);
+  assert.strictEqual(signupEnv.localStore.get('wingman_authenticated'), undefined);
   console.log('✓ weak/leaked signup is rejected using structured Auth error data');
 
   const loginEnv = createEnvironment({ signInResponse: { data: { user: null, session: null }, error: weak } });
@@ -168,7 +174,7 @@ function createEnvironment(options = {}) {
   assert.strictEqual(login.success, false);
   assert.strictEqual(login.code, 'weak_password');
   assert(login.error.includes('known data breaches'));
-  assert.strictEqual(loginEnv.storage.get('wingman_authenticated'), undefined);
+  assert.strictEqual(loginEnv.localStore.get('wingman_authenticated'), undefined);
   console.log('✓ weak-password sign-in response cannot falsely authenticate the UI');
 
   const resetEnv = createEnvironment();
@@ -185,7 +191,8 @@ function createEnvironment(options = {}) {
   assert.strictEqual(typeof cb, 'function');
   cb('PASSWORD_RECOVERY', recoverySession);
   assert(recoveryEnv.document.getElementById('wingmanPasswordRecoveryOverlay'), 'Recovery event must render the locked completion dialog');
-  assert.strictEqual(recoveryEnv.storage.get('wingman_password_recovery_active'), 'true');
+  assert.strictEqual(recoveryEnv.sessionStore.get('wingman_password_recovery_active'), 'true');
+  assert.strictEqual(recoveryEnv.localStore.has('wingman_password_recovery_active'), false, 'Recovery state must never persist in localStorage');
 
   const mismatch = await recoveryEnv.window.completePasswordRecovery('StrongPassword123!', 'DifferentPassword123!');
   assert.strictEqual(mismatch.success, false);
@@ -199,7 +206,7 @@ function createEnvironment(options = {}) {
   assert.strictEqual(weakUpdate.code, 'weak_password');
   assert(weakUpdate.error.includes('known data breaches'));
   assert(recoveryEnv.document.getElementById('wingmanPasswordRecoveryOverlay'), 'Weak password error must keep recovery dialog active');
-  assert.strictEqual(recoveryEnv.storage.get('wingman_password_recovery_active'), 'true');
+  assert.strictEqual(recoveryEnv.sessionStore.get('wingman_password_recovery_active'), 'true');
   console.log('✓ leaked-password rejection keeps recovery completion safely active');
 
   recoveryEnv.setUpdateError(null);
@@ -207,7 +214,7 @@ function createEnvironment(options = {}) {
   assert.strictEqual(success.success, true);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(recoveryEnv.calls.update[1])), { password: 'UniqueStrongPassword123!' });
   assert.strictEqual(recoveryEnv.document.getElementById('wingmanPasswordRecoveryOverlay'), null);
-  assert.strictEqual(recoveryEnv.storage.has('wingman_password_recovery_active'), false);
+  assert.strictEqual(recoveryEnv.sessionStore.has('wingman_password_recovery_active'), false);
   assert.strictEqual(recoveryEnv.calls.history[recoveryEnv.calls.history.length - 1], '/app.html');
   console.log('✓ verified recovery session updates password and cleans recovery state');
 
@@ -216,6 +223,15 @@ function createEnvironment(options = {}) {
   ordinaryEnv.getAuthCallback()('SIGNED_IN', recoverySession);
   assert.strictEqual(ordinaryEnv.document.getElementById('wingmanPasswordRecoveryOverlay'), null, 'Ordinary sign-in must never open recovery UI');
   console.log('✓ ordinary authenticated sessions are unchanged');
+
+  const signedOutRecoveryEnv = createEnvironment({ session: recoverySession });
+  await signedOutRecoveryEnv.window.resetPasswordForEmail('test@example.com');
+  signedOutRecoveryEnv.getAuthCallback()('PASSWORD_RECOVERY', recoverySession);
+  assert(signedOutRecoveryEnv.document.getElementById('wingmanPasswordRecoveryOverlay'));
+  signedOutRecoveryEnv.getAuthCallback()('SIGNED_OUT', null);
+  assert.strictEqual(signedOutRecoveryEnv.document.getElementById('wingmanPasswordRecoveryOverlay'), null, 'Signed-out recovery session must release the blocking dialog');
+  assert.strictEqual(signedOutRecoveryEnv.sessionStore.has('wingman_password_recovery_active'), false, 'Signed out must clear recovery session state');
+  console.log('✓ signed-out/expired recovery sessions clear the ephemeral recovery lock');
 
   const fallbackEnv = createEnvironment({ session: recoverySession, search: '?type=recovery' });
   await fallbackEnv.window.resetPasswordForEmail('test@example.com');
