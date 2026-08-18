@@ -1,0 +1,84 @@
+name: Live Inline Cropper CSS Verification - DO NOT MERGE
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/live-inline-cropper-verification.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  live-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EXPECTED_SHA: e485cb85d4971524265f6a40c0650a0022b8f94a
+      FRONTEND: https://mywingman.pages.dev
+      BACKEND: https://wingman-production-c6ce.up.railway.app
+      OLD_NETLIFY: https://soft-sawine-30785c.netlify.app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: '22', cache: npm }
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps webkit
+          CHROME_BIN=$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || true)
+          test -n "$CHROME_BIN"
+          echo "CHROME_BIN=$CHROME_BIN" >> "$GITHUB_ENV"
+      - name: Verify exact production, backend, CORS and Netlify retirement
+        shell: bash
+        run: |
+          set -euo pipefail
+          deployed=''
+          for attempt in $(seq 1 30); do
+            release=$(curl --connect-timeout 12 --max-time 30 -fsS "$FRONTEND/release.json" 2>/dev/null || true)
+            deployed=$(printf '%s' "$release" | jq -r '.sourceCommit // empty' 2>/dev/null || true)
+            echo "Cloudflare attempt=$attempt sourceCommit=$deployed"
+            [ "$deployed" = "$EXPECTED_SHA" ] && break
+            sleep 10
+          done
+          test "$deployed" = "$EXPECTED_SHA"
+          curl -fsS "$FRONTEND/app" > /tmp/app.html
+          test "$(grep -Fo 'data-inline-source="vendor/cropperjs/cropper.min.css"' /tmp/app.html | wc -l | tr -d ' ')" = 1
+          ! grep -Fq 'href="./vendor/cropperjs/cropper.min.css"' /tmp/app.html
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$FRONTEND/")" = 200
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$FRONTEND/app")" = 200
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$FRONTEND/__cropper_live_missing__")" = 404
+          health=$(curl -fsS "$BACKEND/api/health")
+          echo "RAILWAY_HEALTH=$health"
+          test "$(printf '%s' "$health" | jq -r .status)" = ok
+          test "$(printf '%s' "$health" | jq -r .database)" = supabase_active
+          cf=$(curl -sS -D - -o /dev/null -X OPTIONS -H 'Origin: https://mywingman.pages.dev' -H 'Access-Control-Request-Method: GET' "$BACKEND/api/health" | tr -d '\r')
+          printf '%s\n' "$cf" | grep -Eqi '^access-control-allow-origin:[[:space:]]*https://mywingman\.pages\.dev$'
+          old=$(curl -sS -D - -o /dev/null -X OPTIONS -H 'Origin: https://soft-sawine-30785c.netlify.app' -H 'Access-Control-Request-Method: GET' "$BACKEND/api/health" | tr -d '\r')
+          if printf '%s\n' "$old" | grep -Eqi '^access-control-allow-origin:'; then exit 1; fi
+          set +e
+          old_code=$(curl --connect-timeout 12 --max-time 25 -sS -o /dev/null -w '%{http_code}' "$OLD_NETLIFY/"); old_rc=$?
+          set -e
+          echo "OLD_NETLIFY_RC=$old_rc HTTP=$old_code"
+          if [ "$old_rc" -eq 0 ]; then test "$old_code" = 404; fi
+      - name: Chromium and WebKit 8-check live matrices
+        run: |
+          node <<'NODE'
+          const {chromium,webkit}=require('playwright');
+          const base=process.env.FRONTEND;
+          async function run(name,type,options={}){const b=await type.launch({headless:true,...options});let n=0;try{for(const p of ['/','/app'])for(const w of [320,375,430,1440]){const c=await b.newContext({viewport:{width:w,height:900}}),pg=await c.newPage(),errors=[];pg.on('pageerror',e=>errors.push(String(e)));const r=await pg.goto(base+p,{waitUntil:'domcontentloaded',timeout:45000});await pg.waitForTimeout(400);const d=await pg.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:innerWidth,sup:!!(window.supabaseClient&&window.supabaseClient.auth),inline:document.querySelectorAll('style[data-inline-source="vendor/cropperjs/cropper.min.css"]').length,res:performance.getEntriesByType('resource').map(x=>x.name)}));if(!r||r.status()!==200||d.sw>d.iw+1||!d.sup||errors.length)throw new Error(`${name} ${p} ${w} runtime ${JSON.stringify({d,errors})}`);if(p==='/app'){if(d.inline!==1||d.res.some(x=>/\/vendor\/cropperjs\/cropper\.min\.css(?:\?|$)/.test(x)))throw new Error(`${name} ${p} ${w} Cropper delivery regression`);const s=await pg.evaluate(()=>{const el=document.createElement('div');el.className='cropper-container';document.body.appendChild(el);const cs=getComputedStyle(el),o={position:cs.position,touchAction:cs.touchAction,userSelect:cs.userSelect};el.remove();return o});if(s.position!=='relative'||s.touchAction!=='none'||s.userSelect!=='none')throw new Error(`${name} Cropper styles ${JSON.stringify(s)}`)}console.log(`${name} ${p} ${w} PASS`);n++;await c.close()}}finally{await b.close()}console.log(`${name}_LIVE_PASS=${n}/8`)}
+          (async()=>{await run('CHROMIUM',chromium,{executablePath:process.env.CHROME_BIN});await run('WEBKIT',webkit)})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+      - name: Lighthouse production measurement
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CHROME_PATH="$CHROME_BIN"
+          npx --yes lighthouse@12 "$FRONTEND/" --quiet --chrome-flags='--headless --no-sandbox --disable-gpu' --only-categories=performance,accessibility,best-practices,seo --output=json --output-path=/tmp/home.json
+          npx --yes lighthouse@12 "$FRONTEND/app" --quiet --chrome-flags='--headless --no-sandbox --disable-gpu' --only-categories=performance,accessibility,best-practices --output=json --output-path=/tmp/app.json
+          node <<'NODE'
+          const fs=require('fs');
+          for(const [label,file] of [['HOME','/tmp/home.json'],['APP','/tmp/app.json']]){const r=JSON.parse(fs.readFileSync(file)),c=r.categories,a=r.audits;const o={performance:Math.round(c.performance.score*100),accessibility:Math.round(c.accessibility.score*100),bestPractices:Math.round(c['best-practices'].score*100),seo:c.seo?Math.round(c.seo.score*100):null,FCP_ms:Math.round(a['first-contentful-paint'].numericValue),LCP_ms:Math.round(a['largest-contentful-paint'].numericValue),TBT_ms:Math.round(a['total-blocking-time'].numericValue),CLS:Number(a['cumulative-layout-shift'].numericValue.toFixed(3)),SpeedIndex_ms:Math.round(a['speed-index'].numericValue)};const rb=a['render-blocking-insight']?.details?.items||[];const net=(a['network-requests']?.details?.items||[]).map(x=>({url:x.url||'',transferSize:Math.round(x.transferSize||0)}));console.log(`${label}_LIGHTHOUSE=${JSON.stringify(o)}`);console.log(`${label}_RENDER_BLOCKING=${JSON.stringify(rb)}`);console.log(`${label}_TOP_NETWORK=${JSON.stringify(net.sort((x,y)=>y.transferSize-x.transferSize).slice(0,15))}`);if(label==='APP'&&(JSON.stringify(rb).includes('cropper.min.css')||net.some(x=>/\/vendor\/cropperjs\/cropper\.min\.css(?:\?|$)/.test(x.url))))throw new Error('APP Cropper CSS still network/render blocking');if(o.accessibility<90||o.bestPractices<90||(o.seo!==null&&o.seo<90))throw new Error(`${label} quality regression`)}
+          NODE
