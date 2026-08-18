@@ -35,9 +35,9 @@ function deferScripts(relativeFile, scripts) {
   fs.writeFileSync(file, html, 'utf8');
 }
 
-// Preserve the dependency order while letting the HTML parser construct and paint the page
-// without waiting for the authentication/runtime bundles. Deferred scripts execute in document
-// order and before DOMContentLoaded.
+// Preserve dependency/document order while letting the HTML parser construct and paint the page
+// without waiting for authentication/runtime bundles. Deferred scripts are fetched in parallel,
+// execute in document order, and finish before DOMContentLoaded.
 deferScripts('index.html', [
   { src: 'config.js' },
   { src: 'vendor/supabase.min.js' },
@@ -47,6 +47,7 @@ deferScripts('index.html', [
 
 deferScripts('app.html', [
   { src: './vendor/cropperjs/cropper.min.js' },
+  { src: './vendor/heic2any-loader.js' },
   { src: 'config.js' },
   { src: 'vendor/supabase.min.js' },
   { src: 'supabaseClient.js' },
@@ -62,4 +63,4 @@ for (const rel of ['index.html', 'app.html']) {
 }
 fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
 
-console.log('[deferred-runtime-build] Parser-blocking auth/app runtime scripts converted to ordered defer loading.');
+console.log('[deferred-runtime-build] Parser-blocking auth/app/HEIC-loader scripts converted to ordered defer loading.');
