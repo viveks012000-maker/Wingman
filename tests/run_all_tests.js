@@ -48,7 +48,8 @@ const testSuites = [
     { name: '42. Cloudflare Final Accessibility Guard', file: 'cloudflare_final_accessibility.test.js' },
     { name: '43. Malformed JWT Fast-Reject & Remote Auth Guard', file: 'malformed_jwt_fast_reject.test.js' },
     { name: '44. Consent Table Least-Privilege Guard', file: 'user_consents_least_privilege.test.js' },
-    { name: '45. Railway Request Admission & Client-IP Guard', file: 'railway_request_admission.test.js' }
+    { name: '45. Railway Request Admission & Client-IP Guard', file: 'railway_request_admission.test.js' },
+    { name: '46. Full Production CI Coverage Guard', file: 'ci_full_gate_coverage.test.js' }
 ];
 
 console.log('========================================================================');
