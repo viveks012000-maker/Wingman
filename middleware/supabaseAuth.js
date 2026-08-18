@@ -1,9 +1,9 @@
 const { createClient } = require('@supabase/supabase-js');
 const { installAnalyzerTransportRetry } = require('./analyzerTransportRetry');
+const { installCreditSettlementTransportRetry } = require('./creditSettlementTransportRetry');
 
-// Install a narrowly-scoped retry wrapper before Supabase/server clients are created.
-// It only matches the exact Screenshot Analyzer vision endpoint + model; all other fetches
-// pass through untouched.
+// Install the Analyzer provider retry before other clients. It only matches the exact
+// Screenshot Analyzer vision endpoint + model; all other fetches pass through untouched.
 installAnalyzerTransportRetry();
 
 const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
@@ -11,6 +11,10 @@ const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.en
 const SUPABASE_URL = (process.env.SUPABASE_URL || 'https://gstnghuhhrxtwjdafufd.supabase.co').replace(/\/+$/, '');
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_oh5nDsBwEw56TLZFelxrvQ_A75_y-4j';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// Credit settlement is safe to retry only because migration 008 makes settle_credits
+// idempotent. The wrapper is exact-URL scoped and leaves every other Supabase call untouched.
+installCreditSettlementTransportRetry(SUPABASE_URL);
 
 if (isProduction && !SUPABASE_SERVICE_ROLE_KEY) {
     console.error('❌ CRITICAL SECURITY FATAL: SUPABASE_SERVICE_ROLE_KEY must be provided in production.');
