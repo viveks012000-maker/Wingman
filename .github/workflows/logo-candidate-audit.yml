@@ -1,0 +1,191 @@
+name: Logo asset candidate audit (DO NOT MERGE)
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze-logo:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'audit/logo-asset-candidates-20260818'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install image tooling
+        run: python -m pip install --disable-pip-version-check pillow
+
+      - name: Generate and compare candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p logo-audit-artifacts
+          python - <<'PY'
+          from PIL import Image, ImageChops, ImageDraw
+          from pathlib import Path
+          import hashlib, json, math, os, statistics
+
+          source_path = Path('logo.png')
+          out = Path('logo-audit-artifacts')
+          source = Image.open(source_path).convert('RGBA')
+          sw, sh = source.size
+          source_bytes = source_path.stat().st_size
+          alpha = source.getchannel('A')
+          alpha_extrema = alpha.getextrema()
+          transparent = sum(1 for px in alpha.getdata() if px < 255)
+          fully_transparent = sum(1 for px in alpha.getdata() if px == 0)
+          alpha_bbox = alpha.getbbox()
+
+          def fit_max(img, max_dim):
+              scale = min(max_dim / img.width, max_dim / img.height)
+              size = (max(1, round(img.width * scale)), max(1, round(img.height * scale)))
+              return img.resize(size, Image.Resampling.LANCZOS)
+
+          candidates = []
+          for max_dim in (256, 384):
+              resized = fit_max(source, max_dim)
+              specs = [
+                  ('png-opt', 'PNG', {'optimize': True, 'compress_level': 9}),
+                  ('webp-lossless', 'WEBP', {'lossless': True, 'method': 6}),
+                  ('webp-q95', 'WEBP', {'quality': 95, 'method': 6}),
+                  ('webp-q90', 'WEBP', {'quality': 90, 'method': 6}),
+                  ('webp-q85', 'WEBP', {'quality': 85, 'method': 6}),
+              ]
+              for label, fmt, params in specs:
+                  ext = 'png' if fmt == 'PNG' else 'webp'
+                  path = out / f'logo-{max_dim}-{label}.{ext}'
+                  resized.save(path, fmt, **params)
+                  decoded = Image.open(path).convert('RGBA')
+                  candidates.append({
+                      'label': f'{max_dim}-{label}',
+                      'path': str(path),
+                      'max_dim': max_dim,
+                      'format': fmt,
+                      'params': params,
+                      'bytes': path.stat().st_size,
+                      'decoded': decoded,
+                      'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+                  })
+
+          backgrounds = {
+              'dark': (9, 13, 22, 255),
+              'white': (255, 255, 255, 255),
+          }
+          display_sizes = (128, 64, 56, 48, 44, 36)
+
+          def composite(img, bg):
+              canvas = Image.new('RGBA', img.size, bg)
+              canvas.alpha_composite(img)
+              return canvas.convert('RGB')
+
+          def metrics(a, b):
+              # Images are RGB and same size.
+              diff = ImageChops.difference(a, b)
+              hist = diff.histogram()
+              n = a.width * a.height * 3
+              abs_sum = sum((i % 256) * count for i, count in enumerate(hist))
+              sq_sum = sum(((i % 256) ** 2) * count for i, count in enumerate(hist))
+              mae = abs_sum / n
+              mse = sq_sum / n
+              rmse = math.sqrt(mse)
+              psnr = float('inf') if rmse == 0 else 20 * math.log10(255 / rmse)
+              extrema = diff.getextrema()
+              max_diff = max(v[1] for v in extrema)
+              return {'mae': round(mae, 6), 'rmse': round(rmse, 6), 'psnr_db': None if math.isinf(psnr) else round(psnr, 4), 'max_channel_diff': max_diff}
+
+          for c in candidates:
+              c['alpha_extrema'] = c['decoded'].getchannel('A').getextrema()
+              c['fidelity'] = {}
+              for display in display_sizes:
+                  ref = fit_max(source, display)
+                  cand = fit_max(c['decoded'], display)
+                  # Ensure identical dimensions if rounding differs.
+                  if cand.size != ref.size:
+                      cand = cand.resize(ref.size, Image.Resampling.LANCZOS)
+                  c['fidelity'][str(display)] = {}
+                  for bg_name, bg in backgrounds.items():
+                      c['fidelity'][str(display)][bg_name] = metrics(composite(ref, bg), composite(cand, bg))
+
+          # Produce visual contact sheets at the largest footer size and small app/nav size.
+          preview_candidates = [
+              ('source', source),
+              *[(c['label'], c['decoded']) for c in candidates],
+          ]
+          for display in (128, 44):
+              cell_w = max(170, display + 42)
+              cell_h = max(175, display + 55)
+              sheet = Image.new('RGB', (cell_w * len(preview_candidates), cell_h * 2), (32, 32, 32))
+              draw = ImageDraw.Draw(sheet)
+              for col, (label, img) in enumerate(preview_candidates):
+                  rendered = fit_max(img, display)
+                  for row, (bg_name, bg_rgba) in enumerate(backgrounds.items()):
+                      x0 = col * cell_w
+                      y0 = row * cell_h
+                      bg = bg_rgba[:3]
+                      sheet.paste(Image.new('RGB', (cell_w, cell_h), bg), (x0, y0))
+                      rgba_canvas = Image.new('RGBA', (cell_w, cell_h), (*bg, 255))
+                      x = x0 + (cell_w - rendered.width) // 2
+                      # Render into a local cell canvas so alpha compositing is exact.
+                      local = Image.new('RGBA', (cell_w, cell_h), (*bg, 255))
+                      local.alpha_composite(rendered, ((cell_w - rendered.width)//2, 26))
+                      sheet.paste(local.convert('RGB'), (x0, y0))
+                      text_fill = (255,255,255) if bg_name == 'dark' else (0,0,0)
+                      draw.text((x0 + 6, 6), label, fill=text_fill)
+                      draw.text((x0 + 6, cell_h - 18), bg_name, fill=text_fill)
+              sheet.save(out / f'contact-{display}px.png', optimize=True)
+
+          serializable = []
+          for c in candidates:
+              d = {k:v for k,v in c.items() if k != 'decoded'}
+              d['alpha_extrema'] = list(d['alpha_extrema'])
+              serializable.append(d)
+
+          report = {
+              'source': {
+                  'path': str(source_path),
+                  'bytes': source_bytes,
+                  'size': [sw, sh],
+                  'mode': source.mode,
+                  'alpha_extrema': list(alpha_extrema),
+                  'alpha_bbox': list(alpha_bbox) if alpha_bbox else None,
+                  'pixels_with_any_transparency': transparent,
+                  'fully_transparent_pixels': fully_transparent,
+                  'sha256': hashlib.sha256(source_path.read_bytes()).hexdigest(),
+              },
+              'display_sizes_css_px': list(display_sizes),
+              'candidates': serializable,
+          }
+          (out / 'metrics.json').write_text(json.dumps(report, indent=2))
+
+          print('SOURCE', json.dumps(report['source'], sort_keys=True))
+          print('CANDIDATE_SUMMARY')
+          for c in serializable:
+              m128d = c['fidelity']['128']['dark']
+              m128w = c['fidelity']['128']['white']
+              m44d = c['fidelity']['44']['dark']
+              print(json.dumps({
+                  'label': c['label'],
+                  'bytes': c['bytes'],
+                  'dimensions': list(Image.open(c['path']).size),
+                  'alpha_extrema': c['alpha_extrema'],
+                  '128_dark': m128d,
+                  '128_white': m128w,
+                  '44_dark': m44d,
+                  'sha256': c['sha256'],
+              }, sort_keys=True))
+          PY
+
+      - name: Upload candidate images and metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: logo-candidate-audit
+          path: logo-audit-artifacts/
+          if-no-files-found: error
+          retention-days: 7
