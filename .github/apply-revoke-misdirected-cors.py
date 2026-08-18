@@ -19,7 +19,7 @@ replace_once(
 replace_once(
     'server.js',
     "    if (origin === '*' || origin === 'null' || origin.includes('*')) return false;\n    if (/^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/i.test(origin)) return false;",
-    "    if (origin === '*' || origin === 'null' || origin.includes('*')) return false;\n    if (origin === 'https://mywingman.com') return false;\n    if (/^https?:\\/\\/(localhost|127\\.0\\.1)(:\\d+)?$/i.test(origin)) return false;"
+    "    if (origin === '*' || origin === 'null' || origin.includes('*')) return false;\n    if (origin === 'https://mywingman.com') return false;\n    if (/^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/i.test(origin)) return false;"
 )
 
 replace_once(
@@ -63,15 +63,17 @@ replace_once(
 
 railway_test = ROOT / 'tests' / 'railway_request_admission.test.js'
 text = railway_test.read_text(encoding='utf-8')
-anchor = "process.env.ALLOWED_ORIGINS = originalAllowedOrigins;"
+anchor = "  assert(!allowed.has('*'), 'wildcard configured origin must be rejected in production');\n\n  delete process.env.RAILWAY_ENVIRONMENT;"
 if text.count(anchor) != 1:
-    raise SystemExit(f'railway_request_admission.test.js: expected one restore anchor, found {text.count(anchor)}')
-insert = """process.env.ALLOWED_ORIGINS = 'https://mywingman.com,https://preview.mywingman.com';
-    const staleConfigured = getGatewayAllowedOrigins();
-    assert.strictEqual(staleConfigured.has('https://mywingman.com'), false, 'stale mywingman.com must remain denied even when configured');
-    assert.strictEqual(staleConfigured.has('https://preview.mywingman.com'), true, 'other explicit HTTPS configured origins must remain available');
+    raise SystemExit(f'railway_request_admission.test.js: expected one production-policy anchor, found {text.count(anchor)}')
+insert = """  assert(!allowed.has('*'), 'wildcard configured origin must be rejected in production');
 
-    """ + anchor
+  process.env.ALLOWED_ORIGINS = 'https://mywingman.com,https://preview.mywingman.com';
+  allowed = getGatewayAllowedOrigins();
+  assert(!allowed.has('https://mywingman.com'), 'stale mywingman.com must remain denied even when configured');
+  assert(allowed.has('https://preview.mywingman.com'), 'other explicit HTTPS configured origins must remain available');
+
+  delete process.env.RAILWAY_ENVIRONMENT;"""
 railway_test.write_text(text.replace(anchor, insert, 1), encoding='utf-8')
 
 new_test = ROOT / 'tests' / 'misdirected_domain_cors.test.js'
