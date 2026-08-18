@@ -1,0 +1,161 @@
+name: Temporary Material Symbols Subset Validation - DO NOT MERGE
+
+on:
+  pull_request:
+    branches: [perf/subset-material-symbols-20260818]
+    paths:
+      - '.github/workflows/material-symbols-subset-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-subset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install candidate runtime
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Build exact candidate artifact
+        run: |
+          set -euo pipefail
+          npm run build:netlify
+
+      - name: Validate Google Fonts subset CSS and WOFF2 payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p material-symbols-validation
+
+          subset_url=$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+          html = Path('netlify-dist/index.html').read_text(encoding='utf-8')
+          m = re.search(r'https://fonts\.googleapis\.com/css2\?family=Material\+Symbols\+Outlined:[^"\']+icon_names=[^"\']+&display=block', html)
+          if not m:
+              raise SystemExit('Material Symbols subset URL not found in built artifact')
+          print(m.group(0))
+          PY
+          )
+          printf '%s\n' "$subset_url" | tee material-symbols-validation/subset-url.txt
+
+          user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'
+          css_code=$(curl --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 45 \
+            -A "$user_agent" -sS -D material-symbols-validation/css-headers.txt \
+            -o material-symbols-validation/material-symbols.css -w '%{http_code}' "$subset_url")
+          echo "CSS_HTTP=$css_code"
+          test "$css_code" = 200
+          grep -Fq "font-family: 'Material Symbols Outlined'" material-symbols-validation/material-symbols.css
+          grep -Eq 'font-weight:[[:space:]]*100 700' material-symbols-validation/material-symbols.css
+          grep -Eq 'font-feature-settings:[[:space:]]*.*liga' material-symbols-validation/material-symbols.css
+
+          font_url=$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+          css = Path('material-symbols-validation/material-symbols.css').read_text(encoding='utf-8')
+          urls = re.findall(r'url\((https://fonts\.gstatic\.com/[^)]+\.woff2)\)', css)
+          if not urls:
+              raise SystemExit('WOFF2 URL not found in Google Fonts CSS')
+          print(urls[0])
+          PY
+          )
+          printf '%s\n' "$font_url" | tee material-symbols-validation/font-url.txt
+
+          font_code=$(curl --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 45 \
+            -A "$user_agent" -sS -D material-symbols-validation/font-headers.txt \
+            -o material-symbols-validation/material-symbols.woff2 -w '%{http_code}' "$font_url")
+          echo "FONT_HTTP=$font_code"
+          test "$font_code" = 200
+
+          font_bytes=$(wc -c < material-symbols-validation/material-symbols.woff2 | tr -d ' ')
+          css_bytes=$(wc -c < material-symbols-validation/material-symbols.css | tr -d ' ')
+          echo "MATERIAL_SYMBOLS_CSS_BYTES=$css_bytes"
+          echo "MATERIAL_SYMBOLS_WOFF2_BYTES=$font_bytes"
+          # Previous production Lighthouse measured the full Material Symbols font at ~1,127,440 bytes.
+          # The 45-icon subset must be materially smaller before we consider merging it.
+          test "$font_bytes" -gt 1000
+          test "$font_bytes" -lt 300000
+
+      - name: Verify all 45 icon ligatures render through the downloaded subset
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const http = require('http');
+          const path = require('path');
+          const { chromium } = require('playwright');
+
+          const subsetUrl = fs.readFileSync('material-symbols-validation/subset-url.txt', 'utf8').trim();
+          const names = new URL(subsetUrl).searchParams.get('icon_names').split(',');
+          if (names.length !== 45) throw new Error(`Expected 45 subset icons, got ${names.length}`);
+
+          const fixture = `<!doctype html><html><head><meta charset="utf-8"><link href="${subsetUrl}" rel="stylesheet"><style>
+          body{background:white;color:black}.material-symbols-outlined{font-size:24px;line-height:1;display:inline-block;margin:3px;white-space:nowrap}
+          </style></head><body>${names.map((name, i) => `<span id="i${i}" class="material-symbols-outlined" data-icon="${name}">${name}</span>`).join('')}</body></html>`;
+          fs.writeFileSync('material-symbols-validation/fixture.html', fixture);
+
+          const server = http.createServer((req, res) => {
+            if (req.url === '/' || req.url === '/fixture.html') {
+              res.writeHead(200, {'content-type':'text/html; charset=utf-8', 'cache-control':'no-store'});
+              res.end(fixture);
+              return;
+            }
+            res.writeHead(404); res.end('not found');
+          });
+
+          (async () => {
+            await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+            const port = server.address().port;
+            const browser = await chromium.launch({headless:true});
+            try {
+              const page = await browser.newPage();
+              const failures = [];
+              page.on('pageerror', e => failures.push(`pageerror:${e.message}`));
+              page.on('requestfailed', r => failures.push(`requestfailed:${r.url()} ${r.failure()?.errorText || ''}`));
+              const response = await page.goto(`http://127.0.0.1:${port}/fixture.html`, {waitUntil:'networkidle', timeout:45000});
+              if (!response || response.status() !== 200) throw new Error(`fixture HTTP ${response && response.status()}`);
+              await page.evaluate(async () => { await document.fonts.ready; await document.fonts.load('24px "Material Symbols Outlined"'); });
+              const result = await page.evaluate(() => ({
+                fontReady: document.fonts.check('24px "Material Symbols Outlined"'),
+                icons: [...document.querySelectorAll('.material-symbols-outlined')].map(el => ({
+                  name: el.dataset.icon,
+                  width: el.getBoundingClientRect().width,
+                  height: el.getBoundingClientRect().height,
+                  family: getComputedStyle(el).fontFamily
+                }))
+              }));
+              if (!result.fontReady) throw new Error('Material Symbols font did not become ready');
+              for (const icon of result.icons) {
+                if (!/Material Symbols Outlined/i.test(icon.family)) throw new Error(`${icon.name}: wrong font family ${icon.family}`);
+                // Material Symbols glyphs are square. Raw unligated text would be much wider than one em.
+                if (!(icon.width > 10 && icon.width <= 32 && icon.height > 10)) throw new Error(`${icon.name}: likely missing ligature, box=${icon.width}x${icon.height}`);
+              }
+              if (failures.length) throw new Error(failures.join(' | '));
+              console.log(`MATERIAL_SYMBOLS_RENDER_PASS=${result.icons.length}/45`);
+              console.log('Rendered icons:', result.icons.map(x => x.name).join(','));
+            } finally {
+              await browser.close();
+              await new Promise(resolve => server.close(resolve));
+            }
+          })().catch(error => { console.error(error); process.exit(1); });
+          NODE
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: material-symbols-subset-validation-${{ github.sha }}
+          path: material-symbols-validation/
+          if-no-files-found: warn
+          retention-days: 3
