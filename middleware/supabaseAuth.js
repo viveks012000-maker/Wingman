@@ -46,6 +46,14 @@ function isStructurallyValidJwt(token) {
  * Attaches req.user = { id, email } if valid, otherwise req.user = null.
  */
 async function verifySupabaseToken(req, res, next) {
+    // The Railway API gateway pre-authenticates the two large Analyzer routes before their
+    // 38 MB body parser. Reuse that server-created identity instead of performing a second
+    // Supabase /user verification inside the mounted Wingman app. HTTP clients cannot set
+    // req.user directly; it exists here only when prior trusted middleware attached it.
+    if (req.user && req.user.id) {
+        return next();
+    }
+
     function applyMockAuthIfDev() {
         if (!isProduction && (process.env.ENABLE_MOCK_AUTH === 'true' || req.headers['x-mock-auth'] === 'true')) {
             const devUid = req.headers['x-test-user-id'] || '00000000-0000-0000-0000-000000000001';
