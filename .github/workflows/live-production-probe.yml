@@ -1,0 +1,264 @@
+name: Temporary Live Production Probe - DO NOT MERGE
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/live-production-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  live-public-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      EXPECTED_PRODUCTION_SHA: 8ac511489ffc6620c0febb635d611ea096554eea
+      FRONTEND: https://mywingman.pages.dev
+      BACKEND: https://wingman-production-c6ce.up.railway.app
+      OLD_NETLIFY: https://soft-sawine-30785c.netlify.app
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install test runtime
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium firefox webkit
+
+      - name: Verify Cloudflare production release, routes and security headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p live-probe
+
+          retry_curl() {
+            curl --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 45 "$@"
+          }
+
+          release_json=$(retry_curl -fsS "$FRONTEND/release.json")
+          printf '%s\n' "$release_json" | tee live-probe/release.json
+          deployed_sha=$(printf '%s' "$release_json" | jq -r '.sourceCommit')
+          echo "Cloudflare deployed sourceCommit=$deployed_sha"
+          test "$deployed_sha" = "$EXPECTED_PRODUCTION_SHA"
+
+          root_code=$(retry_curl -sS -o live-probe/frontend-root.html -w '%{http_code}' "$FRONTEND/")
+          app_code=$(retry_curl -sS -o live-probe/frontend-app.html -w '%{http_code}' "$FRONTEND/app")
+          missing_code=$(retry_curl -sS -o live-probe/frontend-missing.html -w '%{http_code}' "$FRONTEND/__mywingman_live_probe_missing_20260818__")
+          echo "Cloudflare routes: /=${root_code} /app=${app_code} missing=${missing_code}"
+          test "$root_code" = '200'
+          test "$app_code" = '200'
+          test "$missing_code" = '404'
+
+          retry_curl -sS -D live-probe/app-html-headers.txt -o /dev/null "$FRONTEND/app.html"
+          app_html_status=$(awk 'toupper($1) ~ /^HTTP\// {code=$2} END {print code}' live-probe/app-html-headers.txt)
+          app_html_location=$(awk 'BEGIN{IGNORECASE=1} /^location:/ {gsub("\r", ""); sub(/^[^:]+:[[:space:]]*/, ""); print; exit}' live-probe/app-html-headers.txt)
+          echo "Cloudflare /app.html status=$app_html_status location=$app_html_location"
+          case "$app_html_status" in 301|302|303|307|308) ;; *) echo "Expected /app.html redirect" >&2; exit 1;; esac
+          case "$app_html_location" in /app|"$FRONTEND/app"|https://mywingman.pages.dev/app) ;; *) echo "Unexpected /app.html redirect target: $app_html_location" >&2; exit 1;; esac
+
+          retry_curl -sS -D live-probe/frontend-headers.txt -o /dev/null "$FRONTEND/"
+          tr -d '\r' < live-probe/frontend-headers.txt > live-probe/frontend-headers-clean.txt
+          headers=live-probe/frontend-headers-clean.txt
+          grep -Eqi '^strict-transport-security:[[:space:]]*max-age=31536000' "$headers"
+          grep -Eqi '^content-security-policy:' "$headers"
+          grep -Eqi '^x-content-type-options:[[:space:]]*nosniff' "$headers"
+          grep -Eqi '^referrer-policy:' "$headers"
+          grep -Eqi '^permissions-policy:' "$headers"
+          if ! grep -Eqi '^x-frame-options:[[:space:]]*DENY' "$headers"; then
+            grep -Eqi "^content-security-policy:.*frame-ancestors[[:space:]]+'none'" "$headers"
+          fi
+          echo 'Cloudflare security headers: PASS'
+
+      - name: Verify Railway health, API-only surface and CORS
+        shell: bash
+        run: |
+          set -euo pipefail
+          retry_curl() {
+            curl --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 45 "$@"
+          }
+
+          health_code=$(retry_curl -sS -o live-probe/railway-health.json -w '%{http_code}' "$BACKEND/api/health")
+          echo "Railway /api/health=$health_code body=$(cat live-probe/railway-health.json)"
+          test "$health_code" = '200'
+          test "$(jq -r '.status' live-probe/railway-health.json)" = 'ok'
+          test "$(jq -r '.database' live-probe/railway-health.json)" = 'supabase_active'
+
+          root_code=$(retry_curl -sS -o live-probe/railway-root.json -w '%{http_code}' "$BACKEND/")
+          test "$root_code" = '200'
+          test "$(jq -r '.service' live-probe/railway-root.json)" = 'mywingman-api'
+
+          for path in package.json server.js tests/security_node.test.js migrations/008_idempotent_credit_settlement.sql; do
+            code=$(retry_curl -sS -o /dev/null -w '%{http_code}' "$BACKEND/$path")
+            echo "Railway /$path=$code"
+            test "$code" = '404'
+          done
+
+          retry_curl -sS -D live-probe/cors-cloudflare-options.txt -o /dev/null -X OPTIONS \
+            -H 'Origin: https://mywingman.pages.dev' \
+            -H 'Access-Control-Request-Method: GET' \
+            "$BACKEND/api/health"
+          tr -d '\r' < live-probe/cors-cloudflare-options.txt > live-probe/cors-cloudflare-options-clean.txt
+          grep -Eqi '^access-control-allow-origin:[[:space:]]*https://mywingman\.pages\.dev$' live-probe/cors-cloudflare-options-clean.txt
+          grep -Eqi '^access-control-allow-credentials:[[:space:]]*true$' live-probe/cors-cloudflare-options-clean.txt
+
+          retry_curl -sS -D live-probe/cors-cloudflare-get.txt -o /dev/null \
+            -H 'Origin: https://mywingman.pages.dev' "$BACKEND/api/health"
+          tr -d '\r' < live-probe/cors-cloudflare-get.txt > live-probe/cors-cloudflare-get-clean.txt
+          grep -Eqi '^access-control-allow-origin:[[:space:]]*https://mywingman\.pages\.dev$' live-probe/cors-cloudflare-get-clean.txt
+
+          for origin in 'https://soft-sawine-30785c.netlify.app' 'https://attacker.example'; do
+            safe=$(printf '%s' "$origin" | tr -c 'A-Za-z0-9' '_')
+            retry_curl -sS -D "live-probe/cors-${safe}.txt" -o /dev/null -X OPTIONS \
+              -H "Origin: $origin" -H 'Access-Control-Request-Method: GET' "$BACKEND/api/health"
+            if tr -d '\r' < "live-probe/cors-${safe}.txt" | grep -Eqi '^access-control-allow-origin:'; then
+              echo "Unauthorized origin received ACAO: $origin" >&2
+              cat "live-probe/cors-${safe}.txt" >&2
+              exit 1
+            fi
+          done
+          echo 'Railway API-only + CORS: PASS'
+
+      - name: Verify live Analyzer pre-body auth and early-error CORS
+        shell: bash
+        run: |
+          set -euo pipefail
+          retry_curl() {
+            curl --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 45 "$@"
+          }
+
+          cloudflare_code=$(retry_curl -sS -D live-probe/analyzer-cloudflare-headers.txt -o live-probe/analyzer-cloudflare-body.json -w '%{http_code}' \
+            -X POST -H 'Origin: https://mywingman.pages.dev' -H 'Content-Type: application/json' \
+            --data-binary '{"broken":' "$BACKEND/api/analyze")
+          tr -d '\r' < live-probe/analyzer-cloudflare-headers.txt > live-probe/analyzer-cloudflare-headers-clean.txt
+          echo "Analyzer unauth Cloudflare status=$cloudflare_code body=$(cat live-probe/analyzer-cloudflare-body.json)"
+          test "$cloudflare_code" = '401'
+          grep -Eqi '^access-control-allow-origin:[[:space:]]*https://mywingman\.pages\.dev$' live-probe/analyzer-cloudflare-headers-clean.txt
+          grep -Eqi '^access-control-allow-credentials:[[:space:]]*true$' live-probe/analyzer-cloudflare-headers-clean.txt
+
+          old_code=$(retry_curl -sS -D live-probe/analyzer-old-netlify-headers.txt -o /dev/null -w '%{http_code}' \
+            -X POST -H 'Origin: https://soft-sawine-30785c.netlify.app' -H 'Content-Type: application/json' \
+            --data-binary '{"broken":' "$BACKEND/api/analyze")
+          test "$old_code" = '401'
+          if tr -d '\r' < live-probe/analyzer-old-netlify-headers.txt | grep -Eqi '^access-control-allow-origin:'; then
+            echo 'Retired Netlify origin received Analyzer ACAO' >&2
+            exit 1
+          fi
+          echo 'Live Analyzer admission/CORS: PASS'
+
+      - name: Verify retired Netlify endpoint is dead
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          code=$(curl --connect-timeout 12 --max-time 25 -sS -o /dev/null -w '%{http_code}' "$OLD_NETLIFY/")
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "Old Netlify endpoint is unreachable (acceptable retired state; curl rc=$rc)."
+          else
+            echo "Old Netlify status=$code"
+            test "$code" = '404'
+          fi
+
+      - name: Live Chromium Firefox WebKit browser matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { chromium, firefox, webkit } = require('playwright');
+          const frontend = process.env.FRONTEND;
+          const engines = { chromium, firefox, webkit };
+          const viewports = [
+            { width: 320, height: 568 },
+            { width: 375, height: 812 },
+            { width: 430, height: 932 },
+            { width: 1440, height: 900 }
+          ];
+          (async () => {
+            let checks = 0;
+            for (const [name, launcher] of Object.entries(engines)) {
+              const browser = await launcher.launch({ headless: true });
+              try {
+                for (const pathname of ['/', '/app']) {
+                  for (const viewport of viewports) {
+                    const context = await browser.newContext({ viewport });
+                    const page = await context.newPage();
+                    const pageErrors = [];
+                    const consoleErrors = [];
+                    page.on('pageerror', err => pageErrors.push(String(err)));
+                    page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+                    const response = await page.goto(frontend + pathname, { waitUntil: 'domcontentloaded', timeout: 45000 });
+                    if (!response || response.status() !== 200) throw new Error(`${name} ${pathname} ${viewport.width}px HTTP ${response && response.status()}`);
+                    await page.waitForTimeout(1500);
+                    const dims = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth }));
+                    if (dims.scrollWidth > dims.innerWidth + 1) throw new Error(`${name} ${pathname} ${viewport.width}px overflow ${dims.scrollWidth}>${dims.innerWidth}`);
+                    if (pageErrors.length) throw new Error(`${name} ${pathname} ${viewport.width}px pageerror: ${pageErrors.join(' | ')}`);
+                    const materialErrors = consoleErrors.filter(text => !/favicon|Failed to load resource.*404/i.test(text));
+                    if (materialErrors.length) throw new Error(`${name} ${pathname} ${viewport.width}px console error: ${materialErrors.join(' | ')}`);
+                    checks++;
+                    await context.close();
+                  }
+                }
+              } finally {
+                await browser.close();
+              }
+            }
+            console.log(`Live cross-browser matrix PASS: ${checks}/24 page/viewport checks`);
+          })().catch(err => { console.error(err); process.exit(1); });
+          NODE
+
+      - name: Lighthouse mobile diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME_PATH=$(find "$HOME/.cache/ms-playwright" -type f -path '*/chrome-linux64/chrome' | head -n 1)
+          test -n "$CHROME_PATH"
+          export CHROME_PATH
+          npx --yes lighthouse@12 "$FRONTEND/" \
+            --quiet --chrome-flags='--headless --no-sandbox --disable-gpu' \
+            --only-categories=performance,accessibility,best-practices,seo \
+            --output=json --output-path=live-probe/lighthouse-home.json
+          npx --yes lighthouse@12 "$FRONTEND/app" \
+            --quiet --chrome-flags='--headless --no-sandbox --disable-gpu' \
+            --only-categories=performance,accessibility,best-practices \
+            --output=json --output-path=live-probe/lighthouse-app.json
+          node <<'NODE'
+          const fs = require('fs');
+          function summary(file, label) {
+            const r = JSON.parse(fs.readFileSync(file, 'utf8'));
+            const cats = r.categories;
+            const a = r.audits;
+            const out = {
+              performance: Math.round((cats.performance?.score ?? 0) * 100),
+              accessibility: Math.round((cats.accessibility?.score ?? 0) * 100),
+              bestPractices: Math.round((cats['best-practices']?.score ?? 0) * 100),
+              seo: cats.seo ? Math.round(cats.seo.score * 100) : null,
+              FCP_ms: Math.round(a['first-contentful-paint']?.numericValue ?? 0),
+              LCP_ms: Math.round(a['largest-contentful-paint']?.numericValue ?? 0),
+              TBT_ms: Math.round(a['total-blocking-time']?.numericValue ?? 0),
+              CLS: Number((a['cumulative-layout-shift']?.numericValue ?? 0).toFixed(3)),
+              speedIndex_ms: Math.round(a['speed-index']?.numericValue ?? 0)
+            };
+            console.log(`${label} LIGHTHOUSE ${JSON.stringify(out)}`);
+            if (out.accessibility < 90) throw new Error(`${label} Lighthouse accessibility below 90: ${out.accessibility}`);
+            if (out.bestPractices < 90) throw new Error(`${label} Lighthouse best-practices below 90: ${out.bestPractices}`);
+            if (out.seo !== null && out.seo < 90) throw new Error(`${label} Lighthouse SEO below 90: ${out.seo}`);
+          }
+          summary('live-probe/lighthouse-home.json', 'HOME');
+          summary('live-probe/lighthouse-app.json', 'APP');
+          NODE
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: temporary-live-production-probe-${{ github.sha }}
+          path: live-probe/
+          if-no-files-found: warn
+          retention-days: 3
