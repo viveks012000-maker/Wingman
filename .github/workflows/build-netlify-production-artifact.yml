@@ -15,6 +15,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  bootstrap-social-image-fix:
+    if: github.event_name == 'pull_request' && github.head_ref == 'fix/seo-indexing-hardening-20260818'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - name: Correct social image and self-clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          python .github/fix-seo-social-image.py
+          npm ci --ignore-scripts
+          node tests/seo_indexing_metadata.test.js
+          node tests/logo_delivery_optimization.test.js
+          rm .github/fix-seo-social-image.py
+          git checkout origin/main -- .github/workflows/build-netlify-production-artifact.yml
+          test ! -e .github/fix-seo-social-image.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Use optimized logo for social metadata'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+
   build-and-verify:
     runs-on: ubuntu-latest
     timeout-minutes: 35
