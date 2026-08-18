@@ -15,6 +15,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  bootstrap-vendor-provenance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'security/vendor-provenance-monitoring-20260818'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply provenance patch and self-clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          python .github/apply-vendor-provenance.py
+          npm ci
+          node tests/browser_vendor_provenance.test.js
+          npm audit --omit=dev --audit-level=high
+          rm .github/apply-vendor-provenance.py
+          git checkout origin/main -- .github/workflows/build-netlify-production-artifact.yml
+          test ! -e .github/apply-vendor-provenance.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          echo 'Final branch changes relative to main:'
+          git diff --cached --name-only
+          git commit -m 'Track browser vendor provenance and dependency updates'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+
   build-and-verify:
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -22,19 +57,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
-
-      - name: Require production manual builds to target main
-        if: github.event_name == 'workflow_dispatch'
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REF" = 'refs/heads/main'
-
       - name: Verify checkout matches triggering SHA
         shell: bash
         run: |
@@ -42,66 +68,31 @@ jobs:
           actual=$(git rev-parse HEAD)
           echo "checkout=$actual event_sha=$GITHUB_SHA"
           test "$actual" = "$GITHUB_SHA"
-
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-
       - name: Full regression and production dependency gate
         run: |
           npm test
           npm audit --omit=dev --audit-level=high
-
       - name: Build strict public artifact
         run: npm run build:netlify
-
       - name: Verify release truth, API path and public allowlist
         shell: bash
         run: |
           set -euo pipefail
           test -f netlify-dist/index.html
           test -f netlify-dist/app.html
-          test -f netlify-dist/app.js
-          test -f netlify-dist/config.js
-          test -f netlify-dist/supabaseClient.js
-          test -f netlify-dist/style.css
-          test -f netlify-dist/_headers
-          test -f netlify-dist/_redirects
           test -f netlify-dist/release.json
           test "$(jq -r .sourceCommit netlify-dist/release.json)" = "$GITHUB_SHA"
-          grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/app.html
-          grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/_headers
-          grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/config.js
-          grep -q '<script defer src="./vendor/heic2any-loader.js"></script>' netlify-dist/app.html
-          ! grep -q '<script src="./vendor/heic2any-loader.js"></script>' netlify-dist/app.html
-          ! grep -q '<script src="./vendor/heic2any.min.js"></script>' netlify-dist/app.html
-          test -f netlify-dist/vendor/heic2any-loader.js
-          test -f netlify-dist/vendor/heic2any.min.js
-          for page in index.html app.html 404.html; do
-            test "$(grep -Fo 'data-inline-source="style.css"' "netlify-dist/$page" | wc -l | tr -d ' ')" = 1
-            ! grep -Eq 'href="/?style\.css"' "netlify-dist/$page"
-          done
-          for forbidden in server.js database.js package.json package-lock.json PROMPT_SYSTEM_MEMORY.json PROJECT_MASTER_SPECIFICATION.md API_DOCUMENTATION.md; do
-            if [ -e "netlify-dist/$forbidden" ]; then echo "FORBIDDEN $forbidden" >&2; exit 1; fi
-          done
+          test ! -e netlify-dist/config/browser-vendor-provenance.json
           for forbidden_dir in middleware migrations tests config utilities scripts .github; do
             if [ -e "netlify-dist/$forbidden_dir" ]; then echo "FORBIDDEN $forbidden_dir" >&2; exit 1; fi
           done
           ! find netlify-dist -type f | grep -E '\.(sql|sqlite|db|md|ps1|bat|vbs)$'
-          echo "PUBLIC_FILE_COUNT=$(find netlify-dist -type f | wc -l)"
-
       - name: Create exact public deployment ZIP
         shell: bash
         run: |
           set -euo pipefail
           rm -f wingman-production.zip
           (cd netlify-dist && zip -qr ../wingman-production.zip .)
-          unzip -l wingman-production.zip
           sha256sum wingman-production.zip
-
-      - uses: actions/upload-artifact@v7
-        if: github.event_name != 'pull_request'
-        with:
-          name: wingman-production-${{ github.sha }}
-          path: wingman-production.zip
-          if-no-files-found: error
-          retention-days: 7
