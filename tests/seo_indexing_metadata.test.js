@@ -18,11 +18,11 @@ assert.strictEqual((index.match(/rel="canonical"/g) || []).length, 1, 'Landing m
 assert(index.includes('<link rel="canonical" href="https://mywingman.pages.dev/" />'), 'Landing canonical must use verified Pages production host.');
 assert(index.includes('property="og:type" content="website"'), 'Landing must expose Open Graph type.');
 assert(index.includes('property="og:url" content="https://mywingman.pages.dev/"'), 'Open Graph URL must match canonical production host.');
-assert(index.includes('property="og:image" content="https://mywingman.pages.dev/logo.png"'), 'Open Graph image must be absolute and production-hosted.');
+assert(index.includes('property="og:image" content="https://mywingman.pages.dev/logo-384.webp"'), 'Open Graph image must be absolute and production-hosted.');
 assert(index.includes('name="twitter:card" content="summary"'), 'Landing must expose Twitter card metadata.');
 assert(index.includes('name="twitter:title"'), 'Landing must expose Twitter title metadata.');
 assert(index.includes('name="twitter:description"'), 'Landing must expose Twitter description metadata.');
-assert(index.includes('name="twitter:image" content="https://mywingman.pages.dev/logo.png"'), 'Twitter image must be absolute and production-hosted.');
+assert(index.includes('name="twitter:image" content="https://mywingman.pages.dev/logo-384.webp"'), 'Twitter image must be absolute and production-hosted.');
 
 assert(app.includes('<meta name="robots" content="noindex, nofollow, noarchive"/>'), 'Dashboard must explicitly opt out of indexing.');
 assert(!sitemap.includes('/app'), 'Dashboard must stay out of the sitemap.');
