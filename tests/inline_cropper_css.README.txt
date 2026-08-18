@@ -1,1 +1,0 @@
-Temporary scope note for PR validation: production build inlines the exact existing vendor/cropperjs/cropper.min.css bytes into app.html, preserves the source asset and release-manifest hash, and must make zero Cropper CSS HTTP requests. This file may be removed before merge if unnecessary.
