@@ -70,7 +70,8 @@ jobs:
           grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/app.html
           grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/_headers
           grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/config.js
-          grep -q '<script src="./vendor/heic2any-loader.js"></script>' netlify-dist/app.html
+          grep -q '<script defer src="./vendor/heic2any-loader.js"></script>' netlify-dist/app.html
+          ! grep -q '<script src="./vendor/heic2any-loader.js"></script>' netlify-dist/app.html
           ! grep -q '<script src="./vendor/heic2any.min.js"></script>' netlify-dist/app.html
           test -f netlify-dist/vendor/heic2any-loader.js
           test -f netlify-dist/vendor/heic2any.min.js
