@@ -59,7 +59,8 @@ const testSuites = [
     { name: '53. Landing Explicit Favicon Delivery Guard', file: 'landing_favicon_delivery.test.js' },
     { name: '54. Password Recovery Completion & Strengthened-Password Guard', file: 'password_recovery_compat.test.js' },
     { name: '55. Persisted Paid Plan State & O(1) Lookup Guard', file: 'paid_plan_state.test.js' },
-    { name: '56. SEO Indexing, Canonical Metadata & 404 Hardening', file: 'seo_indexing_metadata.test.js' }
+    { name: '56. SEO Indexing, Canonical Metadata & 404 Hardening', file: 'seo_indexing_metadata.test.js' },
+    { name: '57. Misdirected Custom-Domain CORS Revocation Guard', file: 'misdirected_domain_cors.test.js' }
 ];
 
 console.log('========================================================================');

@@ -81,6 +81,11 @@ async function runVerify(req) {
   assert(!allowed.has('http://localhost:9999'), 'localhost configured origin must be rejected in production');
   assert(!allowed.has('*'), 'wildcard configured origin must be rejected in production');
 
+  process.env.ALLOWED_ORIGINS = 'https://mywingman.com,https://preview.mywingman.com';
+  allowed = getGatewayAllowedOrigins();
+  assert(!allowed.has('https://mywingman.com'), 'stale mywingman.com must remain denied even when configured');
+  assert(allowed.has('https://preview.mywingman.com'), 'other explicit HTTPS configured origins must remain available');
+
   delete process.env.RAILWAY_ENVIRONMENT;
   delete process.env.ALLOWED_ORIGINS;
   assert.strictEqual(
