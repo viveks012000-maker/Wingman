@@ -8,15 +8,11 @@ permissions:
   contents: read
 
 jobs:
-  diagnose-live-seo-do-not-merge:
+  verify-live-seo-do-not-merge:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: main
-          fetch-depth: 0
-      - name: Print and verify exact live SEO response facts
+      - name: Verify final live SEO/indexing facts
         shell: bash
         run: |
           set -euo pipefail
@@ -25,66 +21,49 @@ jobs:
           BACKEND='https://wingman-production-c6ce.up.railway.app'
           OLD_NETLIFY='https://soft-sawine-30785c.netlify.app'
 
-          deployed=$(curl --fail --silent --show-error "$FRONTEND/release.json" | jq -r '.sourceCommit // empty')
-          echo "live_release=$deployed expected=$TARGET_SHA"
-          test "$deployed" = "$TARGET_SHA"
+          test "$(curl --fail --silent --show-error "$FRONTEND/release.json" | jq -r '.sourceCommit')" = "$TARGET_SHA"
 
-          curl --fail --silent --show-error -D /tmp/index.headers "$FRONTEND/" -o /tmp/index.html
-          echo '--- LIVE INDEX META ---'
-          grep -E 'canonical|og:(url|image)|twitter:(card|image)|mywingman\.com' /tmp/index.html || true
-          echo '--- EXPECTED INDEX META COUNTS ---'
-          for pattern in \
-            '<link rel="canonical" href="https://mywingman.pages.dev/"' \
-            'property="og:url" content="https://mywingman.pages.dev/"' \
-            'property="og:image" content="https://mywingman.pages.dev/logo-384.webp"' \
-            'name="twitter:image" content="https://mywingman.pages.dev/logo-384.webp"'; do
-            printf '%s => ' "$pattern"; grep -Fc "$pattern" /tmp/index.html || true
-          done
-
-          curl --fail --silent --show-error "$FRONTEND/robots.txt" -o /tmp/robots.txt
-          curl --fail --silent --show-error "$FRONTEND/sitemap.xml" -o /tmp/sitemap.xml
-          echo '--- ROBOTS ---'; cat /tmp/robots.txt
-          echo '--- SITEMAP ---'; cat /tmp/sitemap.xml
-
-          curl --fail --silent --show-error -D /tmp/app.headers "$FRONTEND/app" -o /tmp/app.html
-          echo '--- APP RELEVANT HEADERS ---'; grep -Ei '^(HTTP/|x-robots-tag:|content-security-policy:)' /tmp/app.headers || true
-          echo '--- APP ROBOTS META ---'; grep -E 'name="robots"' /tmp/app.html || true
-
-          curl --fail --silent --show-error -D /tmp/404.headers "$FRONTEND/404.html" -o /tmp/404.html
-          echo '--- 404 RELEVANT HEADERS ---'; grep -Ei '^(HTTP/|x-robots-tag:|content-security-policy:)' /tmp/404.headers || true
-          echo '--- 404 META CSP/ROBOTS ---'; grep -E 'Content-Security-Policy|name="robots"' /tmp/404.html || true
-
-          random_path="audit-not-found-${RANDOM}-${RANDOM}"
-          status=$(curl --silent --show-error -D /tmp/missing.headers -o /tmp/missing.html -w '%{http_code}' "$FRONTEND/$random_path")
-          echo "random_404_status=$status title_count=$(grep -Fc 'Page Not Found | MyWingman' /tmp/missing.html || true)"
-
-          curl --fail --silent --show-error "$BACKEND/" | jq -e '.status == "ok" and .service == "mywingman-api"' >/dev/null
-          curl --silent --show-error -D /tmp/cf-cors.txt -o /dev/null -X OPTIONS -H 'Origin: https://mywingman.pages.dev' -H 'Access-Control-Request-Method: POST' "$BACKEND/api/credits"
-          curl --silent --show-error -D /tmp/old-cors.txt -o /dev/null -X OPTIONS -H 'Origin: https://soft-sawine-30785c.netlify.app' -H 'Access-Control-Request-Method: POST' "$BACKEND/api/credits"
-          echo "pages_cors=$(grep -i '^access-control-allow-origin:' /tmp/cf-cors.txt | tr -d '\r' || true)"
-          echo "old_cors=$(grep -i '^access-control-allow-origin:' /tmp/old-cors.txt | tr -d '\r' || true)"
-          echo "old_netlify_status=$(curl --silent --show-error -o /dev/null -w '%{http_code}' "$OLD_NETLIFY/")"
-
-          # Final assertions use exact observations printed above.
+          curl --fail --silent --show-error "$FRONTEND/" -o /tmp/index.html
           grep -Fq 'rel="canonical" href="https://mywingman.pages.dev/"' /tmp/index.html
           grep -Fq 'property="og:url" content="https://mywingman.pages.dev/"' /tmp/index.html
           grep -Fq 'property="og:image" content="https://mywingman.pages.dev/logo-384.webp"' /tmp/index.html
           grep -Fq 'name="twitter:image" content="https://mywingman.pages.dev/logo-384.webp"' /tmp/index.html
           ! grep -Fq 'https://mywingman.com' /tmp/index.html
+
+          curl --fail --silent --show-error "$FRONTEND/robots.txt" -o /tmp/robots.txt
           grep -Fq 'Sitemap: https://mywingman.pages.dev/sitemap.xml' /tmp/robots.txt
           ! grep -Fq 'mywingman.com' /tmp/robots.txt
+          curl --fail --silent --show-error "$FRONTEND/sitemap.xml" -o /tmp/sitemap.xml
           grep -Fq '<loc>https://mywingman.pages.dev/</loc>' /tmp/sitemap.xml
           ! grep -Fq 'https://mywingman.com' /tmp/sitemap.xml
           ! grep -Fq '/app' /tmp/sitemap.xml
+
+          curl --fail --silent --show-error -D /tmp/app.headers "$FRONTEND/app" -o /tmp/app.html
           grep -iq '^x-robots-tag: noindex, nofollow, noarchive' /tmp/app.headers
           grep -Fq 'name="robots" content="noindex, nofollow, noarchive"' /tmp/app.html
-          grep -iq '^content-security-policy:' /tmp/404.headers
-          grep -iq '^x-robots-tag: noindex, nofollow' /tmp/404.headers
-          grep -Fq "script-src 'none'" /tmp/404.html
-          grep -Fq 'name="robots" content="noindex, nofollow"' /tmp/404.html
-          test "$status" = '404'
+
+          # /404.html itself normalizes with HTTP 308 on Cloudflare. Verify its response headers,
+          # then verify the actual custom 404 body using a real missing path.
+          status404doc=$(curl --silent --show-error -D /tmp/404doc.headers -o /dev/null -w '%{http_code}' "$FRONTEND/404.html")
+          echo "404_document_status=$status404doc"
+          test "$status404doc" = '308'
+          grep -iq '^content-security-policy:' /tmp/404doc.headers
+          grep -iq '^x-robots-tag: noindex, nofollow' /tmp/404doc.headers
+
+          random_path="audit-not-found-${RANDOM}-${RANDOM}"
+          missing_status=$(curl --silent --show-error -D /tmp/missing.headers -o /tmp/missing.html -w '%{http_code}' "$FRONTEND/$random_path")
+          echo "random_404_status=$missing_status"
+          test "$missing_status" = '404'
+          grep -iq '^content-security-policy:' /tmp/missing.headers
           grep -Fq 'Page Not Found | MyWingman' /tmp/missing.html
+          grep -Fq "script-src 'none'" /tmp/missing.html
+          grep -Fq 'name="robots" content="noindex, nofollow"' /tmp/missing.html
+
+          curl --fail --silent --show-error "$BACKEND/" | jq -e '.status == "ok" and .service == "mywingman-api"' >/dev/null
+          curl --silent --show-error -D /tmp/cf-cors.txt -o /dev/null -X OPTIONS -H 'Origin: https://mywingman.pages.dev' -H 'Access-Control-Request-Method: POST' "$BACKEND/api/credits"
           grep -iq '^access-control-allow-origin: https://mywingman.pages.dev' /tmp/cf-cors.txt
+          curl --silent --show-error -D /tmp/old-cors.txt -o /dev/null -X OPTIONS -H 'Origin: https://soft-sawine-30785c.netlify.app' -H 'Access-Control-Request-Method: POST' "$BACKEND/api/credits"
           ! grep -iq '^access-control-allow-origin: https://soft-sawine-30785c.netlify.app' /tmp/old-cors.txt
           test "$(curl --silent --show-error -o /dev/null -w '%{http_code}' "$OLD_NETLIFY/")" = '404'
+
           echo 'LIVE_SEO_HARDENING_VERIFICATION=PASS'
