@@ -118,7 +118,10 @@ function replaceExternalLink(relativeFile) {
 function tightenHeadersCsp() {
   const file = path.join(OUT, '_headers');
   if (!fs.existsSync(file)) fail('_headers is missing');
-  const headers = removeGoogleFontCspHosts(fs.readFileSync(file, 'utf8'), '_headers', 7);
+  const source = fs.readFileSync(file, 'utf8');
+  const cspHeaderCount = source.split(/\r?\n/).filter(line => /^\s+Content-Security-Policy:/.test(line)).length;
+  if (cspHeaderCount < 1) fail('_headers contains no Content-Security-Policy route blocks');
+  const headers = removeGoogleFontCspHosts(source, '_headers', cspHeaderCount);
   fs.writeFileSync(file, headers, 'utf8');
 }
 
