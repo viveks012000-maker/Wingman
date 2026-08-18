@@ -1,0 +1,60 @@
+name: CSS Build Repro Diagnostic - DO NOT MERGE
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/css-build-repro-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  css-build-repro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Rebuild CSS and compare exact artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          cp output.css /tmp/output.css.committed
+          before_hash=$(sha256sum /tmp/output.css.committed | awk '{print $1}')
+          before_bytes=$(wc -c < /tmp/output.css.committed | tr -d ' ')
+          style_bytes=$(wc -c < style.css | tr -d ' ')
+          echo "COMMITTED_OUTPUT_CSS_HASH=$before_hash"
+          echo "COMMITTED_OUTPUT_CSS_BYTES=$before_bytes"
+          echo "STYLE_CSS_BYTES=$style_bytes"
+          echo "COMMITTED_HAS_TERMS_SHAKE=$(grep -Fc '.terms-shake-pulse' /tmp/output.css.committed || true)"
+          echo "COMMITTED_HAS_CUSTOM_SCROLLBAR=$(grep -Fc '.custom-scrollbar::-webkit-scrollbar' /tmp/output.css.committed || true)"
+
+          npm run build:css
+
+          after_hash=$(sha256sum output.css | awk '{print $1}')
+          after_bytes=$(wc -c < output.css | tr -d ' ')
+          echo "REBUILT_OUTPUT_CSS_HASH=$after_hash"
+          echo "REBUILT_OUTPUT_CSS_BYTES=$after_bytes"
+          echo "REBUILT_HAS_TERMS_SHAKE=$(grep -Fc '.terms-shake-pulse' output.css || true)"
+          echo "REBUILT_HAS_CUSTOM_SCROLLBAR=$(grep -Fc '.custom-scrollbar::-webkit-scrollbar' output.css || true)"
+
+          if cmp -s /tmp/output.css.committed output.css; then
+            echo 'CSS_BUILD_REPRODUCIBLE=yes'
+          else
+            echo 'CSS_BUILD_REPRODUCIBLE=no'
+            echo '===== OUTPUT.CSS DIFF STAT ====='
+            git diff --stat -- output.css
+            echo '===== OUTPUT.CSS NUMSTAT ====='
+            git diff --numstat -- output.css
+          fi
+
+          if [ "$before_hash" = "$after_hash" ]; then
+            echo 'CSS_HASH_IDENTICAL=yes'
+          else
+            echo 'CSS_HASH_IDENTICAL=no'
+          fi
