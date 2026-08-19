@@ -1,0 +1,175 @@
+name: HEIC libheif 1.23.1 Diagnostic — DO NOT MERGE
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/heic-libheif-1231-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  patched-libheif-csp-browser-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install application/browser dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool pkg-config cmake make brotli
+
+      - name: Build heic-to CSP bundle with patched libheif 1.23.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/heic-1231
+          cd tmp/heic-1231
+
+          git clone https://github.com/emscripten-core/emsdk.git
+          cd emsdk
+          git checkout --detach e3a0604c3d130d6ab2c40e14a1861accd939a255
+          ./emsdk install 6.0.7
+          ./emsdk activate 6.0.7
+          source ./emsdk_env.sh
+          emcc --version | head -n 1
+          cd ..
+
+          git clone --depth 1 --branch v1.23.1 https://github.com/strukturag/libheif.git
+          git clone https://github.com/hoppergee/heic-to.git
+          cd heic-to
+          git checkout --detach f37af866f9aa6212ddc84b67a279c9f2386aba4f
+          npm ci
+          cd ..
+
+          mkdir libheif-build
+          cd libheif-build
+          LIBDE265_VERSION=1.0.16 USE_WASM=0 USE_UNSAFE_EVAL=0 USE_TYPESCRIPT=0 ../../libheif/build-emscripten.sh ../../libheif
+          test -s libheif.js
+          cp libheif.js ../heic-to/src/lib/libheif-without-unsafe-eval.js
+          cd ../heic-to
+          npm run build
+          test -s dist/csp/heic-to.js
+
+          echo 'HEIC_CANDIDATE_LIBHEIF=1.23.1'
+          echo 'HEIC_CANDIDATE_HEIC_TO_BASE=1.5.2+patched-libheif-1.23.1'
+          echo 'HEIC_CANDIDATE_EMSDK=6.0.7'
+          echo 'HEIC_CANDIDATE_LIBDE265=1.0.16'
+          echo "HEIC_CANDIDATE_RAW_BYTES=$(wc -c < dist/csp/heic-to.js)"
+          gzip -9 -c dist/csp/heic-to.js > /tmp/heic-to-1231.js.gz
+          brotli -q 11 -c dist/csp/heic-to.js > /tmp/heic-to-1231.js.br
+          echo "HEIC_CANDIDATE_GZIP_BYTES=$(wc -c < /tmp/heic-to-1231.js.gz)"
+          echo "HEIC_CANDIDATE_BROTLI_BYTES=$(wc -c < /tmp/heic-to-1231.js.br)"
+          sha256sum dist/csp/heic-to.js | sed 's/^/HEIC_CANDIDATE_SHA256=/'
+
+          echo '--- dynamic-code-generation scan ---'
+          if grep -nE '(^|[^[:alnum:]_])(eval[[:space:]]*\(|new[[:space:]]+Function[[:space:]]*\()' dist/csp/heic-to.js; then
+            echo 'HEIC_CANDIDATE_UNSAFE_EVAL_MARKER=FOUND'
+            exit 1
+          else
+            echo 'HEIC_CANDIDATE_UNSAFE_EVAL_MARKER=NONE'
+          fi
+
+      - name: Strict-CSP real HEIC browser conversion
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/heic-browser/candidate
+          cp tmp/heic-1231/heic-to/dist/csp/heic-to.js tmp/heic-browser/candidate/heic-to.js
+          curl --fail --location --silent --show-error \
+            https://raw.githubusercontent.com/tigranbs/test-heic-images/bc08e3edd433d4375039f95b5840fe71a691e041/image1.heic \
+            -o tmp/heic-browser/sample.heic
+          test "$(wc -c < tmp/heic-browser/sample.heic)" -gt 1000
+          sha256sum tmp/heic-browser/sample.heic | sed 's/^/HEIC_FIXTURE_SHA256=/'
+
+          cat > tmp/heic-browser/index.html <<'EOF'
+          <!doctype html>
+          <html><head>
+          <meta charset="utf-8">
+          <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; script-src-elem 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'">
+          </head><body><div id="status">starting</div><script type="module" src="/tmp/heic-browser/test.mjs"></script></body></html>
+          EOF
+
+          cat > tmp/heic-browser/test.mjs <<'EOF'
+          import { heicTo } from '/tmp/heic-browser/candidate/heic-to.js';
+          window.__heicDiagnostic = { done: false, ok: false };
+          try {
+            const response = await fetch('/tmp/heic-browser/sample.heic');
+            if (!response.ok) throw new Error('fixture fetch failed ' + response.status);
+            const input = await response.blob();
+            const start = performance.now();
+            const converted = await heicTo({ blob: input, type: 'image/jpeg', quality: 0.82 });
+            const conversionMs = performance.now() - start;
+            if (!(converted instanceof Blob)) throw new Error('conversion did not return Blob');
+            if (converted.type !== 'image/jpeg') throw new Error('unexpected output MIME ' + converted.type);
+            if (converted.size < 1000) throw new Error('converted JPEG unexpectedly small: ' + converted.size);
+            const url = URL.createObjectURL(converted);
+            const img = new Image();
+            img.src = url;
+            await img.decode();
+            const result = {
+              done: true,
+              ok: true,
+              bytes: converted.size,
+              width: img.naturalWidth,
+              height: img.naturalHeight,
+              mime: converted.type,
+              conversionMs: Number(conversionMs.toFixed(2))
+            };
+            URL.revokeObjectURL(url);
+            window.__heicDiagnostic = result;
+            document.getElementById('status').textContent = 'PASS';
+          } catch (error) {
+            window.__heicDiagnostic = { done: true, ok: false, error: String(error && error.stack || error) };
+            document.getElementById('status').textContent = 'FAIL';
+          }
+          EOF
+
+          python3 -m http.server 4173 >/tmp/heic-1231-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+
+          node - <<'NODE'
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage();
+            const errors = [];
+            page.on('pageerror', e => errors.push('pageerror:' + e.message));
+            page.on('console', m => { if (m.type() === 'error') errors.push('console:' + m.text()); });
+            const resp = await page.goto('http://127.0.0.1:4173/tmp/heic-browser/index.html', { waitUntil: 'load' });
+            if (!resp || resp.status() !== 200) throw new Error('diagnostic page failed to load');
+            await page.waitForFunction(() => window.__heicDiagnostic && window.__heicDiagnostic.done, null, { timeout: 60000 });
+            const result = await page.evaluate(() => window.__heicDiagnostic);
+            console.log('HEIC_1231_BROWSER_RESULT=' + JSON.stringify(result));
+            console.log('HEIC_1231_BROWSER_ERRORS=' + JSON.stringify(errors));
+            if (!result.ok) throw new Error('HEIC conversion failed: ' + result.error);
+            if (errors.length) throw new Error('browser errors under strict CSP: ' + errors.join(' | '));
+            await browser.close();
+          })().catch(err => { console.error(err); process.exit(1); });
+          NODE
+          echo 'HEIC_1231_CSP_DIAGNOSTIC=PASS'
+
+      - name: License and provenance inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f tmp/heic-1231/heic-to/LICENSE
+          test -f tmp/heic-1231/libheif/COPYING
+          echo 'HEIC_PROVENANCE_HEIC_TO_COMMIT=f37af866f9aa6212ddc84b67a279c9f2386aba4f'
+          echo 'HEIC_PROVENANCE_LIBHEIF_TAG=v1.23.1'
+          echo 'HEIC_PROVENANCE_EMSDK_COMMIT=e3a0604c3d130d6ab2c40e14a1861accd939a255'
+          echo 'HEIC_PROVENANCE_FIXTURE_COMMIT=bc08e3edd433d4375039f95b5840fe71a691e041'
+          echo 'HEIC_LICENSE_HEIC_TO=LGPL-3.0'
+          echo 'HEIC_LICENSE_LIBHEIF=LGPL-3.0'
