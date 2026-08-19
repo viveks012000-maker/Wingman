@@ -153,7 +153,7 @@
     <script>
         if (window.location.protocol === 'file:') {
             document.addEventListener('DOMContentLoaded', function () {
-                var b = document.getElementById('fileProtocolWarningBanner');
+                const b = document.getElementById('fileProtocolWarningBanner');
                 if (b) b.classList.remove('hidden');
             });
         }
@@ -1487,7 +1487,7 @@
         function $(id) { return document.getElementById(id); }
 
         window.openInterstitialModal = function () {
-            var m = $("interstitialModal"), c = $("interstitialCard");
+            const m = $("interstitialModal"), c = $("interstitialCard");
             if (!m || !c) return;
             m.style.display = "flex";
             m.classList.remove("opacity-0", "pointer-events-none", "hidden");
@@ -1497,7 +1497,7 @@
         };
 
         window.closeInterstitialModal = function () {
-            var m = $("interstitialModal"), c = $("interstitialCard");
+            const m = $("interstitialModal"), c = $("interstitialCard");
             if (!m || !c) return;
             c.classList.remove("scale-100");
             c.classList.add("scale-95");
@@ -1508,9 +1508,9 @@
 
         window.handleEnterDashboard = async function (e) {
             if (e) e.preventDefault();
-            var cb = $("interstitialCheckbox");
+            const cb = $("interstitialCheckbox");
             if (!cb || !cb.checked) {
-                var container = $("termsCheckboxContainer");
+                const container = $("termsCheckboxContainer");
                 if (container) {
                     container.classList.add("ring-2", "ring-rose-500");
                     setTimeout(function() { container.classList.remove("ring-2", "ring-rose-500"); }, 1500);
@@ -1520,7 +1520,7 @@
                 }
                 return;
             }
-            var isAuth = sessionStorage.getItem("wingman_authenticated") === "true" || localStorage.getItem("wingman_user_authenticated") === "true";
+            const isAuth = sessionStorage.getItem("wingman_authenticated") === "true" || localStorage.getItem("wingman_user_authenticated") === "true";
             if (!isAuth) {
                 if (typeof window.closeInterstitialModal === "function") window.closeInterstitialModal();
                 if (typeof window.openAuthRequiredModal === "function") window.openAuthRequiredModal();
@@ -1528,13 +1528,13 @@
             }
 
             try {
-                var authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
-                var res = await fetch((window.getApiBase ? window.getApiBase() : '') + '/api/consent', {
+                const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
+                const res = await fetch((window.getApiBase ? window.getApiBase() : '') + '/api/consent', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', ...authHeaders },
                     body: JSON.stringify({ age18Plus: true, aiProcessingConsent: true })
                 });
-                var data = await res.json();
+                const data = await res.json();
                 if (!res.ok || !data.success || !data.consentRecorded) {
                     throw new Error(data.error || "Failed to record legal consent.");
                 }
@@ -1550,7 +1550,7 @@
         window.openAuthRequiredModal = function (e) {
             if (e && typeof e.preventDefault === 'function') e.preventDefault();
             if (typeof window.closeInterstitialModal === "function") window.closeInterstitialModal();
-            var m = $("authRequiredModal"), c = $("authRequiredCard");
+            const m = $("authRequiredModal"), c = $("authRequiredCard");
             if (!m || !c) return;
             m.style.display = "flex";
             m.classList.remove("opacity-0", "pointer-events-none", "hidden");
@@ -1561,7 +1561,7 @@
 
         window.closeAuthRequiredModal = function (e) {
             if (e && typeof e.preventDefault === 'function') e.preventDefault();
-            var m = $("authRequiredModal"), c = $("authRequiredCard");
+            const m = $("authRequiredModal"), c = $("authRequiredCard");
             if (c) {
                 c.classList.remove("scale-100");
                 c.classList.add("scale-95");
@@ -1580,12 +1580,12 @@
 
         window.toggleAuthMode = function () {
             window.isSignupMode = !window.isSignupMode;
-            var submitBtn = $("authSubmitBtn");
-            var toggleBtn = $("authToggleModeBtn");
-            var title = $("authModalTitle");
-            var desc = $("authModalDesc");
-            var errBox = $("authErrorMessage");
-            var forgotBtn = $("forgotPasswordBtn");
+            const submitBtn = $("authSubmitBtn");
+            const toggleBtn = $("authToggleModeBtn");
+            const title = $("authModalTitle");
+            const desc = $("authModalDesc");
+            const errBox = $("authErrorMessage");
+            const forgotBtn = $("forgotPasswordBtn");
 
             if (errBox) errBox.classList.add("hidden");
 
@@ -1607,11 +1607,11 @@
         };
 
         window.togglePasswordVisibility = function () {
-            var pwInput = $("authPasswordInput");
-            var toggleBtn = $("togglePasswordBtn");
+            const pwInput = $("authPasswordInput");
+            const toggleBtn = $("togglePasswordBtn");
             if (!pwInput || !toggleBtn) return;
 
-            var iconEl = toggleBtn.querySelector(".material-symbols-outlined");
+            const iconEl = toggleBtn.querySelector(".material-symbols-outlined");
             if (pwInput.type === "password") {
                 pwInput.type = "text";
                 if (iconEl) iconEl.textContent = "visibility";
@@ -1622,14 +1622,14 @@
         };
 
         window.showForgotPasswordView = function () {
-            var form = $("supabaseAuthForm");
-            var forgotView = $("forgotPasswordView");
-            var toggleContainer = $("authToggleContainer");
-            var title = $("authModalTitle");
-            var desc = $("authModalDesc");
-            var errBox = $("authErrorMessage");
-            var resetErr = $("resetErrorMessage");
-            var resetSuccess = $("resetSuccessMessage");
+            const form = $("supabaseAuthForm");
+            const forgotView = $("forgotPasswordView");
+            const toggleContainer = $("authToggleContainer");
+            const title = $("authModalTitle");
+            const desc = $("authModalDesc");
+            const errBox = $("authErrorMessage");
+            const resetErr = $("resetErrorMessage");
+            const resetSuccess = $("resetSuccessMessage");
 
             if (form) form.classList.add("hidden");
             if (forgotView) forgotView.classList.remove("hidden");
@@ -1640,19 +1640,19 @@
             if (resetErr) resetErr.classList.add("hidden");
             if (resetSuccess) resetSuccess.classList.add("hidden");
 
-            var emailInput = $("authEmailInput");
-            var resetEmailInput = $("resetEmailInput");
+            const emailInput = $("authEmailInput");
+            const resetEmailInput = $("resetEmailInput");
             if (emailInput && resetEmailInput && emailInput.value) {
                 resetEmailInput.value = emailInput.value;
             }
         };
 
         window.hideForgotPasswordView = function () {
-            var form = $("supabaseAuthForm");
-            var forgotView = $("forgotPasswordView");
-            var toggleContainer = $("authToggleContainer");
-            var title = $("authModalTitle");
-            var desc = $("authModalDesc");
+            const form = $("supabaseAuthForm");
+            const forgotView = $("forgotPasswordView");
+            const toggleContainer = $("authToggleContainer");
+            const title = $("authModalTitle");
+            const desc = $("authModalDesc");
 
             if (form) form.classList.remove("hidden");
             if (forgotView) forgotView.classList.add("hidden");
@@ -1668,11 +1668,11 @@
         };
 
         window.handleResetPassword = async function () {
-            var resetEmailInput = $("resetEmailInput");
-            var resetErr = $("resetErrorMessage");
-            var resetSuccess = $("resetSuccessMessage");
-            var resetBtn = $("resetPasswordSubmitBtn");
-            var email = (resetEmailInput && resetEmailInput.value) ? resetEmailInput.value.trim() : "";
+            const resetEmailInput = $("resetEmailInput");
+            const resetErr = $("resetErrorMessage");
+            const resetSuccess = $("resetSuccessMessage");
+            const resetBtn = $("resetPasswordSubmitBtn");
+            const email = (resetEmailInput && resetEmailInput.value) ? resetEmailInput.value.trim() : "";
 
             if (resetErr) resetErr.classList.add("hidden");
             if (resetSuccess) resetSuccess.classList.add("hidden");
@@ -1693,10 +1693,10 @@
                 resetBtn.classList.add("opacity-60", "cursor-not-allowed");
             }
 
-            var isSuccess = false;
+            let isSuccess = false;
             try {
                 if (typeof window.resetPasswordForEmail === "function") {
-                    var result = await window.resetPasswordForEmail(email);
+                    const result = await window.resetPasswordForEmail(email);
                     if (result && result.success) {
                         isSuccess = true;
                         if (resetSuccess) {
@@ -1725,7 +1725,7 @@
                 }
             } finally {
                 if (isSuccess && resetBtn) {
-                    var countdown = 30;
+                    let countdown = 30;
                     resetBtn.disabled = true;
                     resetBtn.classList.add("opacity-60", "cursor-not-allowed");
                     resetBtn.textContent = "Resend link in " + countdown + "s";
@@ -1760,11 +1760,11 @@
 
         window.handleSupabaseAuthSubmit = async function (e) {
             if (e && typeof e.preventDefault === 'function') e.preventDefault();
-            var emailInput = $("authEmailInput");
-            var passwordInput = $("authPasswordInput");
-            var email = (emailInput && emailInput.value) ? emailInput.value.trim() : "";
-            var password = (passwordInput && passwordInput.value) ? passwordInput.value : "";
-            var errBox = $("authErrorMessage");
+            const emailInput = $("authEmailInput");
+            const passwordInput = $("authPasswordInput");
+            const email = (emailInput && emailInput.value) ? emailInput.value.trim() : "";
+            const password = (passwordInput && passwordInput.value) ? passwordInput.value : "";
+            const errBox = $("authErrorMessage");
 
             if (errBox) errBox.classList.add("hidden");
 
@@ -1778,8 +1778,8 @@
                 return;
             }
 
-            var websiteHpInput = $("website_hp");
-            var websiteHp = (websiteHpInput && websiteHpInput.value) ? websiteHpInput.value.trim() : "";
+            const websiteHpInput = $("website_hp");
+            const websiteHp = (websiteHpInput && websiteHpInput.value) ? websiteHpInput.value.trim() : "";
 
             // Domain 5: Bot Defense Honeypot Check
             if (websiteHp.length > 0) {
@@ -1799,7 +1799,7 @@
                 return;
             }
 
-            var authResult = { success: false, error: 'Authentication service unavailable.' };
+            let authResult = { success: false, error: 'Authentication service unavailable.' };
 
             if (typeof window.signUpUser === 'function' && window.isSignupMode) {
                 authResult = await window.signUpUser(email, password);
@@ -1824,7 +1824,7 @@
             // Close modal and navigate to app.html dashboard
             window.closeAuthRequiredModal();
             if (typeof window.showToast === "function") {
-                var actionText = window.isSignupMode ? "Account created as " : "Signed in as ";
+                const actionText = window.isSignupMode ? "Account created as " : "Signed in as ";
                 window.showToast(actionText + email + " 🚀", "success");
             }
 
@@ -1833,7 +1833,7 @@
 
         window.handlePricingPurchase = function (e, targetUrl) {
             if (e) e.preventDefault();
-            var isAuthenticated = sessionStorage.getItem("wingman_authenticated") === "true" || localStorage.getItem("wingman_user_authenticated") === "true";
+            const isAuthenticated = sessionStorage.getItem("wingman_authenticated") === "true" || localStorage.getItem("wingman_user_authenticated") === "true";
             if (isAuthenticated) {
                 window.location.href = targetUrl;
             } else {
@@ -1853,14 +1853,14 @@
 
         document.addEventListener("DOMContentLoaded", function () {
             // Click listener for terms and privacy links in modal
-            var termsLink = document.getElementById("modalTermsLink");
+            const termsLink = document.getElementById("modalTermsLink");
             if (termsLink) {
                 termsLink.addEventListener("click", function (e) {
                     e.preventDefault();
                     window.open("terms.html", "_blank");
                 });
             }
-            var privacyLink = document.getElementById("modalPrivacyLink");
+            const privacyLink = document.getElementById("modalPrivacyLink");
             if (privacyLink) {
                 privacyLink.addEventListener("click", function (e) {
                     e.preventDefault();
@@ -1868,8 +1868,8 @@
                 });
             }
 
-            var cb = $("interstitialCheckbox");
-            var btn = $("enterDashboardBtn");
+            const cb = $("interstitialCheckbox");
+            const btn = $("enterDashboardBtn");
             if (cb && btn) {
                 btn.disabled = false;
                 btn.classList.remove("opacity-40", "cursor-not-allowed");
@@ -1888,8 +1888,8 @@
             // Intercept dashboard workspace navigation links
             document.querySelectorAll('a[href^="app.html"]').forEach(function (link) {
                 link.addEventListener("click", function (e) {
-                    var isAuth = sessionStorage.getItem("wingman_authenticated") === "true" || localStorage.getItem("wingman_user_authenticated") === "true";
-                    var agreed = sessionStorage.getItem("wingman_login_agreed") === "true";
+                    const isAuth = sessionStorage.getItem("wingman_authenticated") === "true" || localStorage.getItem("wingman_user_authenticated") === "true";
+                    const agreed = sessionStorage.getItem("wingman_login_agreed") === "true";
                     if (!isAuth && !agreed) {
                         e.preventDefault();
                         window.openInterstitialModal();
@@ -1899,11 +1899,11 @@
 
             // Intersection Observer scroll reveal setup
             if (typeof IntersectionObserver !== "undefined") {
-                var observerOptions = {
+                const observerOptions = {
                     threshold: 0.1,
                     rootMargin: "0px 0px -50px 0px"
                 };
-                var revealObserver = new IntersectionObserver(function (entries, observer) {
+                const revealObserver = new IntersectionObserver(function (entries, observer) {
                     entries.forEach(function (entry) {
                         if (entry.isIntersecting) {
                             entry.target.classList.add("reveal-active");
@@ -2089,17 +2089,17 @@
 
             // Trigger hero layout entry immediately
             setTimeout(function () {
-                var hero = document.getElementById("hero-reveal-container");
+                const hero = document.getElementById("hero-reveal-container");
                 if (hero) hero.classList.add("reveal-active");
             }, 100);
         });
 
         window.runInteractiveDemo = function () {
-            var btn = $("start-demo-btn");
-            var empty = $("demo-empty-state");
-            var loading = $("demo-loading-state");
-            var result = $("demo-result-state");
-            var chatSource = $("demo-chat-source");
+            const btn = $("start-demo-btn");
+            const empty = $("demo-empty-state");
+            const loading = $("demo-loading-state");
+            const result = $("demo-result-state");
+            const chatSource = $("demo-chat-source");
 
             if (!btn || !empty || !loading || !result) return;
 
@@ -2132,8 +2132,8 @@
         };
 
         window.toggleMobileMenu = function () {
-            var menu = document.getElementById("mobileMenu");
-            var icon = document.getElementById("menu-icon");
+            const menu = document.getElementById("mobileMenu");
+            const icon = document.getElementById("menu-icon");
             if (!menu || !icon) return;
             if (menu.classList.contains("opacity-0")) {
                 menu.classList.remove("opacity-0", "pointer-events-none");
@@ -2147,7 +2147,7 @@
 
         window.showToast = function (msg, type, append) {
             try {
-                var container = document.getElementById("toastContainer");
+                let container = document.getElementById("toastContainer");
                 if (!container) {
                     container = document.createElement("div");
                     container.id = "toastContainer";
@@ -2156,13 +2156,13 @@
                 }
                 if (!append) container.innerHTML = "";
 
-                var toast = document.createElement("div");
-                var cls = type === "success" ? "bg-[#062419] border-emerald-500/60 text-emerald-200"
+                const toast = document.createElement("div");
+                const cls = type === "success" ? "bg-[#062419] border-emerald-500/60 text-emerald-200"
                     : type === "warning" ? "bg-[#291b05] border-amber-500/60 text-amber-200"
                     : type === "error" ? "bg-[#290910] border-rose-500/60 text-rose-200"
                     : "bg-[#131124] border-violet-500/50 text-white";
 
-                var icon = type === "success" ? "check_circle" : type === "warning" ? "warning" : type === "error" ? "error" : "info";
+                const icon = type === "success" ? "check_circle" : type === "warning" ? "warning" : type === "error" ? "error" : "info";
                 toast.className = "toast-enter flex items-start gap-2.5 px-4 py-3 rounded-xl shadow-2xl border text-xs font-medium max-w-[340px] pointer-events-auto transition-all cursor-pointer " + cls;
                 toast.innerHTML = '<span class="material-symbols-outlined text-[18px] shrink-0">' + icon + '</span><span class="leading-snug">' + msg + '</span>';
                 toast.onclick = function() { try { toast.remove(); } catch(e) {} };

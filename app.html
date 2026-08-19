@@ -1104,12 +1104,12 @@
     <script>
         if (window.location.protocol === 'file:') {
             document.addEventListener('DOMContentLoaded', function() {
-                var b = document.getElementById('fileProtocolWarningBanner');
+                const b = document.getElementById('fileProtocolWarningBanner');
                 if (b) b.classList.remove('hidden');
             });
         }
         window.openPurchaseModal = window.openPurchaseModal || function() {
-            var modal = document.getElementById('purchaseModal');
+            const modal = document.getElementById('purchaseModal');
             if (modal) modal.classList.remove('hidden');
         };
     </script>
