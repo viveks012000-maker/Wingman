@@ -1,0 +1,72 @@
+name: Generate pinned HEIC runtime
+
+on:
+  push:
+    branches:
+      - fix/heic-csp-replacement
+    paths:
+      - '.github/workflows/generate-heic-runtime.yml'
+      - 'scripts/build-heic-browser-runtime.sh'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: generate-heic-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Verify runner build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          for tool in cmake make curl git python3 sha256sum; do
+            command -v "$tool" >/dev/null
+          done
+
+      - name: Build exact pinned browser runtime and source materials
+        shell: bash
+        run: bash scripts/build-heic-browser-runtime.sh
+
+      - name: Verify generated runtime contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s vendor/heic-runtime/heic-to-csp.js
+          test -s vendor/heic-runtime/NOTICE.txt
+          test -s vendor/heic-runtime/SOURCE.md
+          test -s vendor/heic-runtime/LICENSE-heic-to.txt
+          test -s vendor/heic-runtime/LICENSE-libheif.txt
+          test -s vendor/heic-runtime/LICENSE-libde265.txt
+          test -s vendor/heic-runtime/source/heic-to-worker.js
+          test -s vendor/heic-runtime/source/libheif-build-emscripten.sh
+          test "$(sha256sum vendor/heic-runtime/heic-to-csp.js | awk '{print $1}')" = '500a54dcdb7873c849548fa6ab4f95f9b2c93c2c7808f57f271da7ca84d278a4'
+          test "$(wc -c < vendor/heic-runtime/heic-to-csp.js | tr -d ' ')" = '1115318'
+          ! grep -Eq '(^|[^[:alnum:]_])(eval[[:space:]]*\(|new[[:space:]]+Function[[:space:]]*\()' vendor/heic-runtime/heic-to-csp.js
+
+      - name: Commit generated runtime to this branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add vendor/heic-runtime
+          if git diff --cached --quiet; then
+            echo 'Generated runtime already matches the committed bytes.'
+            exit 0
+          fi
+          git commit -m 'vendor: add patched strict-CSP HEIC runtime'
+          git push origin HEAD:fix/heic-csp-replacement
