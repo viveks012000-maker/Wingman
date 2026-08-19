@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - fix/heic-csp-replacement
-    paths:
-      - '.github/workflows/generate-heic-runtime.yml'
-      - 'scripts/build-heic-browser-runtime.sh'
   pull_request:
     branches:
       - main
