@@ -58,22 +58,36 @@ jobs:
 
           # libheif v1.23.1 compiles its C++ archive with em++ but its helper's
           # final browser-bundle link is hard-coded to emcc. Emscripten 6.0.7
-          # rejects that final C++ link with unresolved libc++ symbols. Patch
-          # exactly that one final driver invocation inside this disposable CI
+          # rejects that final C++ link with unresolved libc++ symbols. Also,
+          # Emscripten's default ENVIRONMENT includes Node, which emits node:fs
+          # and node:crypto branches that a browser-only esbuild must not carry.
+          # Patch exactly those two final-link details in this disposable CI
           # workspace; upstream source and production files remain unchanged.
           python3 - <<'PY'
           from pathlib import Path
           path = Path('libheif/build-emscripten.sh')
           text = path.read_text()
-          old = 'emcc -Wl,--whole-archive "$LIBHEIFA"'
-          new = 'em++ -Wl,--whole-archive "$LIBHEIFA"'
-          count = text.count(old)
-          if count != 1:
-              raise SystemExit(f'expected exactly one final emcc linker invocation, found {count}')
-          path.write_text(text.replace(old, new, 1))
+
+          old_driver = 'emcc -Wl,--whole-archive "$LIBHEIFA"'
+          new_driver = 'em++ -Wl,--whole-archive "$LIBHEIFA"'
+          driver_count = text.count(old_driver)
+          if driver_count != 1:
+              raise SystemExit(f'expected exactly one final emcc linker invocation, found {driver_count}')
+          text = text.replace(old_driver, new_driver, 1)
+
+          old_modularize = '    -sMODULARIZE \\\n'
+          new_modularize = '    -sMODULARIZE \\\n    -sENVIRONMENT=web,worker \\\n'
+          environment_count = text.count(old_modularize)
+          if environment_count != 1:
+              raise SystemExit(f'expected exactly one MODULARIZE final-link flag, found {environment_count}')
+          text = text.replace(old_modularize, new_modularize, 1)
+
+          path.write_text(text)
           PY
           test "$(grep -c '^em++ -Wl,--whole-archive' libheif/build-emscripten.sh)" -eq 1
+          test "$(grep -c -- '-sENVIRONMENT=web,worker' libheif/build-emscripten.sh)" -eq 1
           echo 'HEIC_LIBHEIF_FINAL_LINK_DRIVER=em++'
+          echo 'HEIC_LIBHEIF_ENVIRONMENT=web,worker'
 
           git clone https://github.com/strukturag/libde265.git libde265-src
           cd libde265-src
@@ -116,6 +130,12 @@ jobs:
           cd libheif-build
           LIBDE265_VERSION=1.1.1 USE_WASM=0 USE_UNSAFE_EVAL=0 USE_TYPESCRIPT=0 ../libheif/build-emscripten.sh ../libheif
           test -s libheif.js
+          if grep -Eq 'node:(fs|crypto)' libheif.js; then
+            echo 'HEIC_LIBHEIF_NODE_BUILTINS=FOUND'
+            exit 1
+          else
+            echo 'HEIC_LIBHEIF_NODE_BUILTINS=NONE'
+          fi
           cp libheif.js ../heic-to/src/lib/libheif-without-unsafe-eval.js
           cd ../heic-to
           npm run build
