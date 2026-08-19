@@ -54,7 +54,7 @@ jobs:
           set -euo pipefail
           test -s vendor/heic-runtime/heic-to-csp.js
           test -s vendor/heic-runtime/NOTICE.txt
-          test -s vendor/heic-runtime/SOURCE.md
+          test -s vendor/heic-runtime/SOURCE.txt
           test -s vendor/heic-runtime/LICENSE-heic-to.txt
           test -s vendor/heic-runtime/LICENSE-libheif.txt
           test -s vendor/heic-runtime/LICENSE-libde265.txt
