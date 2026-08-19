@@ -55,7 +55,7 @@ jobs:
 
           mkdir libheif-build
           cd libheif-build
-          LIBDE265_VERSION=1.0.16 USE_WASM=0 USE_UNSAFE_EVAL=0 USE_TYPESCRIPT=0 ../../libheif/build-emscripten.sh ../../libheif
+          LIBDE265_VERSION=1.0.16 USE_WASM=0 USE_UNSAFE_EVAL=0 USE_TYPESCRIPT=0 ../libheif/build-emscripten.sh ../libheif
           test -s libheif.js
           cp libheif.js ../heic-to/src/lib/libheif-without-unsafe-eval.js
           cd ../heic-to
