@@ -10,8 +10,8 @@ console.log('🧪 RUNNING EXACTLY-ONCE 50-CREDIT & MISSING PROFILE TESTS');
 console.log('============================================================\n');
 
 // 1. Static Invariant Verification
-const serverFile = fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8');
-const migrationSql = fs.readFileSync(path.join(__dirname, '../migrations/002_atomic_credits_and_transactions.sql'), 'utf8');
+const serverFile = fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8').replace(/\r\n/g, '\n');
+const migrationSql = fs.readFileSync(path.join(__dirname, '../migrations/002_atomic_credits_and_transactions.sql'), 'utf8').replace(/\r\n/g, '\n');
 
 // Ensure server.js does NOT contain missing profile 50 credit insertion in getUserCreditsDB
 assert.strictEqual(

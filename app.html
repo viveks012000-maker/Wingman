@@ -10,8 +10,9 @@
     <title>MyWingman - Dashboard Workspace</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦅</text></svg>"/>
     <meta name="description" content="MyWingman Dashboard Tool: Upload chat screenshots for instant reply breakdown, icebreaker generation, and conversation optimization."/>
+    <meta name="robots" content="noindex, nofollow, noarchive"/>
     <!-- Content Security Policy Meta Tag -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co http://localhost:* ws://localhost:*; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.supabase.co; script-src-elem 'self' 'unsafe-inline' https://*.supabase.co; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co http://localhost:* ws://localhost:* https://aicredits.in; worker-src 'self' blob:;"/>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co http://localhost:* ws://localhost:*; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.supabase.co; script-src-elem 'self' 'unsafe-inline' https://*.supabase.co; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co http://localhost:* ws://localhost:* https://aicredits.in https://wingman-production-c6ce.up.railway.app; worker-src 'self' blob:;"/>
     <!-- Compiled Static Tailwind CSS -->
     <link rel="stylesheet" href="output.css">
     <!-- Cropper.js for Smooth Flexible Image Cropping - now local -->
@@ -510,7 +511,7 @@
         #analyzeEmptyState *,
         #icebreakEmptyState *,
         #optimizeEmptyState * {
-            color: rgba(156, 163, 175, 0.4) !important;
+            color: rgba(156, 163, 175, 0.8) !important;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
         }
 
@@ -704,7 +705,7 @@
             }
             .chatbox-footer input,
             #simulator-chat-input {
-                font-size: 15px !important;
+                font-size: 16px !important;
                 padding: 10px 12px !important;
             }
 
@@ -1165,7 +1166,7 @@
             <div class="flex items-center justify-between p-3 rounded-xl bg-violet-950/40 border border-violet-500/30 hover:border-violet-500/60 transition-all cursor-pointer shadow-lg" onclick="window.openPurchaseModal()" title="Buy Credits">
                 <div class="flex items-center gap-2">
                     <span class="material-symbols-outlined text-amber-400 text-[20px]">bolt</span>
-                    <span class="font-label text-xs text-white font-semibold" id="desktopCreditCount">0 Credits</span>
+                    <span class="font-label text-xs text-white font-semibold" id="desktopCreditCount">Credits —</span>
                 </div>
                 <button type="button" id="add-credits-btn" class="bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs px-3 py-1 rounded-lg transition-transform active:scale-95 shadow-md" onclick="window.openPurchaseModal()">
                     + Add
@@ -1232,7 +1233,7 @@
             <!-- Mobile Credit Badge Trigger with + Add Button -->
             <div class="flex items-center gap-1 bg-neutral-900/90 hover:bg-neutral-800/90 rounded-full pl-2 pr-1 py-0.5 border border-violet-500/40 cursor-pointer transition-all active:scale-95 shadow-md shrink-0" onclick="window.openPurchaseModal()" title="Buy Credits">
                 <span class="material-symbols-outlined text-amber-400 text-[14px] shrink-0">bolt</span>
-                <span class="font-label text-[10px] sm:text-xs text-white font-extrabold tracking-tight whitespace-nowrap" id="mobileCreditCount">0 Credits</span>
+                <span class="font-label text-[10px] sm:text-xs text-white font-extrabold tracking-tight whitespace-nowrap" id="mobileCreditCount">Credits —</span>
                 <span class="bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-bold text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded-full flex items-center justify-center shadow-sm shrink-0">+ Add</span>
             </div>
 
@@ -1714,7 +1715,7 @@
               <p id="practiceModeSubtitle" class="text-[11px] text-violet-300/80 font-mono mb-3">MODE: OPEN COACHING • Ask for advice, critique texts, or ask dating questions.</p>
 
               <!-- Space-Optimized Smartphone Mockup Container (Expanded Viewport) -->
-              <div class="chatbox-wrapper relative z-10" style="background: rgba(11, 9, 22, 0.95) !important; border: 1px solid rgba(168, 85, 247, 0.4) !important; border-radius: 20px; overflow: visible !important; box-shadow: 0 15px 40px rgba(0,0,0,0.85); backdrop-filter: blur(28px) !important; -webkit-backdrop-filter: blur(28px) !important; width: 100% !important; max-width: 100% !important; flex-grow: 1 !important; min-height: calc(100vh - 210px) !important; display: flex !important; flex-direction: column !important; margin: 0 auto !important; position: relative !important; z-index: 10 !important;">
+              <div class="chatbox-wrapper relative z-10" style="background: rgba(11, 9, 22, 0.95) !important; border: 1px solid rgba(168, 85, 247, 0.4) !important; border-radius: 20px; overflow: visible; box-shadow: 0 15px 40px rgba(0,0,0,0.85); backdrop-filter: blur(28px) !important; -webkit-backdrop-filter: blur(28px) !important; width: 100% !important; max-width: 100% !important; flex-grow: 1 !important; min-height: calc(100vh - 210px); display: flex !important; flex-direction: column !important; margin: 0 auto !important; position: relative !important; z-index: 10 !important;">
                 <div class="gf-profile-header">
                     <div class="gf-header-banner"></div>
                     <div class="gf-profile-info-block">
@@ -1733,7 +1734,7 @@
                         </button>
                     </div>
                 </div>
-                <div id="chatbox-messages-container" style="flex: 1; padding: 22px; padding-bottom: 28px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; background: #090714 !important; opacity: 1 !important; scrollbar-width: thin; scrollbar-color: #2e1a47 #090714;"></div>
+                <div id="chatbox-messages-container" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Practice conversation messages" tabindex="0" style="flex: 1; padding: 22px; padding-bottom: 28px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; background: #090714 !important; opacity: 1 !important; scrollbar-width: thin; scrollbar-color: #2e1a47 #090714;"></div>
                 
                 <!-- Sticky Glassmorphic Floating Input Footer -->
                 <div class="chatbox-footer-sticky-wrapper" style="position: sticky; left: 0; right: 0; width: 100%; z-index: 30; background: rgba(12, 9, 24, 0.92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-top: 1px solid rgba(168, 85, 247, 0.35); box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.7);">
@@ -1741,7 +1742,7 @@
                     <input type="text" id="simulator-chat-input" onkeydown="if(event.key === 'Enter') window.submitChatboxMessage()" placeholder="Type a message to practice your response..." style="flex: 1; background: #07050f; border: 1px solid #2e1a47; border-radius: 12px; padding: 12px 16px; color: #fff; outline: none; font-size: 14px; font-family: sans-serif; transition: all 0.2s ease; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);" onfocus="this.style.borderColor='#a855f7'; this.style.boxShadow='0 0 15px rgba(168,85,247,0.3)';" onblur="this.style.borderColor='#2e1a47'; this.style.boxShadow='inset 0 2px 4px rgba(0,0,0,0.5)';">
                     <button id="chatbox-send-btn" class="chat-utility-btn" onmousedown="event.preventDefault()" onclick="window.submitChatboxMessage()" style="background: linear-gradient(135deg, #a855f7 0%, #6b21a8 100%) !important; border: none !important; color: #fff !important; cursor: pointer; box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4) !important; font-weight: 700 !important; padding: 0 20px !important;">Send</button>
                   </div>
-                  <div id="chatbox-credit-notice" style="display: flex; justify-content: space-between; align-items: center; padding: 2px 16px 8px 16px; font-size: 11px; color: rgba(192, 132, 252, 0.6); font-family: monospace; letter-spacing: 0.5px;">
+                  <div id="chatbox-credit-notice" style="display: flex; justify-content: space-between; align-items: center; padding: 2px 16px 8px 16px; font-size: 11px; color: #c084fc; font-family: monospace; letter-spacing: 0.5px;">
                     <span>Consumes 2 Credits</span>
                     <span id="chatCharCounter">0 / 5,000</span>
                   </div>
@@ -1840,7 +1841,7 @@
                         <span class="text-[11px] text-slate-400">Enforce lowercase and casual spacing</span>
                     </div>
                     <label class="relative inline-flex items-center cursor-pointer select-none">
-                        <input type="checkbox" id="settingLinguisticShorthand" class="sr-only peer" checked>
+                        <input type="checkbox" id="settingLinguisticShorthand" aria-label="Use linguistic shorthand" class="sr-only peer" checked>
                         <div class="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-violet-600"></div>
                     </label>
                 </div>
@@ -1851,7 +1852,7 @@
                         <span class="text-sm font-semibold text-white">Emoji Formatting</span>
                         <span class="text-xs text-violet-400 font-semibold" id="emojiLevelLabel">Minimal (End only)</span>
                     </div>
-                    <input type="range" id="settingEmojiDensity" min="0" max="2" value="1" class="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-violet-500">
+                    <input type="range" id="settingEmojiDensity" aria-label="Emoji density" min="0" max="2" value="1" class="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-violet-500">
                 </div>
 
                 <!-- Toggle: Particle Performance Canvas -->
@@ -1861,7 +1862,7 @@
                         <span class="text-[11px] text-slate-400">Turn off interactive lines to extend battery life</span>
                     </div>
                     <label class="relative inline-flex items-center cursor-pointer select-none">
-                        <input type="checkbox" id="settingPlexusToggle" class="sr-only peer" checked onclick="window.togglePlexusPerformance()">
+                        <input type="checkbox" id="settingPlexusToggle" aria-label="Show background plexus canvas" class="sr-only peer" checked onclick="window.togglePlexusPerformance()">
                         <div class="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-violet-600"></div>
                     </label>
                 </div>
@@ -2093,6 +2094,7 @@
                 </div>
                 <h2 class="font-headline text-xl font-extrabold text-white tracking-tight">Boost Your Credit Balance</h2>
                 <p class="font-body text-[11px] text-slate-300 mt-1 max-w-xs leading-normal">Select a credit pack below to unlock instant AI screenshot analysis, bio optimization &amp; practice coach turns.</p>
+                <p id="purchaseCreditContext" class="hidden mt-2 max-w-sm rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 font-body text-[11px] font-semibold leading-relaxed text-amber-200" role="status" aria-live="polite"></p>
             </div>
 
             <!-- Scrollable Pricing Cards Container -->
@@ -2278,5 +2280,6 @@
 
     <!-- Main Application Bundle -->
     <script src="app.js"></script>
+    <script src="accessibility.js"></script>
 </body>
 </html>

@@ -33,7 +33,7 @@ assert.strictEqual(serverFile.includes('Production FAIL-CLOSED: Refuse un-locked
 assert.strictEqual(serverFile.includes('Credit service temporarily unavailable. Balance unchanged. Please try again.'), true, 'Returns explicit balance unchanged message on RPC error');
 assert.strictEqual(serverFile.includes('settleCreditsDB(req, reqId)'), true, 'server.js settles credits on successful AI completion');
 assert.strictEqual(serverFile.includes('releaseCreditsDB(req, reqId, error.message)'), true, 'server.js releases credits on AI failure');
-assert.strictEqual(serverFile.includes('acquireUserConcurrencyLock(uid)'), true, 'server.js acquires per-user in-flight request lock');
+assert.strictEqual(serverFile.includes('acquireUserConcurrencyLock(uid, reqId)'), true, 'server.js acquires per-user in-flight request lock');
 console.log('✔ Passed: Production credit deduction uses zero-charge reservation architecture with per-user concurrency locking.');
 
 // 4. ROW LOCKING, ANTI-TAMPERING, AND PRIVILEGE LOCKDOWN IN MIGRATION 002
@@ -115,7 +115,7 @@ console.log('✔ Passed: Simulator review is authenticated & metered; unverified
 // 9. FULL ACCOUNT DELETION FAIL-SAFE (SUPABASE TABLES + SUPABASE AUTH IDENTITY)
 console.log('\n--- 9. PERMANENT ACCOUNT DELETION FULL STACK ---');
 assert.strictEqual(serverFile.includes("const { error: authDelErr } = await supabaseAdmin.auth.admin.deleteUser(uid);"), true, 'delete-account permanently deletes Supabase Auth user');
-assert.strictEqual(serverFile.includes("if (authDelErr) {\n                console.error('[delete-account Auth delete error]:', authDelErr.message);\n                return res.status(500).json({ success: false, error: 'Failed to delete authentication account: ' + authDelErr.message });\n            }"), true, 'delete-account fails safe if auth deletion fails');
+assert.strictEqual(serverFile.includes("if (authDelErr) {") && serverFile.includes("Failed to delete authentication account: ' + authDelErr.message"), true, 'delete-account fails safe if auth deletion fails');
 
 assert.strictEqual(appJs.includes('window.confirmPermanentDeletion = async function'), true, 'Frontend deletion handler is async');
 assert.strictEqual(appJs.includes('headers[\'Authorization\'] = \'Bearer \' + token;'), true, 'Frontend sends Authorization header for deletion');

@@ -1,20 +1,73 @@
-const rateLimit = require('express-rate-limit');
+const rateLimitModule = require('express-rate-limit');
+const rateLimit = rateLimitModule.rateLimit || rateLimitModule;
+const { ipKeyGenerator } = rateLimitModule;
+const net = require('net');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
 // VULN-04 FIX: Generate cryptographically strong JWT secret if not provided via .env
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
 
+// Railway's edge provides X-Real-IP as the client address. Trust that header only when the
+// process is actually running inside Railway, validate it as a literal IP, and otherwise fall
+// back to Express/socket identity. Never trust arbitrary X-Forwarded-For chains here.
+function getRateLimitClientIp(req) {
+    const request = req || {};
+    const fallback = (
+        (typeof request.ip === 'string' && request.ip.trim()) ||
+        (request.socket && typeof request.socket.remoteAddress === 'string' && request.socket.remoteAddress.trim()) ||
+        '127.0.0.1'
+    );
+
+    if (!process.env.RAILWAY_ENVIRONMENT) return fallback;
+
+    const rawRealIp = request.headers && request.headers['x-real-ip'];
+    const candidate = Array.isArray(rawRealIp) ? rawRealIp[0] : rawRealIp;
+    if (typeof candidate === 'string') {
+        const normalized = candidate.trim();
+        if (net.isIP(normalized)) return normalized;
+    }
+    return fallback;
+}
+
+function getRateLimitIpKey(req) {
+    const ip = getRateLimitClientIp(req);
+    return typeof ipKeyGenerator === 'function' ? ipKeyGenerator(ip, 56) : ip;
+}
+
+function getApiRateLimitKey(req) {
+    if (req && req.user && (req.user.id || req.user.sub)) {
+        return String(req.user.id || req.user.sub);
+    }
+    return getRateLimitIpKey(req);
+}
+
+// 0. Railway Analyzer Admission Limiter: runs BEFORE expensive auth/body parsing on only the
+// large screenshot routes. It intentionally emits no rate-limit headers because the canonical
+// global/API limiters inside the Wingman application still own response rate-limit metadata.
+const analyzerAdmissionLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 1000,
+    keyGenerator: getRateLimitIpKey,
+    validate: { keyGeneratorIpFallback: false },
+    message: { success: false, error: 'Too many requests from this IP. Please try again after 15 minutes.' },
+    standardHeaders: false,
+    legacyHeaders: false
+});
+
 // 1. Global Rate Limiter: Max 1000 requests per 15 minutes per IP (Skips static HTML & local testing)
 const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 1000,
+    keyGenerator: getRateLimitIpKey,
+    validate: { keyGeneratorIpFallback: false },
     message: { success: false, error: 'Too many requests from this IP. Please try again after 15 minutes.' },
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => {
         const isStaticAsset = !req.path.startsWith('/api/');
-        const isLocalhost = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
+        const clientIp = getRateLimitClientIp(req);
+        const isLocalhost = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === '::ffff:127.0.0.1';
         return isStaticAsset || (process.env.NODE_ENV !== 'production' && isLocalhost);
     }
 });
@@ -23,6 +76,8 @@ const globalLimiter = rateLimit({
 const authLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 10,
+    keyGenerator: getRateLimitIpKey,
+    validate: { keyGeneratorIpFallback: false },
     message: { success: false, error: 'Too many authentication attempts. Please try again after 1 minute.' },
     standardHeaders: true,
     legacyHeaders: false
@@ -32,9 +87,7 @@ const authLimiter = rateLimit({
 const apiLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 30,
-    keyGenerator: (req) => {
-        return (req.user && (req.user.id || req.user.sub)) ? String(req.user.id || req.user.sub) : (req.ip || '127.0.0.1');
-    },
+    keyGenerator: getApiRateLimitKey,
     validate: { keyGeneratorIpFallback: false },
     message: { success: false, error: "You're sending requests too quickly. Please wait a moment and try again." },
     standardHeaders: true,
@@ -146,15 +199,19 @@ const BLOCKED_PATHS = [
     /^\/config\//i,
     /^\/utilities\//i,
     /^\/data\//i,
+    /^\/migrations\//i,
+    /^\/scripts\//i,
     /^\/node_modules\//i,
     /^\/package\.json$/i,
     /^\/package-lock\.json$/i,
+    /^\/netlify\.toml$/i,
     /^\/PROMPT_SYSTEM_MEMORY\.json$/i,
     /^\/\.agents\//i,
     /^\/tests\//i,
     /^\/scratch\//i,
     /^\/.*\.sqlite$/i,
     /^\/.*\.db$/i,
+    /^\/.*\.sql$/i,
     /^\/.*\.ps1$/i,
     /^\/.*\.bat$/i,
     /^\/.*\.vbs$/i,
@@ -237,8 +294,12 @@ function validateCsrfToken(req, res, next) {
 
 module.exports = {
     globalLimiter,
+    analyzerAdmissionLimiter,
     authLimiter,
     apiLimiter,
+    getRateLimitClientIp,
+    getRateLimitIpKey,
+    getApiRateLimitKey,
     authenticateToken,
     optionalAuthenticateToken,
     verifyOwnership,

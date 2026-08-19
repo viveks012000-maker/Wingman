@@ -67,7 +67,7 @@ app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'", "https://*.supabase.co", "http://localhost:*", "ws://localhost:*"],
-            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.supabase.co"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.supabase.co"],
             scriptSrcElem: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.supabase.co"],
             scriptSrcAttr: ["'unsafe-inline'"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
@@ -94,28 +94,45 @@ app.use((req, res, next) => {
 });
 
 // 2. Configure Locked CORS Policy
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
-    : ['https://mywingman.com', 'https://*.pages.dev', 'http://localhost:3000', 'http://localhost:10000', 'http://127.0.0.1:3000', 'http://127.0.0.1:10000'];
+const productionAllowedOrigins = [
+    'https://mywingman.pages.dev'
+];
+const developmentAllowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:10000',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:10000'
+];
+const defaultAllowedOrigins = IS_PROD
+    ? productionAllowedOrigins
+    : [...productionAllowedOrigins, ...developmentAllowedOrigins];
+
+const rawConfiguredAllowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(value => value.trim()).filter(Boolean)
+    : [];
+
+// Production must use explicit HTTPS origins. Ignore wildcard/null/localhost values even if
+// an old environment variable still contains them; this prevents stale deployment settings
+// from silently reopening browser access to arbitrary preview or local origins.
+const configuredAllowedOrigins = rawConfiguredAllowedOrigins.filter(origin => {
+    if (!IS_PROD) return true;
+    if (origin === '*' || origin === 'null' || origin.includes('*')) return false;
+    if (origin === 'https://mywingman.com') return false;
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return false;
+    if (/^https:\/\/[^/]+\.netlify\.app$/i.test(origin)) return false;
+    return /^https:\/\//i.test(origin);
+});
+const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...configuredAllowedOrigins]));
 
 function isOriginAllowed(origin, allowedList) {
-    if (!origin || origin === 'null') return true;
-    if (allowedList.includes('*') || allowedList.includes(origin)) return true;
+    // Requests without an Origin header (health checks, server-to-server clients) are not
+    // browser CORS requests and remain allowed. Opaque browser origins are denied in prod.
+    if (!origin) return true;
+    if (origin === 'null') return !IS_PROD;
+    if (allowedList.includes(origin)) return true;
 
-    for (const item of allowedList) {
-        if (item.includes('*')) {
-            const regexStr = '^' + item.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '[a-zA-Z0-9-]+') + '$';
-            try {
-                if (new RegExp(regexStr).test(origin)) return true;
-            } catch (e) {}
-        }
-    }
-    if (/^https:\/\/[a-zA-Z0-9-]+\.pages\.dev$/.test(origin)) {
-        return true;
-    }
-    if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
-        return true;
-    }
+    // Development may use arbitrary localhost ports for local tooling, but production may not.
+    if (!IS_PROD && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true;
     return false;
 }
 
@@ -127,11 +144,10 @@ app.use(cors({
         if (isOriginAllowed(origin, allowedOrigins)) {
             return callback(null, true);
         }
-        if (!IS_PROD && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
-            return callback(null, true);
-        }
         console.warn(`[SECURITY WARN] Blocked request from unauthorized origin: ${origin}`);
-        callback(new Error('CORS origin not allowed'), false);
+        // CORS is a browser response policy, not an authentication boundary. Returning false
+        // omits ACAO without turning a blocked preflight into an internal-server-error response.
+        return callback(null, false);
     },
     credentials: true
 }));
@@ -158,7 +174,9 @@ app.use((err, req, res, next) => {
 });
 app.use('/api/', verifySupabaseToken);
 app.use('/api/', autoProvisionUser);
-app.use(validateImagePayload);
+// Screenshot payload inspection can scan tens of megabytes of attacker-controlled input.
+// Authenticate these protected routes before running the route-specific validator.
+app.use(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, validateImagePayload);
 
 // 4. Block access to sensitive files, sanitize request bodies & enforce CSRF
 app.use(blockSensitiveFiles);
@@ -354,14 +372,21 @@ function countWords(str) {
 }
 
 // In-flight request concurrency lock per authenticated user (Prevents parallel overlapping AI costs)
-const activeUserAiRequests = new Set();
-function acquireUserConcurrencyLock(userId) {
-    if (!userId || userId === 'guest_user') return true;
-    if (activeUserAiRequests.has(userId)) {
-        return false;
+const activeUserAiRequests = new Map();
+function acquireUserConcurrencyLock(userId, requestId) {
+    if (!userId || userId === 'guest_user') return { acquired: true, duplicate: false };
+    const activeRequestId = activeUserAiRequests.get(userId);
+    if (activeRequestId !== undefined) {
+        return { acquired: false, duplicate: activeRequestId === requestId };
     }
-    activeUserAiRequests.add(userId);
-    return true;
+    activeUserAiRequests.set(userId, requestId);
+    return { acquired: true, duplicate: false };
+}
+function releaseUserConcurrencyLock(userId, requestId) {
+    if (!userId || userId === 'guest_user') return;
+    if (requestId === undefined || activeUserAiRequests.get(userId) === requestId) {
+        activeUserAiRequests.delete(userId);
+    }
 }
 // =========================================================================================
 // SERVER-AUTHORITATIVE CONSENT & 18+ AGE VERIFICATION
@@ -575,7 +600,11 @@ async function settleCreditsDB(req, reqId) {
                 console.error('[settleCreditsDB RPC Error]:', error.message);
                 return { success: false, error: error.message };
             }
-            return { success: true, data };
+            const row = Array.isArray(data) ? data[0] : data;
+            if (!row || row.success !== true || row.settled !== true) {
+                return { success: false, error: (row && row.error_message) || 'Credit settlement did not complete a pending transaction.' };
+            }
+            return { success: true, data: row };
         }
     } catch (e) {
         console.warn('[settleCreditsDB Exception]:', e.message);
@@ -595,16 +624,24 @@ async function releaseCreditsDB(req, reqId, reason = 'ai_failure') {
                 p_request_id: reqId,
                 p_reason: reason || 'ai_failure'
             });
-            if (!rpcErr && rpcRes) {
+            if (rpcErr) {
+                console.error('[releaseCreditsDB RPC Error]:', rpcErr.message);
+                return { success: false, remainingCredits: 0, error: rpcErr.message };
+            }
+            if (rpcRes) {
                 const row = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
+                if (!row || row.success !== true) {
+                    return { success: false, remainingCredits: 0, error: (row && row.error_message) || 'Credit release was rejected.' };
+                }
                 const rem = typeof row.new_balance === 'number' ? row.new_balance : (typeof row.remainingCredits === 'number' ? row.remainingCredits : 0);
                 return { success: true, remainingCredits: rem };
             }
         }
     } catch (e) {
         console.error('[releaseCreditsDB Exception]:', e.message);
+        return { success: false, remainingCredits: 0, error: e.message };
     }
-    return { success: false, remainingCredits: 0 };
+    return { success: false, remainingCredits: 0, error: 'Credit release service returned no response.' };
 }
 
 // Fallback SQLite Deduction Helper
@@ -674,15 +711,34 @@ async function addUserCreditsDB(req, amountCreditsOrInr, tierName = 'purchase', 
         if (!rpcErr && rpcRes) {
             const row = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
             if (row && typeof row === 'object') {
-                const rem = typeof row.new_balance === 'number' ? row.new_balance : (typeof row.remainingCredits === 'number' ? row.remainingCredits : addCredits);
+                if (row.success !== true) {
+                    const rowCode = typeof row.error === 'string' ? row.error.trim() : '';
+                    const rowMessage = typeof row.error_message === 'string' ? row.error_message.trim() : '';
+                    if (rowCode === 'PROFILE_MISSING' || rowMessage === 'PROFILE_MISSING') {
+                        const profileErr = new Error('PROFILE_MISSING');
+                        profileErr.code = 'PROFILE_MISSING';
+                        profileErr.statusCode = 404;
+                        throw profileErr;
+                    }
+                    const rejected = new Error(rowMessage || 'Credit minting request was rejected. No credits were added.');
+                    rejected.statusCode = 503;
+                    throw rejected;
+                }
+                const rem = typeof row.new_balance === 'number' ? row.new_balance : (typeof row.remainingCredits === 'number' ? row.remainingCredits : null);
+                if (typeof rem !== 'number') {
+                    const malformed = new Error('Credit minting service returned an invalid balance. No success was accepted.');
+                    malformed.statusCode = 503;
+                    throw malformed;
+                }
                 return rem / CREDITS_PER_INR;
             }
         }
     } catch (rpcEx) {
+        if (rpcEx && (rpcEx.code === 'PROFILE_MISSING' || rpcEx.statusCode === 404)) throw rpcEx;
         console.warn('[addUserCreditsDB RPC notice]:', rpcEx.message);
     }
 
-    // Fail closed: privileged credit minting may only succeed through the add_credits RPC.
+    // Fail closed: privileged credit minting may only succeed through a semantically successful add_credits RPC.
     const mintErr = new Error('Credit minting service unavailable. No credits were added.');
     mintErr.statusCode = 503;
     throw mintErr;
@@ -969,6 +1025,20 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
     throw lastErr || new Error(`AI API call failed for model ${modelIdentifier}`);
 }
 
+// Machine-readable Screenshot Analyzer provider failure classification.
+// This intentionally exposes only a coarse failure class + pipeline stage, never provider bodies or secrets.
+function getAnalyzerProviderFailureCode(error) {
+    const status = Number(error && error.statusCode);
+    if (error && error.isTimeout) return 'AI_PROVIDER_TIMEOUT';
+    if (error && error.code === 'AI_PROVIDER_CONFIG') return 'AI_PROVIDER_CONFIG';
+    if (status === 401 || status === 403) return 'AI_PROVIDER_AUTH';
+    if (status === 402) return 'AI_PROVIDER_BUDGET';
+    if (status === 429) return 'AI_PROVIDER_RATE_LIMIT';
+    if ([500, 502, 503, 504].includes(status)) return 'AI_PROVIDER_UPSTREAM';
+    if (error && error.code === 'AI_PROVIDER_EMPTY_RESPONSE') return 'AI_PROVIDER_EMPTY_RESPONSE';
+    return 'AI_PROVIDER_FAILURE';
+}
+
 // Strict Screenshot Analyzer provider call: exact AICREDITS endpoint/model/key, no model or key fallback.
 async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, maxTokens = null, timeoutMs = 25000, topP = null) {
     const isVisionStage = stage === 'vision';
@@ -982,7 +1052,10 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
     const baseUrl = 'https://api.aicredits.in/v1';
 
     if (!apiKey) {
-        throw new Error(`Missing required Screenshot Analyzer API key for ${stage} stage.`);
+        const err = new Error(`Missing required Screenshot Analyzer API key for ${stage} stage.`);
+        err.code = 'AI_PROVIDER_CONFIG';
+        err.analyzerStage = stage;
+        throw err;
     }
 
     const payload = { model, messages: messagesArray, temperature };
@@ -1014,28 +1087,156 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
 
         const data = await response.json();
         if (data.error) {
-            throw new Error(`Screenshot Analyzer AI API Error: ${data.error.message || JSON.stringify(data.error)}`);
+            const err = new Error(`Screenshot Analyzer AI API Error: ${data.error.message || JSON.stringify(data.error)}`);
+            const numericStatus = Number(data.error.status || data.error.code);
+            if (Number.isFinite(numericStatus) && numericStatus > 0) err.statusCode = numericStatus;
+            throw err;
         }
         if (!data.choices || data.choices.length === 0) {
-            throw new Error(`Screenshot Analyzer AI API returned no choices for ${model}.`);
+            const err = new Error(`Screenshot Analyzer AI API returned no choices for ${model}.`);
+            err.code = 'AI_PROVIDER_EMPTY_RESPONSE';
+            throw err;
         }
 
         const msg = data.choices[0].message;
         const outputContent = typeof msg === 'string' ? msg : (msg ? (msg.content || msg.reasoning || '') : '');
         if (!outputContent) {
-            throw new Error(`Screenshot Analyzer AI API returned empty content for ${model}.`);
+            const err = new Error(`Screenshot Analyzer AI API returned empty content for ${model}.`);
+            err.code = 'AI_PROVIDER_EMPTY_RESPONSE';
+            throw err;
         }
         return outputContent;
     } catch (err) {
         if (err.name === 'AbortError') {
             const timeoutErr = new Error('Analysis timed out. Please try again.');
             timeoutErr.isTimeout = true;
+            timeoutErr.analyzerStage = stage;
             throw timeoutErr;
         }
+        err.analyzerStage = err.analyzerStage || stage;
         throw err;
     } finally {
         if (timer) clearTimeout(timer);
     }
+}
+
+// Strict Maeve provider path: exact AICredits endpoint/model with bounded transient retry.
+// This keeps Maeve on the proven main text-provider path and never falls back to the vision key.
+function getMaeveProviderFailureCode(error) {
+    const status = Number(error && error.statusCode);
+    if (error && error.isTimeout) return 'AI_PROVIDER_TIMEOUT';
+    if (status === 401 || status === 403) return 'AI_PROVIDER_AUTH';
+    if (status === 402) return 'AI_PROVIDER_BUDGET';
+    if (status === 429) return 'AI_PROVIDER_RATE_LIMIT';
+    if ([500, 502, 503, 504].includes(status)) return 'AI_PROVIDER_UPSTREAM';
+    if (error && error.code === 'AI_PROVIDER_EMPTY_RESPONSE') return 'AI_PROVIDER_EMPTY_RESPONSE';
+    if (error && error.code === 'AI_PROVIDER_CONFIG') return 'AI_PROVIDER_CONFIG';
+    return 'AI_PROVIDER_FAILURE';
+}
+
+async function queryMaeveProvider(messagesArray, temperature = 0.7, maxTokens = 120, timeoutMs = 25000) {
+    const keysToTry = [...new Set([
+        process.env.AICREDITS_API_KEY_GENERAL,
+        process.env.AICREDITS_API_KEY
+    ].filter(Boolean))];
+    const model = 'qwen/qwen3-235b-a22b-2507';
+    const baseUrl = 'https://api.aicredits.in/v1';
+
+    if (keysToTry.length === 0) {
+        const err = new Error('Maeve provider key is not configured.');
+        err.code = 'AI_PROVIDER_CONFIG';
+        throw err;
+    }
+
+    const retryableStatuses = new Set([429, 500, 502, 503, 504]);
+    let lastError = null;
+
+    for (const apiKey of keysToTry) {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            const controller = new AbortController();
+            const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+            try {
+                const response = await fetch(baseUrl + '/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json',
+                        'HTTP-Referer': 'https://mywingman.com',
+                        'X-Title': 'My Wingman App'
+                    },
+                    body: JSON.stringify({
+                        model,
+                        messages: messagesArray,
+                        temperature,
+                        max_tokens: maxTokens
+                    }),
+                    signal: controller.signal
+                });
+
+                if (!response.ok) {
+                    const err = new Error(`Maeve provider request failed with HTTP ${response.status}.`);
+                    err.statusCode = response.status;
+                    lastError = err;
+                    if (retryableStatuses.has(response.status) && attempt < 3) {
+                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        continue;
+                    }
+                    break;
+                }
+
+                const data = await response.json();
+                if (data && data.error) {
+                    const err = new Error('Maeve provider returned an API error.');
+                    err.statusCode = Number(data.error.status || data.error.code) || 502;
+                    lastError = err;
+                    if (retryableStatuses.has(err.statusCode) && attempt < 3) {
+                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        continue;
+                    }
+                    break;
+                }
+
+                const msg = data && Array.isArray(data.choices) && data.choices[0] ? data.choices[0].message : null;
+                const output = typeof msg === 'string' ? msg : (msg ? (msg.content || msg.reasoning || '') : '');
+                if (!output || !String(output).trim()) {
+                    const err = new Error('Maeve provider returned empty output.');
+                    err.code = 'AI_PROVIDER_EMPTY_RESPONSE';
+                    err.statusCode = 502;
+                    lastError = err;
+                    if (attempt < 2) {
+                        await new Promise(resolve => setTimeout(resolve, 250));
+                        continue;
+                    }
+                    break;
+                }
+
+                return String(output).trim();
+            } catch (err) {
+                if (err && err.name === 'AbortError') {
+                    const timeoutErr = new Error('Maeve provider timed out.');
+                    timeoutErr.isTimeout = true;
+                    timeoutErr.statusCode = 504;
+                    lastError = timeoutErr;
+                    if (attempt < 3) {
+                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        continue;
+                    }
+                    break;
+                }
+
+                lastError = err;
+                if (attempt < 3 && (!err || !err.statusCode || retryableStatuses.has(Number(err.statusCode)))) {
+                    await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                    continue;
+                }
+                break;
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
+        }
+    }
+
+    throw lastError || new Error('Maeve provider is unavailable.');
 }
 
 // Helper function to query OpenRouter dynamically with automatic key failover
@@ -1134,10 +1335,19 @@ function sanitizePromptInput(input) {
 // ==================== THE 4 CORE FEATURE API // 1. CHAT SCREENSHOT ANALYZER (/api/analyze & /api/analyze-chat-screenshot)
 app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
-    if (!acquireUserConcurrencyLock(uid)) {
+    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('anl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    const lockState = acquireUserConcurrencyLock(uid, reqId);
+    if (!lockState.acquired) {
+        if (lockState.duplicate) {
+            return res.status(409).json({
+                success: false,
+                error: "This request ID is already in progress. No additional credits were deducted.",
+                code: "DUPLICATE_REQUEST",
+                duplicate: true
+            });
+        }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
     }
-    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('anl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
     try {
@@ -1631,6 +1841,10 @@ ${formattingRule}`;
         });
     } catch (error) {
         console.error("Pipeline breakdown:", error.message);
+        const analyzerFailureStage = (error && error.analyzerStage) ? error.analyzerStage : 'pipeline';
+        const analyzerFailureCode = analyzerFailureStage === 'pipeline'
+            ? 'ANALYZER_PIPELINE_FAILURE'
+            : getAnalyzerProviderFailureCode(error);
         let currentBal = deduction ? deduction.remainingCredits : 0;
         let releaseSucceeded = false;
         if (deduction && deduction.success && !deduction.duplicate) {
@@ -1654,26 +1868,41 @@ ${formattingRule}`;
             return res.status(504).json({
                 success: false,
                 error: "Analysis timed out. Your credits were restored.",
+                code: analyzerFailureCode,
+                stage: analyzerFailureStage,
+                reqId: reqId,
                 credits: currentBal
             });
         }
         res.status(500).json({
             success: false,
             error: "AI analysis failed. Your credits were restored.",
+            code: analyzerFailureCode,
+            stage: analyzerFailureStage,
+            reqId: reqId,
             credits: currentBal
         });
     } finally {
-        releaseUserConcurrencyLock(uid);
+        releaseUserConcurrencyLock(uid, reqId);
     }
 });
 
 // 2. ICEBREAKER GENERATOR (Direct qwen3-235b-a22b-2507)
 app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
-    if (!acquireUserConcurrencyLock(uid)) {
+    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('ice_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    const lockState = acquireUserConcurrencyLock(uid, reqId);
+    if (!lockState.acquired) {
+        if (lockState.duplicate) {
+            return res.status(409).json({
+                success: false,
+                error: "This request ID is already in progress. No additional credits were deducted.",
+                code: "DUPLICATE_REQUEST",
+                duplicate: true
+            });
+        }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
     }
-    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('ice_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
     try {
@@ -1916,7 +2145,7 @@ GENERAL ICEBREAKER LAWS:
             credits: currentBal
         });
     } finally {
-        releaseUserConcurrencyLock(uid);
+        releaseUserConcurrencyLock(uid, reqId);
     }
 });
 
@@ -2011,10 +2240,19 @@ function formatBioLineBreaks(biosArray) {
 // 3. PROFILE BIO OPTIMIZER (/api/optimize & /api/bio-optimizer)
 app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
-    if (!acquireUserConcurrencyLock(uid)) {
+    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('opt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    const lockState = acquireUserConcurrencyLock(uid, reqId);
+    if (!lockState.acquired) {
+        if (lockState.duplicate) {
+            return res.status(409).json({
+                success: false,
+                error: "This request ID is already in progress. No additional credits were deducted.",
+                code: "DUPLICATE_REQUEST",
+                duplicate: true
+            });
+        }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
     }
-    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('opt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
     try {
@@ -2322,13 +2560,26 @@ FORMATTING: Use ${casingInstruction}.`;
             credits: currentBal
         });
     } finally {
-        releaseUserConcurrencyLock(uid);
+        releaseUserConcurrencyLock(uid, reqId);
     }
 });
 
 // 4. MAEVE AI DATING COACH & EVALUATOR CHAT (/api/chat & /api/simulator/chat)
 app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
+    const uid = getUserIdFromReq(req);
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('chat_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    const lockState = acquireUserConcurrencyLock(uid, reqId);
+    if (!lockState.acquired) {
+        if (lockState.duplicate) {
+            return res.status(409).json({
+                success: false,
+                error: "This request ID is already in progress. No additional credits were deducted.",
+                code: "DUPLICATE_REQUEST",
+                duplicate: true
+            });
+        }
+        return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
+    }
     let deduction = null;
 
     try {
@@ -2452,7 +2703,7 @@ CONVERSATIONAL FREEDOM & LAWS:
                 hotlinePayload.push({ role: "user", content: userTextRaw });
             }
 
-            let hotlineAdvice = await queryOpenRouter("qwen3-235b-a22b-2507", hotlinePayload, 0.7, 1500);
+            let hotlineAdvice = await queryMaeveProvider(hotlinePayload, 0.7, 1500);
             if (!hotlineAdvice) {
                 throw new Error("AI Coach endpoint returned empty response.");
             }
@@ -2590,7 +2841,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
             openRouterMessages.push({ role: "user", content: enforceWordLimit(userTextRaw, 500) });
         }
 
-        let replyText = await queryOpenRouter("qwen3-235b-a22b-2507", openRouterMessages, 0.6, 120);
+        let replyText = await queryMaeveProvider(openRouterMessages, 0.6, 120);
 
         if (!replyText) {
             throw new Error("AI provider returned empty response.");
@@ -2702,23 +2953,34 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
                 credits: currentBal
             });
         }
+        const providerCode = getMaeveProviderFailureCode(error);
         res.status(500).json({
             success: false,
             error: "Maeve AI Coach failed to respond. Your credits were restored.",
+            code: providerCode,
             credits: currentBal
         });
     } finally {
-        releaseUserConcurrencyLock(uid);
+        releaseUserConcurrencyLock(uid, reqId);
     }
 });
 
 // 4C. DATING FLIGHT SIMULATOR REVIEW API ENGINE (`/api/simulator/review`)
 app.post('/api/simulator/review', requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
-    if (!acquireUserConcurrencyLock(uid)) {
+    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('rev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    const lockState = acquireUserConcurrencyLock(uid, reqId);
+    if (!lockState.acquired) {
+        if (lockState.duplicate) {
+            return res.status(409).json({
+                success: false,
+                error: "This request ID is already in progress. No additional credits were deducted.",
+                code: "DUPLICATE_REQUEST",
+                duplicate: true
+            });
+        }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
     }
-    const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('rev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     let deduction = null;
 
     try {
@@ -2952,7 +3214,7 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
             credits: currentBal
         });
     } finally {
-        releaseUserConcurrencyLock(uid);
+        releaseUserConcurrencyLock(uid, reqId);
     }
 });
 
@@ -3133,6 +3395,9 @@ app.get(['/api/credits', '/api/user/credits', '/api/credits/sync'], requireSupab
         if (err.statusCode === 404 || err.code === 'PROFILE_MISSING' || err.message === 'PROFILE_MISSING') {
             return res.status(404).json({ success: false, error: "PROFILE_MISSING", code: "PROFILE_MISSING" });
         }
+        if (err.statusCode === 503) {
+            return res.status(503).json({ success: false, error: "Credit service temporarily unavailable." });
+        }
         res.status(500).json({ success: false, error: "Failed to fetch credit balance." });
     }
 });
@@ -3155,34 +3420,38 @@ app.all('/api/credits/verify', requireSupabaseAuth, async (req, res) => {
         if (err.statusCode === 404 || err.code === 'PROFILE_MISSING' || err.message === 'PROFILE_MISSING') {
             return res.status(404).json({ success: false, error: "PROFILE_MISSING", code: "PROFILE_MISSING" });
         }
+        if (err.statusCode === 503) {
+            return res.status(503).json({ success: false, error: "Credit service temporarily unavailable." });
+        }
         res.status(500).json({ success: false, error: "Failed to verify credit balance." });
     }
 });
 
-// System Health Check Endpoint
+// System Health Check Endpoint — availability only; never expose user/business-volume data.
 app.get('/api/health', async (req, res) => {
+    const timestamp = new Date().toISOString();
     try {
-        let userCount = 0;
-        let dbStatus = 'disconnected';
         if (db) {
-            dbStatus = 'sqlite_active';
-            const countRow = await db.get('SELECT COUNT(*) as count FROM user_profiles');
-            userCount = countRow ? countRow.count : 0;
-        } else if (supabaseAdmin) {
-            dbStatus = 'supabase_active';
-            try {
-                const { count } = await supabaseAdmin.from('profiles').select('id', { count: 'exact', head: true });
-                userCount = count || 0;
-            } catch (sErr) {}
+            await db.get('SELECT 1 AS ok');
+            return res.json({ status: 'ok', database: 'sqlite_active', timestamp });
         }
-        res.json({
-            status: 'ok',
-            database: dbStatus,
-            userCount: userCount,
-            timestamp: new Date().toISOString()
-        });
+
+        if (supabaseAdmin) {
+            const { error } = await supabaseAdmin
+                .from('profiles')
+                .select('id')
+                .limit(1);
+            if (error) {
+                console.error('[Health Check] Supabase probe failed:', error.message);
+                return res.status(503).json({ status: 'degraded', database: 'supabase_unavailable', timestamp });
+            }
+            return res.json({ status: 'ok', database: 'supabase_active', timestamp });
+        }
+
+        return res.status(503).json({ status: 'degraded', database: 'unavailable', timestamp });
     } catch (err) {
-        res.status(500).json({ status: 'error', database: 'error', error: err.message });
+        console.error('[Health Check] Database probe failed:', err && err.message ? err.message : err);
+        return res.status(503).json({ status: 'degraded', database: 'unavailable', timestamp });
     }
 });
 
@@ -3263,54 +3532,47 @@ app.post('/api/user/delete-account', requireSupabaseAuth, apiLimiter, async (req
             return res.status(500).json({ success: false, error: 'Server authentication admin service is unavailable.' });
         }
 
-        // 1. Delete user-created dating content from Supabase Postgres tables if they exist
+        const isMissingOptionalTableError = (err) => {
+            const code = err && err.code ? String(err.code) : '';
+            return code === '42P01' || code === 'PGRST116' || code === 'PGRST205';
+        };
+
+        // 1. Purge optional user-created content before deleting the Auth identity. These tables
+        // are not part of the core FK cascade and may not exist in every deployment.
         for (const table of ['saved_bios', 'saved_chat_analyses', 'saved_chat_histories']) {
             try {
                 const { error: tblErr } = await supabaseAdmin.from(table).delete().eq('user_id', uid);
-                if (tblErr && tblErr.code !== '42P01' && tblErr.code !== 'PGRST116') {
-                    console.warn(`[delete-account ${table} notice]:`, tblErr.message);
+                if (tblErr && !isMissingOptionalTableError(tblErr)) {
+                    console.error(`[delete-account ${table} error]:`, tblErr.message);
+                    return res.status(500).json({ success: false, error: 'Failed to purge saved account content.' });
                 }
-            } catch (e) {}
-        }
-
-        // 2. Clean user credit transactions ledger
-        try {
-            const { error: txErr } = await supabaseAdmin.from('credit_transactions').delete().eq('user_id', uid);
-            if (txErr && txErr.code !== '42P01' && txErr.code !== 'PGRST116') {
-                console.error('[delete-account credit_transactions error]:', txErr.message);
-                return res.status(500).json({ success: false, error: 'Failed to purge credit transaction history.' });
+            } catch (e) {
+                return res.status(500).json({ success: false, error: 'Failed to purge saved account content.' });
             }
-        } catch (e) {
-            return res.status(500).json({ success: false, error: 'Failed to purge credit transaction history: ' + e.message });
         }
 
-        // 3. Delete user profile
-        try {
-            const { error: profErr } = await supabaseAdmin.from('profiles').delete().eq('id', uid);
-            if (profErr && profErr.code !== '42P01' && profErr.code !== 'PGRST116') {
-                console.error('[delete-account profiles error]:', profErr.message);
-                return res.status(500).json({ success: false, error: 'Failed to purge user profile.' });
-            }
-        } catch (e) {
-            return res.status(500).json({ success: false, error: 'Failed to purge user profile: ' + e.message });
-        }
-
-        // 4. Permanently Delete Supabase Auth User via Supabase Admin SDK
-        if (supabaseAdmin && supabaseAdmin.auth && supabaseAdmin.auth.admin) {
-            const { error: authDelErr } = await supabaseAdmin.auth.admin.deleteUser(uid);
-            if (authDelErr) {
-                console.error('[delete-account Auth delete error]:', authDelErr.message);
-                return res.status(500).json({ success: false, error: 'Failed to delete authentication account: ' + authDelErr.message });
-            }
-        } else {
-            return res.status(500).json({ success: false, error: 'Failed to access authentication admin service.' });
-        }
-
-        // 5. Purge local SQLite user rows if local dev DB attached
+        // 2. In local development, purge auxiliary SQLite state before the irreversible Auth
+        // deletion. A local cleanup failure must not leave an already-deleted Auth identity.
         if (db) {
-            const rls = forRequest(req, db);
-            await rls.purgeAll();
-            await db.run('DELETE FROM users_auth WHERE id = ?', uid);
+            try {
+                const rls = forRequest(req, db);
+                await rls.purgeAll();
+                await db.run('DELETE FROM users_auth WHERE id = ?', uid);
+            } catch (localErr) {
+                console.error('[delete-account local database error]:', localErr.message);
+                return res.status(500).json({ success: false, error: 'Failed to purge local account data.' });
+            }
+        }
+
+        // 3. Delete the Supabase Auth identity as the authoritative commit point. Core Postgres
+        // data is protected by ON DELETE CASCADE foreign keys:
+        // auth.users -> profiles -> credit_transactions, and auth.users -> user_consents.
+        // We deliberately do NOT pre-delete profiles or the credit ledger. If Auth deletion fails,
+        // the user's core account state therefore remains intact instead of becoming corrupted.
+        const { error: authDelErr } = await supabaseAdmin.auth.admin.deleteUser(uid);
+        if (authDelErr) {
+            console.error('[delete-account Auth delete error]:', authDelErr.message);
+            return res.status(500).json({ success: false, error: 'Failed to delete authentication account: ' + authDelErr.message });
         }
 
         res.json({ success: true, message: "Account data and authentication profile permanently purged." });
@@ -3318,13 +3580,6 @@ app.post('/api/user/delete-account', requireSupabaseAuth, apiLimiter, async (req
         console.error("Delete Account Error:", err);
         res.status(500).json({ success: false, error: "Internal server error during account deletion." });
     }
-});
-
-// PUBLIC ENDPOINT FOR CSRF SECURITY TOKEN ISSUANCE
-app.get('/api/csrf-token', (req, res) => {
-    const token = generateCsrfToken();
-    setHttpOnlyCookie(res, 'wingman_csrf', token, 3600);
-    res.json({ success: true, csrfToken: token });
 });
 
 // PUBLIC ENDPOINT FOR SUPABASE AUTHENTICATION CONFIGURATION
@@ -3424,11 +3679,19 @@ async function startWingmanServer() {
         });
         server.keepAliveTimeout = 120000;
         server.headersTimeout = 125000;
-        module.exports = { app, server, db, supabaseAdmin };
+        return server;
     } catch (err) {
         console.error("Fatal Server Startup Error:", err);
-        process.exit(1);
+        throw err;
     }
 }
 
-startWingmanServer();
+// Importing the application must not open a network listener. Runtime entry points call
+// startWingmanServer explicitly; tests and tooling can safely import the Express app.
+module.exports = { app, startWingmanServer, supabaseAdmin };
+module.exports.queryMaeveProvider = queryMaeveProvider;
+module.exports.getMaeveProviderFailureCode = getMaeveProviderFailureCode;
+
+if (require.main === module) {
+    startWingmanServer().catch(() => process.exit(1));
+}

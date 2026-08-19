@@ -502,15 +502,25 @@ STRICT LAWS:
             }
         }
 
-        // Authoritative numeric balance is confirmed
+        // Never trust a previously cached low numeric balance as sufficient evidence to sell credits.
+        // A fresh authoritative balance check is mandatory immediately before opening the purchase UI.
         if (state.credits < cost) {
-            if (typeof window.showToast === 'function') {
-                window.showToast("Insufficient credits. Current balance: " + state.credits + " credits. Please top up.", "warning");
+            const freshCreditCheck = await window.checkCreditBalance();
+            if (!freshCreditCheck || !freshCreditCheck.success || typeof state.credits !== 'number') {
+                if (typeof window.showToast === 'function') {
+                    window.showToast("Unable to verify your current credit balance. Please retry after your account syncs.", "warning");
+                }
+                return false;
             }
-            if (typeof window.openPurchaseModal === 'function') {
-                window.openPurchaseModal();
+            if (state.credits < cost) {
+                if (typeof window.showToast === 'function') {
+                    window.showToast("Insufficient credits. Current balance: " + state.credits + " credits. Please top up.", "warning");
+                }
+                if (typeof window.openPurchaseModal === 'function') {
+                    window.openPurchaseModal(cost);
+                }
+                return false;
             }
-            return false;
         }
 
         return true;
@@ -745,8 +755,8 @@ STRICT LAWS:
             currentBatchBytes += validFiles[s].size;
         }
 
-        if (currentBatchBytes > 20 * 1024 * 1024) {
-            window.showToast("These images are too large. Maximum total upload size: 20 MB.", "warning");
+        if (currentBatchBytes > 25 * 1024 * 1024) {
+            window.showToast("These images are too large. Maximum total upload size: 25 MB.", "warning");
             return;
         }
 
@@ -1359,6 +1369,20 @@ STRICT LAWS:
 
             state.activeTab = tabId;
             saveSessionState();
+
+            // Mobile tabs must open at their own top; retaining the previous tab's
+            // scroll offset hides section headers and makes the workspace look incomplete.
+            if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) {
+                requestAnimationFrame(function () {
+                    const mainCanvas = document.getElementById('mainContentCanvas') || document.querySelector('main');
+                    try {
+                        if (mainCanvas && typeof mainCanvas.scrollTo === 'function') {
+                            mainCanvas.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+                        }
+                    } catch (e) {}
+                    try { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); } catch (e) { window.scrollTo(0, 0); }
+                });
+            }
         } catch (e) {}
     };
 
@@ -1382,7 +1406,7 @@ STRICT LAWS:
             if (skel) skel.classList.add("hidden");
             if (res) res.classList.add("hidden");
             if (dzContainer) dzContainer.classList.remove("pointer-events-none", "opacity-60");
-            if (si && state.isTermsAccepted) si.disabled = false;
+            if (si && !state.isLoading) si.disabled = false;
         } else if (phase === "SELECTED") {
             toggleLaserScanner(false);
             if (scannerContainer) scannerContainer.classList.remove("is-analyzing");
@@ -1390,7 +1414,7 @@ STRICT LAWS:
             if (skel) skel.classList.add("hidden");
             if (res) res.classList.add("hidden");
             if (dzContainer) dzContainer.classList.remove("pointer-events-none", "opacity-60");
-            if (si && state.isTermsAccepted) si.disabled = false;
+            if (si && !state.isLoading) si.disabled = false;
         } else if (phase === "ANALYZING") {
             toggleLaserScanner(true);
             if (scannerContainer) scannerContainer.classList.add("is-analyzing");
@@ -1405,7 +1429,7 @@ STRICT LAWS:
             if (empty) empty.classList.add("hidden");
             if (skel) skel.classList.add("hidden");
             if (dzContainer) dzContainer.classList.remove("pointer-events-none", "opacity-60");
-            if (si && state.isTermsAccepted) si.disabled = false;
+            if (si && !state.isLoading) si.disabled = false;
             if (res) {
                 res.classList.remove("hidden");
                 res.classList.remove("animate-results-reveal");
@@ -1434,6 +1458,7 @@ STRICT LAWS:
     window.updateTermsLockState = function () {
         try {
             const isLocked = !state.isTermsAccepted;
+            const isBusy = !!state.isLoading;
 
             const cb = $("privacyConsent");
             if (cb) {
@@ -1443,11 +1468,13 @@ STRICT LAWS:
             const dz = $("dropzone");
             const si = $("screenshotInput");
 
+            // Local preparation is allowed before login/consent; nothing is sent until submit preflight passes.
             if (dz) {
-                dz.classList.toggle("opacity-40", isLocked);
-                dz.classList.toggle("cursor-not-allowed", isLocked);
+                dz.classList.remove("opacity-40", "cursor-not-allowed");
+                dz.classList.toggle("pointer-events-none", isBusy);
+                dz.classList.toggle("opacity-60", isBusy);
             }
-            if (si) si.disabled = isLocked;
+            if (si) si.disabled = isBusy;
 
             window.updateButtonStates();
         } catch (e) {}
@@ -1472,9 +1499,9 @@ STRICT LAWS:
             }
             if (btn2) {
                 const isBioValid = bi && bi.value.trim().length >= 5 && bi.value.length <= 5000;
-                const isBtn2Disabled = isLocked || !isBioValid || isLoading || isCreditsBlocked10;
+                const isBtn2Disabled = !isBioValid || isLoading;
                 btn2.disabled = isBtn2Disabled;
-                btn2.classList.toggle("opacity-40", isLocked || !isBioValid || isCreditsBlocked10);
+                btn2.classList.toggle("opacity-40", !isBioValid);
                 btn2.classList.toggle("opacity-70", isLoading);
                 btn2.classList.toggle("cursor-not-allowed", isBtn2Disabled);
                 btn2.classList.toggle("cursor-pointer", !isBtn2Disabled);
@@ -1512,9 +1539,9 @@ STRICT LAWS:
             if (btn3) {
                 const words = ai ? countWords(ai.value) : 0;
                 const isAuditValid = ai && ai.value.trim().length >= 5 && words <= 500;
-                const isBtn3Disabled = isLocked || !isAuditValid || isLoading || isCreditsBlocked10;
+                const isBtn3Disabled = !isAuditValid || isLoading;
                 btn3.disabled = isBtn3Disabled;
-                btn3.classList.toggle("opacity-40", isLocked || !isAuditValid || isCreditsBlocked10);
+                btn3.classList.toggle("opacity-40", !isAuditValid);
                 btn3.classList.toggle("opacity-70", isLoading);
                 btn3.classList.toggle("cursor-not-allowed", isBtn3Disabled);
                 btn3.classList.toggle("cursor-pointer", !isBtn3Disabled);
@@ -1546,19 +1573,26 @@ STRICT LAWS:
             if (ci && chatCounter) {
                 const len = ci.value.length;
                 chatCounter.textContent = `${len.toLocaleString()} / 5,000`;
-                chatCounter.style.color = len > 5000 ? '#ef4444' : (len > 4500 ? '#f59e0b' : 'rgba(192, 132, 252, 0.6)');
+                chatCounter.style.color = len > 5000 ? '#ef4444' : (len > 4500 ? '#f59e0b' : '#c084fc');
             }
 
             const chatSendBtn = $("chatbox-send-btn");
             if (chatSendBtn) {
-                const isChatDisabled = isLocked || isLoading || isCreditsBlocked2;
+                const hasChatText = Boolean(ci && ci.value.trim().length > 0);
+                const isChatDisabled = isLoading || !hasChatText;
                 chatSendBtn.disabled = isChatDisabled;
+                chatSendBtn.setAttribute("aria-disabled", isChatDisabled ? "true" : "false");
                 chatSendBtn.classList.toggle("opacity-40", isChatDisabled);
                 chatSendBtn.classList.toggle("cursor-not-allowed", isChatDisabled);
                 chatSendBtn.classList.toggle("cursor-pointer", !isChatDisabled);
+                chatSendBtn.classList.toggle("chat-send-active", !isChatDisabled);
+                chatSendBtn.style.setProperty("opacity", isChatDisabled ? "0.4" : "1", "important");
+                chatSendBtn.style.setProperty("filter", isChatDisabled ? "saturate(0.65)" : "saturate(1.15)", "important");
+                chatSendBtn.style.setProperty("transform", isChatDisabled ? "none" : "translateY(-1px)", "important");
+                chatSendBtn.style.setProperty("box-shadow", isChatDisabled ? "none" : "0 8px 24px rgba(168, 85, 247, 0.58)", "important");
             }
             if (ci) {
-                ci.disabled = isLocked || isLoading || isCreditsBlocked2;
+                ci.disabled = isLoading;
             }
 
             const btn1 = $("runAnalysisBtn");
@@ -1568,9 +1602,9 @@ STRICT LAWS:
                 const withinLimit = count <= 5;
                 const notLoading = !state.isLoading;
 
-                const enabled = hasScreenshot && withinLimit && notLoading && !isCreditsBlocked10;
+                const enabled = hasScreenshot && withinLimit && notLoading;
                 btn1.disabled = !enabled;
-                btn1.classList.toggle("opacity-40", !hasScreenshot || !withinLimit || isCreditsBlocked10);
+                btn1.classList.toggle("opacity-40", !hasScreenshot || !withinLimit);
                 btn1.classList.toggle("opacity-70", Boolean(state.isLoading));
                 btn1.classList.toggle("cursor-not-allowed", !enabled);
                 btn1.classList.toggle("cursor-pointer", enabled);
@@ -1977,12 +2011,13 @@ STRICT LAWS:
         state.uploadedFiles = [];
         state.croppedWebpDataUrl = null;
         state.lastResults = null;
-        state.credits = 0;
+        state.credits = null;
+        state.creditsStatus = "idle";
 
         const desk = $("desktopCreditCount");
-        if (desk) desk.textContent = "0 Credits";
+        if (desk) desk.textContent = "Credits —";
         const mob = $("mobileCreditCount");
-        if (mob) mob.textContent = "0 Credits";
+        if (mob) mob.textContent = "Credits —";
 
         const analyzeCards = $("analyzeResultsCards");
         if (analyzeCards) analyzeCards.innerHTML = "";
@@ -2057,9 +2092,28 @@ STRICT LAWS:
     // ============================================================
     // PURCHASE MODAL – Server‑only credit updates
     // ============================================================
-    window.openPurchaseModal = function () {
+    window.openPurchaseModal = function (requiredCredits) {
         const m = $("purchaseModal"), c = $("modalCard"), pt = $("pricingTiers");
         if (!m || !c) return;
+        // When the popup is opened by an authoritative insufficient-credit gate,
+        // explain the exact shortage inside the popup itself. Manual pricing opens
+        // remain generic and never invent a balance or required cost.
+        const contextEl = $("purchaseCreditContext");
+        const currentBalance = (typeof state.credits === "number" && Number.isFinite(state.credits)) ? state.credits : null;
+        const required = Number(requiredCredits);
+        const hasShortageContext = Number.isFinite(required) && required > 0 && currentBalance !== null && currentBalance < required;
+        if (contextEl) {
+            if (hasShortageContext) {
+                const shortfall = required - currentBalance;
+                const creditWord = (n) => n === 1 ? "credit" : "credits";
+                contextEl.textContent = "Insufficient credits: you have " + currentBalance + " " + creditWord(currentBalance) + ". This action requires " + required + " " + creditWord(required) + ". You need " + shortfall + " more " + creditWord(shortfall) + ".";
+                contextEl.classList.remove("hidden");
+            } else {
+                contextEl.textContent = "";
+                contextEl.classList.add("hidden");
+            }
+        }
+
         document.body.style.overflow = "hidden";
         m.style.display = "flex";
         m.classList.remove("opacity-0", "pointer-events-none", "hidden");
@@ -2241,6 +2295,12 @@ STRICT LAWS:
     // STAR PLEXUS CANVAS ANIMATION SYSTEM (HIGH-DPI & HIGH-CONTRAST)
     // ============================================================
     function initAmbientPlexusCanvas() {
+        // The animated high-DPI plexus is decorative and disproportionately expensive on phones.
+        if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) {
+            const mobileCanvas = document.getElementById("ambient-plexus-canvas");
+            if (mobileCanvas) mobileCanvas.style.display = 'none';
+            return;
+        }
         const canvas = document.getElementById("ambient-plexus-canvas");
         if (!canvas) return;
         const ctx = canvas.getContext("2d");
@@ -2769,27 +2829,15 @@ STRICT LAWS:
             const nameMap = { starter: "Starter Pack", pro: "Pro Pack", elite: "Elite Pack" };
 
             if (creditMap[tier]) {
-                window.simulateDemoPurchase(creditMap[tier]).then(function() {
-                    const badge = $("activationBadge");
-                    const title = $("activationTitle");
-                    const desc = $("activationDesc");
+                // Payment processing is intentionally fail-closed. A tier query parameter
+                // must never imply that credits were purchased or minted.
+                window.simulateDemoPurchase(creditMap[tier]);
 
-                    if (badge) badge.textContent = nameMap[tier] + " Activated";
-                    if (title) title.textContent = creditMap[tier] + " Credits Added";
-                    if (desc) desc.textContent = "Your " + creditMap[tier] + " credits are active! Upload your chat screenshots on the left to generate tailored replies.";
-
-                    const am = $("activationModal"), ac = $("activationCard");
-                    if (am && ac) {
-                        am.classList.remove("opacity-0", "pointer-events-none");
-                        am.classList.add("opacity-100", "pointer-events-auto");
-                        ac.classList.remove("scale-95");
-                        ac.classList.add("scale-100");
-                    }
-                });
-
-                try {
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                } catch (e2) {}
+                // Remove the stale checkout parameter so refresh/back navigation cannot
+                // repeatedly trigger purchase messaging.
+                const cleanUrl = new URL(window.location.href);
+                cleanUrl.searchParams.delete("tier");
+                window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
             }
         } catch (e) {}
     }
@@ -2870,7 +2918,10 @@ STRICT LAWS:
                     const errJson = await response.json().catch(function() { return {}; });
 
                     if (response.status === 401) {
-                        window.updateUICredits(0);
+                        // Authentication failure does NOT mean the user's real wallet balance is zero.
+                        state.credits = null;
+                        state.creditsStatus = "idle";
+                        if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
                         if (typeof window.showToast === 'function') window.showToast("Authentication required. Please sign in.", "warning");
                         if (typeof window.openAuthRequiredModal === 'function') window.openAuthRequiredModal();
                         return null;
@@ -2878,11 +2929,24 @@ STRICT LAWS:
 
                     if (response.status === 402) {
                         trackWingmanEvent('credits_exhausted', { endpoint: endpoint, currentCredits: state.credits || 0 });
-                        await window.checkCreditBalance();
-                        if (typeof window.showToast === 'function') {
-                            window.showToast(errJson.error || ("Insufficient credits. Current balance: " + (state.credits || 0) + " credits. Please top up."), "warning");
+                        const requiredCreditCost = (endpoint === '/api/chat' || endpoint === '/api/simulator/chat' || endpoint === '/api/simulator/review') ? 2 : 10;
+                        const authoritativeBalanceCheck = await window.checkCreditBalance();
+                        if (!authoritativeBalanceCheck || !authoritativeBalanceCheck.success || typeof state.credits !== 'number') {
+                            if (typeof window.showToast === 'function') {
+                                window.showToast("The server rejected this request for credits, but your current wallet balance could not be verified. Please refresh or sign in again.", "warning");
+                            }
+                            return null;
                         }
-                        if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal();
+                        if (state.credits >= requiredCreditCost) {
+                            if (typeof window.showToast === 'function') {
+                                window.showToast("Your wallet has enough credits, but this request was rejected by the credit service. Please refresh or sign in again; no purchase is required.", "warning");
+                            }
+                            return null;
+                        }
+                        if (typeof window.showToast === 'function') {
+                            window.showToast(errJson.error || ("Insufficient credits. Current balance: " + state.credits + " credits. Please top up."), "warning");
+                        }
+                        if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal(requiredCreditCost);
                         return null;
                     }
 
@@ -3170,11 +3234,6 @@ STRICT LAWS:
     window.runAnalysis = async function (e) {
         if (e) e.preventDefault();
         if (state.isLoading) return;
-        if (!state.isTermsAccepted) {
-            window.highlightTermsCheckbox();
-            window.showToast("Please agree to the Terms of Service & Privacy Protocol box first!", "warning");
-            return;
-        }
 
         const useCache = (state.activeTranscriptCache && state.uploadedFiles.length === 0);
         if (!useCache && state.uploadedFiles.length === 0) {
@@ -3183,6 +3242,13 @@ STRICT LAWS:
         }
 
         if (!(await hasSufficientCredits(10))) return;
+
+        if (!state.isTermsAccepted) {
+            window.highlightTermsCheckbox();
+            if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
+            window.showToast("18+ verification and consent are required before AI processing.", "warning");
+            return;
+        }
 
         state.isLoading = true;
         setButtonLoadingState("runAnalysisBtn", true, "Analyzing Context...", "Generate Perfect Replies");
@@ -3273,13 +3339,14 @@ STRICT LAWS:
         }
         text = enforceWordLimitClient(text, 500);
 
+        if (!(await hasSufficientCredits(10))) return;
+
         if (!state.isTermsAccepted) {
             window.highlightTermsCheckbox();
-            window.showToast("Please agree to the Terms of Service & Privacy Protocol box first!", "warning");
+            if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
+            window.showToast("18+ verification and consent are required before AI processing.", "warning");
             return;
         }
-
-        if (!(await hasSufficientCredits(10))) return;
 
         state.isLoading = true;
         setButtonLoadingState("generateIcebreakerBtn", true, "Crafting Openers...", "Generate Icebreaker");
@@ -3361,13 +3428,14 @@ STRICT LAWS:
         }
         raw = enforceWordLimitClient(raw, 500);
 
+        if (!(await hasSufficientCredits(10))) return;
+
         if (!state.isTermsAccepted) {
             window.highlightTermsCheckbox();
-            window.showToast("Please agree to the Terms of Service & Privacy Protocol box first!", "warning");
+            if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
+            window.showToast("18+ verification and consent are required before AI processing.", "warning");
             return;
         }
-
-        if (!(await hasSufficientCredits(10))) return;
 
         state.isLoading = true;
         setButtonLoadingState("runAuditBtn", true, "Optimizing Bio...", "Optimize My Bio");
@@ -3452,11 +3520,6 @@ STRICT LAWS:
     };
 
     window.loadPresetBio = function(btn) {
-        if (!state.isTermsAccepted) {
-            window.highlightTermsCheckbox();
-            window.showToast("Please agree to the Terms of Service & Privacy Protocol box first!", "warning");
-            return;
-        }
         const bi = $("bioInput");
         if (bi && btn && typeof btn.getAttribute === 'function' && btn.getAttribute("data-sample")) {
             bi.value = btn.getAttribute("data-sample");
@@ -3710,6 +3773,13 @@ STRICT LAWS:
 
         if (!(await hasSufficientCredits(2))) return;
 
+        if (!state.isTermsAccepted) {
+            window.highlightTermsCheckbox();
+            if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
+            window.showToast("18+ verification and consent are required before AI processing.", "warning");
+            return;
+        }
+
         const sendBtn = $("chatbox-send-btn");
         if (sendBtn) {
             sendBtn.disabled = true;
@@ -3813,8 +3883,16 @@ STRICT LAWS:
                     window.renderChatboxBubble(errJson.error || "Credit service is temporarily unavailable. Please try again later.", "assistant");
                 }
             } else if (chatResp.status === 402) {
-                window.renderChatboxBubble("⚠️ Insufficient credits. Please top up credits to continue practicing.", "assistant");
-                if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal();
+                const errJson = await chatResp.json().catch(() => ({}));
+                const authoritativeChatBalance = await window.checkCreditBalance();
+                if (!authoritativeChatBalance || !authoritativeChatBalance.success || typeof state.credits !== 'number') {
+                    window.renderChatboxBubble("The credit service rejected this message, but your wallet could not be verified. Please refresh or sign in again.", "assistant");
+                } else if (state.credits >= 2) {
+                    window.renderChatboxBubble("Your wallet has enough credits, but this message was rejected by the credit service. Please refresh or sign in again; no purchase is required.", "assistant");
+                } else {
+                    window.renderChatboxBubble(errJson.error || "⚠️ Insufficient credits. Please top up credits to continue practicing.", "assistant");
+                    if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal(2);
+                }
             } else {
                 const errJson = await chatResp.json().catch(() => ({}));
                 if (typeof errJson.credits === 'number') {

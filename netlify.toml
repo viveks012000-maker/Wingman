@@ -1,0 +1,10 @@
+[build]
+  command = "npm run build:netlify"
+  publish = "netlify-dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Git-connected production deploys are expected to build automatically from main.
+# Security headers and no-cache rules are generated into netlify-dist/_headers by the
+# build script so they work for both Git-connected deploys and manual drag-and-drop deploys.
