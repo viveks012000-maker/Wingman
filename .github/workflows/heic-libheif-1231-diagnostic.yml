@@ -12,7 +12,7 @@ permissions:
 jobs:
   patched-libheif-csp-browser-diagnostic:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v7
 
@@ -30,7 +30,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y autoconf automake libtool pkg-config cmake make brotli
 
-      - name: Build heic-to CSP bundle with patched libheif 1.23.1
+      - name: Build heic-to CSP bundle with patched libheif 1.23.1 and libde265 1.1.1
         shell: bash
         run: |
           set -euo pipefail
@@ -47,15 +47,45 @@ jobs:
           cd ..
 
           git clone --depth 1 --branch v1.23.1 https://github.com/strukturag/libheif.git
+
+          git clone https://github.com/strukturag/libde265.git libde265-src
+          cd libde265-src
+          git checkout --detach 4dd701fffac01632ffd5cabc5ef10deb56accba1
+          cd ..
+
+          mkdir libde265-cmake
+          cd libde265-cmake
+          emcmake cmake ../libde265-src \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DENABLE_SDL=OFF \
+            -DENABLE_DECODER=OFF \
+            -DENABLE_ENCODER=OFF \
+            -DENABLE_SHERLOCK265=OFF \
+            -DENABLE_INTERNAL_DEVELOPMENT_TOOLS=OFF \
+            -DWITH_FUZZERS=OFF \
+            -DENABLE_SIMD=OFF
+          cmake --build . --target de265 --parallel 2
+          test -s libde265/libde265.a
+          test -s libde265/de265-version.h
+          cd ..
+
+          # libheif v1.23.1's helper still expects the old libde265 Autotools
+          # layout. Seed the exact static 1.1.1 build into that expected layout
+          # so the helper skips its obsolete bundled-libde265 build path.
+          mkdir -p libheif-build/libde265-1.1.1/libde265/.libs
+          cp -R libde265-src/libde265/. libheif-build/libde265-1.1.1/libde265/
+          cp libde265-cmake/libde265/de265-version.h libheif-build/libde265-1.1.1/libde265/de265-version.h
+          cp libde265-cmake/libde265/libde265.a libheif-build/libde265-1.1.1/libde265/.libs/libde265.a
+
           git clone https://github.com/hoppergee/heic-to.git
           cd heic-to
           git checkout --detach f37af866f9aa6212ddc84b67a279c9f2386aba4f
           npm ci
           cd ..
 
-          mkdir libheif-build
           cd libheif-build
-          LIBDE265_VERSION=1.0.16 USE_WASM=0 USE_UNSAFE_EVAL=0 USE_TYPESCRIPT=0 ../libheif/build-emscripten.sh ../libheif
+          LIBDE265_VERSION=1.1.1 USE_WASM=0 USE_UNSAFE_EVAL=0 USE_TYPESCRIPT=0 ../libheif/build-emscripten.sh ../libheif
           test -s libheif.js
           cp libheif.js ../heic-to/src/lib/libheif-without-unsafe-eval.js
           cd ../heic-to
@@ -63,9 +93,9 @@ jobs:
           test -s dist/csp/heic-to.js
 
           echo 'HEIC_CANDIDATE_LIBHEIF=1.23.1'
-          echo 'HEIC_CANDIDATE_HEIC_TO_BASE=1.5.2+patched-libheif-1.23.1'
+          echo 'HEIC_CANDIDATE_LIBDE265=1.1.1'
+          echo 'HEIC_CANDIDATE_HEIC_TO_BASE=1.5.2+patched-libheif-1.23.1-libde265-1.1.1'
           echo 'HEIC_CANDIDATE_EMSDK=6.0.7'
-          echo 'HEIC_CANDIDATE_LIBDE265=1.0.16'
           echo "HEIC_CANDIDATE_RAW_BYTES=$(wc -c < dist/csp/heic-to.js)"
           gzip -9 -c dist/csp/heic-to.js > /tmp/heic-to-1231.js.gz
           brotli -q 11 -c dist/csp/heic-to.js > /tmp/heic-to-1231.js.br
@@ -167,9 +197,12 @@ jobs:
           set -euo pipefail
           test -f tmp/heic-1231/heic-to/LICENSE
           test -f tmp/heic-1231/libheif/COPYING
+          test -f tmp/heic-1231/libde265-src/COPYING
           echo 'HEIC_PROVENANCE_HEIC_TO_COMMIT=f37af866f9aa6212ddc84b67a279c9f2386aba4f'
           echo 'HEIC_PROVENANCE_LIBHEIF_TAG=v1.23.1'
+          echo 'HEIC_PROVENANCE_LIBDE265_COMMIT=4dd701fffac01632ffd5cabc5ef10deb56accba1'
           echo 'HEIC_PROVENANCE_EMSDK_COMMIT=e3a0604c3d130d6ab2c40e14a1861accd939a255'
           echo 'HEIC_PROVENANCE_FIXTURE_COMMIT=bc08e3edd433d4375039f95b5840fe71a691e041'
           echo 'HEIC_LICENSE_HEIC_TO=LGPL-3.0'
           echo 'HEIC_LICENSE_LIBHEIF=LGPL-3.0'
+          echo 'HEIC_LICENSE_LIBDE265=LGPL-3.0-or-later'
