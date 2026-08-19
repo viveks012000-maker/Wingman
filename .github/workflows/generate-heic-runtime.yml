@@ -78,3 +78,4 @@ jobs:
           fi
           git commit -m 'vendor: add patched strict-CSP HEIC runtime'
           git push origin HEAD:fix/heic-csp-replacement
+# trigger workflow
