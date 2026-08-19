@@ -143,11 +143,11 @@ The converter is loaded as a separate local ES module on first HEIC/HEIF use. It
 License texts, modified source files, exact source revisions and the reproducible build recipe are provided alongside this file.
 EOF
 
-cat > "$OUT/SOURCE.md" <<EOF
-# HEIC browser runtime source and rebuild information
+cat > "$OUT/SOURCE.txt" <<EOF
+HEIC browser runtime source and rebuild information
 
-Runtime SHA-256: \`$EXPECTED_RUNTIME_SHA256\`  
-Runtime bytes: \`$EXPECTED_RUNTIME_BYTES\`
+Runtime SHA-256: $EXPECTED_RUNTIME_SHA256
+Runtime bytes: $EXPECTED_RUNTIME_BYTES
 
 Pinned source revisions:
 - heic-to: https://github.com/hoppergee/heic-to/commit/$HEIC_TO_COMMIT
@@ -157,11 +157,11 @@ Pinned source revisions:
 - Emscripten: $EMSCRIPTEN_VERSION
 
 MyWingman modifications are limited to browser-build compatibility:
-1. libheif's Emscripten final link uses \`em++\` instead of \`emcc\` and targets \`ENVIRONMENT=web,worker\`.
-2. heic-to's worker awaits the Emscripten 6 modularized factory Promise before constructing \`HeifDecoder\`.
-3. The build uses \`USE_WASM=0\`, \`USE_UNSAFE_EVAL=0\`, and only the libde265 HEVC decoder path required for HEIC.
+1. libheif's Emscripten final link uses em++ instead of emcc and targets ENVIRONMENT=web,worker.
+2. heic-to's worker awaits the Emscripten 6 modularized factory Promise before constructing HeifDecoder.
+3. The build uses USE_WASM=0, USE_UNSAFE_EVAL=0, and only the libde265 HEVC decoder path required for HEIC.
 
-The exact modified source files are in \`source/\`. The complete unmodified upstream source is available at the pinned public revisions above. The repository build recipe is \`scripts/build-heic-browser-runtime.sh\`.
+The exact modified source files are in the source/ subdirectory. The complete unmodified upstream source is available at the pinned public revisions above. The repository build recipe is scripts/build-heic-browser-runtime.sh.
 EOF
 
 cat > "$OUT/build-info.json" <<EOF
