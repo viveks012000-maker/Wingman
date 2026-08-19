@@ -21,14 +21,18 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Install application/browser dependencies
+      - name: Install application dependencies and verify runner toolchain
         shell: bash
         run: |
           set -euo pipefail
           npm ci
-          npx playwright install --with-deps chromium
-          sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool pkg-config cmake make brotli
+          SYSTEM_BROWSER="$(command -v chromium || command -v google-chrome || command -v google-chrome-stable)"
+          test -x "$SYSTEM_BROWSER"
+          echo "SYSTEM_BROWSER=$SYSTEM_BROWSER" >> "$GITHUB_ENV"
+          "$SYSTEM_BROWSER" --version
+          for tool in autoconf automake libtool pkg-config cmake make brotli curl git; do
+            command -v "$tool" >/dev/null
+          done
 
       - name: Build heic-to CSP bundle with patched libheif 1.23.1 and libde265 1.1.1
         shell: bash
@@ -173,7 +177,7 @@ jobs:
           node - <<'NODE'
           const { chromium } = require('playwright');
           (async () => {
-            const browser = await chromium.launch({ headless: true });
+            const browser = await chromium.launch({ headless: true, executablePath: process.env.SYSTEM_BROWSER });
             const page = await browser.newPage();
             const errors = [];
             page.on('pageerror', e => errors.push('pageerror:' + e.message));
