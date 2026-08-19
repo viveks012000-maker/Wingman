@@ -7,12 +7,18 @@ on:
     paths:
       - '.github/workflows/generate-heic-runtime.yml'
       - 'scripts/build-heic-browser-runtime.sh'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/generate-heic-runtime.yml'
+      - 'scripts/build-heic-browser-runtime.sh'
 
 permissions:
   contents: write
 
 concurrency:
-  group: generate-heic-runtime-${{ github.ref }}
+  group: generate-heic-runtime-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -22,6 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
       - uses: actions/setup-node@v7
@@ -58,6 +65,7 @@ jobs:
           ! grep -Eq '(^|[^[:alnum:]_])(eval[[:space:]]*\(|new[[:space:]]+Function[[:space:]]*\()' vendor/heic-runtime/heic-to-csp.js
 
       - name: Commit generated runtime to this branch only
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/fix/heic-csp-replacement'
         shell: bash
         run: |
           set -euo pipefail
