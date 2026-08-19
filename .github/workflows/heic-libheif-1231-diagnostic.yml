@@ -30,7 +30,7 @@ jobs:
           test -x "$SYSTEM_BROWSER"
           echo "SYSTEM_BROWSER=$SYSTEM_BROWSER" >> "$GITHUB_ENV"
           "$SYSTEM_BROWSER" --version
-          for tool in autoconf automake libtool pkg-config cmake make brotli curl git; do
+          for tool in cmake make brotli curl git python3 gzip; do
             command -v "$tool" >/dev/null
           done
 
