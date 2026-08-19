@@ -26,13 +26,13 @@
     function safeGet(key, defaultVal) {
         try {
             if (typeof window !== 'undefined' && window.localStorage) {
-                var v = localStorage.getItem(key);
+                const v = localStorage.getItem(key);
                 if (v !== null) return v;
             }
         } catch (e) {}
         try {
             if (typeof window !== 'undefined' && window.sessionStorage) {
-                var vS = sessionStorage.getItem(key);
+                const vS = sessionStorage.getItem(key);
                 if (vS !== null) return vS;
             }
         } catch (e) {}
@@ -40,7 +40,7 @@
     }
 
     function safeSet(key, val) {
-        var strVal = (val !== null && val !== undefined) ? String(val) : "";
+        const strVal = (val !== null && val !== undefined) ? String(val) : "";
         try {
             if (typeof window !== 'undefined' && window.localStorage) {
                 localStorage.setItem(key, strVal);
@@ -143,7 +143,7 @@
         return {};
     };
 
-    var initPromise = null;
+    let initPromise = null;
 
     // Initialize Supabase Client (Singleton Promise Pattern)
     async function initSupabase() {
@@ -151,13 +151,13 @@
         if (initPromise) return initPromise;
 
         initPromise = (async function () {
-            var url = window.SUPABASE_URL;
-            var key = window.SUPABASE_ANON_KEY;
+            let url = window.SUPABASE_URL;
+            let key = window.SUPABASE_ANON_KEY;
 
             // Fetch from backend configuration API if available
             if (!url || !key) {
                 try {
-                    var apiBase;
+                    let apiBase;
                     if (typeof window.getApiBase === 'function') {
                         apiBase = window.getApiBase();
                     } else {
@@ -168,9 +168,9 @@
                             apiBase = window.location.origin || 'http://localhost:3000';
                         }
                     }
-                    var resp = await fetch(apiBase + '/api/config');
+                    const resp = await fetch(apiBase + '/api/config');
                     if (resp.ok) {
-                        var data = await resp.json();
+                        const data = await resp.json();
                         if (data.supabaseUrl && data.supabaseAnonKey) {
                             url = data.supabaseUrl;
                             key = data.supabaseAnonKey;
@@ -255,7 +255,7 @@
                 });
 
                 // Hydrate existing session or URL hash token on initial boot
-                var sessionResp = await window.supabaseClient.auth.getSession();
+                const sessionResp = await window.supabaseClient.auth.getSession();
                 if (sessionResp && sessionResp.data && sessionResp.data.session) {
                     window.currentSupabaseSession = sessionResp.data.session;
                     window.currentSupabaseUser = sessionResp.data.session.user;
@@ -266,7 +266,7 @@
                     }
                 } else if (window.location.hash && window.location.hash.includes('access_token')) {
                     setTimeout(async function () {
-                        var s = await window.supabaseClient.auth.getSession();
+                        const s = await window.supabaseClient.auth.getSession();
                         if (s && s.data && s.data.session) {
                             window.currentSupabaseSession = s.data.session;
                             window.currentSupabaseUser = s.data.session.user;
@@ -288,7 +288,7 @@
     // Dynamic UI Update Helper for Authentication State
     function updateAuthUIState(user) {
         // ONLY trust real Supabase user objects — never self-authenticate from stale storage
-        var isUserLoggedIn = !!(user || window.currentSupabaseUser);
+        const isUserLoggedIn = !!(user || window.currentSupabaseUser);
 
         if (isUserLoggedIn) {
             safeSet('wingman_authenticated', 'true');
@@ -326,7 +326,7 @@
             window.updateButtonStates();
         }
 
-        var topBanner = document.getElementById('topAuthBanner');
+        const topBanner = document.getElementById('topAuthBanner');
         if (topBanner) {
             if (isUserLoggedIn) {
                 topBanner.classList.add('hidden');
@@ -335,7 +335,7 @@
             }
         }
 
-        var userEmailBadge = document.getElementById('userEmailBadge');
+        const userEmailBadge = document.getElementById('userEmailBadge');
         if (userEmailBadge) {
             if (user && user.email) {
                 userEmailBadge.textContent = user.email;
@@ -346,7 +346,7 @@
             }
         }
 
-        var signOutBtn = document.getElementById('headerSignOutBtn');
+        const signOutBtn = document.getElementById('headerSignOutBtn');
         if (signOutBtn) {
             if (isUserLoggedIn) {
                 signOutBtn.classList.remove('hidden');
@@ -605,27 +605,27 @@
 
     // 1. Email/Password Signup
     window.signUpUser = async function (email, password) {
-        var cleanEmail = (email || "").trim().toLowerCase();
+        const cleanEmail = (email || "").trim().toLowerCase();
         if (!cleanEmail || !emailRegex.test(cleanEmail)) {
-            var msg = 'Please enter a valid email address (e.g. name@domain.com).';
+            const msg = 'Please enter a valid email address (e.g. name@domain.com).';
             notifyUser(msg, 'warning');
             return { success: false, error: msg };
         }
         if (!password || password.length < 8) {
-            var msg = 'Password must be at least 8 characters long.';
+            const msg = 'Password must be at least 8 characters long.';
             notifyUser(msg, 'warning');
             return { success: false, error: msg };
         }
 
-        var client = await initSupabase();
+        const client = await initSupabase();
         if (!client) {
-            var msg = 'Authentication service is initializing. Please try again.';
+            const msg = 'Authentication service is initializing. Please try again.';
             notifyUser(msg, 'warning');
             return { success: false, error: msg };
         }
 
         try {
-            var resp = await client.auth.signUp({
+            const resp = await client.auth.signUp({
                 email: cleanEmail,
                 password: password
             });
@@ -653,7 +653,7 @@
             }
             return { success: false, error: 'Sign up failed.' };
         } catch (err) {
-            var errMsg = err ? (err.message || err.toString()) : 'Sign up error occurred.';
+            const errMsg = err ? (err.message || err.toString()) : 'Sign up error occurred.';
             console.error('Supabase Signup Error:', errMsg);
             notifyUser(errMsg, 'warning');
             return { success: false, error: errMsg };
@@ -662,27 +662,27 @@
 
     // 2. Email/Password Login
     window.loginUser = async function (email, password) {
-        var cleanEmail = (email || "").trim().toLowerCase();
+        const cleanEmail = (email || "").trim().toLowerCase();
         if (!cleanEmail || !emailRegex.test(cleanEmail)) {
-            var msg = 'Please enter a valid email address (e.g. name@domain.com).';
+            const msg = 'Please enter a valid email address (e.g. name@domain.com).';
             notifyUser(msg, 'warning');
             return { success: false, error: msg };
         }
         if (!password || password.length < 8) {
-            var msg = 'Password must be at least 8 characters long.';
+            const msg = 'Password must be at least 8 characters long.';
             notifyUser(msg, 'warning');
             return { success: false, error: msg };
         }
 
-        var client = await initSupabase();
+        const client = await initSupabase();
         if (!client) {
-            var msg = 'Authentication service is initializing. Please try again.';
+            const msg = 'Authentication service is initializing. Please try again.';
             notifyUser(msg, 'warning');
             return { success: false, error: msg };
         }
 
         try {
-            var resp = await client.auth.signInWithPassword({
+            const resp = await client.auth.signInWithPassword({
                 email: email,
                 password: password
             });
@@ -715,7 +715,7 @@
             }
             return { success: false, error: 'Login failed.' };
         } catch (err) {
-            var errMsg = err ? (err.message || err.toString()) : 'Login error occurred.';
+            const errMsg = err ? (err.message || err.toString()) : 'Login error occurred.';
             console.error('Supabase Login Error:', errMsg);
             notifyUser(errMsg, 'warning');
             return { success: false, error: errMsg };
@@ -727,14 +727,14 @@
         if (e && typeof e.preventDefault === 'function') e.preventDefault();
 
         try {
-            var client = await initSupabase();
+            const client = await initSupabase();
 
             if (client && client.auth) {
-                var targetRedirect = (window.location.origin && window.location.origin !== 'null')
+                const targetRedirect = (window.location.origin && window.location.origin !== 'null')
                     ? (window.location.origin + '/app.html')
                     : 'http://localhost:3000/app.html';
 
-                var resp = await client.auth.signInWithOAuth({
+                const resp = await client.auth.signInWithOAuth({
                     provider: 'google',
                     options: {
                         redirectTo: targetRedirect,
@@ -760,22 +760,22 @@
 
     // 4. Password Reset via Email
     window.resetPasswordForEmail = async function (email) {
-        var cleanEmail = (email || "").trim().toLowerCase();
+        const cleanEmail = (email || "").trim().toLowerCase();
         if (!cleanEmail || !emailRegex.test(cleanEmail)) {
             return { success: false, error: 'Please enter a valid email address (e.g. name@domain.com).' };
         }
 
-        var client = await initSupabase();
+        const client = await initSupabase();
         if (!client) {
             return { success: false, error: 'Authentication service is initializing. Please try again.' };
         }
 
         try {
-            var redirectTo = (window.location.origin && window.location.origin !== 'null')
+            const redirectTo = (window.location.origin && window.location.origin !== 'null')
                 ? (window.location.origin + '/app.html?type=recovery')
                 : 'http://localhost:3000/app.html?type=recovery';
 
-            var resp = await client.auth.resetPasswordForEmail(email, {
+            const resp = await client.auth.resetPasswordForEmail(email, {
                 redirectTo: redirectTo
             });
 
@@ -786,7 +786,7 @@
 
             return { success: true };
         } catch (err) {
-            var errMsg = err ? (err.message || err.toString()) : 'Password reset error occurred.';
+            const errMsg = err ? (err.message || err.toString()) : 'Password reset error occurred.';
             console.error('Password Reset Error:', errMsg);
             return { success: false, error: errMsg };
         }
