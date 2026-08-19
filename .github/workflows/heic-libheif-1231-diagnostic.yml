@@ -122,6 +122,30 @@ jobs:
           git clone https://github.com/hoppergee/heic-to.git
           cd heic-to
           git checkout --detach f37af866f9aa6212ddc84b67a279c9f2386aba4f
+
+          # heic-to 1.5.2 assumes buildLibheif() returns an initialized module
+          # synchronously. Emscripten 6 MODULARIZE factories are async and return
+          # a Promise, so cache that Promise and await it inside decodeBuffer().
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/worker.js')
+          text = path.read_text()
+          old_factory = 'const libheif = buildLibheif()'
+          new_factory = 'const libheifPromise = buildLibheif()'
+          if text.count(old_factory) != 1:
+              raise SystemExit('unexpected heic-to libheif factory shape')
+          text = text.replace(old_factory, new_factory, 1)
+          old_decode = 'const decodeBuffer = async (buffer) => {\n  let decoder, data;'
+          new_decode = 'const decodeBuffer = async (buffer) => {\n  const libheif = await libheifPromise;\n  let decoder, data;'
+          if text.count(old_decode) != 1:
+              raise SystemExit('unexpected heic-to decodeBuffer shape')
+          text = text.replace(old_decode, new_decode, 1)
+          path.write_text(text)
+          PY
+          test "$(grep -c 'const libheifPromise = buildLibheif()' src/worker.js)" -eq 1
+          test "$(grep -c 'const libheif = await libheifPromise;' src/worker.js)" -eq 1
+          echo 'HEIC_HEIC_TO_MODULARIZE_ASYNC_ADAPTER=PASS'
+
           npm ci
           npm audit --omit=dev
           echo 'HEIC_HEIC_TO_RUNTIME_DEP_AUDIT=PASS'
@@ -143,7 +167,7 @@ jobs:
 
           echo 'HEIC_CANDIDATE_LIBHEIF=1.23.1'
           echo 'HEIC_CANDIDATE_LIBDE265=1.1.1'
-          echo 'HEIC_CANDIDATE_HEIC_TO_BASE=1.5.2+patched-libheif-1.23.1-libde265-1.1.1'
+          echo 'HEIC_CANDIDATE_HEIC_TO_BASE=1.5.2+patched-libheif-1.23.1-libde265-1.1.1-async-factory'
           echo 'HEIC_CANDIDATE_EMSDK=6.0.7'
           echo "HEIC_CANDIDATE_RAW_BYTES=$(wc -c < dist/csp/heic-to.js)"
           gzip -9 -c dist/csp/heic-to.js > /tmp/heic-to-1231.js.gz
@@ -176,6 +200,7 @@ jobs:
           <!doctype html>
           <html><head>
           <meta charset="utf-8">
+          <link rel="icon" href="data:,">
           <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; script-src-elem 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'">
           </head><body><div id="status">starting</div><script type="module" src="/tmp/heic-browser/test.mjs"></script></body></html>
           EOF
@@ -226,7 +251,15 @@ jobs:
             const page = await browser.newPage();
             const errors = [];
             page.on('pageerror', e => errors.push('pageerror:' + e.message));
-            page.on('console', m => { if (m.type() === 'error') errors.push('console:' + m.text()); });
+            page.on('console', m => {
+              if (m.type() === 'error') {
+                const loc = m.location();
+                errors.push('console:' + m.text() + (loc && loc.url ? '@' + loc.url + ':' + loc.lineNumber : ''));
+              }
+            });
+            page.on('response', r => {
+              if (r.status() >= 400) errors.push('http:' + r.status() + ':' + r.url());
+            });
             const resp = await page.goto('http://127.0.0.1:4173/tmp/heic-browser/index.html', { waitUntil: 'load' });
             if (!resp || resp.status() !== 200) throw new Error('diagnostic page failed to load');
             await page.waitForFunction(() => window.__heicDiagnostic && window.__heicDiagnostic.done, null, { timeout: 60000 });
@@ -252,6 +285,6 @@ jobs:
           echo 'HEIC_PROVENANCE_LIBDE265_COMMIT=4dd701fffac01632ffd5cabc5ef10deb56accba1'
           echo 'HEIC_PROVENANCE_EMSDK_COMMIT=e3a0604c3d130d6ab2c40e14a1861accd939a255'
           echo 'HEIC_PROVENANCE_FIXTURE_COMMIT=bc08e3edd433d4375039f95b5840fe71a691e041'
-          echo 'HEIC_LICENSE_HEIC_TO=LGPL-3.0'
-          echo 'HEIC_LICENSE_LIBHEIF=LGPL-3.0'
+          echo 'HEIC_LICENSE_HEIC_TO=LGPL-3.0-or-later'
+          echo 'HEIC_LICENSE_LIBHEIF=LGPL-3.0-or-later'
           echo 'HEIC_LICENSE_LIBDE265=LGPL-3.0-or-later'
