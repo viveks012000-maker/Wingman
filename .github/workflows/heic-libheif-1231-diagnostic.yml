@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: heic-diagnostic-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   patched-libheif-csp-browser-diagnostic:
     runs-on: ubuntu-latest
