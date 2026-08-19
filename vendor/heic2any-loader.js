@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    var REAL_SRC = './vendor/heic2any.min.js';
+    var REAL_SRC = './vendor/heic-runtime/heic-to-csp.js';
     var loadPromise = null;
 
     function getRealImplementation(lazyFn) {
@@ -25,6 +25,7 @@
 
             var script = document.createElement('script');
             script.src = REAL_SRC;
+            script.type = 'module';
             script.async = true;
             script.setAttribute('data-wingman-heic-runtime', 'true');
 

@@ -13,7 +13,7 @@ const ALLOWED_VENDOR_FILES = new Set([
   'cropperjs/cropper.min.css',
   'cropperjs/cropper.min.js',
   'heic2any-loader.js',
-  'heic2any.min.js',
+  'heic-runtime/heic-to-csp.js',
   'production-runtime.js',
   'supabase.min.js'
 ]);
