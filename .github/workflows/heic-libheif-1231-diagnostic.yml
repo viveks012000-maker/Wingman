@@ -56,6 +56,25 @@ jobs:
 
           git clone --depth 1 --branch v1.23.1 https://github.com/strukturag/libheif.git
 
+          # libheif v1.23.1 compiles its C++ archive with em++ but its helper's
+          # final browser-bundle link is hard-coded to emcc. Emscripten 6.0.7
+          # rejects that final C++ link with unresolved libc++ symbols. Patch
+          # exactly that one final driver invocation inside this disposable CI
+          # workspace; upstream source and production files remain unchanged.
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('libheif/build-emscripten.sh')
+          text = path.read_text()
+          old = 'emcc -Wl,--whole-archive "$LIBHEIFA"'
+          new = 'em++ -Wl,--whole-archive "$LIBHEIFA"'
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'expected exactly one final emcc linker invocation, found {count}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          test "$(grep -c '^em++ -Wl,--whole-archive' libheif/build-emscripten.sh)" -eq 1
+          echo 'HEIC_LIBHEIF_FINAL_LINK_DRIVER=em++'
+
           git clone https://github.com/strukturag/libde265.git libde265-src
           cd libde265-src
           git checkout --detach 4dd701fffac01632ffd5cabc5ef10deb56accba1
@@ -90,6 +109,8 @@ jobs:
           cd heic-to
           git checkout --detach f37af866f9aa6212ddc84b67a279c9f2386aba4f
           npm ci
+          npm audit --omit=dev
+          echo 'HEIC_HEIC_TO_RUNTIME_DEP_AUDIT=PASS'
           cd ..
 
           cd libheif-build
