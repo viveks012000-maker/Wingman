@@ -28,7 +28,7 @@ source "./emsdk_env.sh"
 cd "$WORK"
 
 git clone -q --depth 1 --branch "$LIBHEIF_TAG" https://github.com/strukturag/libheif.git
-/c/Users/User/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe - <<'PY'
+python3 - <<'PY'
 from pathlib import Path
 path = Path('libheif/build-emscripten.sh')
 text = path.read_text()
@@ -74,7 +74,7 @@ cp libde265-cmake/libde265/libde265.a libheif-build/libde265-1.1.1/libde265/.lib
 git clone -q https://github.com/hoppergee/heic-to.git
 cd heic-to
 git checkout -q --detach "$HEIC_TO_COMMIT"
-/c/Users/User/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe - <<'PY'
+python3 - <<'PY'
 from pathlib import Path
 path = Path('src/worker.js')
 text = path.read_text()
