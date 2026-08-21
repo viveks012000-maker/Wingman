@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build-and-verify:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, wingman]
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
