@@ -45,6 +45,20 @@ try {
   );
   assert.deepStrictEqual(forbidden, [], `Public Netlify artifact contains forbidden files: ${forbidden.join(', ')}`);
 
+  const heicRuntimeDir = path.join(OUT, 'vendor', 'heic-runtime');
+  if (fs.existsSync(heicRuntimeDir) && fs.statSync(heicRuntimeDir).isDirectory()) {
+    const heicLicenseFiles = [
+      'vendor/heic-runtime/LICENSE-heic-to.txt',
+      'vendor/heic-runtime/LICENSE-libheif.txt',
+      'vendor/heic-runtime/LICENSE-libde265.txt',
+      'vendor/heic-runtime/NOTICE.txt',
+      'vendor/heic-runtime/SOURCE.txt'
+    ];
+    for (const rel of heicLicenseFiles) {
+      assert.ok(files.includes(rel), `LGPL compliance file must be preserved in public artifact: ${rel}`);
+    }
+  }
+
   const railway = 'https://wingman-production-c6ce.up.railway.app';
   const appHtml = fs.readFileSync(path.join(OUT, 'app.html'), 'utf8');
   const appJs = fs.readFileSync(path.join(OUT, 'app.js'), 'utf8');

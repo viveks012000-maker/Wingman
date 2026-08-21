@@ -14,6 +14,14 @@ const ALLOWED_VENDOR_FILES = new Set([
   'cropperjs/cropper.min.js',
   'heic2any-loader.js',
   'heic-runtime/heic-to-csp.js',
+  'heic-runtime/LICENSE-heic-to.txt',
+  'heic-runtime/LICENSE-libheif.txt',
+  'heic-runtime/LICENSE-libde265.txt',
+  'heic-runtime/NOTICE.txt',
+  'heic-runtime/SOURCE.txt',
+  'heic-runtime/build-info.json',
+  'heic-runtime/source/heic-to-worker.js',
+  'heic-runtime/source/libheif-build-emscripten.sh',
   'production-runtime.js',
   'supabase.min.js'
 ]);
