@@ -109,8 +109,47 @@ jobs:
             echo "node --version: $(node --version)"
             echo "npm --version: $(npm --version)"
             echo "python3 --version: $(python3 --version)"
-            echo "emcc --version: $(emcc --version | head -1)"
-            clang --version 2>/dev/null | head -1 || echo "clang: not found"
+            echo "PYTHON: $(command -v python3) (realpath: $(readlink -f "$(command -v python3)") )"
+            echo ""
+            echo "=== EMCC FULL VERSION (both lines) ==="
+            emcc --version 2>&1 || echo "emcc: not found"
+            echo ""
+            echo "=== EMSDK BUNDLED CLANG VERSION ==="
+            if [ -x "${EMSDK}/upstream/bin/clang" ]; then
+              "${EMSDK}/upstream/bin/clang" --version 2>&1
+            else
+              echo "emsdk clang not found at ${EMSDK}/upstream/bin/clang"
+            fi
+            echo ""
+            echo "=== EMSDK BUNDLED LLD VERSION ==="
+            if [ -x "${EMSDK}/upstream/bin/wasm-ld" ]; then
+              "${EMSDK}/upstream/bin/wasm-ld" --version 2>&1 || true
+            else
+              echo "wasm-ld not found at ${EMSDK}/upstream/bin/wasm-ld"
+            fi
+            if [ -x "${EMSDK}/upstream/bin/lld" ]; then
+              "${EMSDK}/upstream/bin/lld" --version 2>&1 || true
+            else
+              echo "lld not found at ${EMSDK}/upstream/bin/lld"
+            fi
+            echo ""
+            echo "=== SYSTEM CLANG ==="
+            clang --version 2>/dev/null | head -1 || echo "system clang: not found"
+            echo ""
+            echo "=== EMSDK TOOLCHAIN BINARY HASHES ==="
+            for tool in clang clang++ lld wasm-ld llvm-ar llvm-nm llvm-objcopy llvm-ranlib; do
+              tp="${EMSDK}/upstream/bin/${tool}"
+              if [ -f "$tp" ] && [ ! -L "$tp" ]; then
+                echo "${tool}: sha256=$(sha256sum "$tp" | cut -d' ' -f1) size=$(wc -c < "$tp" | tr -d ' ')"
+              elif [ -L "$tp" ]; then
+                target=$(readlink "$tp")
+                echo "${tool}: symlink -> ${target}"
+              else
+                echo "${tool}: NOT FOUND"
+              fi
+            done
+            echo ""
+            echo "=== EMSDK ENV ==="
             echo "EMSDK: $EMSDK"
             echo "EMSDK_NODE: $EMSDK_NODE"
             "$EMSDK_NODE" --version
@@ -219,15 +258,41 @@ jobs:
             done
 
             echo ""
+            echo "=== EMSDK INTERNALS ==="
+            echo "EMSDK version file:"
+            cat "${EMSDK}/upstream/emscripten/emscripten-version.txt" 2>/dev/null || echo "(missing)"
+            echo "LLVM root contents:"
+            ls -la "${EMSDK}/upstream/bin/" 2>/dev/null | head -30
+            echo "python3 from emsdk_env:"
+            echo "$EMSDK_PYTHON" 2>/dev/null || echo "(EMSDK_PYTHON not set)"
+            echo "em++ script location:"
+            command -v em++ 2>/dev/null || echo "em++ not on PATH"
+            echo "PYTHONHASHSEED: ${PYTHONHASHSEED:-<unset>}"
+            echo "LANG: ${LANG:-<unset>}"
+            echo "LC_ALL: ${LC_ALL:-<unset>}"
+
+            echo ""
             echo "=== CMAKE CACHE ==="
             if [ -f "${WORK}/libheif-build/CMakeCache.txt" ]; then
               cat "${WORK}/libheif-build/CMakeCache.txt"
             fi
 
             echo ""
-            echo "=== LINK.TXT (libheif) ==="
+            echo "=== LINK.TXT (libheif cmake) ==="
             if [ -f "${WORK}/libheif-build/libheif/CMakeFiles/heif.dir/link.txt" ]; then
               cat "${WORK}/libheif-build/libheif/CMakeFiles/heif.dir/link.txt"
+            fi
+
+            echo ""
+            echo "=== POST-LINK: libheif.js FIRST 30 LINES ==="
+            if [ -f "${WORK}/libheif-build/libheif.js" ]; then
+              head -30 "${WORK}/libheif-build/libheif.js"
+            fi
+
+            echo ""
+            echo "=== POST-LINK: libheif.js FUNCTION ORDER (first 30 names) ==="
+            if [ -f "${WORK}/libheif-build/libheif.js" ]; then
+              grep -oE 'function [a-zA-Z_][a-zA-Z0-9_]*' "${WORK}/libheif-build/libheif.js" | head -30
             fi
 
           } > "${DIAG_DIR}/diagnostics.txt" 2>&1
