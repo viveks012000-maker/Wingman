@@ -76,6 +76,12 @@ jobs:
           
           WORK="${RUNNER_TEMP}/wingman-heic-runtime"
           
+          # Restore emsdk environment so emcc/llvm-nm/llvm-ar/EMSDK_NODE are available
+          if [ -f "${WORK}/emsdk/emsdk_env.sh" ]; then
+            # shellcheck disable=SC1091
+            source "${WORK}/emsdk/emsdk_env.sh"
+          fi
+          
           # Collect intermediate artifacts when present
           cp -f "${WORK}/libde265-cmake/libde265/libde265.a" "${DIAG_DIR}/" 2>/dev/null || true
           cp -f "${WORK}/libheif-build/libde265-1.1.1/libde265/.libs/libde265.a" "${DIAG_DIR}/" 2>/dev/null || true
