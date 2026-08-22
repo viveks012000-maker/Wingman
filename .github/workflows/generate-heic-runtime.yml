@@ -126,7 +126,7 @@ jobs:
             echo ""
             echo "=== EXPORTED FUNCTION LIST FOR EMS LINK ==="
             if [ -f "${WORK}/libheif-build/libheif/libheif.a" ]; then
-              EXPORTED=$(llvm-nm --format=just-symbols "${WORK}/libheif-build/libheif/libheif.a" 2>/dev/null | grep -E '^(heif_|de265_|aom_)' | sort | sed 's/^/_/' | paste -sd ',' -)
+              EXPORTED=$(llvm-nm --format=just-symbols "${WORK}/libheif-build/libheif/libheif.a" 2>/dev/null | grep -E '^(heif_|de265_|aom_)' | sort | sed 's/^/_/' | paste -sd ',' - || true)
               echo "${EXPORTED}"
             fi
             
