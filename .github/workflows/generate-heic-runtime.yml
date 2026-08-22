@@ -71,8 +71,8 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: heic-runtime-mismatch-${{ github.sha }}
-          path: vendor/heic-runtime/heic-to-csp.js
-          if-no-files-found: ignore
+          path: ${{ runner.temp }}/wingman-heic-runtime/heic-to/dist/csp/heic-to.js
+          if-no-files-found: error
           retention-days: 7
 # trigger workflow
 # trigger workflow
