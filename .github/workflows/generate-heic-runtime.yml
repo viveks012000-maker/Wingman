@@ -66,12 +66,106 @@ jobs:
           test "$ACTUAL_BYTES" = "$EXPECTED_BYTES"
           ! grep -Eq '(^|[^[:alnum:]_])(eval[[:space:]]*\(|new[[:space:]]+Function[[:space:]]*\()' vendor/heic-runtime/heic-to-csp.js
 
-      - name: Upload mismatched runtime artifact (diagnostic)
+      - name: Collect diagnostic artifacts on mismatch
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIAG_DIR="${RUNNER_TEMP}/heic-diagnostic"
+          mkdir -p "${DIAG_DIR}"
+          
+          WORK="${RUNNER_TEMP}/wingman-heic-runtime"
+          
+          # Collect intermediate artifacts when present
+          cp -f "${WORK}/libde265-cmake/libde265/libde265.a" "${DIAG_DIR}/" 2>/dev/null || true
+          cp -f "${WORK}/libheif-build/libde265-1.1.1/libde265/.libs/libde265.a" "${DIAG_DIR}/" 2>/dev/null || true
+          cp -f "${WORK}/libheif-build/libheif/libheif.a" "${DIAG_DIR}/" 2>/dev/null || true
+          cp -f "${WORK}/libheif-build/libheif.js" "${DIAG_DIR}/" 2>/dev/null || true
+          cp -f "${WORK}/heic-to/src/lib/libheif-without-unsafe-eval.js" "${DIAG_DIR}/" 2>/dev/null || true
+          cp -f "${WORK}/heic-to/dist/csp/heic-to.js" "${DIAG_DIR}/" 2>/dev/null || true
+          
+          # Generate diagnostic metadata
+          {
+            echo "=== ENVIRONMENT ==="
+            echo "uname -a: $(uname -a)"
+            echo "cmake --version: $(cmake --version | head -1)"
+            echo "make --version: $(make --version | head -1)"
+            echo "node --version: $(node --version)"
+            echo "npm --version: $(npm --version)"
+            echo "python3 --version: $(python3 --version)"
+            echo "emcc --version: $(emcc --version | head -1)"
+            clang --version 2>/dev/null | head -1 || echo "clang: not found"
+            echo "emcc --version: $(emcc --version | head -1)"
+            echo "EMSDK_NODE: $EMSDK_NODE"
+            "$EMSDK_NODE" --version
+            
+            echo ""
+            echo "=== libheif.a ARCHIVE MEMBERS ==="
+            if [ -f "${WORK}/libheif-build/libheif/libheif.a" ]; then
+              llvm-ar t "${WORK}/libheif-build/libheif/libheif.a" | sort
+            else
+              echo "libheif.a not found"
+            fi
+            
+            echo ""
+            echo "=== libde265.a ARCHIVE MEMBERS ==="
+            if [ -f "${WORK}/libde265-cmake/libde265/libde265.a" ]; then
+              llvm-ar t "${WORK}/libde265-cmake/libde265/libde265.a" | sort
+            elif [ -f "${WORK}/libheif-build/libde265-1.1.1/libde265/.libs/libde265.a" ]; then
+              llvm-ar t "${WORK}/libheif-build/libde265-1.1.1/libde265/.libs/libde265.a" | sort
+            else
+              echo "libde265.a not found"
+            fi
+            
+            echo ""
+            echo "=== libheif.a EXPORTED SYMBOLS ==="
+            if [ -f "${WORK}/libheif-build/libheif/libheif.a" ]; then
+              llvm-nm --format=just-symbols "${WORK}/libheif-build/libheif/libheif.a" 2>/dev/null | grep -E '^(heif_|de265_|aom_)' | sort || true
+            fi
+            
+            echo ""
+            echo "=== EXPORTED FUNCTION LIST FOR EMS LINK ==="
+            if [ -f "${WORK}/libheif-build/libheif/libheif.a" ]; then
+              EXPORTED=$(llvm-nm --format=just-symbols "${WORK}/libheif-build/libheif/libheif.a" 2>/dev/null | grep -E '^(heif_|de265_|aom_)' | sort | sed 's/^/_/' | paste -sd ',' -)
+              echo "${EXPORTED}"
+            fi
+            
+            echo ""
+            echo "=== FILE HASHES AND SIZES ==="
+            for f in \
+              "${WORK}/libde265-cmake/libde265/libde265.a" \
+              "${WORK}/libheif-build/libde265-1.1.1/libde265/.libs/libde265.a" \
+              "${WORK}/libheif-build/libheif/libheif.a" \
+              "${WORK}/libheif-build/libheif.js" \
+              "${WORK}/heic-to/src/lib/libheif-without-unsafe-eval.js" \
+              "${WORK}/heic-to/dist/csp/heic-to.js"; do
+              if [ -f "$f" ]; then
+                echo "$f: $(sha256sum "$f" | awk '{print $1}') $(wc -c < "$f" | tr -d ' ')"
+              else
+                echo "$f: MISSING"
+              fi
+            done
+            
+            echo ""
+            echo "=== CMAKE CACHE ==="
+            if [ -f "${WORK}/libheif-build/CMakeCache.txt" ]; then
+              cat "${WORK}/libheif-build/CMakeCache.txt"
+            fi
+            
+            echo ""
+            echo "=== LINK.TXT (libheif) ==="
+            if [ -f "${WORK}/libheif-build/libheif/CMakeFiles/heif.dir/link.txt" ]; then
+              cat "${WORK}/libheif-build/libheif/CMakeFiles/heif.dir/link.txt"
+            fi
+            
+          } > "${DIAG_DIR}/diagnostics.txt" 2>&1
+          
+      - name: Upload diagnostic artifacts on mismatch
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: heic-runtime-mismatch-${{ github.sha }}
-          path: ${{ runner.temp }}/wingman-heic-runtime/heic-to/dist/csp/heic-to.js
+          name: heic-diagnostic-${{ github.sha }}
+          path: ${{ runner.temp }}/heic-diagnostic
           if-no-files-found: error
           retention-days: 7
 # trigger workflow
