@@ -1,0 +1,9 @@
+MyWingman HEIC browser converter third-party notice
+
+This separately loaded browser module contains and/or is derived from:
+- heic-to, commit f37af866f9aa6212ddc84b67a279c9f2386aba4f — GNU LGPL v3 or later
+- libheif v1.23.1 — GNU LGPL v3 or later
+- libde265, commit 4dd701fffac01632ffd5cabc5ef10deb56accba1 (v1.1.1) — GNU LGPL v3 or later
+
+The converter is loaded as a separate local ES module on first HEIC/HEIF use. It is not bundled into MyWingman's proprietary application JavaScript.
+License texts, modified source files, exact source revisions and the reproducible build recipe are provided alongside this file.
