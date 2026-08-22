@@ -41,10 +41,10 @@
       "version": "f37af866f9aa6212ddc84b67a279c9f2386aba4f",
       "license": "LGPL-3.0-or-later",
       "source": "https://github.com/hoppergee/heic-to/commit/f37af866f9aa6212ddc84b67a279c9f2386aba4f",
-      "provenance": "Pinned heic-to browser runtime built from libheif v1.23.1 and libde265 v1.1.1 with Emscripten 6.0.7. Uses em++ final link, ENVIRONMENT=web,worker, USE_WASM=0, USE_UNSAFE_EVAL=0. No dynamic code generation.",
+      "provenance": "Pinned heic-to browser runtime built from libheif v1.23.1 and libde265 v1.1.1 with Emscripten 6.0.7 (pinned emsdk commit). Uses em++ final link, ENVIRONMENT=web,worker, USE_WASM=0, USE_UNSAFE_EVAL=0. No dynamic code generation. Byte-exact reproducible on Linux/CI (ubuntu-latest); verified across two independent local builds.",
       "reviewStatus": "approved",
-      "bytes": 1115318,
-      "sha256": "500a54dcdb7873c849548fa6ab4f95f9b2c93c2c7808f57f271da7ca84d278a4"
+      "bytes": 3168650,
+      "sha256": "d19857f33f41f9d21d27d515d95d60a2dff0369bcc4d4525c8eef487be7dd9a5"
     }
   ]
 }

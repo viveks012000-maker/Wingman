@@ -6,8 +6,8 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const CSS = path.join(ROOT, 'output.css');
-const EXPECTED_BYTES = 113877;
-const EXPECTED_SHA256 = 'f513634da85c3b6248efedb2a70605d10552cb251e73bfccd0b3b5dc6af87f56';
+const EXPECTED_BYTES = 113878;
+const EXPECTED_SHA256 = 'd4be791e92f9063eb67140a2913ae0418cf15ee29861b258a34f9aaa689d9211';
 
 function sha256(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');

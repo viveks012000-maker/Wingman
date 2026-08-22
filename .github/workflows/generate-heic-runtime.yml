@@ -12,7 +12,7 @@ on:
       - 'scripts/build-heic-browser-runtime.sh'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: generate-heic-runtime-${{ github.event.pull_request.number || github.ref }}
@@ -23,12 +23,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
           cache: npm
@@ -57,23 +58,8 @@ jobs:
           test -s vendor/heic-runtime/LICENSE-libde265.txt
           test -s vendor/heic-runtime/source/heic-to-worker.js
           test -s vendor/heic-runtime/source/libheif-build-emscripten.sh
-          test "$(sha256sum vendor/heic-runtime/heic-to-csp.js | awk '{print $1}')" = '500a54dcdb7873c849548fa6ab4f95f9b2c93c2c7808f57f271da7ca84d278a4'
-          test "$(wc -c < vendor/heic-runtime/heic-to-csp.js | tr -d ' ')" = '1115318'
+          test "$(sha256sum vendor/heic-runtime/heic-to-csp.js | awk '{print $1}')" = 'd19857f33f41f9d21d27d515d95d60a2dff0369bcc4d4525c8eef487be7dd9a5'
+          test "$(wc -c < vendor/heic-runtime/heic-to-csp.js | tr -d ' ')" = '3168650'
           ! grep -Eq '(^|[^[:alnum:]_])(eval[[:space:]]*\(|new[[:space:]]+Function[[:space:]]*\()' vendor/heic-runtime/heic-to-csp.js
-
-      - name: Commit generated runtime to this branch only
-        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/fix/heic-csp-replacement'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add vendor/heic-runtime
-          if git diff --cached --quiet; then
-            echo 'Generated runtime already matches the committed bytes.'
-            exit 0
-          fi
-          git commit -m 'vendor: add patched strict-CSP HEIC runtime'
-          git push origin HEAD:fix/heic-csp-replacement
 # trigger workflow
 # trigger workflow
