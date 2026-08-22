@@ -73,23 +73,33 @@ jobs:
           set -euo pipefail
           DIAG_DIR="${RUNNER_TEMP}/heic-diagnostic"
           mkdir -p "${DIAG_DIR}"
-          
+
           WORK="${RUNNER_TEMP}/wingman-heic-runtime"
-          
-          # Restore emsdk environment so emcc/llvm-nm/llvm-ar/EMSDK_NODE are available
+
+          # Restore emsdk environment so emcc/EMSDK_NODE are available
           if [ -f "${WORK}/emsdk/emsdk_env.sh" ]; then
             # shellcheck disable=SC1091
             source "${WORK}/emsdk/emsdk_env.sh"
           fi
-          
-          # Collect intermediate artifacts when present
-          cp -f "${WORK}/libde265-cmake/libde265/libde265.a" "${DIAG_DIR}/" 2>/dev/null || true
-          cp -f "${WORK}/libheif-build/libde265-1.1.1/libde265/.libs/libde265.a" "${DIAG_DIR}/" 2>/dev/null || true
-          cp -f "${WORK}/libheif-build/libheif/libheif.a" "${DIAG_DIR}/" 2>/dev/null || true
-          cp -f "${WORK}/libheif-build/libheif.js" "${DIAG_DIR}/" 2>/dev/null || true
-          cp -f "${WORK}/heic-to/src/lib/libheif-without-unsafe-eval.js" "${DIAG_DIR}/" 2>/dev/null || true
-          cp -f "${WORK}/heic-to/dist/csp/heic-to.js" "${DIAG_DIR}/" 2>/dev/null || true
-          
+
+          # Pin LLVM tools to the exact SDK-shipped binaries (bare llvm-ar/llvm-nm are not on PATH)
+          LLVM_AR="${EMSDK}/upstream/bin/llvm-ar"
+          LLVM_NM="${EMSDK}/upstream/bin/llvm-nm"
+          for _tool in "${LLVM_AR}" "${LLVM_NM}"; do
+            if [ ! -x "$_tool" ]; then
+              echo "FATAL: LLVM tool not found or not executable: $_tool" >&2
+              exit 1
+            fi
+          done
+
+          # Collect intermediate artifacts with distinct names (two libde265 archives preserved separately)
+          cp -f "${WORK}/libde265-cmake/libde265/libde265.a" "${DIAG_DIR}/libde265-cmake.a" 2>/dev/null || true
+          cp -f "${WORK}/libheif-build/libde265-1.1.1/libde265/.libs/libde265.a" "${DIAG_DIR}/libde265-libheif-copy.a" 2>/dev/null || true
+          cp -f "${WORK}/libheif-build/libheif/libheif.a" "${DIAG_DIR}/libheif.a" 2>/dev/null || true
+          cp -f "${WORK}/libheif-build/libheif.js" "${DIAG_DIR}/libheif.js" 2>/dev/null || true
+          cp -f "${WORK}/heic-to/src/lib/libheif-without-unsafe-eval.js" "${DIAG_DIR}/libheif-without-unsafe-eval.js" 2>/dev/null || true
+          cp -f "${WORK}/heic-to/dist/csp/heic-to.js" "${DIAG_DIR}/heic-to.js" 2>/dev/null || true
+
           # Generate diagnostic metadata
           {
             echo "=== ENVIRONMENT ==="
@@ -101,69 +111,125 @@ jobs:
             echo "python3 --version: $(python3 --version)"
             echo "emcc --version: $(emcc --version | head -1)"
             clang --version 2>/dev/null | head -1 || echo "clang: not found"
-            echo "emcc --version: $(emcc --version | head -1)"
+            echo "EMSDK: $EMSDK"
             echo "EMSDK_NODE: $EMSDK_NODE"
             "$EMSDK_NODE" --version
-            
+            echo "LLVM_AR: ${LLVM_AR} (exists=$([ -x "${LLVM_AR}" ] && echo yes || echo no))"
+            echo "LLVM_NM: ${LLVM_NM} (exists=$([ -x "${LLVM_NM}" ] && echo yes || echo no))"
+
             echo ""
-            echo "=== libheif.a ARCHIVE MEMBERS ==="
-            if [ -f "${WORK}/libheif-build/libheif/libheif.a" ]; then
-              llvm-ar t "${WORK}/libheif-build/libheif/libheif.a" | sort
+            echo "=== libheif.a ARCHIVE MEMBERS (RAW ORDER) ==="
+            if [ -f "${DIAG_DIR}/libheif.a" ]; then
+              "${LLVM_AR}" t "${DIAG_DIR}/libheif.a"
             else
               echo "libheif.a not found"
             fi
-            
+
             echo ""
-            echo "=== libde265.a ARCHIVE MEMBERS ==="
-            if [ -f "${WORK}/libde265-cmake/libde265/libde265.a" ]; then
-              llvm-ar t "${WORK}/libde265-cmake/libde265/libde265.a" | sort
-            elif [ -f "${WORK}/libheif-build/libde265-1.1.1/libde265/.libs/libde265.a" ]; then
-              llvm-ar t "${WORK}/libheif-build/libde265-1.1.1/libde265/.libs/libde265.a" | sort
+            echo "=== libheif.a ARCHIVE MEMBERS (SORTED) ==="
+            if [ -f "${DIAG_DIR}/libheif.a" ]; then
+              "${LLVM_AR}" t "${DIAG_DIR}/libheif.a" | sort
+            fi
+
+            echo ""
+            echo "=== libde265-cmake.a ARCHIVE MEMBERS (RAW ORDER) ==="
+            if [ -f "${DIAG_DIR}/libde265-cmake.a" ]; then
+              "${LLVM_AR}" t "${DIAG_DIR}/libde265-cmake.a"
             else
-              echo "libde265.a not found"
+              echo "libde265-cmake.a not found"
             fi
-            
+
             echo ""
-            echo "=== libheif.a EXPORTED SYMBOLS ==="
-            if [ -f "${WORK}/libheif-build/libheif/libheif.a" ]; then
-              llvm-nm --format=just-symbols "${WORK}/libheif-build/libheif/libheif.a" 2>/dev/null | grep -E '^(heif_|de265_|aom_)' | sort || true
+            echo "=== libde265-cmake.a ARCHIVE MEMBERS (SORTED) ==="
+            if [ -f "${DIAG_DIR}/libde265-cmake.a" ]; then
+              "${LLVM_AR}" t "${DIAG_DIR}/libde265-cmake.a" | sort
             fi
-            
+
             echo ""
-            echo "=== EXPORTED FUNCTION LIST FOR EMS LINK ==="
-            if [ -f "${WORK}/libheif-build/libheif/libheif.a" ]; then
-              EXPORTED=$(llvm-nm --format=just-symbols "${WORK}/libheif-build/libheif/libheif.a" 2>/dev/null | grep -E '^(heif_|de265_|aom_)' | sort | sed 's/^/_/' | paste -sd ',' - || true)
-              echo "${EXPORTED}"
+            echo "=== libde265-libheif-copy.a ARCHIVE MEMBERS (RAW ORDER) ==="
+            if [ -f "${DIAG_DIR}/libde265-libheif-copy.a" ]; then
+              "${LLVM_AR}" t "${DIAG_DIR}/libde265-libheif-copy.a"
+            else
+              echo "libde265-libheif-copy.a not found"
             fi
-            
+
+            echo ""
+            echo "=== libde265-libheif-copy.a ARCHIVE MEMBERS (SORTED) ==="
+            if [ -f "${DIAG_DIR}/libde265-libheif-copy.a" ]; then
+              "${LLVM_AR}" t "${DIAG_DIR}/libde265-libheif-copy.a" | sort
+            fi
+
+            echo ""
+            echo "=== libheif.a ALL SYMBOLS (RAW llvm-nm ORDER) ==="
+            if [ -f "${DIAG_DIR}/libheif.a" ]; then
+              "${LLVM_NM}" --format=just-symbols "${DIAG_DIR}/libheif.a" 2>/dev/null || true
+            fi
+
+            echo ""
+            echo "=== libheif.a EXPORTED SYMBOLS heif_/de265_/aom_ (RAW ORDER, no sort) ==="
+            if [ -f "${DIAG_DIR}/libheif.a" ]; then
+              "${LLVM_NM}" --format=just-symbols "${DIAG_DIR}/libheif.a" 2>/dev/null | grep "^heif_\|^de265_\|^aom_" || echo "(no matches)"
+            fi
+
+            echo ""
+            echo "=== libheif.a EXPORTED SYMBOLS heif_/de265_/aom_ (SORTED) ==="
+            if [ -f "${DIAG_DIR}/libheif.a" ]; then
+              "${LLVM_NM}" --format=just-symbols "${DIAG_DIR}/libheif.a" 2>/dev/null | grep "^heif_\|^de265_\|^aom_" | sort || echo "(no matches)"
+            fi
+
+            echo ""
+            echo "=== EXPORTED_FUNCTIONS_RAW_ORDER ==="
+            if [ -f "${DIAG_DIR}/libheif.a" ]; then
+              EXPORTED_RAW=$("${LLVM_NM}" --format=just-symbols "${DIAG_DIR}/libheif.a" 2>/dev/null \
+                | grep "^heif_\|^de265_\|^aom_" \
+                | grep "[^:]$" \
+                | sed 's/^/_/' \
+                | paste -sd "," - || true)
+              echo "EXPORTED_FUNCTIONS_RAW_ORDER = ${EXPORTED_RAW}"
+            else
+              echo "libheif.a not found — cannot reproduce EXPORTED_FUNCTIONS"
+            fi
+
+            echo ""
+            echo "=== EXPORTED_FUNCTIONS_SORTED (for set comparison) ==="
+            if [ -f "${DIAG_DIR}/libheif.a" ]; then
+              EXPORTED_SORTED=$("${LLVM_NM}" --format=just-symbols "${DIAG_DIR}/libheif.a" 2>/dev/null \
+                | grep "^heif_\|^de265_\|^aom_" \
+                | grep "[^:]$" \
+                | sort \
+                | sed 's/^/_/' \
+                | paste -sd "," - || true)
+              echo "EXPORTED_FUNCTIONS_SORTED = ${EXPORTED_SORTED}"
+            fi
+
             echo ""
             echo "=== FILE HASHES AND SIZES ==="
             for f in \
-              "${WORK}/libde265-cmake/libde265/libde265.a" \
-              "${WORK}/libheif-build/libde265-1.1.1/libde265/.libs/libde265.a" \
-              "${WORK}/libheif-build/libheif/libheif.a" \
-              "${WORK}/libheif-build/libheif.js" \
-              "${WORK}/heic-to/src/lib/libheif-without-unsafe-eval.js" \
-              "${WORK}/heic-to/dist/csp/heic-to.js"; do
+              "${DIAG_DIR}/libde265-cmake.a" \
+              "${DIAG_DIR}/libde265-libheif-copy.a" \
+              "${DIAG_DIR}/libheif.a" \
+              "${DIAG_DIR}/libheif.js" \
+              "${DIAG_DIR}/libheif-without-unsafe-eval.js" \
+              "${DIAG_DIR}/heic-to.js"; do
               if [ -f "$f" ]; then
-                echo "$f: $(sha256sum "$f" | awk '{print $1}') $(wc -c < "$f" | tr -d ' ')"
+                echo "$(basename "$f"): sha256=$(sha256sum "$f" | awk '{print $1}') bytes=$(wc -c < "$f" | tr -d ' ')"
               else
-                echo "$f: MISSING"
+                echo "$(basename "$f"): MISSING"
               fi
             done
-            
+
             echo ""
             echo "=== CMAKE CACHE ==="
             if [ -f "${WORK}/libheif-build/CMakeCache.txt" ]; then
               cat "${WORK}/libheif-build/CMakeCache.txt"
             fi
-            
+
             echo ""
             echo "=== LINK.TXT (libheif) ==="
             if [ -f "${WORK}/libheif-build/libheif/CMakeFiles/heif.dir/link.txt" ]; then
               cat "${WORK}/libheif-build/libheif/CMakeFiles/heif.dir/link.txt"
             fi
-            
+
           } > "${DIAG_DIR}/diagnostics.txt" 2>&1
           
       - name: Upload diagnostic artifacts on mismatch
