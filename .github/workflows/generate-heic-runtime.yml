@@ -9,6 +9,7 @@ on:
       - main
     paths:
       - '.github/workflows/generate-heic-runtime.yml'
+      - '.github/Dockerfile.heic-builder'
       - 'scripts/build-heic-browser-runtime.sh'
 
 permissions:
@@ -21,7 +22,7 @@ concurrency:
 jobs:
   generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -29,24 +30,43 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '22'
-          cache: npm
-
-      - name: Verify runner build tools
+      - name: Build hermetic Docker image
         shell: bash
         run: |
-          set -euo pipefail
-          for tool in cmake make curl git python3 sha256sum; do
-            command -v "$tool" >/dev/null
-          done
+          docker build -t wingman-heic-builder \
+            -f .github/Dockerfile.heic-builder .
 
-      - name: Build exact pinned browser runtime and source materials
+      - name: Build HEIC runtime inside hermetic container
         shell: bash
-        env:
-          EMCC_DEBUG: "1"
-        run: bash scripts/build-heic-browser-runtime.sh
+        run: |
+          docker run --name heic-builder \
+            -v "${{ github.workspace }}/scripts/build-heic-browser-runtime.sh:/build-script.sh:ro" \
+            wingman-heic-builder \
+            sleep 3600
+
+          docker cp "${{ github.workspace }}/scripts/build-heic-browser-runtime.sh" \
+            heic-builder:/home/builder/build-heic-browser-runtime.sh
+
+          docker exec heic-builder bash -c '
+            set -euo pipefail
+            source /home/builder/emsdk/emsdk_env.sh 2>/dev/null || true
+
+            WORK="/home/builder/wingman-heic-runtime"
+            OUT_ROOT="/home/builder/repo"
+            mkdir -p "$OUT_ROOT"
+
+            # Run the build with a temporary RUNNER_TEMP
+            export RUNNER_TEMP="$WORK"
+            bash /home/builder/build-heic-browser-runtime.sh
+
+            # Copy results to a well-known location for extraction
+            mkdir -p /home/builder/output
+            cp -R "$OUT_ROOT/vendor/heic-runtime/." /home/builder/output/ 2>/dev/null || true
+          '
+
+          mkdir -p vendor/heic-runtime
+          docker cp heic-builder:/home/builder/output/ vendor/heic-runtime/
+          docker rm -f heic-builder
 
       - name: Verify generated runtime contract
         shell: bash
@@ -67,266 +87,4 @@ jobs:
           test "$ACTUAL_SHA256" = "$EXPECTED_SHA256"
           test "$ACTUAL_BYTES" = "$EXPECTED_BYTES"
           ! grep -Eq '(^|[^[:alnum:]_])(eval[[:space:]]*\(|new[[:space:]]+Function[[:space:]]*\()' vendor/heic-runtime/heic-to-csp.js
-
-      - name: Collect diagnostic artifacts on mismatch
-        if: failure()
-        shell: bash
-        run: |
-          set -euo pipefail
-          DIAG_DIR="${RUNNER_TEMP}/heic-diagnostic"
-          mkdir -p "${DIAG_DIR}"
-
-          WORK="${RUNNER_TEMP}/wingman-heic-runtime"
-
-          # Restore emsdk environment so emcc/EMSDK_NODE are available
-          if [ -f "${WORK}/emsdk/emsdk_env.sh" ]; then
-            # shellcheck disable=SC1091
-            source "${WORK}/emsdk/emsdk_env.sh"
-          fi
-
-          # Pin LLVM tools to the exact SDK-shipped binaries (bare llvm-ar/llvm-nm are not on PATH)
-          LLVM_AR="${EMSDK}/upstream/bin/llvm-ar"
-          LLVM_NM="${EMSDK}/upstream/bin/llvm-nm"
-          for _tool in "${LLVM_AR}" "${LLVM_NM}"; do
-            if [ ! -x "$_tool" ]; then
-              echo "FATAL: LLVM tool not found or not executable: $_tool" >&2
-              exit 1
-            fi
-          done
-
-          # Collect intermediate artifacts with distinct names (two libde265 archives preserved separately)
-          cp -f "${WORK}/libde265-cmake/libde265/libde265.a" "${DIAG_DIR}/libde265-cmake.a" 2>/dev/null || true
-          cp -f "${WORK}/libheif-build/libde265-1.1.1/libde265/.libs/libde265.a" "${DIAG_DIR}/libde265-libheif-copy.a" 2>/dev/null || true
-          cp -f "${WORK}/libheif-build/libheif/libheif.a" "${DIAG_DIR}/libheif.a" 2>/dev/null || true
-          cp -f "${WORK}/libheif-build/libheif.js" "${DIAG_DIR}/libheif.js" 2>/dev/null || true
-          cp -f "${WORK}/heic-to/src/lib/libheif-without-unsafe-eval.js" "${DIAG_DIR}/libheif-without-unsafe-eval.js" 2>/dev/null || true
-          cp -f "${WORK}/heic-to/dist/csp/heic-to.js" "${DIAG_DIR}/heic-to.js" 2>/dev/null || true
-
-          # Copy EMCC_DEBUG intermediates into diagnostic dir
-          for dir in /tmp/emscripten_temp /tmp/emscripten_temp/emscripten_temp; do
-            if [ -d "$dir" ]; then
-              cp -f "$dir"/emcc-*.wasm "${DIAG_DIR}/" 2>/dev/null || true
-              cp -f "$dir"/emcc-*.js "${DIAG_DIR}/" 2>/dev/null || true
-            fi
-          done
-
-          # Generate diagnostic metadata
-          {
-            echo "=== ENVIRONMENT ==="
-            echo "uname -a: $(uname -a)"
-            echo "cmake --version: $(cmake --version | head -1)"
-            echo "make --version: $(make --version | head -1)"
-            echo "node --version: $(node --version)"
-            echo "npm --version: $(npm --version)"
-            echo "python3 --version: $(python3 --version)"
-            echo "PYTHON: $(command -v python3) (realpath: $(readlink -f "$(command -v python3)") )"
-            echo ""
-            echo "=== EMCC FULL VERSION (both lines) ==="
-            emcc --version 2>&1 || echo "emcc: not found"
-            echo ""
-            echo "=== EMSDK BUNDLED CLANG VERSION ==="
-            if [ -x "${EMSDK}/upstream/bin/clang" ]; then
-              "${EMSDK}/upstream/bin/clang" --version 2>&1
-            else
-              echo "emsdk clang not found at ${EMSDK}/upstream/bin/clang"
-            fi
-            echo ""
-            echo "=== EMSDK BUNDLED LLD VERSION ==="
-            if [ -x "${EMSDK}/upstream/bin/wasm-ld" ]; then
-              "${EMSDK}/upstream/bin/wasm-ld" --version 2>&1 || true
-            else
-              echo "wasm-ld not found at ${EMSDK}/upstream/bin/wasm-ld"
-            fi
-            if [ -x "${EMSDK}/upstream/bin/lld" ]; then
-              "${EMSDK}/upstream/bin/lld" --version 2>&1 || true
-            else
-              echo "lld not found at ${EMSDK}/upstream/bin/lld"
-            fi
-            echo ""
-            echo "=== SYSTEM CLANG ==="
-            clang --version 2>/dev/null | head -1 || echo "system clang: not found"
-            echo ""
-            echo "=== EMSDK TOOLCHAIN BINARY HASHES ==="
-            for tool in clang clang++ lld wasm-ld llvm-ar llvm-nm llvm-objcopy llvm-ranlib; do
-              tp="${EMSDK}/upstream/bin/${tool}"
-              if [ -f "$tp" ] && [ ! -L "$tp" ]; then
-                echo "${tool}: sha256=$(sha256sum "$tp" | cut -d' ' -f1) size=$(wc -c < "$tp" | tr -d ' ')"
-              elif [ -L "$tp" ]; then
-                target=$(readlink "$tp")
-                echo "${tool}: symlink -> ${target}"
-              else
-                echo "${tool}: NOT FOUND"
-              fi
-            done
-            echo ""
-            echo "=== EMSDK ENV ==="
-            echo "EMSDK: $EMSDK"
-            echo "EMSDK_NODE: $EMSDK_NODE"
-            "$EMSDK_NODE" --version
-            echo "LLVM_AR: ${LLVM_AR} (exists=$([ -x "${LLVM_AR}" ] && echo yes || echo no))"
-            echo "LLVM_NM: ${LLVM_NM} (exists=$([ -x "${LLVM_NM}" ] && echo yes || echo no))"
-
-            echo ""
-            echo "=== libheif.a ARCHIVE MEMBERS (RAW ORDER) ==="
-            if [ -f "${DIAG_DIR}/libheif.a" ]; then
-              "${LLVM_AR}" t "${DIAG_DIR}/libheif.a"
-            else
-              echo "libheif.a not found"
-            fi
-
-            echo ""
-            echo "=== libheif.a ARCHIVE MEMBERS (SORTED) ==="
-            if [ -f "${DIAG_DIR}/libheif.a" ]; then
-              "${LLVM_AR}" t "${DIAG_DIR}/libheif.a" | sort
-            fi
-
-            echo ""
-            echo "=== libde265-cmake.a ARCHIVE MEMBERS (RAW ORDER) ==="
-            if [ -f "${DIAG_DIR}/libde265-cmake.a" ]; then
-              "${LLVM_AR}" t "${DIAG_DIR}/libde265-cmake.a"
-            else
-              echo "libde265-cmake.a not found"
-            fi
-
-            echo ""
-            echo "=== libde265-cmake.a ARCHIVE MEMBERS (SORTED) ==="
-            if [ -f "${DIAG_DIR}/libde265-cmake.a" ]; then
-              "${LLVM_AR}" t "${DIAG_DIR}/libde265-cmake.a" | sort
-            fi
-
-            echo ""
-            echo "=== libde265-libheif-copy.a ARCHIVE MEMBERS (RAW ORDER) ==="
-            if [ -f "${DIAG_DIR}/libde265-libheif-copy.a" ]; then
-              "${LLVM_AR}" t "${DIAG_DIR}/libde265-libheif-copy.a"
-            else
-              echo "libde265-libheif-copy.a not found"
-            fi
-
-            echo ""
-            echo "=== libde265-libheif-copy.a ARCHIVE MEMBERS (SORTED) ==="
-            if [ -f "${DIAG_DIR}/libde265-libheif-copy.a" ]; then
-              "${LLVM_AR}" t "${DIAG_DIR}/libde265-libheif-copy.a" | sort
-            fi
-
-            echo ""
-            echo "=== libheif.a ALL SYMBOLS (RAW llvm-nm ORDER) ==="
-            if [ -f "${DIAG_DIR}/libheif.a" ]; then
-              "${LLVM_NM}" --format=just-symbols "${DIAG_DIR}/libheif.a" 2>/dev/null || true
-            fi
-
-            echo ""
-            echo "=== libheif.a EXPORTED SYMBOLS heif_/de265_/aom_ (RAW ORDER, no sort) ==="
-            if [ -f "${DIAG_DIR}/libheif.a" ]; then
-              "${LLVM_NM}" --format=just-symbols "${DIAG_DIR}/libheif.a" 2>/dev/null | grep "^heif_\|^de265_\|^aom_" || echo "(no matches)"
-            fi
-
-            echo ""
-            echo "=== libheif.a EXPORTED SYMBOLS heif_/de265_/aom_ (SORTED) ==="
-            if [ -f "${DIAG_DIR}/libheif.a" ]; then
-              "${LLVM_NM}" --format=just-symbols "${DIAG_DIR}/libheif.a" 2>/dev/null | grep "^heif_\|^de265_\|^aom_" | sort || echo "(no matches)"
-            fi
-
-            echo ""
-            echo "=== EXPORTED_FUNCTIONS_RAW_ORDER ==="
-            if [ -f "${DIAG_DIR}/libheif.a" ]; then
-              EXPORTED_RAW=$("${LLVM_NM}" --format=just-symbols "${DIAG_DIR}/libheif.a" 2>/dev/null \
-                | grep "^heif_\|^de265_\|^aom_" \
-                | grep "[^:]$" \
-                | sed 's/^/_/' \
-                | paste -sd "," - || true)
-              echo "EXPORTED_FUNCTIONS_RAW_ORDER = ${EXPORTED_RAW}"
-            else
-              echo "libheif.a not found — cannot reproduce EXPORTED_FUNCTIONS"
-            fi
-
-            echo ""
-            echo "=== EXPORTED_FUNCTIONS_SORTED (for set comparison) ==="
-            if [ -f "${DIAG_DIR}/libheif.a" ]; then
-              EXPORTED_SORTED=$("${LLVM_NM}" --format=just-symbols "${DIAG_DIR}/libheif.a" 2>/dev/null \
-                | grep "^heif_\|^de265_\|^aom_" \
-                | grep "[^:]$" \
-                | sort \
-                | sed 's/^/_/' \
-                | paste -sd "," - || true)
-              echo "EXPORTED_FUNCTIONS_SORTED = ${EXPORTED_SORTED}"
-            fi
-
-            echo ""
-            echo "=== FILE HASHES AND SIZES ==="
-            for f in \
-              "${DIAG_DIR}/libde265-cmake.a" \
-              "${DIAG_DIR}/libde265-libheif-copy.a" \
-              "${DIAG_DIR}/libheif.a" \
-              "${DIAG_DIR}/libheif.js" \
-              "${DIAG_DIR}/libheif-without-unsafe-eval.js" \
-              "${DIAG_DIR}/heic-to.js"; do
-              if [ -f "$f" ]; then
-                echo "$(basename "$f"): sha256=$(sha256sum "$f" | awk '{print $1}') bytes=$(wc -c < "$f" | tr -d ' ')"
-              else
-                echo "$(basename "$f"): MISSING"
-              fi
-            done
-
-            echo ""
-            echo "=== EMSDK INTERNALS ==="
-            echo "EMSDK version file:"
-            cat "${EMSDK}/upstream/emscripten/emscripten-version.txt" 2>/dev/null || echo "(missing)"
-            echo "LLVM root contents:"
-            ls -la "${EMSDK}/upstream/bin/" 2>/dev/null | head -30
-            echo "python3 from emsdk_env:"
-            echo "$EMSDK_PYTHON" 2>/dev/null || echo "(EMSDK_PYTHON not set)"
-            echo "em++ script location:"
-            command -v em++ 2>/dev/null || echo "em++ not on PATH"
-            echo "PYTHONHASHSEED: ${PYTHONHASHSEED:-<unset>}"
-            echo "LANG: ${LANG:-<unset>}"
-            echo "LC_ALL: ${LC_ALL:-<unset>}"
-
-            echo ""
-            echo "=== EMCC_DEBUG INTERMEDIATE FILES ==="
-            for dir in /tmp/emscripten_temp /tmp/emscripten_temp/emscripten_temp; do
-              if [ -d "$dir" ]; then
-                echo "Found temp dir: $dir"
-                for f in "$dir"/emcc-*.wasm "$dir"/emcc-*.js; do
-                  if [ -f "$f" ]; then
-                    echo "$(basename "$f") size=$(stat -c%s "$f") sha256=$(sha256sum "$f" | cut -d' ' -f1)"
-                  fi
-                done
-              fi
-            done
-
-            echo ""
-            echo "=== CMAKE CACHE ==="
-            if [ -f "${WORK}/libheif-build/CMakeCache.txt" ]; then
-              cat "${WORK}/libheif-build/CMakeCache.txt"
-            fi
-
-            echo ""
-            echo "=== LINK.TXT (libheif cmake) ==="
-            if [ -f "${WORK}/libheif-build/libheif/CMakeFiles/heif.dir/link.txt" ]; then
-              cat "${WORK}/libheif-build/libheif/CMakeFiles/heif.dir/link.txt"
-            fi
-
-            echo ""
-            echo "=== POST-LINK: libheif.js FIRST 30 LINES ==="
-            if [ -f "${WORK}/libheif-build/libheif.js" ]; then
-              head -30 "${WORK}/libheif-build/libheif.js"
-            fi
-
-            echo ""
-            echo "=== POST-LINK: libheif.js FUNCTION ORDER (first 30 names) ==="
-            if [ -f "${WORK}/libheif-build/libheif.js" ]; then
-              grep -oE 'function [a-zA-Z_][a-zA-Z0-9_]*' "${WORK}/libheif-build/libheif.js" | head -30
-            fi
-
-          } > "${DIAG_DIR}/diagnostics.txt" 2>&1
-          
-      - name: Upload diagnostic artifacts on mismatch
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: heic-diagnostic-${{ github.sha }}
-          path: ${{ runner.temp }}/heic-diagnostic
-          if-no-files-found: error
-          retention-days: 7
-# trigger workflow
-# trigger workflow
+          echo "Runtime verification PASSED: $ACTUAL_SHA256 ($ACTUAL_BYTES bytes)"

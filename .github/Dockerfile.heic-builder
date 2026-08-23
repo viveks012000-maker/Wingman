@@ -1,0 +1,24 @@
+FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git cmake make python3 curl ca-certificates xz-utils file \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -s /bin/bash builder
+USER builder
+WORKDIR /home/builder
+
+RUN git clone -q https://github.com/emscripten-core/emsdk.git && \
+    cd emsdk && \
+    git checkout -q --detach e3a0604c3d130d6ab2c40e14a1861accd939a255 && \
+    ./emsdk install 6.0.7 && \
+    ./emsdk activate 6.0.7
+
+ENV EMSDK=/home/builder/emsdk
+ENV EMSCRIPTEN=/home/builder/emsdk/upstream/emscripten
+ENV PATH="/home/builder/emsdk:/home/builder/emsdk/upstream/emscripten:/home/builder/emsdk/node/24.19.0_64bit/bin:/home/builder/emsdk/upstream/bin:${PATH}"
+
+RUN node --version && cmake --version | head -1 && python3 --version && emcc --version | head -1
