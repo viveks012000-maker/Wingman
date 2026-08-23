@@ -39,33 +39,32 @@ jobs:
       - name: Build HEIC runtime inside hermetic container
         shell: bash
         run: |
-          docker run --name heic-builder \
-            -v "${{ github.workspace }}/scripts/build-heic-browser-runtime.sh:/build-script.sh:ro" \
-            wingman-heic-builder \
-            sleep 3600
+          set -euo pipefail
 
-          docker cp "${{ github.workspace }}/scripts/build-heic-browser-runtime.sh" \
-            heic-builder:/home/builder/build-heic-browser-runtime.sh
+          docker run --name heic-builder wingman-heic-builder sleep 3600
 
           docker exec heic-builder bash -c '
             set -euo pipefail
-            source /home/builder/emsdk/emsdk_env.sh 2>/dev/null || true
+            mkdir -p /home/builder/repo/scripts
+          '
+          docker cp "${{ github.workspace }}/scripts/build-heic-browser-runtime.sh" \
+            heic-builder:/home/builder/repo/scripts/build-heic-browser-runtime.sh
+          docker exec heic-builder chown -R builder:builder /home/builder/repo
 
-            WORK="/home/builder/wingman-heic-runtime"
-            OUT_ROOT="/home/builder/repo"
-            mkdir -p "$OUT_ROOT"
-
-            # Run the build with a temporary RUNNER_TEMP
-            export RUNNER_TEMP="$WORK"
-            bash /home/builder/build-heic-browser-runtime.sh
-
-            # Copy results to a well-known location for extraction
-            mkdir -p /home/builder/output
-            cp -R "$OUT_ROOT/vendor/heic-runtime/." /home/builder/output/ 2>/dev/null || true
+          docker exec heic-builder bash -c '
+            set -euo pipefail
+            su - builder -c "
+              set -euo pipefail
+              cd /home/builder/repo
+              export RUNNER_TEMP=/home/builder/wingman-heic-runtime
+              bash scripts/build-heic-browser-runtime.sh
+            "
+            test -s /home/builder/repo/vendor/heic-runtime/heic-to-csp.js \
+              || { echo \"FATAL: generated heic-to-csp.js not found\" >&2; exit 1; }
           '
 
           mkdir -p vendor/heic-runtime
-          docker cp heic-builder:/home/builder/output/ vendor/heic-runtime/
+          docker cp heic-builder:/home/builder/repo/vendor/heic-runtime/. vendor/heic-runtime/
           docker rm -f heic-builder
 
       - name: Verify generated runtime contract
