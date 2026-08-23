@@ -1,0 +1,18 @@
+FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517
+
+# Base image is digest-pinned for immutability. System packages (git, cmake,
+# make, python3, curl, ca-certificates, xz-utils, file) are resolved from
+# the pinned Ubuntu 24.04 repositories. Individual package versions are not
+# pinned because Ubuntu 24.04 does not provide a reliable snapshot mechanism
+# for apt packages. The digest-pinned base image is the primary environmental
+# control for build reproducibility.
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git cmake make python3 curl ca-certificates xz-utils file \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -s /bin/bash builder
+USER builder
+WORKDIR /home/builder

@@ -19,11 +19,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
           cache: npm
@@ -72,10 +73,10 @@ jobs:
           grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/_headers
           grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/config.js
           grep -q '<script defer src="./vendor/heic2any-loader.js"></script>' netlify-dist/app.html
-          ! grep -q '<script src="./vendor/heic2any-loader.js"></script>' netlify-dist/app.html
-          ! grep -q '<script src="./vendor/heic2any.min.js"></script>' netlify-dist/app.html
-          test -f netlify-dist/vendor/heic2any-loader.js
-          test -f netlify-dist/vendor/heic2any.min.js
+                    ! grep -q '<script src="./vendor/heic2any.min.js"></script>' netlify-dist/app.html
+                    ! grep -q '<script src="./vendor/heic2any-loader.js"></script>' netlify-dist/app.html
+                    test -f netlify-dist/vendor/heic2any-loader.js
+                    test -f netlify-dist/vendor/heic-runtime/heic-to-csp.js
           for page in index.html app.html 404.html; do
             test "$(grep -Fo 'data-inline-source="style.css"' "netlify-dist/$page" | wc -l | tr -d ' ')" = 1
             ! grep -Eq 'href="/?style\.css"' "netlify-dist/$page"
@@ -98,7 +99,7 @@ jobs:
           unzip -l wingman-production.zip
           sha256sum wingman-production.zip
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: github.event_name != 'pull_request'
         with:
           name: wingman-production-${{ github.sha }}

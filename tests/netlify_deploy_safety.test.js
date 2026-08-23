@@ -45,6 +45,20 @@ try {
   );
   assert.deepStrictEqual(forbidden, [], `Public Netlify artifact contains forbidden files: ${forbidden.join(', ')}`);
 
+  const heicRuntimeDir = path.join(OUT, 'vendor', 'heic-runtime');
+  if (fs.existsSync(heicRuntimeDir) && fs.statSync(heicRuntimeDir).isDirectory()) {
+    const heicLicenseFiles = [
+      'vendor/heic-runtime/LICENSE-heic-to.txt',
+      'vendor/heic-runtime/LICENSE-libheif.txt',
+      'vendor/heic-runtime/LICENSE-libde265.txt',
+      'vendor/heic-runtime/NOTICE.txt',
+      'vendor/heic-runtime/SOURCE.txt'
+    ];
+    for (const rel of heicLicenseFiles) {
+      assert.ok(files.includes(rel), `LGPL compliance file must be preserved in public artifact: ${rel}`);
+    }
+  }
+
   const railway = 'https://wingman-production-c6ce.up.railway.app';
   const appHtml = fs.readFileSync(path.join(OUT, 'app.html'), 'utf8');
   const appJs = fs.readFileSync(path.join(OUT, 'app.js'), 'utf8');
@@ -66,10 +80,10 @@ try {
   assert.ok(headerBlock('/*').includes('Strict-Transport-Security: max-age=31536000'), 'All frontend routes must enforce HSTS');
   assert.ok(!headerBlock('/').includes("'unsafe-eval'"), 'Root landing CSP must not allow unsafe-eval');
   assert.ok(!headerBlock('/index.html').includes("'unsafe-eval'"), 'index.html CSP must not allow unsafe-eval');
-  assert.ok(headerBlock('/app').includes("'unsafe-eval'"), '/app rewrite CSP must allow HEIC converter runtime code generation');
-  assert.ok(headerBlock('/app.html').includes("'unsafe-eval'"), 'app.html CSP must allow HEIC converter runtime code generation');
+  assert.ok(!headerBlock('/app').includes("'unsafe-eval'"), '/app CSP must not allow unsafe-eval (new HEIC runtime uses USE_UNSAFE_EVAL=0)');
+  assert.ok(!headerBlock('/app.html').includes("'unsafe-eval'"), 'app.html CSP must not allow unsafe-eval (new HEIC runtime uses USE_UNSAFE_EVAL=0)');
   for (const route of ['/terms.html', '/privacy.html', '/refund.html']) assert.ok(!headerBlock(route).includes("'unsafe-eval'"), `${route} CSP must remain eval-free`);
-  assert.strictEqual((headers.match(/'unsafe-eval'/g) || []).length, 2, 'unsafe-eval must be scoped only to /app and /app.html');
+  assert.strictEqual((headers.match(/'unsafe-eval'/g) || []).length, 0, 'unsafe-eval must not appear in any CSP block');
   assert.ok(!appJs.includes("if (response.status === 401) {\n                        window.updateUICredits(0);"), '401 must never become fake zero credits');
   assert.ok(appJs.includes('const freshCreditCheck = await window.checkCreditBalance();'), 'low client balance must be freshly rechecked');
   assert.ok(appJs.includes('const authoritativeBalanceCheck = await window.checkCreditBalance();'), 'HTTP 402 must recheck authoritative wallet');

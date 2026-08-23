@@ -1,0 +1,89 @@
+name: Generate pinned HEIC runtime
+
+on:
+  push:
+    branches:
+      - fix/heic-csp-replacement
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/generate-heic-runtime.yml'
+      - '.github/Dockerfile.heic-builder'
+      - 'scripts/build-heic-browser-runtime.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: generate-heic-runtime-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Build hermetic Docker image
+        shell: bash
+        run: |
+          docker build -t wingman-heic-builder \
+            -f .github/Dockerfile.heic-builder .
+
+      - name: Build HEIC runtime inside hermetic container
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker run --name heic-builder wingman-heic-builder sleep 3600
+
+          docker exec heic-builder bash -c '
+            set -euo pipefail
+            mkdir -p /home/builder/repo/scripts
+          '
+          docker cp "${{ github.workspace }}/scripts/build-heic-browser-runtime.sh" \
+            heic-builder:/home/builder/repo/scripts/build-heic-browser-runtime.sh
+          docker exec heic-builder chown -R builder:builder /home/builder/repo
+
+          docker exec heic-builder bash -c '
+            set -euo pipefail
+            su - builder -c "
+              set -euo pipefail
+              cd /home/builder/repo
+              export RUNNER_TEMP=/home/builder/wingman-heic-runtime
+              bash scripts/build-heic-browser-runtime.sh
+            "
+            test -s /home/builder/repo/vendor/heic-runtime/heic-to-csp.js \
+              || { echo \"FATAL: generated heic-to-csp.js not found\" >&2; exit 1; }
+          '
+
+          mkdir -p vendor/heic-runtime
+          docker cp heic-builder:/home/builder/repo/vendor/heic-runtime/. vendor/heic-runtime/
+          docker rm -f heic-builder
+
+      - name: Verify generated runtime contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s vendor/heic-runtime/heic-to-csp.js
+          test -s vendor/heic-runtime/NOTICE.txt
+          test -s vendor/heic-runtime/SOURCE.txt
+          test -s vendor/heic-runtime/LICENSE-heic-to.txt
+          test -s vendor/heic-runtime/LICENSE-libheif.txt
+          test -s vendor/heic-runtime/LICENSE-libde265.txt
+          test -s vendor/heic-runtime/source/heic-to-worker.js
+          test -s vendor/heic-runtime/source/libheif-build-emscripten.sh
+          ACTUAL_SHA256="$(sha256sum vendor/heic-runtime/heic-to-csp.js | awk '{print $1}')"
+          ACTUAL_BYTES="$(wc -c < vendor/heic-runtime/heic-to-csp.js | tr -d ' ')"
+          EXPECTED_SHA256="d19857f33f41f9d21d27d515d95d60a2dff0369bcc4d4525c8eef487be7dd9a5"
+          EXPECTED_BYTES="3168650"
+          test "$ACTUAL_SHA256" = "$EXPECTED_SHA256"
+          test "$ACTUAL_BYTES" = "$EXPECTED_BYTES"
+          ! grep -Eq '(^|[^[:alnum:]_])(eval[[:space:]]*\(|new[[:space:]]+Function[[:space:]]*\()' vendor/heic-runtime/heic-to-csp.js
+          echo "Runtime verification PASSED: $ACTUAL_SHA256 ($ACTUAL_BYTES bytes)"
