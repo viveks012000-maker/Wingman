@@ -44,6 +44,8 @@ jobs:
 
       - name: Build exact pinned browser runtime and source materials
         shell: bash
+        env:
+          EMCC_DEBUG: "1"
         run: bash scripts/build-heic-browser-runtime.sh
 
       - name: Verify generated runtime contract
@@ -99,6 +101,14 @@ jobs:
           cp -f "${WORK}/libheif-build/libheif.js" "${DIAG_DIR}/libheif.js" 2>/dev/null || true
           cp -f "${WORK}/heic-to/src/lib/libheif-without-unsafe-eval.js" "${DIAG_DIR}/libheif-without-unsafe-eval.js" 2>/dev/null || true
           cp -f "${WORK}/heic-to/dist/csp/heic-to.js" "${DIAG_DIR}/heic-to.js" 2>/dev/null || true
+
+          # Copy EMCC_DEBUG intermediates into diagnostic dir
+          for dir in /tmp/emscripten_temp /tmp/emscripten_temp/emscripten_temp; do
+            if [ -d "$dir" ]; then
+              cp -f "$dir"/emcc-*.wasm "${DIAG_DIR}/" 2>/dev/null || true
+              cp -f "$dir"/emcc-*.js "${DIAG_DIR}/" 2>/dev/null || true
+            fi
+          done
 
           # Generate diagnostic metadata
           {
@@ -270,6 +280,19 @@ jobs:
             echo "PYTHONHASHSEED: ${PYTHONHASHSEED:-<unset>}"
             echo "LANG: ${LANG:-<unset>}"
             echo "LC_ALL: ${LC_ALL:-<unset>}"
+
+            echo ""
+            echo "=== EMCC_DEBUG INTERMEDIATE FILES ==="
+            for dir in /tmp/emscripten_temp /tmp/emscripten_temp/emscripten_temp; do
+              if [ -d "$dir" ]; then
+                echo "Found temp dir: $dir"
+                for f in "$dir"/emcc-*.wasm "$dir"/emcc-*.js; do
+                  if [ -f "$f" ]; then
+                    echo "$(basename "$f") size=$(stat -c%s "$f") sha256=$(sha256sum "$f" | cut -d' ' -f1)"
+                  fi
+                done
+              fi
+            done
 
             echo ""
             echo "=== CMAKE CACHE ==="
