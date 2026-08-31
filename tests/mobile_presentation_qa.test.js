@@ -340,18 +340,23 @@ async function assertApp(browser, viewport) {
             });
             await opened.page.waitForTimeout(50);
             const purchaseScrollRange = await opened.page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
-            await opened.page.mouse.wheel(0, 80);
+            let purchaseRootMoved = false;
+            if (purchaseScrollRange > 0) {
+                await opened.page.evaluate(() => document.getElementById('purchaseModal').style.setProperty('pointer-events', 'none', 'important'));
+                await opened.page.mouse.wheel(0, 80);
+                purchaseRootMoved = await opened.page.evaluate(() => window.scrollY > 0);
+                await opened.page.evaluate(() => document.getElementById('purchaseModal').style.removeProperty('pointer-events'));
+            }
             const purchaseScrollLock = await opened.page.evaluate(() => ({
                 inlineOverflow: document.body.style.overflow,
                 computedOverflowY: getComputedStyle(document.body).overflowY,
-                htmlOverflowY: getComputedStyle(document.documentElement).overflowY,
-                moved: window.scrollY > 0
+                htmlOverflowY: getComputedStyle(document.documentElement).overflowY
             }));
             assert.strictEqual(purchaseScrollLock.inlineOverflow, 'hidden', `purchase modal must set a body scroll lock at ${viewport.join('x')}`);
             assert.strictEqual(purchaseScrollLock.computedOverflowY, 'hidden', `purchase modal body scroll lock is overridden at ${viewport.join('x')}: ${JSON.stringify(purchaseScrollLock)}`);
             assert.strictEqual(purchaseScrollLock.htmlOverflowY, 'hidden', `purchase modal must lock the root scroller at ${viewport.join('x')}: ${JSON.stringify(purchaseScrollLock)}`);
             if (purchaseScrollRange > 0) {
-                assert.strictEqual(purchaseScrollLock.moved, false, `purchase modal allowed document scrolling at ${viewport.join('x')}: ${JSON.stringify(purchaseScrollLock)}`);
+                assert.strictEqual(purchaseRootMoved, false, `purchase modal allowed document scrolling at ${viewport.join('x')}: ${JSON.stringify(purchaseScrollLock)}`);
             }
             await opened.page.evaluate(() => window.closePurchaseModal());
 
