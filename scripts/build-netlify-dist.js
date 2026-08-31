@@ -109,13 +109,13 @@ function writeSecurityFiles() {
     const evalSource = allowEval ? " 'unsafe-eval'" : '';
     return [
     "default-src 'self' https://*.supabase.co",
-      `script-src 'self' 'unsafe-inline'${evalSource} https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co`,
-    "script-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co",
+      `script-src 'self' 'unsafe-inline'${evalSource} https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co https://static.cloudflareinsights.com`,
+    "script-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co https://static.cloudflareinsights.com",
     "script-src-attr 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com",
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' data: blob: https:",
-    `connect-src 'self' https://*.supabase.co wss://*.supabase.co ${railway} https://aicredits.in`,
+    `connect-src 'self' https://*.supabase.co wss://*.supabase.co ${railway} https://aicredits.in https://cloudflareinsights.com`,
     "worker-src 'self' blob:",
     "frame-ancestors 'none'",
     "object-src 'none'",
