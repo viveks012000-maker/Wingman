@@ -108,7 +108,7 @@ function writeSecurityFiles() {
   function cspFor(allowEval = false) {
     const evalSource = allowEval ? " 'unsafe-eval'" : '';
     return [
-    "default-src 'self' https://*.supabase.co https://static.cloudflareinsights.com",
+    "default-src 'self' https://*.supabase.co",
       `script-src 'self' 'unsafe-inline'${evalSource} https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co https://static.cloudflareinsights.com`,
     "script-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co https://static.cloudflareinsights.com",
     "script-src-attr 'unsafe-inline'",
