@@ -41,7 +41,18 @@ function startStaticServer() {
 }
 
 async function openPage(browser, pageName, viewport) {
-    const context = await browser.newContext({ viewport: { width: viewport[0], height: viewport[1] }, isMobile: true, hasTouch: true });
+    const isMobileViewport = viewport[0] < 768;
+    const context = await browser.newContext({
+        viewport: { width: viewport[0], height: viewport[1] },
+        isMobile: true,
+        hasTouch: true,
+        ...(isMobileViewport ? {
+            deviceScaleFactor: viewport[0] > viewport[1] ? 2 : 3,
+            userAgent: viewport[0] > viewport[1]
+                ? 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP2A.240505.002) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36'
+                : 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
+        } : {})
+    });
     const page = await context.newPage();
     const pageErrors = [];
     const failedRequests = [];
@@ -181,6 +192,13 @@ async function assertLanding(browser, viewport) {
             assert.strictEqual(scrollContract.bodyOverflowY, 'auto', `landing body must remain vertically scrollable at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.htmlTouchAction, 'pan-y pinch-zoom', `landing document must allow vertical touch panning and pinch zoom at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.bodyTouchAction, 'pan-y pinch-zoom', `landing body must allow vertical touch panning and pinch zoom at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
+            const compatibilityScrollContract = await opened.page.$eval('#compatibility-row', element => {
+                const style = getComputedStyle(element);
+                return { overflowX: style.overflowX, overflowY: style.overflowY, touchAction: style.touchAction };
+            });
+            assert.strictEqual(compatibilityScrollContract.overflowX, 'clip', `landing compatibility marquee must clip horizontally without creating a vertical touch barrier at ${viewport.join('x')}: ${JSON.stringify(compatibilityScrollContract)}`);
+            assert.strictEqual(compatibilityScrollContract.overflowY, 'visible', `landing compatibility marquee must leave vertical panning to the document at ${viewport.join('x')}: ${JSON.stringify(compatibilityScrollContract)}`);
+            assert.strictEqual(compatibilityScrollContract.touchAction, 'pan-y', `landing compatibility marquee must allow vertical touch panning at ${viewport.join('x')}: ${JSON.stringify(compatibilityScrollContract)}`);
         }
         if (viewport[0] <= 639) {
             assert(layout.hero.y - layout.nav.bottom <= 56, `landing hero has excessive top gap at ${viewport.join('x')}: hero=${layout.hero.y}, nav=${layout.nav.bottom}`);

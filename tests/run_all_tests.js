@@ -67,7 +67,9 @@ const testSuites = [
     { name: '59. Browser Vendor Provenance & Dependency Monitoring', file: 'browser_vendor_provenance.test.js' },
     { name: '60. All Dialog Accessibility Coverage', file: 'all_dialog_accessibility.test.js' },
     { name: '61. Chat Routing, Idempotency & Stale Response Contract', file: 'chat_contract.test.js' },
-    { name: '62. Mobile Presentation Layer Browser QA', file: 'mobile_presentation_qa.test.js' }
+    // This suite exercises 23 fresh mobile/desktop contexts and is bounded separately
+    // because its measured local runtime is just over the default 60-second cap.
+    { name: '62. Mobile Presentation Layer Browser QA', file: 'mobile_presentation_qa.test.js', timeoutMs: 90_000 }
 ];
 
 console.log('========================================================================');
@@ -79,12 +81,13 @@ let totalFailed = 0;
 
 for (const suite of testSuites) {
     const filePath = path.join(__dirname, suite.file);
+    const timeoutMs = suite.timeoutMs || TEST_TIMEOUT_MS;
     console.log(`\n▶ [SUITE] ${suite.name} (${suite.file})`);
     try {
         const output = execSync(`node "${filePath}"`, {
             stdio: 'pipe',
             encoding: 'utf8',
-            timeout: TEST_TIMEOUT_MS,
+            timeout: timeoutMs,
             killSignal: 'SIGTERM'
         });
         console.log(output.trim());
@@ -92,7 +95,7 @@ for (const suite of testSuites) {
     } catch (err) {
         console.error(`❌ FAILED: ${suite.name}`);
         if (err.killed || err.signal === 'SIGTERM' || err.code === 'ETIMEDOUT') {
-            console.error(`Test suite exceeded ${TEST_TIMEOUT_MS / 1000} seconds and was terminated to prevent CI from hanging.`);
+            console.error(`Test suite exceeded ${timeoutMs / 1000} seconds and was terminated to prevent CI from hanging.`);
         }
         if (err.stdout) console.log(err.stdout);
         if (err.stderr) console.error(err.stderr);
