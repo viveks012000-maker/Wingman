@@ -38,6 +38,7 @@ const testSuites = [
     { name: '31. Production Legal & Privacy Accuracy Guard', file: 'legal_production_accuracy.test.js' },
     { name: '32. Public Health Endpoint Minimal-Disclosure Guard', file: 'health_endpoint_minimal.test.js' },
     { name: '33. Netlify Release Manifest Source-Commit Truth Guard', file: 'release_manifest_source.test.js' },
+    { name: '33a. Checked-In Build Script Dependency Guard', file: 'build_script_dependencies.test.js' },
     { name: '34. Maeve Provider Runtime & Retry Guard', file: 'maeve_runtime_repair.test.js' },
     { name: '35. Feature Access Preflight UX Guard', file: 'feature_access_preflight.test.js' },
     { name: '36. Duplicate Request Concurrency Lock Race Guard', file: 'duplicate_request_lock_race.test.js' },
