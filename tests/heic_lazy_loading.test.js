@@ -65,7 +65,7 @@ async function verifyLoaderBehavior() {
         const second = harness.window.heic2any({ id: 2 });
         assert.strictEqual(harness.scripts.length, 1, 'concurrent first use must inject exactly one real HEIC script');
         const injected = harness.scripts[0];
-        assert.strictEqual(injected.src, './vendor/heic-runtime/heic-to-csp.js');
+         assert.strictEqual(injected.src, './vendor/heic2any-adapter.js');
         assert.strictEqual(injected.attrs['data-wingman-heic-runtime'], 'true');
 
         harness.window.heic2any = async options => `converted-${options.id}`;
@@ -104,11 +104,13 @@ function verifyFinalArtifact() {
         assert.ok(appHtml.includes('<script src="./vendor/heic2any-loader.js"></script>'), 'deployed dashboard must load the tiny HEIC loader');
         assert.ok(!appHtml.includes('<script src="./vendor/heic2any.min.js"></script>'), 'deployed dashboard must not eagerly load the heavy HEIC runtime');
         assert.ok(fs.existsSync(path.join(OUT, 'vendor', 'heic2any-loader.js')));
+        assert.ok(fs.existsSync(path.join(OUT, 'vendor', 'heic2any-adapter.js')), 'real HEIC adapter must remain available for first HEIC use');
         assert.ok(fs.existsSync(path.join(OUT, 'vendor', 'heic-runtime', 'heic-to-csp.js')), 'real HEIC runtime must remain available for first HEIC use');
 
         const release = JSON.parse(fs.readFileSync(path.join(OUT, 'release.json'), 'utf8'));
         assert.strictEqual(release.files['app.html'], sha256(appPath), 'release manifest must hash the post-processed app.html');
         assert.strictEqual(release.files['vendor/heic2any-loader.js'], sha256(path.join(OUT, 'vendor', 'heic2any-loader.js')));
+        assert.strictEqual(release.files['vendor/heic2any-adapter.js'], sha256(path.join(OUT, 'vendor', 'heic2any-adapter.js')));
         assert.strictEqual(release.files['vendor/heic-runtime/heic-to-csp.js'], sha256(path.join(OUT, 'vendor', 'heic-runtime', 'heic-to-csp.js')));
     } finally {
         fs.rmSync(OUT, { recursive: true, force: true });

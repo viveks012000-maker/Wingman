@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    var REAL_SRC = './vendor/heic-runtime/heic-to-csp.js';
+    var REAL_SRC = './vendor/heic2any-adapter.js';
     var loadPromise = null;
 
     function getRealImplementation(lazyFn) {

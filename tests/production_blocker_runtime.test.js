@@ -45,7 +45,9 @@ assert(runtime.includes("'/api/simulator/review'"), 'runtime must call the simul
 assert(runtime.includes('Finish & Review · 2 Credits'), 'simulator must expose a visible review action with its exact credit cost.');
 assert(runtime.includes('X-Idempotency-Key'), 'review requests must carry an idempotency key.');
 assert(runtime.includes('sessionHistory: history'), 'review requests must send bounded session history.');
-assert(runtime.includes('messages.slice(-50)'), 'DOM-derived simulator history must be capped at 50 messages.');
+assert(runtime.includes('MAX_REVIEW_MESSAGES = 50'), 'DOM-derived simulator history must be capped at 50 messages.');
+assert(runtime.includes('MAX_REVIEW_MESSAGE_CHARS = 5000'), 'DOM-derived simulator messages must be capped at 5,000 characters.');
+assert(runtime.includes('MAX_REVIEW_CONTENT_CHARS = 200000'), 'DOM-derived simulator payload must have a 200,000-character content bound.');
 assert(runtime.includes('window.updateUICredits(data.credits)'), 'successful review must synchronize authoritative remaining credits.');
 assert(runtime.includes('textContent = data[key]'), 'AI-generated review fields must render through textContent rather than an HTML sink.');
 

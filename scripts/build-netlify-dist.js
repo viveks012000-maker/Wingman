@@ -198,6 +198,15 @@ function writeSecurityFiles() {
   fs.writeFileSync(path.join(OUT, '_redirects'), '# Cloudflare Pages handles clean HTML URLs natively; no /app rewrite is required.\n', 'utf8');
 }
 
+function stripDevelopmentCspSources() {
+  for (const rel of PUBLIC_FILES.filter(file => file.endsWith('.html'))) {
+    const target = path.join(OUT, rel);
+    const source = fs.readFileSync(target, 'utf8');
+    const production = source.replace(/\s+http:\/\/localhost:\*/g, '').replace(/\s+ws:\/\/localhost:\*/g, '');
+    fs.writeFileSync(target, production, 'utf8');
+  }
+}
+
 function verifyNoForbiddenFiles() {
   const files = walk(OUT);
   for (const rel of files) {
@@ -220,8 +229,9 @@ function verifyCriticalRuntimeContent() {
   if (!headers.includes(railway)) fail('_headers CSP does not include Railway backend');
   if (!headers.includes('Strict-Transport-Security: max-age=31536000')) fail('_headers does not enforce HSTS');
   const unsafeEvalHeaderCount = (headers.match(/'unsafe-eval'/g) || []).length;
-    if (unsafeEvalHeaderCount !== 0) fail(`unsafe-eval must not appear in any CSP block with the new HEIC runtime; found ${unsafeEvalHeaderCount}`);
+  if (unsafeEvalHeaderCount !== 0) fail(`unsafe-eval must not appear in any CSP block with the new HEIC runtime; found ${unsafeEvalHeaderCount}`);
     if (!appHtml.includes('vendor/heic2any-loader.js')) fail('Dashboard HEIC loader must be present');
+    if (!fs.existsSync(path.join(OUT, 'vendor', 'heic2any-adapter.js'))) fail('Dashboard HEIC adapter must be present');
 
   // Prevent the known stale-production regression from ever entering a new artifact.
   if (appJs.includes("if (response.status === 401) {\n                        window.updateUICredits(0);")) {
@@ -232,6 +242,13 @@ function verifyCriticalRuntimeContent() {
   }
   if (!appJs.includes('const authoritativeBalanceCheck = await window.checkCreditBalance();')) {
     fail('HTTP 402 authoritative wallet re-check is absent');
+  }
+
+  for (const rel of PUBLIC_FILES.filter(file => file.endsWith('.html'))) {
+    const html = fs.readFileSync(path.join(OUT, rel), 'utf8');
+    if (html.includes('http://localhost:*') || html.includes('ws://localhost:*')) {
+      fail(`Development CSP source entered production artifact: ${rel}`);
+    }
   }
 }
 
@@ -271,6 +288,7 @@ fs.mkdirSync(OUT, { recursive: true });
 for (const rel of PUBLIC_FILES) copyFile(rel);
 for (const rel of PUBLIC_DIRS) copyDir(rel);
 writeSecurityFiles();
+stripDevelopmentCspSources();
 const files = verifyNoForbiddenFiles();
 verifyCriticalRuntimeContent();
 verifyLocalHtmlReferences();

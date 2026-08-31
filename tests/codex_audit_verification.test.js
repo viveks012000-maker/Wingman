@@ -65,7 +65,9 @@ console.log('✔ Test 6 Passed: Route-specific 38mb limit on screenshot routes a
 
 // 7. TEST BROWSER STORAGE SAFETY (NO BASE64 AND NO RAW HTML IN LOCALSTORAGE)
 assert.strictEqual(appJs.includes('// Retain uploaded screenshots in-memory only to prevent localStorage quota exhaustion'), true, 'saveSessionState must not save base64 to localStorage');
-assert.strictEqual(appJs.includes('if (data.uploadedFiles || data.icebreakHtml || data.optimizeHtml) {'), true, 'restoreSessionState must purge any legacy uploadedFiles and HTML');
+assert.strictEqual(appJs.includes('JSON.parse(legacyRaw)'), false, 'legacy transcript data must never be parsed during startup purge');
+assert.strictEqual(appJs.includes('localStorage.removeItem(SESSION_KEY)'), true, 'startup must purge the owned localStorage transcript key directly');
+assert.strictEqual(appJs.includes('sessionStorage.removeItem(SESSION_KEY)'), true, 'startup must purge the owned sessionStorage transcript key directly');
 
 console.log('✔ Test 7 Passed: Screenshot base64 and raw HTML excluded from localStorage persistence');
 

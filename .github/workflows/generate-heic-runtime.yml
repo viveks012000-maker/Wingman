@@ -12,7 +12,7 @@ on:
       - 'scripts/build-heic-browser-runtime.sh'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: generate-heic-runtime-${{ github.event.pull_request.number || github.ref }}
@@ -27,6 +27,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-node@v7
         with:
@@ -45,6 +46,12 @@ jobs:
         shell: bash
         run: bash scripts/build-heic-browser-runtime.sh
 
+      - name: Compare generated runtime against committed artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- vendor/heic-runtime
+
       - name: Verify generated runtime contract
         shell: bash
         run: |
@@ -61,19 +68,3 @@ jobs:
            test "$(wc -c < vendor/heic-runtime/heic-to-csp.js | tr -d ' ')" = '3168650'
           ! grep -Eq '(^|[^[:alnum:]_])(eval[[:space:]]*\(|new[[:space:]]+Function[[:space:]]*\()' vendor/heic-runtime/heic-to-csp.js
 
-      - name: Commit generated runtime to this branch only
-        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/fix/heic-csp-replacement'
-        shell: bash
-        run: |
-          set -euo pipefail
-           git config user.name 'github-actions[bot]'
-           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-           git add vendor/heic-runtime
-          if git diff --cached --quiet; then
-            echo 'Generated runtime already matches the committed bytes.'
-            exit 0
-           fi
-           git commit -m 'vendor: add patched strict-CSP HEIC runtime'
-           git push origin "HEAD:${{ github.event.pull_request.head.ref || github.ref_name }}"
-# trigger workflow
-# trigger workflow

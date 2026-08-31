@@ -8,6 +8,7 @@ const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'netlify-dist');
 const APP_HTML = path.join(OUT, 'app.html');
 const LOADER = path.join(OUT, 'vendor', 'heic2any-loader.js');
+const ADAPTER = path.join(OUT, 'vendor', 'heic2any-adapter.js');
 const REAL_RUNTIME = path.join(OUT, 'vendor', 'heic-runtime', 'heic-to-csp.js');
 const RELEASE = path.join(OUT, 'release.json');
 
@@ -19,7 +20,7 @@ function sha256(file) {
     return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
-for (const required of [APP_HTML, LOADER, REAL_RUNTIME, RELEASE]) {
+for (const required of [APP_HTML, LOADER, ADAPTER, REAL_RUNTIME, RELEASE]) {
     if (!fs.existsSync(required) || !fs.statSync(required).isFile()) {
         fail(`Required artifact file is missing: ${path.relative(OUT, required)}`);
     }
@@ -51,12 +52,14 @@ if (!release || !release.files || typeof release.files !== 'object') {
 }
 release.files['app.html'] = sha256(APP_HTML);
 release.files['vendor/heic2any-loader.js'] = sha256(LOADER);
+release.files['vendor/heic2any-adapter.js'] = sha256(ADAPTER);
 release.files['vendor/heic-runtime/heic-to-csp.js'] = sha256(REAL_RUNTIME);
 fs.writeFileSync(RELEASE, JSON.stringify(release, null, 2) + '\n', 'utf8');
 
 const rewrittenRelease = JSON.parse(fs.readFileSync(RELEASE, 'utf8'));
 if (rewrittenRelease.files['app.html'] !== sha256(APP_HTML)) fail('app.html release hash is stale after HEIC post-processing.');
 if (rewrittenRelease.files['vendor/heic2any-loader.js'] !== sha256(LOADER)) fail('HEIC loader release hash is stale.');
+if (rewrittenRelease.files['vendor/heic2any-adapter.js'] !== sha256(ADAPTER)) fail('HEIC adapter release hash is stale.');
 if (rewrittenRelease.files['vendor/heic-runtime/heic-to-csp.js'] !== sha256(REAL_RUNTIME)) fail('HEIC runtime release hash is stale.');
 
 console.log('[lazy-heic-build] HEIC converter moved from eager page load to first HEIC/HEIF use.');

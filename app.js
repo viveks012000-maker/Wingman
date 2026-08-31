@@ -51,44 +51,9 @@
     window.safeStorageRemove = safeStorage.remove.bind(safeStorage);
     window.safeStorageClear = safeStorage.clear.bind(safeStorage);
 
-    // Dynamic Global API Endpoint Selector (Strict Environment Lock)
-    function getApiBase() {
-        if (typeof window !== 'undefined' && window.location) {
-            const hostname = window.location.hostname || '';
-            const protocol = window.location.protocol || '';
-            const origin = window.location.origin || '';
-
-            // 1. Strict Local Development Environment Lock
-            const isLocalEnv = (
-                protocol === 'file:' ||
-                origin === 'null' ||
-                hostname === 'localhost' ||
-                hostname === '127.0.0.1' ||
-                hostname.startsWith('192.168.') ||
-                hostname.startsWith('10.') ||
-                hostname.endsWith('.local')
-            );
-
-            if (isLocalEnv) {
-                return 'http://localhost:3000';
-            }
-
-            // 2. Production Environment Resolution (Cloudflare Pages / Hosted Domain)
-            if (window.WINGMAN_CONFIG && window.WINGMAN_CONFIG.API_BASE_URL) {
-                return String(window.WINGMAN_CONFIG.API_BASE_URL).replace(/\/+$/, '');
-            }
-            if (window.API_BASE_URL) return String(window.API_BASE_URL).replace(/\/+$/, '');
-            if (window.RAILWAY_URL) return String(window.RAILWAY_URL).replace(/\/+$/, '');
-            if (window.BACKEND_API_URL) return String(window.BACKEND_API_URL).replace(/\/+$/, '');
-
-            // 3. Co-located Production Origin Fallback (No Localhost Fallback in Production)
-            if (origin && origin !== 'null') {
-                return origin.replace(/\/+$/, '');
-            }
-        }
-        return '';
-    }
-    window.getApiBase = getApiBase;
+    // config.js owns endpoint selection; this wrapper keeps existing app call sites small and
+    // allows isolated app.js test harnesses to run without the page bootstrap.
+    const getApiBase = () => typeof window.getApiBase === 'function' ? window.getApiBase() : '';
 
     function countWords(str) {
         if (!str || typeof str !== 'string') return 0;
@@ -745,7 +710,7 @@ STRICT LAWS:
         if (type.includes("heic") || type.includes("heif") || type.includes("quicktime") || name.endsWith(".heic") || name.endsWith(".heif")) {
             if (window.heic2any) {
                 try {
-                    const convertedBlob = await window.heic2any({ blob: file, toType: "image/jpeg", quality: 0.88 });
+                    const convertedBlob = await window.heic2any({ blob: file, type: "image/jpeg", quality: 0.88 });
                     const singleBlob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
                     const newFileName = (name.endsWith(".heic") || name.endsWith(".heif")) ? name.replace(/\.(heic|heif)$/i, ".jpg") : name + ".jpg";
                     return new File([singleBlob], newFileName, { type: "image/jpeg" });
@@ -2530,6 +2495,7 @@ STRICT LAWS:
     }
 
     function initFormInputListeners() {
+        purgeLegacyTranscript();
         initSettingsListeners();
         initVisualViewportSupport();
         initAmbientPlexusCanvas();
@@ -2766,19 +2732,8 @@ STRICT LAWS:
         // retained only in JavaScript memory for the lifetime of this tab.
     }
 
-    function restoreSessionState() {
-        // Purge the legacy global session key without restoring private content.
-        try {
-            const legacyRaw = (typeof localStorage !== 'undefined' && localStorage.getItem(SESSION_KEY)) ||
-                (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(SESSION_KEY));
-            if (legacyRaw) {
-                const data = JSON.parse(legacyRaw);
-                if (data.uploadedFiles || data.icebreakHtml || data.optimizeHtml) {
-                    // Legacy private payloads are discarded instead of migrated.
-                }
-            }
-        } catch (e) {}
-        try { safeStorage.remove(SESSION_KEY); } catch (e) {}
+    function purgeLegacyTranscript() {
+        try { if (typeof localStorage !== 'undefined') localStorage.removeItem(SESSION_KEY); } catch (e) {}
         try { if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
     }
 

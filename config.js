@@ -9,6 +9,29 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
     API_BASE_URL: "https://wingman-production-c6ce.up.railway.app"
 };
 
+// Shared endpoint resolution used by both the landing page and dashboard.
+(function () {
+    'use strict';
+
+    function getApiBase() {
+        if (typeof window === 'undefined' || !window.location) return '';
+        var hostname = window.location.hostname || '';
+        var protocol = window.location.protocol || '';
+        var origin = window.location.origin || '';
+        var isLocalEnv = protocol === 'file:' || origin === 'null' || hostname === 'localhost' ||
+            hostname === '127.0.0.1' || hostname.indexOf('192.168.') === 0 ||
+            hostname.indexOf('10.') === 0 || hostname.endsWith('.local');
+
+        if (isLocalEnv) return 'http://localhost:3000';
+        if (window.WINGMAN_CONFIG && window.WINGMAN_CONFIG.API_BASE_URL) {
+            return String(window.WINGMAN_CONFIG.API_BASE_URL).replace(/\/+$/, '');
+        }
+        return origin && origin !== 'null' ? origin.replace(/\/+$/, '') : '';
+    }
+
+    window.getApiBase = getApiBase;
+})();
+
 /*
  * Production mobile runtime safeguards.
  * This file is loaded before app.js, so the patch is installed after app.js has defined its

@@ -12,6 +12,7 @@ const MANIFEST_PATH = path.join(OUT, 'release.json');
 const ALLOWED_VENDOR_FILES = new Set([
   'cropperjs/cropper.min.css',
   'cropperjs/cropper.min.js',
+  'heic2any-adapter.js',
   'heic2any-loader.js',
   'heic-runtime/heic-to-csp.js',
   'production-runtime.js',

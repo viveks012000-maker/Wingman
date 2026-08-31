@@ -3,6 +3,10 @@
 
     var runtimeInstalled = false;
     var reviewBusy = false;
+    var LEGACY_TRANSCRIPT_KEY = 'wingman_session_data';
+    var MAX_REVIEW_MESSAGES = 50;
+    var MAX_REVIEW_MESSAGE_CHARS = 5000;
+    var MAX_REVIEW_CONTENT_CHARS = 200000;
 
     function byId(id) {
         return document.getElementById(id);
@@ -35,6 +39,13 @@
                 var key = storage.key(i);
                 if (key && key.indexOf('wingman_') === 0) storage.removeItem(key);
             }
+        });
+    }
+
+    function purgeLegacyTranscript() {
+        [window.localStorage, window.sessionStorage].forEach(function (storage) {
+            if (!storage || typeof storage.removeItem !== 'function') return;
+            try { storage.removeItem(LEGACY_TRANSCRIPT_KEY); } catch (_) {}
         });
     }
 
@@ -149,29 +160,18 @@
             });
         }
 
-        if (messages.length >= 2) return messages.slice(-50);
-
-        ['sessionStorage', 'localStorage'].some(function (storageName) {
-            try {
-                var storage = window[storageName];
-                var raw = storage && storage.getItem('wingman_session_data');
-                if (!raw) return false;
-                var parsed = JSON.parse(raw);
-                var thread = parsed && Array.isArray(parsed.activeSimulatorThread) ? parsed.activeSimulatorThread : [];
-                var restored = thread.filter(function (item) {
-                    return item && (item.role === 'user' || item.role === 'assistant') && (item.content || item.text);
-                }).map(function (item) {
-                    return { role: item.role, content: String(item.content || item.text) };
-                });
-                if (restored.length >= 2) {
-                    messages = restored.slice(-50);
-                    return true;
-                }
-            } catch (_) {}
-            return false;
-        });
-
-        return messages;
+        messages = messages.slice(-MAX_REVIEW_MESSAGES);
+        var bounded = [];
+        var totalChars = 0;
+        for (var i = messages.length - 1; i >= 0; i -= 1) {
+            if (totalChars >= MAX_REVIEW_CONTENT_CHARS) break;
+            var content = messages[i].content.slice(0, MAX_REVIEW_MESSAGE_CHARS);
+            var remaining = MAX_REVIEW_CONTENT_CHARS - totalChars;
+            if (content.length > remaining) content = content.slice(0, remaining);
+            bounded.unshift({ role: messages[i].role, content: content });
+            totalChars += content.length;
+        }
+        return bounded;
     }
 
     function ensureReviewModal() {
@@ -376,6 +376,7 @@
     function installRuntime() {
         if (runtimeInstalled) return;
         runtimeInstalled = true;
+        purgeLegacyTranscript();
         installForgotPasswordFallback();
         installAccountDeletionRepair();
         installSimulatorReviewButton();
