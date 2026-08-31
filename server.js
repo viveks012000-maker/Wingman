@@ -652,6 +652,22 @@ async function verifyAndDeductCreditsSQLite(req, costInr, featureName, idempoten
     return await withTransactionRetry(db, async (db) => {
         const row = await db.get('SELECT credits_balance FROM user_profiles WHERE user_id = ?', [uid]);
         const currentInr = row ? Number(row.credits_balance || 0.00) : 0.00;
+        const requestKey = typeof idempotencyKey === 'string' ? idempotencyKey.trim() : '';
+
+        if (requestKey) {
+            const existing = await db.get(
+                'SELECT id FROM credit_deductions WHERE user_id = ? AND request_id = ? LIMIT 1',
+                [uid, requestKey]
+            );
+            if (existing) {
+                return {
+                    success: true,
+                    duplicate: true,
+                    remainingCredits: Math.round(currentInr * CREDITS_PER_INR),
+                    remainingInr: currentInr
+                };
+            }
+        }
 
         if (currentInr < costInr) {
             throw { insufficient: true, currentCredits: Math.round(currentInr * CREDITS_PER_INR) };
@@ -665,7 +681,7 @@ async function verifyAndDeductCreditsSQLite(req, costInr, featureName, idempoten
         const deductionId = 'ded_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5);
         await db.run(
             'INSERT INTO credit_deductions (id, user_id, amount_inr, feature, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-            [deductionId, uid, costInr, featureName, idempotencyKey || ('req_' + Date.now()), new Date().toISOString()]
+            [deductionId, uid, costInr, featureName, requestKey || ('req_' + Date.now()), new Date().toISOString()]
         );
 
         const updatedRow = await db.get('SELECT credits_balance FROM user_profiles WHERE user_id = ?', [uid]);
@@ -2584,7 +2600,12 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
 
     try {
         let { message, userMessage, messages, conversationHistory, sessionHistory } = req.body || {};
-        const rawUserMsg = message || userMessage || (messages && messages.length > 0 ? messages[messages.length - 1].content : "");
+        const lastMessage = Array.isArray(messages) && messages.length > 0 ? messages[messages.length - 1] : null;
+        const rawUserMsg = message || userMessage || (lastMessage && typeof lastMessage === 'object' ? (lastMessage.content || lastMessage.text || "") : "");
+
+        if (typeof rawUserMsg !== 'string' || !rawUserMsg.trim()) {
+            return res.status(400).json({ success: false, error: "Please enter a message before sending." });
+        }
 
         if (typeof rawUserMsg === 'string' && rawUserMsg.length > 5000) {
             return res.status(400).json({
@@ -2593,7 +2614,11 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
             });
         }
 
-        let historyArr = Array.isArray(conversationHistory) ? conversationHistory : (Array.isArray(sessionHistory) ? sessionHistory : (Array.isArray(messages) ? messages : []));
+        let historyArr = Array.isArray(messages) && messages.length > 0
+            ? messages
+            : (Array.isArray(conversationHistory) && conversationHistory.length > 0
+                ? conversationHistory
+                : (Array.isArray(sessionHistory) ? sessionHistory : []));
         
         // Cap message history to latest 50 messages max
         if (historyArr.length > 50) {
@@ -2663,9 +2688,12 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
         const currentScenario = scenario || "Flirting & Teasing";
         const useShorthand = shorthandOption !== false;
         const emojiLevel = typeof emojiOption === 'number' ? emojiOption : 1;
-        const isHotline = mode === "hotline" || currentScenario === "Coach Hotline";
+        const hasExplicitHotline = typeof (req.body && req.body.isHotline) === 'boolean';
+        const isHotline = hasExplicitHotline
+            ? req.body.isHotline
+            : (mode === "hotline" || currentScenario === "Coach Hotline");
 
-        const userTextRaw = message || userMessage || (messages && messages.length > 0 ? messages[messages.length - 1].content : "");
+        const userTextRaw = rawUserMsg;
         const userText = (userTextRaw || "").toLowerCase().trim();
 
         if (isHotline) {
@@ -2689,7 +2717,6 @@ CONVERSATIONAL FREEDOM & LAWS:
    - NEVER output markdown divider lines ("---" or "===").
 8. COMPLETE ALL SENTENCES & THOUGHTS: Never cut off mid-sentence or leave questions/points incomplete. Always finish every single sentence cleanly.`;
 
-            let historyArr = req.body.messages || conversationHistory || sessionHistory || [];
             const nonSystemHistory = (historyArr || []).filter(m => m.role !== 'system').map(m => ({
                 role: m.role === 'user' ? 'user' : 'assistant',
                 content: m.content || m.text || ''

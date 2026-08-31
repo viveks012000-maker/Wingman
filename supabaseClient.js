@@ -541,6 +541,9 @@
         panel.appendChild(form);
         overlay.appendChild(panel);
         document.body.appendChild(overlay);
+        if (typeof window.registerWingmanModal === 'function') {
+            window.registerWingmanModal('wingmanPasswordRecoveryOverlay', { close: 'closePasswordRecoveryModal', label: 'Password recovery' });
+        }
 
         form.addEventListener('submit', async function (event) {
             if (event && typeof event.preventDefault === 'function') event.preventDefault();
@@ -559,6 +562,16 @@
 
         try { input1.focus(); } catch (e) {}
     }
+
+    window.openPasswordRecoveryModal = function () {
+        setPasswordRecoveryActive(true);
+        showPasswordRecoveryDialog();
+    };
+
+    window.closePasswordRecoveryModal = function () {
+        setPasswordRecoveryActive(false);
+        removePasswordRecoveryDialog();
+    };
 
     window.completePasswordRecovery = async function (newPassword, confirmPassword) {
         var password = String(newPassword || '');
@@ -796,13 +809,19 @@
     window.logoutUser = function (e) {
         // Do NOT call e.preventDefault() — it can block navigation
 
-        // 1. Wipe all storage
+        // 1. Wipe only MyWingman's owned runtime keys; preserve unrelated origin data.
         try {
             window.currentSupabaseUser = null;
             window.currentSupabaseSession = null;
             window.__memoryStore = {};
-            try { sessionStorage.clear(); } catch (e) {}
-            try { localStorage.clear(); } catch (e) {}
+            const storages = [window.localStorage, window.sessionStorage];
+            storages.forEach(function (storage) {
+                if (!storage) return;
+                for (let i = storage.length - 1; i >= 0; i -= 1) {
+                    const key = storage.key(i);
+                    if (key && key.indexOf('wingman_') === 0) storage.removeItem(key);
+                }
+            });
         } catch (err) {}
 
         // 2. Background Supabase SignOut (fire-and-forget)
@@ -819,7 +838,7 @@
 
     // Helper: Return Active Supabase User
     window.getCurrentUser = function () {
-        return window.currentSupabaseUser || (safeGet('wingman_user_authenticated') === 'true' ? { email: safeGet('wingman_user_email') || 'User' } : null);
+        return window.currentSupabaseUser || null;
     };
 
     // Auto-run Supabase initialization on script load

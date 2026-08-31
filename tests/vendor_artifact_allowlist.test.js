@@ -14,7 +14,7 @@ const EXPECTED_VENDOR_FILES = [
   'cropperjs/cropper.min.css',
   'cropperjs/cropper.min.js',
   'heic2any-loader.js',
-  'heic2any.min.js',
+  'heic-runtime/heic-to-csp.js',
   'production-runtime.js',
   'supabase.min.js'
 ].sort();
@@ -69,7 +69,7 @@ for (const requiredRef of [
 
 // The heavy HEIC converter is intentionally not referenced eagerly, but must remain available
 // for heic2any-loader.js to fetch on first HEIC/HEIF conversion.
-assert(fs.existsSync(path.join(VENDOR, 'heic2any.min.js')), 'lazy HEIC runtime payload must remain available');
+assert(fs.existsSync(path.join(VENDOR, 'heic-runtime', 'heic-to-csp.js')), 'lazy HEIC runtime payload must remain available');
 
 const manifest = JSON.parse(fs.readFileSync(path.join(OUT, 'release.json'), 'utf8'));
 const vendorManifestKeys = Object.keys(manifest.files).filter(key => key.startsWith('vendor/')).sort();

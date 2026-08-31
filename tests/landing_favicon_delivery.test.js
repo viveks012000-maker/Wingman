@@ -19,7 +19,7 @@ function sha256(file) {
 function buildArtifact() {
   fs.rmSync(OUT, { recursive: true, force: true });
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  execFileSync(npm, ['run', 'build:netlify'], { cwd: ROOT, stdio: 'pipe' });
+  execFileSync(npm, ['run', 'build:netlify'], { cwd: ROOT, stdio: 'pipe', shell: process.platform === 'win32' });
 }
 
 function contentType(file) {

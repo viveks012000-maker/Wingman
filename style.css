@@ -1,11 +1,29 @@
 /**
- * =========================================================================================
- * MYWINGMAN CUSTOM CSS UTILITIES & ANIMATION STYLESHEET
- * =========================================================================================
+ * MyWingman shared custom styles.
+ *
+ * Tailwind owns the component primitives. This file owns cross-page behavior,
+ * mobile layout contracts, safe areas, and viewport-sensitive UI.
  */
 
-/* Anti-FOUT & Touch Action Core Reset */
-html, body {
+:root {
+    --wingman-visual-height: 100vh;
+    --wingman-mobile-header-height: 64px;
+    --wingman-mobile-nav-height: 78px;
+    --wingman-mobile-header-total-height: calc(var(--wingman-mobile-header-height) + env(safe-area-inset-top, 0px));
+    --wingman-mobile-nav-total-height: calc(var(--wingman-mobile-nav-height) + env(safe-area-inset-bottom, 0px));
+    --wingman-mobile-safe-bottom: max(0px, env(safe-area-inset-bottom, 0px));
+    --wingman-mobile-bottom-clearance: var(--wingman-mobile-nav-total-height);
+    --wingman-mobile-content-clearance: calc(var(--wingman-mobile-bottom-clearance) + 16px);
+}
+
+@supports (height: 100dvh) {
+    :root {
+        --wingman-visual-height: 100dvh;
+    }
+}
+
+html,
+body {
     background-color: #000000 !important;
     color: #ffffff;
     -webkit-overflow-scrolling: touch;
@@ -15,28 +33,38 @@ html, body {
     -webkit-tap-highlight-color: transparent !important;
 }
 
-button, a, .tone-chip, .vibe-chip, .bio-style-chip, .nav-tab-mobile, .nav-tab-desktop {
+button,
+a,
+input,
+textarea,
+select,
+.tone-chip,
+.vibe-chip,
+.bio-style-chip,
+.nav-tab-mobile,
+.nav-tab-desktop {
     touch-action: manipulation !important;
 }
 
-/* Custom Scrollbar Styles */
 .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
     height: 6px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-track {
     background: rgba(15, 23, 42, 0.6);
     border-radius: 9999px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb {
     background: rgba(139, 92, 246, 0.4);
     border-radius: 9999px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: rgba(168, 85, 247, 0.7);
 }
 
-/* Terms Shake Pulse Animation */
 @keyframes termsShakePulse {
     0%, 100% { transform: translateX(0); }
     20%, 60% { transform: translateX(-4px); }
@@ -49,200 +77,10 @@ button, a, .tone-chip, .vibe-chip, .bio-style-chip, .nav-tab-mobile, .nav-tab-de
     box-shadow: 0 0 15px rgba(239, 68, 68, 0.4) !important;
 }
 
-/* Mobile Safe Area & Dynamic Viewport Height Support */
-:root {
-    --app-height: 100vh;
-}
-@supports (height: 100dvh) {
-    :root {
-        --app-height: 100dvh;
-    }
-}
 .mobile-safe-bottom {
     padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
 }
 
-/* =========================================================================================
- * PRODUCTION MOBILE REPAIR LAYER
- * Keeps all primary controls visible without horizontal discovery gestures and prevents the
- * fixed bottom navigation from obscuring the active workspace.
- * ========================================================================================= */
-@media (max-width: 767px) {
-    html, body {
-        width: 100% !important;
-        max-width: 100% !important;
-        overflow-x: hidden !important;
-        overscroll-behavior-x: none;
-        scroll-behavior: auto !important;
-    }
-
-    #mainContentCanvas {
-        width: 100% !important;
-        max-width: 100% !important;
-        padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px)) !important;
-        scroll-padding-top: 72px;
-    }
-
-    /* Show all four Practice Partner modes at once: no hidden horizontal-scroll choices. */
-    #practiceScenarioBar {
-        display: grid !important;
-        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-        gap: 8px !important;
-        width: 100% !important;
-        overflow: visible !important;
-        padding: 2px 0 !important;
-    }
-
-    #practiceScenarioBar .scenario-chip,
-    #practiceScenarioBar .scenario-pill {
-        width: 100% !important;
-        min-width: 0 !important;
-        max-width: 100% !important;
-        height: auto !important;
-        min-height: 44px !important;
-        padding: 9px 8px !important;
-        white-space: normal !important;
-        text-align: center !important;
-        line-height: 1.2 !important;
-        font-size: 11px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-    }
-
-    /* Keep the other four-choice selectors wrapped and fully discoverable too. */
-    #analyzeToneContainer,
-    #vibeContainer,
-    #bioStyleContainer {
-        flex-wrap: wrap !important;
-        overflow: visible !important;
-        max-width: 100% !important;
-    }
-
-    /* Practice workspace: the composer must remain inside the visible mobile card. */
-    #chatboxSection {
-        min-height: 0 !important;
-        height: auto !important;
-        padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important;
-    }
-
-    #chatbox-simulator-panel {
-        width: 100% !important;
-        max-width: 100% !important;
-        padding: 12px !important;
-        box-sizing: border-box !important;
-    }
-
-    #chatbox-simulator-panel > div:first-child {
-        display: block !important;
-        visibility: visible !important;
-        margin-bottom: 12px !important;
-    }
-
-    .chatbox-wrapper {
-        width: 100% !important;
-        max-width: 100% !important;
-        height: calc(100dvh - 300px) !important;
-        min-height: 350px !important;
-        max-height: 620px !important;
-        overflow: hidden !important;
-        border-radius: 16px !important;
-    }
-
-    #chatbox-messages-container {
-        flex: 1 1 auto !important;
-        min-height: 0 !important;
-        max-height: none !important;
-        overflow-y: auto !important;
-        overscroll-behavior-y: contain;
-        padding: 12px !important;
-    }
-
-    .chatbox-footer-sticky-wrapper {
-        position: relative !important;
-        bottom: auto !important;
-        left: auto !important;
-        right: auto !important;
-        flex: 0 0 auto !important;
-        width: 100% !important;
-        z-index: 35 !important;
-    }
-
-    .chatbox-footer {
-        display: flex !important;
-        align-items: center !important;
-        gap: 8px !important;
-        padding: 9px !important;
-    }
-
-    #simulator-chat-input {
-        display: block !important;
-        visibility: visible !important;
-        pointer-events: auto !important;
-        min-width: 0 !important;
-        width: 100% !important;
-        min-height: 46px !important;
-        font-size: 16px !important; /* Prevents Chrome/iOS focus zoom. */
-        touch-action: manipulation !important;
-    }
-
-    #chatbox-send-btn {
-        flex: 0 0 auto !important;
-        min-width: 74px !important;
-        min-height: 46px !important;
-        padding: 0 14px !important;
-    }
-
-    #mobileNavBar {
-        min-height: 78px !important;
-        padding-bottom: max(8px, env(safe-area-inset-bottom, 0px)) !important;
-    }
-
-    /* Mobile performance: remove expensive decorative layers that do not affect functionality. */
-    #ambient-plexus-canvas {
-        display: none !important;
-    }
-
-    .ambient-glow-1,
-    .ambient-glow-2,
-    .ambient-glow-3 {
-        animation: none !important;
-        opacity: 0.28 !important;
-        filter: blur(48px) !important;
-    }
-
-    .chatbox-footer-sticky-wrapper,
-    #mobileNavBar {
-        -webkit-backdrop-filter: blur(8px) !important;
-        backdrop-filter: blur(8px) !important;
-    }
-
-    /* Avoid needless transform layers on long mobile panels. */
-    .tab-content-panel,
-    .chatbox-wrapper {
-        backface-visibility: visible !important;
-    }
-}
-
-@media (max-width: 390px) {
-    #practiceScenarioBar {
-        gap: 6px !important;
-    }
-
-    #practiceScenarioBar .scenario-chip,
-    #practiceScenarioBar .scenario-pill {
-        font-size: 10px !important;
-        padding: 8px 6px !important;
-    }
-
-    .chatbox-wrapper {
-        height: calc(100dvh - 285px) !important;
-        min-height: 330px !important;
-    }
-}
-
-
-/* Accessibility hardening: cross-browser mobile + keyboard contracts. */
 .a11y-icon-touch-target {
     min-width: 44px !important;
     min-height: 44px !important;
@@ -257,13 +95,919 @@ button, a, .tone-chip, .vibe-chip, .bio-style-chip, .nav-tab-mobile, .nav-tab-de
 }
 
 @media (max-width: 767px) {
-    #authEmailInput,
-    #authPasswordInput,
-    #forgotEmailInput,
-    #resetEmailInput,
-    #bioInput,
-    #auditBioInput,
-    #simulator-chat-input {
+    html,
+    body {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+        overscroll-behavior-x: none;
+        scroll-behavior: auto !important;
+    }
+
+    /* Landing page */
+    body.landing-page > nav {
+        min-height: var(--wingman-mobile-header-height);
+    }
+
+    body.landing-page > nav > div {
+        height: var(--wingman-mobile-header-height);
+        padding-left: 16px;
+        padding-right: 12px;
+        gap: 12px;
+    }
+
+    body.landing-page > nav img {
+        height: 44px !important;
+        width: auto;
+    }
+
+    body.landing-page > nav #mobile-menu-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    body.landing-page > section:first-of-type {
+        padding: 28px 16px 44px !important;
+    }
+
+    body.landing-page #hero-reveal-container {
+        gap: 18px !important;
+        max-width: 36rem;
+    }
+
+    body.landing-page #hero-reveal-container h1 {
+        max-width: 22ch;
+        font-size: clamp(2.1rem, 9vw, 2.85rem) !important;
+        line-height: 1.04 !important;
+        text-wrap: balance;
+    }
+
+    body.landing-page #hero-reveal-container > p {
+        max-width: 34rem;
+        font-size: 1rem !important;
+        line-height: 1.55 !important;
+    }
+
+    body.landing-page #hero-reveal-container > div.flex {
+        margin-top: 0 !important;
+    }
+
+    body.landing-page #hero-reveal-container > div.flex > a {
+        min-height: 52px;
+        padding: 13px 18px !important;
+        font-size: 0.9rem !important;
+        line-height: 1.25 !important;
+    }
+
+    body.landing-page #hero-reveal-container > div:last-child {
+        max-width: 32rem;
+        margin-top: 0 !important;
+    }
+
+    body.landing-page #hero-reveal-container > div:last-child > div {
+        padding: 9px 13px !important;
+        line-height: 1.35;
+        text-align: center;
+    }
+
+    body.landing-page #compatibility-row {
+        padding: 16px !important;
+    }
+
+    body.landing-page #compatibility-row > div {
+        gap: 12px !important;
+    }
+
+    body.landing-page #compatibility-row .compatibility-title {
+        max-width: 34rem;
+        line-height: 1.4;
+    }
+
+    body.landing-page #compatibility-row .animate-marquee {
+        gap: 32px !important;
+        padding-left: 16px !important;
+    }
+
+    body.landing-page .ambient-glow-1,
+    body.landing-page .ambient-glow-2 {
+        width: min(100vw, 420px) !important;
+        height: min(100vw, 420px) !important;
+        filter: blur(80px) !important;
+    }
+
+    body.landing-page > section:not(:first-of-type) {
+        padding-top: 56px !important;
+        padding-bottom: 56px !important;
+    }
+
+    body.landing-page > section:not(:first-of-type) > div {
+        gap: 32px !important;
+    }
+
+    body.landing-page > section:not(:first-of-type) h2 {
+        font-size: clamp(1.75rem, 7.4vw, 2.35rem) !important;
+        line-height: 1.12 !important;
+        text-wrap: balance;
+    }
+
+    body.landing-page > section:not(:first-of-type) > div > div:first-child > p {
+        max-width: 38rem;
+        line-height: 1.55;
+    }
+
+    body.landing-page #differentiation .grid,
+    body.landing-page #how-it-works .grid,
+    body.landing-page #results .grid,
+    body.landing-page #ai-coach .grid,
+    body.landing-page #pricing .grid {
+        gap: 16px !important;
+    }
+
+    body.landing-page #differentiation .glass-card,
+    body.landing-page #how-it-works .glass-card,
+    body.landing-page #ai-coach .glass-card,
+    body.landing-page #pricing .glass-card {
+        padding: 20px !important;
+        border-radius: 20px !important;
+        gap: 18px !important;
+    }
+
+    body.landing-page #interactive-demo > div,
+    body.landing-page #results > div,
+    body.landing-page #ai-coach > div,
+    body.landing-page #pricing > div,
+    body.landing-page #faq > div {
+        gap: 32px !important;
+    }
+
+    body.landing-page #interactive-demo .glass-card {
+        padding: 16px !important;
+        border-radius: 20px !important;
+    }
+
+    body.landing-page #interactive-demo .grid {
+        gap: 24px !important;
+    }
+
+    body.landing-page #ai-coach .gf-text-details,
+    body.landing-page #ai-coach .gf-text-details * {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    body.landing-page #pricing > div > p:last-child {
+        line-height: 1.5;
+    }
+
+    body.landing-page > footer {
+        padding: 36px 16px !important;
+    }
+
+    body.landing-page > footer > div {
+        gap: 18px !important;
+    }
+
+    body.landing-page > footer img {
+        height: 76px !important;
+        width: auto;
+    }
+
+    body.landing-page > footer > div > div:last-child {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px 16px;
+        width: 100%;
+    }
+
+    body.landing-page > footer > div > div:last-child a {
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+    }
+
+    body.landing-page #interstitialModal,
+    body.landing-page #authRequiredModal {
+        align-items: flex-start !important;
+        justify-content: center !important;
+        padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)) !important;
+        overflow-y: auto !important;
+        overscroll-behavior: contain;
+        box-sizing: border-box !important;
+    }
+
+    body.landing-page #interstitialCard,
+    body.landing-page #authRequiredCard {
+        width: 100% !important;
+        max-width: 100% !important;
+        max-height: calc(var(--wingman-visual-height) - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+        margin: 0 auto !important;
+        overflow-y: auto !important;
+        box-sizing: border-box !important;
+        overscroll-behavior: contain;
+    }
+
+    body.landing-page #interstitialModal button,
+    body.landing-page #authRequiredModal button {
+        min-height: 44px !important;
+    }
+
+    body.landing-page #interstitialModal button[onclick*="close"],
+    body.landing-page #authRequiredModal button[onclick*="close"] {
+        min-width: 44px !important;
+        min-height: 44px !important;
+    }
+
+    body.landing-page #authEmailInput,
+    body.landing-page #authPasswordInput,
+    body.landing-page #resetEmailInput {
         font-size: 16px !important;
+    }
+
+    /* Legal pages */
+    body.legal-page > header > div {
+        width: 100%;
+        min-width: 0;
+        min-height: var(--wingman-mobile-header-height);
+        height: auto;
+        padding: 8px 16px;
+        box-sizing: border-box;
+        gap: 10px;
+    }
+
+    /* The locked utility artifact contains an older sticky-header rule. Keep
+       the responsive header contract authoritative on legal pages too. */
+    body.legal-page > header.sticky {
+        padding-left: max(0px, env(safe-area-inset-left, 0px)) !important;
+        padding-right: max(0px, env(safe-area-inset-right, 0px)) !important;
+        box-sizing: border-box !important;
+    }
+
+    body.legal-page > header img {
+        height: 40px !important;
+        width: auto;
+    }
+
+    body.legal-page > header span {
+        font-size: 1rem !important;
+    }
+
+    body.legal-page > header > div > a:last-child {
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        padding: 8px 10px;
+        white-space: nowrap;
+    }
+
+    body.legal-page > main {
+        padding: 40px 16px !important;
+    }
+
+    body.legal-page > main > div:first-child {
+        padding-bottom: 20px;
+        margin-bottom: 28px;
+    }
+
+    body.legal-page > main h1 {
+        font-size: clamp(1.75rem, 8vw, 2.25rem) !important;
+        line-height: 1.1 !important;
+        overflow-wrap: anywhere;
+    }
+
+    body.legal-page > main h2 {
+        font-size: 0.9rem !important;
+        line-height: 1.35 !important;
+        overflow-wrap: anywhere;
+    }
+
+    body.legal-page > main p,
+    body.legal-page > main li {
+        overflow-wrap: anywhere;
+    }
+
+    body.legal-page > main section {
+        padding: 20px !important;
+        border-radius: 18px !important;
+    }
+
+    body.legal-page > main article,
+    body.legal-page > main > div:last-child {
+        gap: 24px !important;
+    }
+
+    body.legal-page > footer {
+        padding: 28px 16px !important;
+    }
+
+    body.legal-page > footer > div {
+        gap: 14px !important;
+    }
+
+    body.legal-page > footer > div > div:last-child {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px 16px;
+        width: 100%;
+    }
+
+    body.legal-page > footer a {
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+    }
+
+    /* App shell */
+    body.app-page {
+        min-height: var(--wingman-visual-height);
+    }
+
+    body.app-page > header {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        height: var(--wingman-mobile-header-total-height) !important;
+        min-height: var(--wingman-mobile-header-total-height) !important;
+        padding-left: max(10px, env(safe-area-inset-left, 0px)) !important;
+        padding-right: max(10px, env(safe-area-inset-right, 0px)) !important;
+        padding-top: env(safe-area-inset-top, 0px);
+        box-sizing: border-box !important;
+    }
+
+    body.app-page > header > div,
+    body.app-page > header > a,
+    body.app-page > header > div > button,
+    body.app-page > header > div > div {
+        min-width: 0;
+        min-height: 44px;
+    }
+
+    body.app-page > header button,
+    body.app-page > header [onclick*="openPurchaseModal"] {
+        min-height: 44px !important;
+    }
+
+    body.app-page #mainContentCanvas {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-height: max(0px, calc(var(--wingman-visual-height) - var(--wingman-mobile-header-total-height)));
+        padding: 12px !important;
+        padding-bottom: var(--wingman-mobile-content-clearance) !important;
+        box-sizing: border-box !important;
+        overflow: visible !important;
+    }
+
+    body.app-page.practice-tab-active #mainContentCanvas {
+        padding-bottom: 16px !important;
+    }
+
+    body.app-page #mainContentCanvas > section:not(#chatboxSection) {
+        gap: 16px !important;
+    }
+
+    body.app-page #mainContentCanvas > section:not(#chatboxSection) > div {
+        width: 100% !important;
+        max-width: 100% !important;
+        max-height: none !important;
+        overflow: visible !important;
+        padding-right: 0 !important;
+    }
+
+    body.app-page .tab-content-panel h1,
+    body.app-page .tab-content-panel h2,
+    body.app-page .tab-content-panel h3,
+    body.app-page #optimizeSection h1,
+    body.app-page #icebreakSection h1,
+    body.app-page #analyzeSection h1 {
+        font-size: 22px !important;
+        line-height: 1.2 !important;
+        text-wrap: balance;
+    }
+
+    body.app-page .tab-content-panel,
+    body.app-page #chatbox-simulator-panel {
+        min-width: 0;
+    }
+
+    body.app-page #topAuthBanner {
+        padding: 14px !important;
+        gap: 12px !important;
+        border-radius: 16px !important;
+        margin-bottom: 16px !important;
+    }
+
+    body.app-page #practiceScenarioBar {
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        gap: 8px !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        padding: 2px 0 !important;
+        overscroll-behavior-x: contain;
+        scrollbar-width: none;
+    }
+
+    body.app-page #practiceScenarioBar .scenario-chip,
+    body.app-page #practiceScenarioBar .scenario-pill {
+        width: auto !important;
+        min-width: max-content !important;
+        min-height: 44px !important;
+        max-width: none !important;
+        padding: 8px !important;
+        white-space: nowrap !important;
+        text-align: center !important;
+        line-height: 1.2 !important;
+        font-size: 11px !important;
+        display: flex !important;
+        flex: 0 0 auto !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    body.app-page #analyzeToneContainer,
+    body.app-page #vibeContainer,
+    body.app-page #bioStyleContainer {
+        display: flex;
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+        overflow: visible !important;
+        max-width: 100% !important;
+    }
+
+    body.app-page .tone-chip,
+    body.app-page .vibe-chip,
+    body.app-page .bio-style-chip,
+    body.app-page .vibe-chip-premium {
+        min-height: 44px !important;
+        height: auto !important;
+        padding: 8px 14px !important;
+        font-size: 13px !important;
+        line-height: 1.2 !important;
+    }
+
+    body.app-page #dropzone {
+        min-height: 200px !important;
+        padding: 16px !important;
+    }
+
+    body.app-page #dropzone .w-28 {
+        width: 76px !important;
+        height: 76px !important;
+    }
+
+    body.app-page #thumbnailGrid {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        gap: 6px !important;
+    }
+
+    body.app-page #analyzer-output-panel,
+    body.app-page #icebreaker-output-grid,
+    body.app-page #optimizer-results-container {
+        padding: 16px !important;
+        border-radius: 16px !important;
+        margin-bottom: 16px !important;
+    }
+
+    body.app-page #analyzeEmptyState,
+    body.app-page #icebreakEmptyState,
+    body.app-page #optimizeEmptyState {
+        min-height: 240px !important;
+        padding: 24px 18px !important;
+    }
+
+    body.app-page #analyzeResultsState .pr-24 {
+        padding-right: 48px !important;
+    }
+
+    body.app-page .bio-input-field {
+        min-height: 120px !important;
+    }
+
+    body.app-page #runAnalysisBtn,
+    body.app-page #generateIcebreakerBtn,
+    body.app-page #runAuditBtn,
+    body.app-page .premium-action-btn {
+        min-height: 50px !important;
+        height: auto !important;
+        padding: 12px 16px !important;
+        font-size: 14px !important;
+        border-radius: 12px !important;
+    }
+
+    body.app-page #chatboxSection {
+        display: flex;
+        flex-direction: column;
+        flex: 0 0 auto !important;
+        height: max(0px, calc(var(--wingman-visual-height) - var(--wingman-mobile-header-total-height) - var(--wingman-mobile-bottom-clearance))) !important;
+        max-height: none !important;
+        min-height: 0 !important;
+        padding: 0 0 16px !important;
+        box-sizing: border-box;
+        overflow: visible !important;
+    }
+
+    body.app-page #chatbox-simulator-panel {
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        min-height: 0 !important;
+        height: auto !important;
+        width: 100% !important;
+        padding: 0 !important;
+        box-sizing: border-box !important;
+    }
+
+    body.app-page #chatbox-simulator-panel > div:first-child {
+        margin-bottom: 12px !important;
+    }
+
+    body.app-page #chatbox-simulator-panel > p#practiceModeSubtitle {
+        margin-top: 0;
+        margin-bottom: 12px !important;
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+    }
+
+    body.app-page .chatbox-wrapper {
+        display: flex !important;
+        flex: 1 1 0% !important;
+        flex-direction: column !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        height: auto !important;
+        min-height: 184px !important;
+        max-height: none !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+        border-radius: 16px !important;
+        box-sizing: border-box !important;
+    }
+
+    body.app-page .gf-profile-header {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: end;
+        min-height: 70px;
+        padding-top: 8px !important;
+        position: relative !important;
+        flex: 0 0 auto;
+    }
+
+    body.app-page .gf-header-banner {
+        position: absolute !important;
+        inset: 0 0 auto;
+        height: 20px !important;
+    }
+
+    body.app-page .gf-profile-info-block {
+        min-width: 0;
+        gap: 8px !important;
+        padding: 0 8px 8px 10px !important;
+        margin-top: 0 !important;
+        flex: 0 1 auto !important;
+        position: relative;
+        z-index: 1;
+    }
+
+    body.app-page .gf-avatar-container,
+    body.app-page .gf-profile-pic {
+        width: 48px !important;
+        height: 48px !important;
+    }
+
+    body.app-page .gf-text-details {
+        min-width: 0;
+        margin-top: 0 !important;
+        gap: 2px !important;
+        overflow-wrap: anywhere;
+    }
+
+    body.app-page .gf-display-name {
+        font-size: 1rem !important;
+    }
+
+    body.app-page .gf-mood-badge {
+        max-width: 100%;
+        font-size: 0.58rem !important;
+        white-space: normal !important;
+        line-height: 1.2;
+    }
+
+    body.app-page .chat-header-actions {
+        flex: 0 0 auto;
+        margin: 0 !important;
+        padding: 0 8px 8px 4px;
+        align-self: end;
+        position: relative;
+        z-index: 1;
+    }
+
+    body.app-page .chat-header-actions #reset-chat-btn {
+        min-height: 44px !important;
+        padding: 8px 10px !important;
+        font-size: 0.65rem !important;
+        white-space: nowrap;
+    }
+
+    body.app-page #reset-chat-btn,
+    body.app-page #chatbox-send-btn,
+    body.app-page #simulator-chat-input {
+        min-height: 44px !important;
+    }
+
+    body.app-page #chatbox-messages-container {
+        flex: 1 1 auto !important;
+        min-height: 40px !important;
+        max-height: none !important;
+        overflow-y: auto !important;
+        overscroll-behavior-y: contain;
+        padding: 12px !important;
+    }
+
+    body.app-page .chatbox-footer-sticky-wrapper {
+        position: relative !important;
+        inset: auto !important;
+        flex: 0 0 auto !important;
+        width: 100% !important;
+        z-index: 35 !important;
+    }
+
+    body.app-page .chatbox-footer {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        padding: 4px 8px !important;
+    }
+
+    body.app-page #simulator-chat-input {
+        flex: 1 1 auto !important;
+        display: block !important;
+        min-width: 0 !important;
+        width: 100% !important;
+        padding: 10px 12px !important;
+        font-size: 16px !important;
+    }
+
+    body.app-page #chatbox-send-btn {
+        flex: 0 0 auto !important;
+        min-width: 74px !important;
+        padding: 0 14px !important;
+    }
+
+    body.app-page #chatbox-credit-notice {
+        min-height: 0 !important;
+        display: flex !important;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0 8px 2px !important;
+        color: #c084fc;
+        font-family: monospace;
+        font-size: 11px !important;
+        line-height: 1.25 !important;
+        letter-spacing: 0.5px;
+    }
+
+    body.app-page #simulatorReviewActionRow {
+        padding: 0 8px 2px !important;
+    }
+
+    body.app-page #simulatorReviewBtn {
+        min-height: 44px !important;
+        padding: 8px 10px !important;
+        font-size: 10px !important;
+    }
+
+    body.app-page #mobileNavBar {
+        position: fixed !important;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 70 !important;
+        height: var(--wingman-mobile-nav-total-height) !important;
+        min-height: var(--wingman-mobile-nav-total-height) !important;
+        padding: 6px 8px var(--wingman-mobile-safe-bottom) !important;
+        box-sizing: border-box !important;
+        gap: 4px;
+    }
+
+    body.app-page #mobileNavBar .nav-tab-mobile {
+        min-width: 44px !important;
+        min-height: 44px !important;
+        padding: 4px 2px !important;
+    }
+
+    body.app-page #mobileNavBar .nav-tab-mobile:not(.active-tab) {
+        background: transparent !important;
+        border: none !important;
+        color: #94a3b8 !important;
+    }
+
+    body.app-page #mobileNavBar .nav-tab-mobile.active-tab {
+        border: none !important;
+        border-radius: 12px !important;
+    }
+
+    /* Hide navigation while the keyboard owns the bottom of the visual viewport. */
+    body.app-page.chat-keyboard-open #mobileNavBar {
+        display: none !important;
+        transform: translateY(110%);
+        pointer-events: none;
+    }
+
+    body.app-page.chat-keyboard-open #mainContentCanvas {
+        --wingman-mobile-bottom-clearance: 16px;
+        --wingman-mobile-content-clearance: 16px;
+        padding-bottom: 16px !important;
+    }
+
+    body.app-page.chat-keyboard-open #chatbox-credit-notice {
+        display: flex !important;
+        opacity: 1 !important;
+        height: auto !important;
+        min-height: 0 !important;
+        padding: 0 8px 2px !important;
+        overflow: visible !important;
+    }
+
+    /* All mobile app dialogs share one viewport/scroll contract. */
+    body.app-page #cropModal,
+    body.app-page #settingsModal,
+    body.app-page #deleteAccountModal,
+    body.app-page #authRequiredModal,
+    body.app-page #unreadableErrorModal,
+    body.app-page #activationModal,
+    body.app-page #purchaseModal,
+    body.app-page #simulatorReviewModal,
+    body.app-page #wingmanPasswordRecoveryOverlay {
+        align-items: flex-start !important;
+        justify-content: center !important;
+        padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)) !important;
+        overflow-y: auto !important;
+        overscroll-behavior: contain;
+        box-sizing: border-box !important;
+    }
+
+    body.app-page #cropCard,
+    body.app-page #settingsCard,
+    body.app-page #deleteAccountCard,
+    body.app-page #authRequiredCard,
+    body.app-page #unreadableErrorCard,
+    body.app-page #activationCard,
+    body.app-page #modalCard,
+    body.app-page #simulatorReviewModal > div,
+    body.app-page #wingmanPasswordRecoveryOverlay > div {
+        width: 100% !important;
+        max-width: 100% !important;
+        max-height: calc(var(--wingman-visual-height) - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+        margin: 0 auto !important;
+        box-sizing: border-box !important;
+        overflow-y: auto !important;
+        overscroll-behavior: contain;
+    }
+
+    body.app-page #settingsCard {
+        gap: 18px !important;
+    }
+
+    body.app-page #cropCard > div:nth-child(2) {
+        height: min(48dvh, 440px) !important;
+        min-height: 240px !important;
+    }
+
+    body.app-page #cropModal button,
+    body.app-page #settingsModal button,
+    body.app-page #deleteAccountModal button,
+    body.app-page #authRequiredModal button,
+    body.app-page #unreadableErrorModal button,
+    body.app-page #activationModal button,
+    body.app-page #purchaseModal button,
+    body.app-page #simulatorReviewModal button,
+    body.app-page #wingmanPasswordRecoveryOverlay button {
+        min-height: 44px !important;
+    }
+
+    body.app-page #cropModal button[onclick*="close"],
+    body.app-page #settingsModal button[onclick*="close"],
+    body.app-page #deleteAccountModal button[onclick*="close"],
+    body.app-page #authRequiredModal button[onclick*="close"],
+    body.app-page #unreadableErrorModal button[onclick*="close"],
+    body.app-page #activationModal button[onclick*="close"],
+    body.app-page #purchaseModal button[onclick*="close"],
+    body.app-page #simulatorReviewModal button[aria-label*="Close"] {
+        min-width: 44px !important;
+        min-height: 44px !important;
+    }
+
+    body.app-page #wingmanPasswordRecoveryOverlay input {
+        min-width: 0;
+        font-size: 16px !important;
+    }
+
+    body.app-page #toastContainer {
+        top: calc(var(--wingman-mobile-header-height) + env(safe-area-inset-top, 0px) + 8px) !important;
+        right: 12px !important;
+        left: 12px !important;
+        width: auto !important;
+        max-width: none !important;
+    }
+
+    body.app-page .ambient-glow-1,
+    body.app-page .ambient-glow-2,
+    body.app-page .ambient-glow-3 {
+        animation: none !important;
+        opacity: 0.28 !important;
+        filter: blur(48px) !important;
+    }
+
+    #ambient-plexus-canvas {
+        display: none !important;
+    }
+
+    body.app-page .cropper-point {
+        width: 28px !important;
+        height: 28px !important;
+        margin-top: -14px !important;
+        margin-left: -14px !important;
+        border-radius: 4px !important;
+        opacity: 0.95 !important;
+        background-color: #a855f7 !important;
+        border: 2px solid #ffffff !important;
+        box-shadow: 0 0 8px rgba(168, 85, 247, 0.8) !important;
+    }
+
+    body.app-page .cropper-point.point-n,
+    body.app-page .cropper-point.point-s,
+    body.app-page .cropper-point.point-e,
+    body.app-page .cropper-point.point-w {
+        display: none !important;
+    }
+
+    body.app-page .cropper-view-box {
+        outline: 2px solid rgba(168, 85, 247, 0.8) !important;
+        box-shadow: 0 0 15px rgba(168, 85, 247, 0.4) !important;
+    }
+
+    body.app-page #authEmailInput,
+    body.app-page #authPasswordInput,
+    body.app-page #resetEmailInput,
+    body.app-page #bioInput,
+    body.app-page #auditBioInput,
+    body.app-page #simulator-chat-input {
+        font-size: 16px !important;
+    }
+}
+
+@media (max-width: 390px) {
+    body.landing-page #hero-reveal-container h1 {
+        font-size: clamp(2rem, 9.5vw, 2.5rem) !important;
+    }
+
+    body.app-page #practiceScenarioBar {
+        gap: 6px !important;
+    }
+
+    body.app-page #practiceScenarioBar .scenario-chip,
+    body.app-page #practiceScenarioBar .scenario-pill {
+        font-size: 10px !important;
+        padding: 8px 6px !important;
+    }
+}
+
+@media (max-width: 374px) {
+    body.app-page #mobileNavBar .nav-tab-mobile .text-\[10px\] {
+        font-size: 9px !important;
+    }
+
+    body.app-page #mobileNavBar .nav-tab-mobile .text-\[24px\] {
+        font-size: 20px !important;
+    }
+
+    body.app-page .tone-chip,
+    body.app-page .vibe-chip,
+    body.app-page .bio-style-chip,
+    body.app-page .vibe-chip-premium {
+        padding: 8px 10px !important;
+        font-size: 12px !important;
+    }
+}
+
+@media (min-width: 768px) {
+    .custom-scrollbar::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
     }
 }

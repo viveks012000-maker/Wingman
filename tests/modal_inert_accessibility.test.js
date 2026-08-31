@@ -92,6 +92,23 @@ async function verifyModal(page, id, openFn, closeFn) {
     await page.evaluate(() => window.closeAuthRequiredModal());
     await page.waitForTimeout(20);
 
+    // Regression: when a new dialog is opened from a control inside a dialog
+    // that is closed as part of the transition, focus must not return to inert content.
+    await page.evaluate(() => {
+      window.openInterstitialModal();
+      const trigger = document.getElementById('interstitialAcceptBtn');
+      if (trigger) trigger.focus();
+      window.openAuthRequiredModal('Please sign in first.');
+    });
+    await page.waitForTimeout(20);
+    await page.evaluate(() => window.closeAuthRequiredModal());
+    await page.waitForTimeout(30);
+    const restored = await page.evaluate(() => ({
+      active: document.activeElement && document.activeElement.id,
+      activeIsAuthTrigger: !!(document.activeElement && document.activeElement.matches('button[onclick*="openAuthRequiredModal"]'))
+    }));
+    assert(restored.activeIsAuthTrigger, 'Closing auth must not restore focus into the closed interstitial', restored);
+
     await page.goto(`http://localhost:${PORT}/app.html`, {waitUntil:'domcontentloaded'});
     await page.waitForTimeout(40);
     await verifyModal(page, 'authRequiredModal', 'openAuthRequiredModal', 'closeAuthRequiredModal');

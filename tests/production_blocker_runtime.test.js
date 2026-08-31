@@ -8,12 +8,14 @@ function assert(condition, message) {
 const root = path.join(__dirname, '..');
 const runtime = fs.readFileSync(path.join(root, 'vendor', 'production-runtime.js'), 'utf8').replace(/\r\n/g, '\n');
 const accessibility = fs.readFileSync(path.join(root, 'accessibility.js'), 'utf8').replace(/\r\n/g, '\n');
+const supabaseClient = fs.readFileSync(path.join(root, 'supabaseClient.js'), 'utf8').replace(/\r\n/g, '\n');
 const indexHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 const appJs = fs.readFileSync(path.join(root, 'app.js'), 'utf8').replace(/\r\n/g, '\n');
 
 // Syntax must be valid before this can reach production.
 new Function(runtime);
 new Function(accessibility);
+new Function(supabaseClient);
 
 // The existing public artifact already copies vendor/ recursively. accessibility.js is loaded
 // after app.js, so it is a safe bootstrap point for the isolated production runtime.
@@ -21,10 +23,10 @@ assert(accessibility.includes("script.src = 'vendor/production-runtime.js'"), 'a
 assert(accessibility.includes('data-wingman-production-runtime'), 'runtime loader must be idempotent.');
 
 // Password recovery: follow the current documented Supabase JavaScript flow.
-assert(runtime.includes("event === 'PASSWORD_RECOVERY'"), 'runtime must handle the Supabase PASSWORD_RECOVERY auth event.');
-assert(runtime.includes('auth.updateUser') || runtime.includes('auth.updateUser({ password:'), 'runtime must update the authenticated recovery user password.');
-assert(runtime.includes("searchParams.get('type') === 'recovery'"), 'runtime must recover even if the auth event fired before the extension attached.');
-assert(runtime.includes("searchParams.delete('type')"), 'successful recovery must remove the recovery query marker.');
+assert(supabaseClient.includes("event === 'PASSWORD_RECOVERY'"), 'Supabase client must handle the PASSWORD_RECOVERY auth event.');
+assert(supabaseClient.includes('auth.updateUser({ password: password })'), 'Supabase client must update the authenticated recovery user password.');
+assert(supabaseClient.includes("params.get('type') === 'recovery'"), 'Supabase client must recover when the URL marker is present before the auth event.');
+assert(supabaseClient.includes("params.delete('type')"), 'successful recovery must remove the recovery query marker.');
 
 // Landing Forgot Password already exists in source. Guard both its source presence and the
 // defensive runtime fallback so a script-order regression cannot turn the button into a no-op.

@@ -11,7 +11,7 @@ const { chromium } = require('playwright');
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'netlify-dist');
 const SOURCE_CSS = path.join(ROOT, 'style.css');
-const TARGETS = ['index.html', 'app.html', '404.html'];
+const TARGETS = ['index.html', 'app.html', '404.html', 'terms.html', 'privacy.html', 'refund.html'];
 const MARKER = 'data-inline-source="style.css"';
 
 function sha256(file) {
@@ -49,12 +49,6 @@ function verifyArtifact() {
     assert(!/\bhref=(["'])\/?style\.css\1/i.test(html), `${target} must not request style.css as a render-blocking stylesheet`);
     const expectedInline = `<style ${MARKER}>\n${sourceCss}\n</style>`;
     assert(html.includes(expectedInline), `${target} must inline the exact current style.css bytes without mutation`);
-  }
-
-  for (const target of ['terms.html', 'privacy.html', 'refund.html']) {
-    const html = fs.readFileSync(path.join(OUT, target), 'utf8');
-    assert(!html.includes(MARKER), `${target} must not receive unrelated style.css inlining`);
-    assert(!/\bhref=(["'])\/?style\.css\1/i.test(html), `${target} must remain free of style.css requests`);
   }
 
   const release = JSON.parse(fs.readFileSync(path.join(OUT, 'release.json'), 'utf8'));
@@ -149,7 +143,7 @@ async function verifyBrowserDelivery() {
         }
         if (routePath === '/app') {
           const scenarioDisplay = await page.evaluate(() => getComputedStyle(document.getElementById('practiceScenarioBar')).display);
-          assert.strictEqual(scenarioDisplay, 'grid', 'mobile dashboard must preserve style.css practice-scenario grid repair');
+          assert.strictEqual(scenarioDisplay, 'flex', 'mobile dashboard must preserve style.css horizontally scrollable practice-scenario layout');
         }
 
         await context.close();

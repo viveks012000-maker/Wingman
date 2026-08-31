@@ -7,7 +7,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'netlify-dist');
 const CSS_FILE = 'style.css';
-const TARGETS = Object.freeze(['index.html', 'app.html', '404.html']);
+const TARGETS = Object.freeze(['index.html', 'app.html', '404.html', 'terms.html', 'privacy.html', 'refund.html']);
 const INLINE_MARKER = `data-inline-source="${CSS_FILE}"`;
 
 function fail(message) {

@@ -2,20 +2,20 @@
     "use strict";
 
     // ============================================================
-    // SAFE STORAGE WRAPPER – Browser Tracking Protection safe
+    // SAFE STORAGE WRAPPER – settings only; private feature state stays in memory.
     // ============================================================
+    const PERSISTED_SETTING_KEYS = new Set([
+        "wingman_setting_plexus",
+        "wingman_setting_shorthand",
+        "wingman_setting_emoji"
+    ]);
+    const isPersistedSetting = (key) => PERSISTED_SETTING_KEYS.has(String(key));
     const safeStorage = {
         _memory: window.__memoryStore || {},
         get(key, defaultVal) {
             try {
-                if (typeof localStorage !== 'undefined') {
+                if (isPersistedSetting(key) && typeof localStorage !== 'undefined') {
                     const val = localStorage.getItem(key);
-                    if (val !== null) return val;
-                }
-            } catch (_) { /* ignore */ }
-            try {
-                if (typeof sessionStorage !== 'undefined') {
-                    const val = sessionStorage.getItem(key);
                     if (val !== null) return val;
                 }
             } catch (_) { /* ignore */ }
@@ -23,9 +23,13 @@
         },
         set(key, val) {
             const strVal = (val !== null && val !== undefined) ? String(val) : "";
-            try { if (typeof localStorage !== 'undefined') localStorage.setItem(key, strVal); } catch (_) {}
-            try { if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(key, strVal); } catch (_) {}
             this._memory[key] = strVal;
+            if (isPersistedSetting(key)) {
+                try { if (typeof localStorage !== 'undefined') localStorage.setItem(key, strVal); } catch (_) {}
+            } else {
+                try { if (typeof localStorage !== 'undefined') localStorage.removeItem(key); } catch (_) {}
+                try { if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(key); } catch (_) {}
+            }
         },
         remove(key) {
             try { if (typeof localStorage !== 'undefined') localStorage.removeItem(key); } catch (_) {}
@@ -33,9 +37,11 @@
             delete this._memory[key];
         },
         clear() {
-            try { if (typeof localStorage !== 'undefined') localStorage.clear(); } catch (_) {}
-            try { if (typeof sessionStorage !== 'undefined') sessionStorage.clear(); } catch (_) {}
+            for (const key of Object.keys(this._memory)) {
+                if (!isPersistedSetting(key)) this.remove(key);
+            }
             this._memory = {};
+            window.__memoryStore = this._memory;
         }
     };
     window.__memoryStore = safeStorage._memory;
@@ -145,6 +151,8 @@
     let tickerInterval = null;
     const telemetryIntervals = {};
     let activeSimulatorThread = [];
+    let simulatorGeneration = 0;
+    let simulatorRequestInFlight = false;
 
     const state = {
         credits: null,
@@ -683,6 +691,53 @@ STRICT LAWS:
     // ============================================================
     // IMAGE PROCESSING & CROPPER
     // ============================================================
+    const MAX_IMAGE_EDGE = 3072;
+    const MAX_IMAGE_PIXELS = 8_000_000;
+    const MAX_IMAGE_DATA_URL_BYTES = 5 * 1024 * 1024;
+
+    function getBoundedImageDimensions(width, height) {
+        const sourceWidth = Math.max(1, Number(width) || 1);
+        const sourceHeight = Math.max(1, Number(height) || 1);
+        const edgeScale = MAX_IMAGE_EDGE / Math.max(sourceWidth, sourceHeight);
+        const pixelScale = Math.sqrt(MAX_IMAGE_PIXELS / (sourceWidth * sourceHeight));
+        const scale = Math.min(1, edgeScale, pixelScale);
+        return {
+            width: Math.max(1, Math.floor(sourceWidth * scale)),
+            height: Math.max(1, Math.floor(sourceHeight * scale))
+        };
+    }
+
+    function canvasToJpegDataUrl(canvas) {
+        let best = null;
+        for (const quality of [0.82, 0.72, 0.62, 0.52]) {
+            const candidate = canvas.toDataURL("image/jpeg", quality);
+            best = candidate;
+            const base64Length = candidate.includes(",") ? candidate.split(",", 2)[1].length : 0;
+            const estimatedBytes = Math.ceil(base64Length * 3 / 4);
+            if (estimatedBytes <= MAX_IMAGE_DATA_URL_BYTES) return candidate;
+        }
+        return best && Math.ceil((best.split(",", 2)[1] || "").length * 3 / 4) <= MAX_IMAGE_DATA_URL_BYTES ? best : null;
+    }
+
+    function renderBoundedJpeg(img) {
+        const dimensions = getBoundedImageDimensions(img.naturalWidth || img.width, img.naturalHeight || img.height);
+        const canvas = document.createElement("canvas");
+        canvas.width = dimensions.width;
+        canvas.height = dimensions.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, dimensions.width, dimensions.height);
+        return canvasToJpegDataUrl(canvas);
+    }
+
+    function processImageDataUrl(dataUrl) {
+        return new Promise(function (resolve) {
+            const img = new Image();
+            img.onload = function () { resolve(renderBoundedJpeg(img)); };
+            img.onerror = function () { resolve(null); };
+            img.src = dataUrl;
+        });
+    }
+
     async function convertHeicIfNeeded(file) {
         if (!file) return file;
         const name = (file.name || "screenshot.jpg").toLowerCase();
@@ -710,20 +765,9 @@ STRICT LAWS:
         return new Promise(function (resolve) {
             const reader = new FileReader();
             reader.onload = function (ev) {
-                const img = new Image();
-                img.onload = function () {
-                    const w = img.naturalWidth || img.width;
-                    const h = img.naturalHeight || img.height;
-                    const canvas = document.createElement("canvas");
-                    canvas.width = w;
-                    canvas.height = h;
-                    const ctx = canvas.getContext("2d");
-                    ctx.drawImage(img, 0, 0, w, h);
-                    resolve(canvas.toDataURL("image/jpeg", 0.88));
-                };
-                img.onerror = function () { resolve(ev.target.result); };
-                img.src = ev.target.result;
+                processImageDataUrl(ev.target.result).then(resolve);
             };
+            reader.onerror = function () { resolve(null); };
             reader.readAsDataURL(file);
         });
     }
@@ -776,6 +820,10 @@ STRICT LAWS:
                 if (state.uploadedFiles.length < 5) {
                     const procFile = await convertHeicIfNeeded(validFiles[i]);
                     const dUrl = await processImageToJpegDataUrl(procFile);
+                    if (!dUrl) {
+                        window.showToast("Could not safely process that image. Please use a smaller JPEG or PNG.", "warning");
+                        continue;
+                    }
                     state.uploadedFiles.push(dUrl);
                 }
             }
@@ -1302,24 +1350,8 @@ STRICT LAWS:
     // ============================================================
     window.switchTab = function (tabId) {
         try {
-            const mainEl = document.querySelector("main");
-            if (mainEl) {
-                if (tabId === "chatboxSection") {
-                    mainEl.classList.remove("max-w-7xl", "p-4", "md:p-6");
-                    mainEl.style.setProperty("padding-left", "0px", "important");
-                    mainEl.style.setProperty("padding-right", "0px", "important");
-                    mainEl.style.setProperty("padding-top", "0px", "important");
-                    mainEl.style.setProperty("max-width", "100%", "important");
-                } else {
-                    mainEl.classList.add("max-w-7xl", "p-4", "md:p-6");
-                    mainEl.style.removeProperty("padding-left");
-                    mainEl.style.removeProperty("padding-right");
-                    mainEl.style.removeProperty("padding-top");
-                    mainEl.style.removeProperty("max-width");
-                }
-            }
-
             const tabs = ["analyzeSection", "icebreakSection", "optimizeSection", "chatboxSection"];
+            document.body.classList.toggle("practice-tab-active", tabId === "chatboxSection");
 
             if (tabId === "chatboxSection") {
                 const container = $("chatbox-messages-container");
@@ -1328,7 +1360,6 @@ STRICT LAWS:
                 }
             } else {
                 document.body.classList.remove("chat-keyboard-open");
-                if (typeof window.resetPracticeChat === "function") window.resetPracticeChat();
             }
 
             tabs.forEach(function (s) {
@@ -1484,7 +1515,7 @@ STRICT LAWS:
         try {
             const isLocked = !state.isTermsAccepted;
             const isLoading = !!state.isLoading;
-            const isAuth = safeStorage.get("wingman_authenticated") === "true" || safeStorage.get("wingman_user_authenticated") === "true" || (typeof window.currentSupabaseUser === 'object' && window.currentSupabaseUser);
+            const isAuth = !!(window.currentSupabaseSession && window.currentSupabaseSession.access_token);
 
             const isCreditsBlocked10 = !isAuth || isLocked || state.creditsStatus === "loading" || state.creditsStatus === "error" || state.creditsStatus === "missing_profile" || state.creditsStatus === "idle" || state.credits === null || (typeof state.credits === 'number' && state.credits < 10);
             const isCreditsBlocked2 = !isAuth || isLocked || state.creditsStatus === "loading" || state.creditsStatus === "error" || state.creditsStatus === "missing_profile" || state.creditsStatus === "idle" || state.credits === null || (typeof state.credits === 'number' && state.credits < 2);
@@ -1697,12 +1728,11 @@ STRICT LAWS:
     // ============================================================
     window.handleAuthBtnClick = function (e) {
         if (e && typeof e.preventDefault === 'function') e.preventDefault();
-        const isAuth = safeStorage.get("wingman_authenticated") === "true" || safeStorage.get("wingman_user_authenticated") === "true" || (typeof window.currentSupabaseUser === 'object' && window.currentSupabaseUser);
+        const isAuth = !!(window.currentSupabaseSession && window.currentSupabaseSession.access_token);
         if (isAuth) {
             if (typeof window.logoutUser === 'function') window.logoutUser(e);
             else {
-                sessionStorage.clear();
-                localStorage.clear();
+                try { safeStorage.clear(); } catch (_) {}
                 window.location.href = "index.html";
             }
         } else {
@@ -2031,8 +2061,7 @@ STRICT LAWS:
         const chatBox = $("chatMessagesContainer");
         if (chatBox) chatBox.innerHTML = "";
 
-        try { sessionStorage.clear(); } catch(e){}
-        try { localStorage.clear(); } catch(e){}
+        try { safeStorage.clear(); } catch(e){}
     };
 
     window.handleSignOut = function (e) {
@@ -2043,7 +2072,7 @@ STRICT LAWS:
     };
 
     window.checkDashboardAuth = function () {
-        const isAuth = safeStorage.get("wingman_authenticated") === "true" || safeStorage.get("wingman_user_authenticated") === "true" || (typeof window.currentSupabaseUser === 'object' && window.currentSupabaseUser);
+        const isAuth = !!(window.currentSupabaseSession && window.currentSupabaseSession.access_token);
         const userEmail = safeStorage.get("wingman_user_email") || (window.currentSupabaseUser && window.currentSupabaseUser.email) || "";
         const avatarLetter = userEmail ? userEmail.charAt(0).toUpperCase() : "U";
 
@@ -2210,7 +2239,12 @@ STRICT LAWS:
         }
 
         const plexusInput = $("settingPlexusToggle");
-        if (plexusInput) plexusInput.checked = state.showPlexus !== false;
+        if (plexusInput) {
+            const mobilePlexusDisabled = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+            plexusInput.disabled = !!mobilePlexusDisabled;
+            plexusInput.setAttribute('aria-disabled', mobilePlexusDisabled ? 'true' : 'false');
+            plexusInput.checked = !mobilePlexusDisabled && state.showPlexus !== false;
+        }
 
         const m = $("settingsModal"), c = $("settingsCard");
         if (m) {
@@ -2278,7 +2312,10 @@ STRICT LAWS:
 
         const plexusInput = $("settingPlexusToggle");
         if (plexusInput) {
-            plexusInput.checked = state.showPlexus !== false;
+            const mobilePlexusDisabled = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+            plexusInput.disabled = !!mobilePlexusDisabled;
+            plexusInput.setAttribute('aria-disabled', mobilePlexusDisabled ? 'true' : 'false');
+            plexusInput.checked = !mobilePlexusDisabled && state.showPlexus !== false;
             plexusInput.addEventListener("change", function(e) {
                 state.showPlexus = e.target.checked;
                 safeStorage.set("wingman_setting_plexus", e.target.checked ? "true" : "false");
@@ -2467,8 +2504,34 @@ STRICT LAWS:
         }
     }
 
+    function updateVisualViewportHeight() {
+        const viewport = window.visualViewport;
+        const height = viewport && Number.isFinite(viewport.height) ? viewport.height : window.innerHeight;
+        if (height && document.documentElement && document.documentElement.style) {
+            document.documentElement.style.setProperty('--wingman-visual-height', `${Math.round(height)}px`);
+        }
+
+        const chatInput = $("simulator-chat-input");
+        if (chatInput && document.body && window.innerHeight) {
+            const keyboardOpen = document.activeElement === chatInput && height < window.innerHeight * 0.85;
+            document.body.classList.toggle('chat-keyboard-open', keyboardOpen);
+        }
+    }
+
+    function initVisualViewportSupport() {
+        if (window._wingmanVisualViewportReady) return;
+        window._wingmanVisualViewportReady = true;
+        updateVisualViewportHeight();
+        window.addEventListener('resize', updateVisualViewportHeight);
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', updateVisualViewportHeight);
+            window.visualViewport.addEventListener('scroll', updateVisualViewportHeight);
+        }
+    }
+
     function initFormInputListeners() {
         initSettingsListeners();
+        initVisualViewportSupport();
         initAmbientPlexusCanvas();
 
         const bi = $("bioInput");
@@ -2490,6 +2553,8 @@ STRICT LAWS:
             ci.addEventListener("input", function() { window.updateButtonStates(); });
             ci.addEventListener("keyup", function() { window.updateButtonStates(); });
             ci.addEventListener("paste", function() { setTimeout(window.updateButtonStates, 50); });
+            ci.addEventListener("focus", function() { setTimeout(updateVisualViewportHeight, 0); });
+            ci.addEventListener("blur", function() { setTimeout(updateVisualViewportHeight, 0); });
         }
 
         const si = $("screenshotInput");
@@ -2693,121 +2758,28 @@ STRICT LAWS:
     };
 
     // ============================================================
-    // SESSION PERSISTENCE (includes chat thread)
+    // SESSION STATE (private feature data remains in the current tab only)
     // ============================================================
     function saveSessionState() {
-        try {
-            const bioVal = $("bioInput") ? $("bioInput").value : "";
-            const auditVal = $("auditBioInput") ? $("auditBioInput").value : "";
-            const iceRes = $("icebreakResultsState");
-            const optRes = $("optimizer-results-container") ? $("optimizeResultsState") : null;
-
-            // Retain uploaded screenshots in-memory only to prevent localStorage quota exhaustion
-            const payload = {
-                lifecycle: state.lifecycle || "EMPTY",
-                activeTab: state.activeTab || "analyzeSection",
-                activeTone: state.activeTone || "Witty",
-                bioInput: bioVal,
-                icebreakCardsData: state.icebreakCardsData || null,
-                icebreakVisible: iceRes ? !iceRes.classList.contains("hidden") : false,
-                auditInput: auditVal,
-                optimizeCardsData: state.optimizeCardsData || null,
-                optimizeVisible: optRes ? !optRes.classList.contains("hidden") : false,
-                activeTranscriptCache: state.activeTranscriptCache || null,
-                selectedBioStyle: state.selectedBioStyle || "Punchy",
-                selectedVibe: state.selectedVibe || "Direct",
-                activeSimulatorThread: activeSimulatorThread || []
-            };
-
-            safeStorage.set(SESSION_KEY, JSON.stringify(payload));
-        } catch (e) {}
+        // Retain uploaded screenshots in-memory only to prevent localStorage quota exhaustion
+        // Private inputs, screenshots, transcripts, and generated output are intentionally
+        // retained only in JavaScript memory for the lifetime of this tab.
     }
 
     function restoreSessionState() {
+        // Purge the legacy global session key without restoring private content.
         try {
-            const raw = safeStorage.get(SESSION_KEY);
-            if (!raw) return;
-            const data = JSON.parse(raw);
-            if (!data) return;
-
-            // Security & Storage hygiene: ignore and purge any legacy persisted screenshot base64 strings or HTML strings
-            if (data.uploadedFiles || data.icebreakHtml || data.optimizeHtml) {
-                delete data.uploadedFiles;
-                delete data.icebreakHtml;
-                delete data.optimizeHtml;
-                try {
-                    safeStorage.set(SESSION_KEY, JSON.stringify(data));
-                } catch (e) {}
-            }
-
-            if (data.activeTranscriptCache) state.activeTranscriptCache = data.activeTranscriptCache;
-
-            if (data.activeTone) {
-                state.activeTone = data.activeTone;
-                const valMap = { "Witty": "tone-witty", "witty": "tone-witty", "Flirty": "tone-flirty", "flirty": "tone-flirty", "Casual": "tone-casual", "casual": "tone-casual", "Bold": "tone-bold", "bold": "tone-bold", "Closer": "tone-bold", "closer": "tone-bold" };
-                const targetId = valMap[data.activeTone];
-                if (targetId) window.selectTone(targetId, data.activeTone);
-            }
-
-            if (data.selectedBioStyle) {
-                state.selectedBioStyle = data.selectedBioStyle;
-                const valMap = { "Punchy": "style-punchy", "punchy": "style-punchy", "Playful": "style-playful", "playful": "style-playful", "Green Flag": "style-greenflag", "greenflag": "style-greenflag", "Mysterious": "style-mysterious", "mysterious": "style-mysterious", "Hot Take": "style-punchy", "hottake": "style-punchy" };
-                const targetId = valMap[data.selectedBioStyle];
-                if (targetId) window.selectBioStyle(targetId, data.selectedBioStyle);
-            }
-
-            if (data.selectedVibe) {
-                state.selectedVibe = data.selectedVibe;
-                const valMap = { "Direct": "vibe-direct", "direct": "vibe-direct", "Intriguing": "vibe-intriguing", "intriguing": "vibe-intriguing", "Humorous": "vibe-humorous", "humorous": "vibe-humorous", "Compliment": "vibe-compliment", "compliment": "vibe-compliment", "Debate": "vibe-direct", "debate": "vibe-direct" };
-                const targetId = valMap[data.selectedVibe];
-                if (targetId) window.selectVibe(targetId, data.selectedVibe);
-            }
-
-            if (data.lifecycle && data.lifecycle !== "ANALYZING") {
-                window.setLifecycleState(data.lifecycle);
-            }
-
-            if (data.activeTab) window.switchTab(data.activeTab);
-
-            const bi = $("bioInput");
-            if (bi && data.bioInput) bi.value = data.bioInput;
-            if (data.icebreakVisible && data.icebreakCardsData) {
-                state.icebreakCardsData = data.icebreakCardsData;
-                const empI = $("icebreakEmptyState"), skelI = $("icebreakSkeletonState"), resI = $("icebreakResultsState");
-                if (empI) empI.classList.add("hidden");
-                if (skelI) skelI.classList.add("hidden");
-                if (resI) {
-                    resI.classList.remove("hidden");
-                    window.renderFiveCards("icebreakResultsState", data.icebreakCardsData);
-                }
-            }
-
-            const ai = $("auditBioInput");
-            if (ai && data.auditInput) ai.value = data.auditInput;
-            if (data.optimizeVisible && data.optimizeCardsData) {
-                state.optimizeCardsData = data.optimizeCardsData;
-                const empO = $("optimizeEmptyState"), skelO = $("optimizeSkeletonState"), resO = $("optimizeResultsState");
-                if (empO) empO.classList.add("hidden");
-                if (skelO) skelO.classList.add("hidden");
-                if (resO) {
-                    resO.classList.remove("hidden");
-                    window.renderFiveCards("optimizeResultsState", data.optimizeCardsData);
-                }
-            }
-
-            if (Array.isArray(data.activeSimulatorThread) && data.activeSimulatorThread.length > 0) {
-                activeSimulatorThread = data.activeSimulatorThread;
-                const chatContainer = $("chatbox-messages-container");
-                if (chatContainer) {
-                    chatContainer.innerHTML = "";
-                    activeSimulatorThread.forEach(function (msg) {
-                        if (msg && (msg.role === 'user' || msg.role === 'assistant')) {
-                            window.renderChatboxBubble(msg.content || msg.text, msg.role);
-                        }
-                    });
+            const legacyRaw = (typeof localStorage !== 'undefined' && localStorage.getItem(SESSION_KEY)) ||
+                (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(SESSION_KEY));
+            if (legacyRaw) {
+                const data = JSON.parse(legacyRaw);
+                if (data.uploadedFiles || data.icebreakHtml || data.optimizeHtml) {
+                    // Legacy private payloads are discarded instead of migrated.
                 }
             }
         } catch (e) {}
+        try { safeStorage.remove(SESSION_KEY); } catch (e) {}
+        try { if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
     }
 
     // ============================================================
@@ -2819,7 +2791,7 @@ STRICT LAWS:
             const tier = params.get("tier");
             if (!tier) return;
 
-            const isAuth = safeStorage.get("wingman_authenticated") === "true" || safeStorage.get("wingman_user_authenticated") === "true";
+            const isAuth = !!(window.currentSupabaseSession && window.currentSupabaseSession.access_token);
             if (!isAuth) {
                 window.openAuthRequiredModal();
                 return;
@@ -3543,6 +3515,7 @@ STRICT LAWS:
     };
 
     window.clearAndResetChatbox = function() {
+        simulatorGeneration += 1;
         activeSimulatorThread = [];
         activeSimulatorThread.push({ role: "system", content: practicePartnerSystemContext });
 
@@ -3781,6 +3754,10 @@ STRICT LAWS:
         }
 
         const sendBtn = $("chatbox-send-btn");
+        if (simulatorRequestInFlight) return;
+        simulatorRequestInFlight = true;
+        const requestGeneration = simulatorGeneration;
+        const idempotencyKey = 'sim_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
         if (sendBtn) {
             sendBtn.disabled = true;
             sendBtn.classList.add("opacity-50", "cursor-not-allowed");
@@ -3825,6 +3802,7 @@ STRICT LAWS:
             const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
             const headers = {
                 'Content-Type': 'application/json',
+                'X-Idempotency-Key': idempotencyKey,
                 ...authHeaders
             };
 
@@ -3836,30 +3814,39 @@ STRICT LAWS:
                     scenario: activeScenario,
                     mode: activeMode,
                     isHotline: isHotlineMode,
-                    attractionScore: window.currentAttractionScore
+                    attractionScore: window.currentAttractionScore,
+                    idempotencyKey
                 })
             });
 
-            window.showChatboxTypingIndicator(false);
+            if (requestGeneration === simulatorGeneration) {
+                window.showChatboxTypingIndicator(false);
+            }
+
+            if (!chatResp.ok && requestGeneration !== simulatorGeneration) return;
 
             if (chatResp.ok) {
                 const chatData = await chatResp.json();
                 if (chatData && chatData.reply) {
                     const aiReply = chatData.reply;
-                    activeSimulatorThread.push({ role: "assistant", content: aiReply });
-                    window.renderChatboxBubble(aiReply, "assistant");
                     const updatedBal = typeof chatData.credits === 'number' ? chatData.credits : (typeof chatData.creditsRemaining === 'number' ? chatData.creditsRemaining : null);
                     if (updatedBal !== null) {
                         window.updateUICredits(updatedBal);
                     }
+                    if (requestGeneration !== simulatorGeneration) return;
+                    activeSimulatorThread.push({ role: "assistant", content: aiReply });
+                    window.renderChatboxBubble(aiReply, "assistant");
                 } else if (chatData && chatData.error) {
+                    if (requestGeneration !== simulatorGeneration) return;
                     window.renderChatboxBubble("Notice: " + chatData.error, "assistant");
                 }
             } else if (chatResp.status === 409) {
+                if (requestGeneration !== simulatorGeneration) return;
                 const errJson = await chatResp.json().catch(() => ({}));
                 if (typeof window.checkCreditBalance === 'function') await window.checkCreditBalance();
                 window.renderChatboxBubble(errJson.error || "This message is already being processed. No additional credits were deducted.", "assistant");
             } else if (chatResp.status === 403) {
+                if (requestGeneration !== simulatorGeneration) return;
                 const errJson = await chatResp.json().catch(() => ({}));
                 if (errJson.code === "CONSENT_REQUIRED" || (errJson.error && errJson.error.toLowerCase().includes("consent"))) {
                     state.isTermsAccepted = false;
@@ -3902,10 +3889,12 @@ STRICT LAWS:
                 window.renderChatboxBubble("Notice: " + errMsg, "assistant");
             }
         } catch (chatErr) {
+            if (requestGeneration !== simulatorGeneration) return;
             window.showChatboxTypingIndicator(false);
             console.error("Chatbox API Error:", chatErr);
             window.renderChatboxBubble("Connection issue. Please check your network and try again.", "assistant");
         } finally {
+            simulatorRequestInFlight = false;
             if (typeof window.updateButtonStates === 'function') {
                 window.updateButtonStates();
             }
@@ -3957,7 +3946,7 @@ STRICT LAWS:
 
     window.checkServerConsentStatus = async function() {
         try {
-            const isAuth = safeStorage.get("wingman_authenticated") === "true" || safeStorage.get("wingman_user_authenticated") === "true" || (typeof window.currentSupabaseUser === 'object' && window.currentSupabaseUser);
+            const isAuth = !!(window.currentSupabaseSession && window.currentSupabaseSession.access_token);
             if (!isAuth) {
                 state.isTermsAccepted = false;
                 state.consentStatus = 'unauthenticated';
@@ -4039,7 +4028,7 @@ STRICT LAWS:
             return;
         }
 
-        const isAuth = safeStorage.get("wingman_authenticated") === "true" || safeStorage.get("wingman_user_authenticated") === "true" || (typeof window.currentSupabaseUser === 'object' && window.currentSupabaseUser);
+        const isAuth = !!(window.currentSupabaseSession && window.currentSupabaseSession.access_token);
         if (!isAuth) {
             if (typeof window.openAuthRequiredModal === 'function') {
                 window.openAuthRequiredModal("Please sign in or create an account to record your 18+ verification and consent.");
@@ -4132,13 +4121,21 @@ STRICT LAWS:
 
     window.showUnreadableErrorModal = function() {
         const modal = document.getElementById('unreadableErrorModal');
-        if (modal) modal.classList.remove('hidden');
+        if (modal) {
+            modal.style.display = 'flex';
+            modal.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+            modal.classList.add('opacity-100', 'pointer-events-auto');
+        }
     };
 
     window.closeUnreadableErrorModal = function(e) {
         if (e && typeof e.preventDefault === 'function') e.preventDefault();
         const modal = document.getElementById('unreadableErrorModal');
-        if (modal) modal.classList.add('hidden');
+        if (modal) {
+            modal.classList.remove('opacity-100', 'pointer-events-auto');
+            modal.classList.add('opacity-0', 'pointer-events-none', 'hidden');
+            modal.style.display = 'none';
+        }
     };
 
 })();

@@ -40,8 +40,8 @@ function verifyArtifact() {
   assert(fs.existsSync(license), 'Material Symbols Apache license must exist in final artifact');
   assert.strictEqual(fs.statSync(font).size, 16580, 'Material Symbols font byte count must stay pinned');
   assert.strictEqual(sha256(font), '56f6255b1341a07abae9b27ad468ecbf7de7141c6522a078060fb4c5173def70', 'Material Symbols font SHA-256 must stay pinned');
-  assert.strictEqual(fs.statSync(license).size, 11357, 'Material Symbols license byte count must stay pinned');
-  assert.strictEqual(sha256(license), '58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd', 'Material Symbols license SHA-256 must stay pinned');
+  assert.strictEqual(fs.statSync(license).size, 11558, 'Material Symbols license byte count must stay pinned');
+  assert.strictEqual(sha256(license), '49bbe9114e49214df2ccc324cb3ac8d1d1aa1c3a0947f94c286765e86647b32e', 'Material Symbols license SHA-256 must stay pinned');
   assert(fs.readFileSync(license, 'utf8').includes('Apache License'), 'Material Symbols license must remain Apache License');
 
   assert.strictEqual(material.ICON_NAMES.split(',').length, 45, 'self-hosted subset contract must stay at the proven 45 icons unless intentionally regenerated');

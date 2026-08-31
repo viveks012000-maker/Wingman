@@ -62,7 +62,10 @@ const testSuites = [
     { name: '56. SEO Indexing, Canonical Metadata & 404 Hardening', file: 'seo_indexing_metadata.test.js' },
     { name: '57. Misdirected Custom-Domain CORS Revocation Guard', file: 'misdirected_domain_cors.test.js' },
     { name: '58. Production CSS Compatibility Artifact Lock', file: 'production_css_compat_lock.test.js' },
-    { name: '59. Browser Vendor Provenance & Dependency Monitoring', file: 'browser_vendor_provenance.test.js' }
+    { name: '59. Browser Vendor Provenance & Dependency Monitoring', file: 'browser_vendor_provenance.test.js' },
+    { name: '60. All Dialog Accessibility Coverage', file: 'all_dialog_accessibility.test.js' },
+    { name: '61. Chat Routing, Idempotency & Stale Response Contract', file: 'chat_contract.test.js' },
+    { name: '62. Mobile Presentation Layer Browser QA', file: 'mobile_presentation_qa.test.js' }
 ];
 
 console.log('========================================================================');

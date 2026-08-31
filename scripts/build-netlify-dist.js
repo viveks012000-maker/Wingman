@@ -121,8 +121,8 @@ function currentGitSha() {
 
 function writeSecurityFiles() {
   const railway = 'https://wingman-production-c6ce.up.railway.app';
-  // heic2any.min.js currently performs runtime code generation. Keep unsafe-eval
-  // scoped to the dashboard document only so HEIC/iPhone screenshot conversion works.
+  // The new HEIC runtime (heic-to-csp.js) is built with USE_UNSAFE_EVAL=0 and contains no eval/new Function.
+  // No unsafe-eval is needed in the CSP.
   function cspFor(allowEval = false) {
     const evalSource = allowEval ? " 'unsafe-eval'" : '';
     return [
@@ -143,7 +143,7 @@ function writeSecurityFiles() {
   }
 
   const strictCsp = cspFor(false);
-  const appCsp = cspFor(true);
+  const appCsp = cspFor(false); // No unsafe-eval needed for new HEIC runtime
   const security = [
     '/*',
     '  Strict-Transport-Security: max-age=31536000',
@@ -220,8 +220,8 @@ function verifyCriticalRuntimeContent() {
   if (!headers.includes(railway)) fail('_headers CSP does not include Railway backend');
   if (!headers.includes('Strict-Transport-Security: max-age=31536000')) fail('_headers does not enforce HSTS');
   const unsafeEvalHeaderCount = (headers.match(/'unsafe-eval'/g) || []).length;
-  if (unsafeEvalHeaderCount !== 2) fail(`unsafe-eval must appear only on /app and /app.html CSP blocks; found ${unsafeEvalHeaderCount}`);
-  if (!appHtml.includes("'unsafe-eval'") || !appHtml.includes('vendor/heic2any.min.js')) fail('Dashboard HEIC runtime/CSP compatibility contract is missing');
+    if (unsafeEvalHeaderCount !== 0) fail(`unsafe-eval must not appear in any CSP block with the new HEIC runtime; found ${unsafeEvalHeaderCount}`);
+    if (!appHtml.includes('vendor/heic2any-loader.js')) fail('Dashboard HEIC loader must be present');
 
   // Prevent the known stale-production regression from ever entering a new artifact.
   if (appJs.includes("if (response.status === 401) {\n                        window.updateUICredits(0);")) {

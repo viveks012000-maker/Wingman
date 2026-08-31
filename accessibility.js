@@ -7,7 +7,9 @@
         purchaseModal: { close: 'closePurchaseModal', label: 'Buy credits' },
         settingsModal: { close: 'closeSettingsModal', label: 'Settings' },
         cropModal: { close: 'closeCropModal', label: 'Crop image' },
-        deleteAccountModal: { close: 'closeDeleteAccountModal', label: 'Delete account' }
+        deleteAccountModal: { close: 'closeDeleteAccountModal', label: 'Delete account' },
+        activationModal: { close: 'closeActivationModal', label: 'Activation' },
+        unreadableErrorModal: { close: 'closeUnreadableErrorModal', label: 'Unreadable image' }
     };
     var states = new Map();
 
@@ -103,8 +105,22 @@
         try { target.focus({ preventScroll: true }); } catch (_) { try { target.focus(); } catch (_) {} }
     }
 
+    function canRestoreFocus(target) {
+        if (!target || !target.isConnected || target === document.body || typeof target.focus !== 'function') return false;
+        var owner = target.closest && target.closest('[role="dialog"], [inert]');
+        return isVisible(target) && (!owner || (isVisible(owner) && !owner.hasAttribute('inert')));
+    }
+
+    function focusAuthFallback() {
+        var candidates = [document.getElementById('desktopAuthBtn'), document.getElementById('mobileAuthBtn')];
+        document.querySelectorAll('button[onclick*="openAuthRequiredModal"]').forEach(function (candidate) { candidates.push(candidate); });
+        var fallback = candidates.find(function (candidate) {
+            return candidate && !candidate.disabled && isVisible(candidate) && !candidate.closest('[inert]');
+        });
+        if (fallback) focusElement(fallback);
+    }
+
     function scheduleFocusAfterClose(target) {
-        if (!target || !target.isConnected || typeof target.focus !== 'function') return;
         setTimeout(function () {
             var activeModal = topOpenModal();
             if (activeModal) {
@@ -113,7 +129,8 @@
                 }
                 return;
             }
-            focusElement(target);
+            if (canRestoreFocus(target)) focusElement(target);
+            else focusAuthFallback();
         }, 0);
     }
 
@@ -181,7 +198,9 @@
             var wrappedOpen = function () {
                 var st = states.get(modal) || { open: false, returnFocus: null };
                 if (!st.open) {
-                    st.returnFocus = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+                    var event = arguments[0];
+                    var invoker = event && event.currentTarget && event.currentTarget.isConnected ? event.currentTarget : null;
+                    st.returnFocus = invoker || (document.activeElement && document.activeElement !== document.body ? document.activeElement : null);
                 }
                 setModalInteractiveState(modal, true);
                 var result = originalOpen.apply(this, arguments);
@@ -213,10 +232,9 @@
         }
     }
 
-    function init() {
-        Object.keys(modalConfigs).forEach(function (id) {
+    function initModal(id) {
             var modal = document.getElementById(id);
-            if (!modal) return;
+            if (!modal || states.has(modal)) return;
             var cfg = modalConfigs[id];
             setDialogName(modal, cfg);
             enhanceCloseControls(modal, cfg);
@@ -227,7 +245,17 @@
                 attributes: true,
                 attributeFilter: ['class', 'style', 'hidden']
             });
-        });
+    }
+
+    window.registerWingmanModal = function (id, config) {
+        if (!id || !config || !config.close) return false;
+        modalConfigs[id] = config;
+        initModal(id);
+        return !!document.getElementById(id);
+    };
+
+    function init() {
+        Object.keys(modalConfigs).forEach(initModal);
         enhancePasswordToggle();
         enhanceNonNativeActions();
     }

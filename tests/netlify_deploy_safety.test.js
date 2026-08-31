@@ -66,10 +66,10 @@ try {
   assert.ok(headerBlock('/*').includes('Strict-Transport-Security: max-age=31536000'), 'All frontend routes must enforce HSTS');
   assert.ok(!headerBlock('/').includes("'unsafe-eval'"), 'Root landing CSP must not allow unsafe-eval');
   assert.ok(!headerBlock('/index.html').includes("'unsafe-eval'"), 'index.html CSP must not allow unsafe-eval');
-  assert.ok(headerBlock('/app').includes("'unsafe-eval'"), '/app rewrite CSP must allow HEIC converter runtime code generation');
-  assert.ok(headerBlock('/app.html').includes("'unsafe-eval'"), 'app.html CSP must allow HEIC converter runtime code generation');
+  assert.ok(!headerBlock('/app').includes("'unsafe-eval'"), '/app rewrite CSP must remain eval-free with the CSP-safe HEIC runtime');
+  assert.ok(!headerBlock('/app.html').includes("'unsafe-eval'"), 'app.html CSP must remain eval-free with the CSP-safe HEIC runtime');
   for (const route of ['/terms.html', '/privacy.html', '/refund.html']) assert.ok(!headerBlock(route).includes("'unsafe-eval'"), `${route} CSP must remain eval-free`);
-  assert.strictEqual((headers.match(/'unsafe-eval'/g) || []).length, 2, 'unsafe-eval must be scoped only to /app and /app.html');
+  assert.strictEqual((headers.match(/'unsafe-eval'/g) || []).length, 0, 'unsafe-eval must not appear in any CSP block');
   assert.ok(!appJs.includes("if (response.status === 401) {\n                        window.updateUICredits(0);"), '401 must never become fake zero credits');
   assert.ok(appJs.includes('const freshCreditCheck = await window.checkCreditBalance();'), 'low client balance must be freshly rechecked');
   assert.ok(appJs.includes('const authoritativeBalanceCheck = await window.checkCreditBalance();'), 'HTTP 402 must recheck authoritative wallet');
