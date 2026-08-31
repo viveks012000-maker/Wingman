@@ -100,6 +100,8 @@ select,
         width: 100% !important;
         max-width: 100% !important;
         overflow-x: hidden !important;
+        overflow-y: auto !important;
+        touch-action: pan-y;
         overscroll-behavior-x: none;
         scroll-behavior: auto !important;
     }
@@ -601,7 +603,7 @@ select,
         display: flex;
         flex-direction: column;
         flex: 0 0 auto !important;
-        height: max(0px, calc(var(--wingman-visual-height) - var(--wingman-mobile-header-total-height) - var(--wingman-mobile-bottom-clearance))) !important;
+        height: max(0px, calc(var(--wingman-visual-height) - var(--wingman-mobile-header-total-height) - var(--wingman-mobile-bottom-clearance) - 16px)) !important;
         max-height: none !important;
         min-height: 0 !important;
         padding: 0 0 16px !important;
