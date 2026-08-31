@@ -45,6 +45,10 @@ assert(notFound.includes("connect-src 'none'"), '404 document CSP must prohibit 
 
 assert(/'\/app',\s*`  Content-Security-Policy: \$\{appCsp\}`,\s*'  X-Robots-Tag: noindex, nofollow, noarchive'/s.test(build), 'Clean /app response must emit X-Robots-Tag noindex.');
 assert(/'\/app\.html',\s*`  Content-Security-Policy: \$\{appCsp\}`,\s*'  X-Robots-Tag: noindex, nofollow, noarchive'/s.test(build), '/app.html response must emit X-Robots-Tag noindex.');
+for (const route of ['/terms', '/privacy', '/refund']) {
+  const headerPattern = "'" + route + "',\\s*" + String.fromCharCode(96) + "  Content-Security-Policy: \\$\\{strictCsp\\}" + String.fromCharCode(96);
+  assert(new RegExp(headerPattern, 's').test(build), `Clean ${route} response must emit strict CSP.`);
+}
 assert(/'\/404\.html',\s*`  Content-Security-Policy: \$\{strictCsp\}`,\s*'  X-Robots-Tag: noindex, nofollow'/s.test(build), '/404.html must receive strict CSP and X-Robots-Tag headers.');
 
 console.log('✅ Canonical SEO host, social metadata, dashboard noindex, and 404 hardening are locked to production truth.');
