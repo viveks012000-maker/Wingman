@@ -191,6 +191,7 @@ assert(!isPrivateDevelopmentOrigin('http://172.15.4.20:4174'), 'non-private 172/
 assert(!isPrivateDevelopmentOrigin('http://10.example.com:4174'), 'public lookalike hostnames must not be allowed for development CORS');
 assert(serverSource.includes('isPrivateDevelopmentOrigin(origin)'), 'inner API CORS must allow only validated private development origins');
 assert(railwayServerSource.includes('isPrivateDevelopmentOrigin(origin)'), 'gateway admission CORS must allow only validated private development origins');
+assert(!railwayServerSource.includes("res.setHeader('Access-Control-Allow-Origin', origin)"), 'gateway admission CORS must not reflect a request Origin directly');
 assert(index.includes('http://*:*'), 'landing development CSP must permit the local private-network backend');
 assert(appHtml.includes('http://*:*'), 'dashboard development CSP must permit the local private-network backend');
 assert(buildNetlify.includes('http:\\/\\/\\*:\\*'), 'production build must explicitly remove private-network HTTP CSP sources');

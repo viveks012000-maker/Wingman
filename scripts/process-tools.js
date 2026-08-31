@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
@@ -18,8 +19,8 @@ function canRun(executable) {
 }
 
 function githubDesktopGitCandidates() {
-  if (process.platform !== 'win32' || !process.env.LOCALAPPDATA) return [];
-  const root = path.join(process.env.LOCALAPPDATA, 'GitHubDesktop');
+  if (process.platform !== 'win32') return [];
+  const root = path.join(os.homedir(), 'AppData', 'Local', 'GitHubDesktop');
   let versions = [];
   try {
     versions = fs.readdirSync(root)

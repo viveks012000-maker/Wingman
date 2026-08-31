@@ -51,8 +51,15 @@ function getGatewayAllowedOrigins() {
 function applyAnalyzerAdmissionCors(req, res) {
     const origin = req && req.headers ? req.headers.origin : null;
     const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
-    if (!origin || (!getGatewayAllowedOrigins().has(origin) && (isProduction || !isPrivateDevelopmentOrigin(origin)))) return false;
-    res.setHeader('Access-Control-Allow-Origin', origin);
+    const isAllowedOrigin = origin && (getGatewayAllowedOrigins().has(origin) ||
+        (!isProduction && isPrivateDevelopmentOrigin(origin)));
+    if (!isAllowedOrigin) return false;
+
+    // Early admission responses must never reflect a request-controlled Origin. The mounted
+    // inner app handles normal development responses; this gateway path emits CORS only for the
+    // single fixed production frontend origin.
+    if (origin !== 'https://mywingman.pages.dev') return false;
+    res.setHeader('Access-Control-Allow-Origin', 'https://mywingman.pages.dev');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     if (typeof res.vary === 'function') res.vary('Origin');
     else res.setHeader('Vary', 'Origin');
