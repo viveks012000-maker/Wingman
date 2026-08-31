@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { execFileSync } = require('child_process');
+const { currentGitSha } = require('./process-tools');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'netlify-dist');
@@ -101,24 +101,6 @@ function sha256(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
-function currentGitSha() {
-  // The checked-out Git HEAD is the artifact source of truth. GitHub reserves GITHUB_SHA
-  // for the workflow-triggering commit, which can differ from an explicitly checked-out SHA.
-  try {
-    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
-    if (/^[0-9a-f]{40}$/i.test(head)) return head.toLowerCase();
-  } catch (_) {}
-
-  // Fallback for build environments where Git metadata is unavailable.
-  if (process.env.SOURCE_COMMIT && /^[0-9a-f]{40}$/i.test(process.env.SOURCE_COMMIT)) {
-    return process.env.SOURCE_COMMIT.toLowerCase();
-  }
-  if (process.env.GITHUB_SHA && /^[0-9a-f]{40}$/i.test(process.env.GITHUB_SHA)) {
-    return process.env.GITHUB_SHA.toLowerCase();
-  }
-  return 'unknown';
-}
-
 function writeSecurityFiles() {
   const railway = 'https://wingman-production-c6ce.up.railway.app';
   // The new HEIC runtime (heic-to-csp.js) is built with USE_UNSAFE_EVAL=0 and contains no eval/new Function.
@@ -202,7 +184,12 @@ function stripDevelopmentCspSources() {
   for (const rel of PUBLIC_FILES.filter(file => file.endsWith('.html'))) {
     const target = path.join(OUT, rel);
     const source = fs.readFileSync(target, 'utf8');
-    const production = source.replace(/\s+http:\/\/localhost:\*/g, '').replace(/\s+ws:\/\/localhost:\*/g, '');
+    const production = source.replace(/\s+http:\/\/localhost:\*/g, '')
+      .replace(/\s+ws:\/\/localhost:\*/g, '')
+      .replace(/\s+http:\/\/\*:\*/g, '')
+      .replace(/\s+ws:\/\/\*:\*/g, '')
+      .replace(/\s+https:\/\/\*:\*/g, '')
+      .replace(/\s+wss:\/\/\*:\*/g, '');
     fs.writeFileSync(target, production, 'utf8');
   }
 }
@@ -246,7 +233,9 @@ function verifyCriticalRuntimeContent() {
 
   for (const rel of PUBLIC_FILES.filter(file => file.endsWith('.html'))) {
     const html = fs.readFileSync(path.join(OUT, rel), 'utf8');
-    if (html.includes('http://localhost:*') || html.includes('ws://localhost:*')) {
+    if (html.includes('http://localhost:*') || html.includes('ws://localhost:*') ||
+      html.includes('http://*:*') || html.includes('ws://*:*') ||
+      html.includes('https://*:*') || html.includes('wss://*:*')) {
       fail(`Development CSP source entered production artifact: ${rel}`);
     }
   }
@@ -273,7 +262,7 @@ function verifyLocalHtmlReferences() {
 }
 
 function writeManifest(files) {
-  const sha = currentGitSha();
+  const sha = currentGitSha(ROOT);
   const manifest = {
     build: 'frontend-only-netlify',
     sourceCommit: sha,
@@ -296,6 +285,6 @@ writeManifest(files);
 
 const finalFiles = walk(OUT);
 console.log(`[netlify-build] Safe frontend artifact created: ${path.relative(ROOT, OUT)}`);
-console.log(`[netlify-build] Source commit: ${currentGitSha()}`);
+console.log(`[netlify-build] Source commit: ${currentGitSha(ROOT)}`);
 console.log(`[netlify-build] Public files: ${finalFiles.length}`);
 for (const rel of finalFiles) console.log(`[netlify-build] PUBLIC ${rel}`);

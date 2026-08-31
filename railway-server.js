@@ -5,6 +5,7 @@ require('dotenv').config();
 const express = require('express');
 const { verifySupabaseToken, requireSupabaseAuth } = require('./middleware/supabaseAuth');
 const { analyzerAdmissionLimiter } = require('./middleware/security');
+const { isPrivateDevelopmentOrigin } = require('./middleware/developmentOrigin');
 const { app: wingmanApi } = require('./server');
 
 const app = express();
@@ -49,7 +50,8 @@ function getGatewayAllowedOrigins() {
 
 function applyAnalyzerAdmissionCors(req, res) {
     const origin = req && req.headers ? req.headers.origin : null;
-    if (!origin || !getGatewayAllowedOrigins().has(origin)) return false;
+    const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
+    if (!origin || (!getGatewayAllowedOrigins().has(origin) && (isProduction || !isPrivateDevelopmentOrigin(origin)))) return false;
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     if (typeof res.vary === 'function') res.vary('Origin');

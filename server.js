@@ -56,11 +56,13 @@ const { createUserProvisioningMiddleware } = require('./middleware/userProvision
 const autoProvisionUser = createUserProvisioningMiddleware(() => db);
 const { validateImagePayload } = require('./middleware/imageValidator');
 const { forRequest } = require('./middleware/rls');
+const { isPrivateDevelopmentOrigin } = require('./middleware/developmentOrigin');
 
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const IS_PROD = isProduction;
+const developmentCspConnectSources = IS_PROD ? [] : ['http://*:*', 'ws://*:*', 'https://*:*', 'wss://*:*'];
 
 // 1. Security Headers Middleware (Helmet + Explicit Production Headers)
 app.use(helmet({
@@ -73,7 +75,7 @@ app.use(helmet({
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com"],
             imgSrc: ["'self'", "data:", "blob:", "https:"],
-            connectSrc: ["'self'", "https://*.supabase.co", "wss://*.supabase.co", "http://localhost:*", "ws://localhost:*", "https://aicredits.in"],
+            connectSrc: ["'self'", "https://*.supabase.co", "wss://*.supabase.co", "http://localhost:*", "ws://localhost:*", "https://aicredits.in", ...developmentCspConnectSources],
             workerSrc: ["'self'", "blob:"],
             frameAncestors: ["'none'"],
             objectSrc: ["'none'"]
@@ -133,6 +135,7 @@ function isOriginAllowed(origin, allowedList) {
 
     // Development may use arbitrary localhost ports for local tooling, but production may not.
     if (!IS_PROD && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true;
+    if (!IS_PROD && isPrivateDevelopmentOrigin(origin)) return true;
     return false;
 }
 
