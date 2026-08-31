@@ -1,6 +1,6 @@
 {
   "runtime": "heic-to-csp.js",
-  "sha256": "d19857f33f41f9d21d27d515d95d60a2dff0369bcc4d4525c8eef487be7dd9a5",
+  "sha256": "9e645c9d6b73f68bd18f90f48227a4a4bbf98f071d02fa001e83537b5f7dd408",
   "bytes": 3168650,
   "heicToCommit": "f37af866f9aa6212ddc84b67a279c9f2386aba4f",
   "libheifTag": "v1.23.1",
