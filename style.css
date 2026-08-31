@@ -109,6 +109,10 @@ select,
         overflow-y: auto !important;
     }
 
+    html:has(body[style*="overflow: hidden"]) {
+        overflow-y: hidden !important;
+    }
+
     body {
         overflow-y: auto;
     }
@@ -969,7 +973,7 @@ select,
     }
 }
 
-@media (max-width: 767px) and (max-height: 500px) {
+@media (max-width: 767px) and (max-height: 520px) {
     /* Let short landscape Practice grow into a scrollable document. Keep the
        fixed tab bar available so users can leave the conversation view. */
     body.app-page.practice-tab-active #mainContentCanvas {
