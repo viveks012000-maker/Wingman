@@ -56,24 +56,27 @@ const { createUserProvisioningMiddleware } = require('./middleware/userProvision
 const autoProvisionUser = createUserProvisioningMiddleware(() => db);
 const { validateImagePayload } = require('./middleware/imageValidator');
 const { forRequest } = require('./middleware/rls');
+const { isPrivateDevelopmentOrigin } = require('./middleware/developmentOrigin');
 
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const IS_PROD = isProduction;
+const developmentCspDefaultSources = IS_PROD ? [] : ['http://localhost:*', 'ws://localhost:*'];
+const developmentCspConnectSources = IS_PROD ? [] : ['http://*:*', 'ws://*:*', 'https://*:*', 'wss://*:*'];
 
 // 1. Security Headers Middleware (Helmet + Explicit Production Headers)
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
-            defaultSrc: ["'self'", "https://*.supabase.co", "http://localhost:*", "ws://localhost:*"],
+            defaultSrc: ["'self'", "https://*.supabase.co", ...developmentCspDefaultSources],
             scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.supabase.co"],
             scriptSrcElem: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.supabase.co"],
             scriptSrcAttr: ["'unsafe-inline'"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com"],
             imgSrc: ["'self'", "data:", "blob:", "https:"],
-            connectSrc: ["'self'", "https://*.supabase.co", "wss://*.supabase.co", "http://localhost:*", "ws://localhost:*", "https://aicredits.in"],
+            connectSrc: ["'self'", "https://*.supabase.co", "wss://*.supabase.co", "https://aicredits.in", ...developmentCspConnectSources],
             workerSrc: ["'self'", "blob:"],
             frameAncestors: ["'none'"],
             objectSrc: ["'none'"]
@@ -111,17 +114,9 @@ const rawConfiguredAllowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map(value => value.trim()).filter(Boolean)
     : [];
 
-// Production must use explicit HTTPS origins. Ignore wildcard/null/localhost values even if
-// an old environment variable still contains them; this prevents stale deployment settings
-// from silently reopening browser access to arbitrary preview or local origins.
-const configuredAllowedOrigins = rawConfiguredAllowedOrigins.filter(origin => {
-    if (!IS_PROD) return true;
-    if (origin === '*' || origin === 'null' || origin.includes('*')) return false;
-    if (origin === 'https://mywingman.com') return false;
-    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return false;
-    if (/^https:\/\/[^/]+\.netlify\.app$/i.test(origin)) return false;
-    return /^https:\/\//i.test(origin);
-});
+// Production has one browser client. Ignore ALLOWED_ORIGINS entirely there so stale or
+// attacker-controlled deployment configuration cannot widen credentialed browser access.
+const configuredAllowedOrigins = IS_PROD ? [] : rawConfiguredAllowedOrigins;
 const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...configuredAllowedOrigins]));
 
 function isOriginAllowed(origin, allowedList) {
@@ -129,10 +124,12 @@ function isOriginAllowed(origin, allowedList) {
     // browser CORS requests and remain allowed. Opaque browser origins are denied in prod.
     if (!origin) return true;
     if (origin === 'null') return !IS_PROD;
+    if (origin === 'https://mywingman.com') return false;
     if (allowedList.includes(origin)) return true;
 
     // Development may use arbitrary localhost ports for local tooling, but production may not.
     if (!IS_PROD && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true;
+    if (!IS_PROD && isPrivateDevelopmentOrigin(origin)) return true;
     return false;
 }
 
@@ -652,6 +649,22 @@ async function verifyAndDeductCreditsSQLite(req, costInr, featureName, idempoten
     return await withTransactionRetry(db, async (db) => {
         const row = await db.get('SELECT credits_balance FROM user_profiles WHERE user_id = ?', [uid]);
         const currentInr = row ? Number(row.credits_balance || 0.00) : 0.00;
+        const requestKey = typeof idempotencyKey === 'string' ? idempotencyKey.trim() : '';
+
+        if (requestKey) {
+            const existing = await db.get(
+                'SELECT id FROM credit_deductions WHERE user_id = ? AND request_id = ? LIMIT 1',
+                [uid, requestKey]
+            );
+            if (existing) {
+                return {
+                    success: true,
+                    duplicate: true,
+                    remainingCredits: Math.round(currentInr * CREDITS_PER_INR),
+                    remainingInr: currentInr
+                };
+            }
+        }
 
         if (currentInr < costInr) {
             throw { insufficient: true, currentCredits: Math.round(currentInr * CREDITS_PER_INR) };
@@ -665,7 +678,7 @@ async function verifyAndDeductCreditsSQLite(req, costInr, featureName, idempoten
         const deductionId = 'ded_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5);
         await db.run(
             'INSERT INTO credit_deductions (id, user_id, amount_inr, feature, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-            [deductionId, uid, costInr, featureName, idempotencyKey || ('req_' + Date.now()), new Date().toISOString()]
+            [deductionId, uid, costInr, featureName, requestKey || ('req_' + Date.now()), new Date().toISOString()]
         );
 
         const updatedRow = await db.get('SELECT credits_balance FROM user_profiles WHERE user_id = ?', [uid]);
@@ -2584,7 +2597,12 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
 
     try {
         let { message, userMessage, messages, conversationHistory, sessionHistory } = req.body || {};
-        const rawUserMsg = message || userMessage || (messages && messages.length > 0 ? messages[messages.length - 1].content : "");
+        const lastMessage = Array.isArray(messages) && messages.length > 0 ? messages[messages.length - 1] : null;
+        const rawUserMsg = message || userMessage || (lastMessage && typeof lastMessage === 'object' ? (lastMessage.content || lastMessage.text || "") : "");
+
+        if (typeof rawUserMsg !== 'string' || !rawUserMsg.trim()) {
+            return res.status(400).json({ success: false, error: "Please enter a message before sending." });
+        }
 
         if (typeof rawUserMsg === 'string' && rawUserMsg.length > 5000) {
             return res.status(400).json({
@@ -2593,7 +2611,11 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
             });
         }
 
-        let historyArr = Array.isArray(conversationHistory) ? conversationHistory : (Array.isArray(sessionHistory) ? sessionHistory : (Array.isArray(messages) ? messages : []));
+        let historyArr = Array.isArray(messages) && messages.length > 0
+            ? messages
+            : (Array.isArray(conversationHistory) && conversationHistory.length > 0
+                ? conversationHistory
+                : (Array.isArray(sessionHistory) ? sessionHistory : []));
         
         // Cap message history to latest 50 messages max
         if (historyArr.length > 50) {
@@ -2663,9 +2685,12 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
         const currentScenario = scenario || "Flirting & Teasing";
         const useShorthand = shorthandOption !== false;
         const emojiLevel = typeof emojiOption === 'number' ? emojiOption : 1;
-        const isHotline = mode === "hotline" || currentScenario === "Coach Hotline";
+        const hasExplicitHotline = typeof (req.body && req.body.isHotline) === 'boolean';
+        const isHotline = hasExplicitHotline
+            ? req.body.isHotline
+            : (mode === "hotline" || currentScenario === "Coach Hotline");
 
-        const userTextRaw = message || userMessage || (messages && messages.length > 0 ? messages[messages.length - 1].content : "");
+        const userTextRaw = rawUserMsg;
         const userText = (userTextRaw || "").toLowerCase().trim();
 
         if (isHotline) {
@@ -2689,7 +2714,6 @@ CONVERSATIONAL FREEDOM & LAWS:
    - NEVER output markdown divider lines ("---" or "===").
 8. COMPLETE ALL SENTENCES & THOUGHTS: Never cut off mid-sentence or leave questions/points incomplete. Always finish every single sentence cleanly.`;
 
-            let historyArr = req.body.messages || conversationHistory || sessionHistory || [];
             const nonSystemHistory = (historyArr || []).filter(m => m.role !== 'system').map(m => ({
                 role: m.role === 'user' ? 'user' : 'assistant',
                 content: m.content || m.text || ''

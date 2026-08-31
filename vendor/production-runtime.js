@@ -2,8 +2,11 @@
     'use strict';
 
     var runtimeInstalled = false;
-    var recoveryListenerInstalled = false;
     var reviewBusy = false;
+    var LEGACY_TRANSCRIPT_KEY = 'wingman_session_data';
+    var MAX_REVIEW_MESSAGES = 50;
+    var MAX_REVIEW_MESSAGE_CHARS = 5000;
+    var MAX_REVIEW_CONTENT_CHARS = 200000;
 
     function byId(id) {
         return document.getElementById(id);
@@ -29,216 +32,29 @@
         return headers && typeof headers === 'object' ? headers : {};
     }
 
+    function clearOwnedStorage() {
+        [window.localStorage, window.sessionStorage].forEach(function (storage) {
+            if (!storage) return;
+            for (var i = storage.length - 1; i >= 0; i -= 1) {
+                var key = storage.key(i);
+                if (key && key.indexOf('wingman_') === 0) storage.removeItem(key);
+            }
+        });
+    }
+
+    function purgeLegacyTranscript() {
+        [window.localStorage, window.sessionStorage].forEach(function (storage) {
+            if (!storage || typeof storage.removeItem !== 'function') return;
+            try { storage.removeItem(LEGACY_TRANSCRIPT_KEY); } catch (_) {}
+        });
+    }
+
     function makeButton(text) {
         var button = document.createElement('button');
         button.type = 'button';
         button.textContent = text;
         button.style.cssText = 'border:1px solid rgba(168,85,247,.55);background:rgba(91,33,182,.28);color:#e9d5ff;border-radius:10px;padding:10px 14px;font-size:12px;font-weight:700;cursor:pointer;transition:opacity .2s ease,transform .2s ease;';
         return button;
-    }
-
-    // ---------------------------------------------------------------------
-    // Password recovery completion
-    // Supabase's documented client flow is PASSWORD_RECOVERY -> updateUser.
-    // ---------------------------------------------------------------------
-    function isRecoveryLocation() {
-        try {
-            return new URL(window.location.href).searchParams.get('type') === 'recovery';
-        } catch (_) {
-            return /(?:\?|&)type=recovery(?:&|$)/.test(window.location.search || '');
-        }
-    }
-
-    function ensureRecoveryModal() {
-        var existing = byId('passwordRecoveryModal');
-        if (existing) return existing;
-
-        var overlay = document.createElement('div');
-        overlay.id = 'passwordRecoveryModal';
-        overlay.setAttribute('role', 'dialog');
-        overlay.setAttribute('aria-modal', 'true');
-        overlay.setAttribute('aria-labelledby', 'passwordRecoveryTitle');
-        overlay.style.cssText = 'display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.86);backdrop-filter:blur(10px);align-items:center;justify-content:center;padding:18px;';
-
-        var card = document.createElement('div');
-        card.style.cssText = 'width:min(100%,430px);background:#0d0918;border:1px solid rgba(168,85,247,.45);border-radius:18px;padding:24px;box-shadow:0 24px 80px rgba(0,0,0,.65);color:#fff;font-family:Inter,system-ui,sans-serif;';
-
-        var title = document.createElement('h2');
-        title.id = 'passwordRecoveryTitle';
-        title.textContent = 'Choose a new password';
-        title.style.cssText = 'margin:0 0 8px;font-size:22px;font-weight:800;';
-
-        var description = document.createElement('p');
-        description.textContent = 'Your reset link is verified. Enter a new password for your MyWingman account.';
-        description.style.cssText = 'margin:0 0 18px;color:#cbd5e1;font-size:13px;line-height:1.5;';
-
-        function buildPasswordInput(id, labelText) {
-            var wrap = document.createElement('div');
-            wrap.style.marginBottom = '12px';
-            var label = document.createElement('label');
-            label.htmlFor = id;
-            label.textContent = labelText;
-            label.style.cssText = 'display:block;margin-bottom:6px;color:#cbd5e1;font-size:12px;font-weight:700;';
-            var input = document.createElement('input');
-            input.id = id;
-            input.type = 'password';
-            input.autocomplete = 'new-password';
-            input.maxLength = 128;
-            input.style.cssText = 'width:100%;box-sizing:border-box;background:#05030a;border:1px solid #3b2857;color:#fff;border-radius:10px;padding:12px 13px;font-size:14px;outline:none;';
-            wrap.appendChild(label);
-            wrap.appendChild(input);
-            return wrap;
-        }
-
-        var firstWrap = buildPasswordInput('recoveryNewPassword', 'New password');
-        var secondWrap = buildPasswordInput('recoveryConfirmPassword', 'Confirm new password');
-
-        var message = document.createElement('div');
-        message.id = 'recoveryPasswordMessage';
-        message.setAttribute('aria-live', 'polite');
-        message.style.cssText = 'display:none;margin:4px 0 12px;padding:9px 10px;border-radius:8px;font-size:12px;line-height:1.4;';
-
-        var submit = makeButton('Update password');
-        submit.id = 'recoveryPasswordSubmit';
-        submit.style.width = '100%';
-        submit.style.padding = '12px 14px';
-
-        card.appendChild(title);
-        card.appendChild(description);
-        card.appendChild(firstWrap);
-        card.appendChild(secondWrap);
-        card.appendChild(message);
-        card.appendChild(submit);
-        overlay.appendChild(card);
-        document.body.appendChild(overlay);
-
-        submit.addEventListener('click', window.submitRecoveredPassword);
-        [byId('recoveryNewPassword'), byId('recoveryConfirmPassword')].forEach(function (input) {
-            if (!input) return;
-            input.addEventListener('keydown', function (event) {
-                if (event.key === 'Enter') window.submitRecoveredPassword(event);
-            });
-        });
-
-        return overlay;
-    }
-
-    function showRecoveryMessage(text, type) {
-        var el = byId('recoveryPasswordMessage');
-        if (!el) return;
-        el.textContent = text;
-        el.style.display = 'block';
-        if (type === 'success') {
-            el.style.background = 'rgba(16,185,129,.12)';
-            el.style.border = '1px solid rgba(16,185,129,.4)';
-            el.style.color = '#a7f3d0';
-        } else {
-            el.style.background = 'rgba(244,63,94,.12)';
-            el.style.border = '1px solid rgba(244,63,94,.4)';
-            el.style.color = '#fecdd3';
-        }
-    }
-
-    window.openPasswordRecoveryModal = function () {
-        var modal = ensureRecoveryModal();
-        modal.style.display = 'flex';
-        modal.setAttribute('aria-hidden', 'false');
-        var input = byId('recoveryNewPassword');
-        setTimeout(function () { if (input) input.focus(); }, 0);
-    };
-
-    window.submitRecoveredPassword = async function (event) {
-        if (event && typeof event.preventDefault === 'function') event.preventDefault();
-        var password = byId('recoveryNewPassword');
-        var confirmPassword = byId('recoveryConfirmPassword');
-        var submit = byId('recoveryPasswordSubmit');
-        var value = password ? password.value : '';
-        var confirmation = confirmPassword ? confirmPassword.value : '';
-
-        if (value.length < 8) {
-            showRecoveryMessage('Password must be at least 8 characters long.', 'error');
-            if (password) password.focus();
-            return;
-        }
-        if (value.length > 128) {
-            showRecoveryMessage('Password is too long. Maximum: 128 characters.', 'error');
-            return;
-        }
-        if (value !== confirmation) {
-            showRecoveryMessage('The two passwords do not match.', 'error');
-            if (confirmPassword) confirmPassword.focus();
-            return;
-        }
-        if (!window.supabaseClient || !window.supabaseClient.auth || typeof window.supabaseClient.auth.updateUser !== 'function') {
-            showRecoveryMessage('Authentication service is not ready. Please refresh the reset link and try again.', 'error');
-            return;
-        }
-
-        if (submit) {
-            submit.disabled = true;
-            submit.textContent = 'Updating password…';
-            submit.style.opacity = '.6';
-        }
-
-        try {
-            var sessionResult = await window.supabaseClient.auth.getSession();
-            var session = sessionResult && sessionResult.data ? sessionResult.data.session : null;
-            if (!session || !session.access_token) {
-                throw new Error('This password reset link is no longer valid. Request a new reset email.');
-            }
-
-            var result = await window.supabaseClient.auth.updateUser({ password: value });
-            if (result && result.error) throw result.error;
-
-            showRecoveryMessage('Password updated successfully. You can continue using MyWingman.', 'success');
-            notify('Password updated successfully.', 'success');
-
-            try {
-                var cleanUrl = new URL(window.location.href);
-                cleanUrl.searchParams.delete('type');
-                cleanUrl.hash = '';
-                var cleanPath = cleanUrl.pathname === '/app.html' ? '/app' : cleanUrl.pathname;
-                window.history.replaceState({}, document.title, cleanPath + cleanUrl.search);
-            } catch (_) {}
-
-            setTimeout(function () {
-                var modal = byId('passwordRecoveryModal');
-                if (modal) modal.style.display = 'none';
-            }, 900);
-        } catch (err) {
-            showRecoveryMessage((err && err.message) || 'Password update failed. Request a new reset link and try again.', 'error');
-        } finally {
-            if (submit) {
-                submit.disabled = false;
-                submit.textContent = 'Update password';
-                submit.style.opacity = '1';
-            }
-        }
-    };
-
-    function attachRecoveryListener() {
-        if (recoveryListenerInstalled || !window.supabaseClient || !window.supabaseClient.auth) return false;
-        recoveryListenerInstalled = true;
-        if (typeof window.supabaseClient.auth.onAuthStateChange === 'function') {
-            window.supabaseClient.auth.onAuthStateChange(function (event) {
-                if (event === 'PASSWORD_RECOVERY') window.openPasswordRecoveryModal();
-            });
-        }
-        if (isRecoveryLocation()) window.openPasswordRecoveryModal();
-        return true;
-    }
-
-    function waitForRecoveryClient(attempt) {
-        if (attachRecoveryListener()) return;
-        if (attempt >= 80) {
-            if (isRecoveryLocation()) {
-                ensureRecoveryModal();
-                showRecoveryMessage('Authentication service could not initialize. Refresh the page or request a new reset link.', 'error');
-                window.openPasswordRecoveryModal();
-            }
-            return;
-        }
-        setTimeout(function () { waitForRecoveryClient(attempt + 1); }, 100);
     }
 
     // ---------------------------------------------------------------------
@@ -312,8 +128,7 @@
                 try {
                     if (window.supabaseClient && window.supabaseClient.auth) await window.supabaseClient.auth.signOut();
                 } catch (_) {}
-                try { sessionStorage.clear(); } catch (_) {}
-                try { localStorage.clear(); } catch (_) {}
+                try { clearOwnedStorage(); } catch (_) {}
                 try { if (typeof window.closeDeleteAccountModal === 'function') window.closeDeleteAccountModal(); } catch (_) {}
                 notify('Your MyWingman account and associated data were permanently deleted.', 'warning');
                 setTimeout(function () { window.location.href = '/'; }, 700);
@@ -345,29 +160,18 @@
             });
         }
 
-        if (messages.length >= 2) return messages.slice(-50);
-
-        ['sessionStorage', 'localStorage'].some(function (storageName) {
-            try {
-                var storage = window[storageName];
-                var raw = storage && storage.getItem('wingman_session_data');
-                if (!raw) return false;
-                var parsed = JSON.parse(raw);
-                var thread = parsed && Array.isArray(parsed.activeSimulatorThread) ? parsed.activeSimulatorThread : [];
-                var restored = thread.filter(function (item) {
-                    return item && (item.role === 'user' || item.role === 'assistant') && (item.content || item.text);
-                }).map(function (item) {
-                    return { role: item.role, content: String(item.content || item.text) };
-                });
-                if (restored.length >= 2) {
-                    messages = restored.slice(-50);
-                    return true;
-                }
-            } catch (_) {}
-            return false;
-        });
-
-        return messages;
+        messages = messages.slice(-MAX_REVIEW_MESSAGES);
+        var bounded = [];
+        var totalChars = 0;
+        for (var i = messages.length - 1; i >= 0; i -= 1) {
+            if (totalChars >= MAX_REVIEW_CONTENT_CHARS) break;
+            var content = messages[i].content.slice(0, MAX_REVIEW_MESSAGE_CHARS);
+            var remaining = MAX_REVIEW_CONTENT_CHARS - totalChars;
+            if (content.length > remaining) content = content.slice(0, remaining);
+            bounded.unshift({ role: messages[i].role, content: content });
+            totalChars += content.length;
+        }
+        return bounded;
     }
 
     function ensureReviewModal() {
@@ -398,6 +202,7 @@
         titleWrap.appendChild(status);
         var close = makeButton('Close');
         close.id = 'simulatorReviewClose';
+        close.setAttribute('aria-label', 'Close conversation review dialog');
         close.style.padding = '7px 10px';
         close.addEventListener('click', function () { window.closeSessionReviewModal(); });
         top.appendChild(titleWrap);
@@ -452,6 +257,9 @@
         card.appendChild(detailWrap);
         overlay.appendChild(card);
         document.body.appendChild(overlay);
+        if (typeof window.registerWingmanModal === 'function') {
+            window.registerWingmanModal('simulatorReviewModal', { close: 'closeSessionReviewModal', label: 'Conversation review' });
+        }
 
         overlay.addEventListener('click', function (event) {
             if (event.target === overlay) window.closeSessionReviewModal();
@@ -568,10 +376,10 @@
     function installRuntime() {
         if (runtimeInstalled) return;
         runtimeInstalled = true;
+        purgeLegacyTranscript();
         installForgotPasswordFallback();
         installAccountDeletionRepair();
         installSimulatorReviewButton();
-        waitForRecoveryClient(0);
     }
 
     if (document.readyState === 'loading') {
@@ -584,6 +392,5 @@
         installForgotPasswordFallback();
         installAccountDeletionRepair();
         installSimulatorReviewButton();
-        if (!recoveryListenerInstalled) waitForRecoveryClient(0);
     }, { once: true });
 })();

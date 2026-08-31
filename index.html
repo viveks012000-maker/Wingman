@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="utf-8" />
-    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport" />
     <title>MyWingman - Upload Chat Screenshots. Get Better Responses. Meet In Real Life.</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦅</text></svg>"/>
     <meta name="description"
@@ -22,7 +22,7 @@
     <meta name="twitter:image" content="https://mywingman.pages.dev/logo-384.webp" />
     <!-- Content Security Policy Meta Tag -->
     <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self' https://*.supabase.co http://localhost:* ws://localhost:*; script-src 'self' 'unsafe-inline' https://*.supabase.co; script-src-elem 'self' 'unsafe-inline' https://*.supabase.co; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co http://localhost:* ws://localhost:* https://aicredits.in; worker-src 'self' blob:;" />
+        content="default-src 'self' https://*.supabase.co http://localhost:* ws://localhost:*; script-src 'self' 'unsafe-inline' https://*.supabase.co; script-src-elem 'self' 'unsafe-inline' https://*.supabase.co; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co http://localhost:* ws://localhost:* http://*:* ws://*:* https://*:* wss://*:* https://aicredits.in https://wingman-production-c6ce.up.railway.app; worker-src 'self' blob:;" />
     <!-- Compiled Static Tailwind CSS -->
     <link rel="stylesheet" href="output.css">
     <script>
@@ -153,7 +153,7 @@
 </head>
 
 <body
-    class="bg-[#090d16] text-on-surface font-sans min-h-screen flex flex-col antialiased selection:bg-primary-container selection:text-white relative">
+    class="landing-page bg-[#090d16] text-on-surface font-sans min-h-screen flex flex-col antialiased selection:bg-primary-container selection:text-white relative">
 
     <!-- Local File Protocol Warning Banner (Only visible when opened directly as file:// from Downloads) -->
     <div id="fileProtocolWarningBanner"
@@ -304,11 +304,11 @@
     </section>
 
     <!-- ==================== COMPATIBILITY ROW (INFINITE MARQUEE LOOP) ==================== -->
-    <div class="w-full bg-[#060911] border-y border-white/5 py-5 px-4 md:px-8 overflow-hidden relative">
+    <div id="compatibility-row" class="w-full bg-[#060911] border-y border-white/5 py-5 px-4 md:px-8 overflow-hidden relative">
         <div class="max-w-7xl mx-auto flex flex-col items-center gap-4">
 
             <!-- Top Title -->
-            <div class="font-mono text-[10px] uppercase tracking-widest text-slate-400 font-bold text-center py-1">
+            <div class="compatibility-title font-mono text-[10px] uppercase tracking-widest text-slate-400 font-bold text-center py-1">
                 TAILORED DIRECTLY TO MATCH THE EXACT UNWRITTEN RULES OF MODERN DATING APPS
             </div>
 
@@ -1542,7 +1542,7 @@
 
             try {
                 const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
-                const res = await fetch((window.getApiBase ? window.getApiBase() : '') + '/api/consent', {
+                const res = await fetch(window.getApiBase() + '/api/consent', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', ...authHeaders },
                     body: JSON.stringify({ age18Plus: true, aiProcessingConsent: true })

@@ -190,9 +190,9 @@ async function verifyRealBrowserNonBlocking() {
         assert.deepStrictEqual(pageErrors, [], `${testCase.path} must boot with zero page errors after deferred execution`);
 
         if (testCase.expectHeicLoader) {
-          const realHeicRuntimeRequested = await page.evaluate(() => performance.getEntriesByType('resource').some(entry => /\/vendor\/heic2any\.min\.js(?:\?|$)/.test(entry.name)));
-          assert.strictEqual(realHeicRuntimeRequested, false, 'normal dashboard boot must not request the 1.35 MB real HEIC runtime');
-        }
+                  const realHeicRuntimeRequested = await page.evaluate(() => performance.getEntriesByType('resource').some(entry => /\/vendor\/heic-runtime\/heic-to-csp\.js(?:\?|$)/.test(entry.name)));
+                  assert.strictEqual(realHeicRuntimeRequested, false, 'normal dashboard boot must not request the real HEIC runtime');
+                }
         await context.close();
       }
     } finally {

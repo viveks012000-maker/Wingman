@@ -5,6 +5,7 @@ require('dotenv').config();
 const express = require('express');
 const { verifySupabaseToken, requireSupabaseAuth } = require('./middleware/supabaseAuth');
 const { analyzerAdmissionLimiter } = require('./middleware/security');
+const { isPrivateDevelopmentOrigin } = require('./middleware/developmentOrigin');
 const { app: wingmanApi } = require('./server');
 
 const app = express();
@@ -35,22 +36,24 @@ function getGatewayAllowedOrigins() {
         ? process.env.ALLOWED_ORIGINS.split(',').map(value => value.trim()).filter(Boolean)
         : [];
 
-    const safeConfigured = configured.filter(origin => {
-        if (!isProduction) return true;
-        if (origin === '*' || origin === 'null' || origin.includes('*')) return false;
-        if (origin === 'https://mywingman.com') return false;
-        if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return false;
-        if (/^https:\/\/[^/]+\.netlify\.app$/i.test(origin)) return false;
-        return /^https:\/\//i.test(origin);
-    });
+    const safeConfigured = isProduction ? [] : configured;
 
     return new Set([...defaults, ...safeConfigured]);
 }
 
 function applyAnalyzerAdmissionCors(req, res) {
     const origin = req && req.headers ? req.headers.origin : null;
-    if (!origin || !getGatewayAllowedOrigins().has(origin)) return false;
-    res.setHeader('Access-Control-Allow-Origin', origin);
+    const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
+    if (origin === 'https://mywingman.com') return false;
+    const isAllowedOrigin = origin && (getGatewayAllowedOrigins().has(origin) ||
+        (!isProduction && isPrivateDevelopmentOrigin(origin)));
+    if (!isAllowedOrigin) return false;
+
+    // Early admission responses must never reflect a request-controlled Origin. The mounted
+    // inner app handles normal development responses; this gateway path emits CORS only for the
+    // single fixed production frontend origin.
+    if (origin !== 'https://mywingman.pages.dev') return false;
+    res.setHeader('Access-Control-Allow-Origin', 'https://mywingman.pages.dev');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     if (typeof res.vary === 'function') res.vary('Origin');
     else res.setHeader('Vary', 'Origin');

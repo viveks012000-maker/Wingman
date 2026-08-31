@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { execFileSync } = require('child_process');
+const { currentGitSha } = require('./process-tools');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'netlify-dist');
@@ -101,28 +101,10 @@ function sha256(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
-function currentGitSha() {
-  // The checked-out Git HEAD is the artifact source of truth. GitHub reserves GITHUB_SHA
-  // for the workflow-triggering commit, which can differ from an explicitly checked-out SHA.
-  try {
-    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
-    if (/^[0-9a-f]{40}$/i.test(head)) return head.toLowerCase();
-  } catch (_) {}
-
-  // Fallback for build environments where Git metadata is unavailable.
-  if (process.env.SOURCE_COMMIT && /^[0-9a-f]{40}$/i.test(process.env.SOURCE_COMMIT)) {
-    return process.env.SOURCE_COMMIT.toLowerCase();
-  }
-  if (process.env.GITHUB_SHA && /^[0-9a-f]{40}$/i.test(process.env.GITHUB_SHA)) {
-    return process.env.GITHUB_SHA.toLowerCase();
-  }
-  return 'unknown';
-}
-
 function writeSecurityFiles() {
   const railway = 'https://wingman-production-c6ce.up.railway.app';
-  // heic2any.min.js currently performs runtime code generation. Keep unsafe-eval
-  // scoped to the dashboard document only so HEIC/iPhone screenshot conversion works.
+  // The new HEIC runtime (heic-to-csp.js) is built with USE_UNSAFE_EVAL=0 and contains no eval/new Function.
+  // No unsafe-eval is needed in the CSP.
   function cspFor(allowEval = false) {
     const evalSource = allowEval ? " 'unsafe-eval'" : '';
     return [
@@ -143,7 +125,7 @@ function writeSecurityFiles() {
   }
 
   const strictCsp = cspFor(false);
-  const appCsp = cspFor(true);
+  const appCsp = cspFor(false); // No unsafe-eval needed for new HEIC runtime
   const security = [
     '/*',
     '  Strict-Transport-Security: max-age=31536000',
@@ -198,6 +180,20 @@ function writeSecurityFiles() {
   fs.writeFileSync(path.join(OUT, '_redirects'), '# Cloudflare Pages handles clean HTML URLs natively; no /app rewrite is required.\n', 'utf8');
 }
 
+function stripDevelopmentCspSources() {
+  for (const rel of PUBLIC_FILES.filter(file => file.endsWith('.html'))) {
+    const target = path.join(OUT, rel);
+    const source = fs.readFileSync(target, 'utf8');
+    const production = source.replace(/\s+http:\/\/localhost:\*/g, '')
+      .replace(/\s+ws:\/\/localhost:\*/g, '')
+      .replace(/\s+http:\/\/\*:\*/g, '')
+      .replace(/\s+ws:\/\/\*:\*/g, '')
+      .replace(/\s+https:\/\/\*:\*/g, '')
+      .replace(/\s+wss:\/\/\*:\*/g, '');
+    fs.writeFileSync(target, production, 'utf8');
+  }
+}
+
 function verifyNoForbiddenFiles() {
   const files = walk(OUT);
   for (const rel of files) {
@@ -220,8 +216,9 @@ function verifyCriticalRuntimeContent() {
   if (!headers.includes(railway)) fail('_headers CSP does not include Railway backend');
   if (!headers.includes('Strict-Transport-Security: max-age=31536000')) fail('_headers does not enforce HSTS');
   const unsafeEvalHeaderCount = (headers.match(/'unsafe-eval'/g) || []).length;
-  if (unsafeEvalHeaderCount !== 2) fail(`unsafe-eval must appear only on /app and /app.html CSP blocks; found ${unsafeEvalHeaderCount}`);
-  if (!appHtml.includes("'unsafe-eval'") || !appHtml.includes('vendor/heic2any.min.js')) fail('Dashboard HEIC runtime/CSP compatibility contract is missing');
+  if (unsafeEvalHeaderCount !== 0) fail(`unsafe-eval must not appear in any CSP block with the new HEIC runtime; found ${unsafeEvalHeaderCount}`);
+    if (!appHtml.includes('vendor/heic2any-loader.js')) fail('Dashboard HEIC loader must be present');
+    if (!fs.existsSync(path.join(OUT, 'vendor', 'heic2any-adapter.js'))) fail('Dashboard HEIC adapter must be present');
 
   // Prevent the known stale-production regression from ever entering a new artifact.
   if (appJs.includes("if (response.status === 401) {\n                        window.updateUICredits(0);")) {
@@ -232,6 +229,15 @@ function verifyCriticalRuntimeContent() {
   }
   if (!appJs.includes('const authoritativeBalanceCheck = await window.checkCreditBalance();')) {
     fail('HTTP 402 authoritative wallet re-check is absent');
+  }
+
+  for (const rel of PUBLIC_FILES.filter(file => file.endsWith('.html'))) {
+    const html = fs.readFileSync(path.join(OUT, rel), 'utf8');
+    if (html.includes('http://localhost:*') || html.includes('ws://localhost:*') ||
+      html.includes('http://*:*') || html.includes('ws://*:*') ||
+      html.includes('https://*:*') || html.includes('wss://*:*')) {
+      fail(`Development CSP source entered production artifact: ${rel}`);
+    }
   }
 }
 
@@ -256,11 +262,10 @@ function verifyLocalHtmlReferences() {
 }
 
 function writeManifest(files) {
-  const sha = currentGitSha();
+  const sha = currentGitSha(ROOT);
   const manifest = {
     build: 'frontend-only-netlify',
     sourceCommit: sha,
-    generatedAt: new Date().toISOString(),
     files: Object.fromEntries(files.concat(['_headers', '_redirects']).sort().map(rel => [rel, sha256(path.join(OUT, rel))]))
   };
   fs.writeFileSync(path.join(OUT, 'release.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');
@@ -271,6 +276,7 @@ fs.mkdirSync(OUT, { recursive: true });
 for (const rel of PUBLIC_FILES) copyFile(rel);
 for (const rel of PUBLIC_DIRS) copyDir(rel);
 writeSecurityFiles();
+stripDevelopmentCspSources();
 const files = verifyNoForbiddenFiles();
 verifyCriticalRuntimeContent();
 verifyLocalHtmlReferences();
@@ -278,6 +284,6 @@ writeManifest(files);
 
 const finalFiles = walk(OUT);
 console.log(`[netlify-build] Safe frontend artifact created: ${path.relative(ROOT, OUT)}`);
-console.log(`[netlify-build] Source commit: ${currentGitSha()}`);
+console.log(`[netlify-build] Source commit: ${currentGitSha(ROOT)}`);
 console.log(`[netlify-build] Public files: ${finalFiles.length}`);
 for (const rel of finalFiles) console.log(`[netlify-build] PUBLIC ${rel}`);

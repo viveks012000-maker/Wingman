@@ -25,7 +25,7 @@ assert.strictEqual(manifest.schemaVersion, 1, 'Vendor provenance schema version 
 const expectedPaths = [
   'vendor/cropperjs/cropper.min.css',
   'vendor/cropperjs/cropper.min.js',
-  'vendor/heic2any.min.js',
+  'vendor/heic-runtime/heic-to-csp.js',
   'vendor/supabase.min.js'
 ].sort();
 const actualPaths = manifest.thirdPartyRuntime.map(entry => entry.path).sort();
@@ -46,10 +46,10 @@ assert(fs.readFileSync(path.join(root, supabase.path), 'utf8').slice(0, 1000).in
 const cropper = manifest.thirdPartyRuntime.find(entry => entry.package === 'cropperjs' && entry.path.endsWith('.js'));
 assert.strictEqual(cropper.version, '1.5.13');
 assert(fs.readFileSync(path.join(root, cropper.path), 'utf8').slice(0, 1000).includes('Cropper.js v1.5.13'), 'Cropper vendored version marker drifted.');
-const heic = manifest.thirdPartyRuntime.find(entry => entry.package === 'heic2any');
-assert.strictEqual(heic.version, '0.0.4');
-assert.strictEqual(heic.reviewStatus, 'replacement-required', 'Known HEIC upstream licensing issue must remain explicitly tracked until replacement lands.');
-assert(heic.reviewReference.includes('/heic2any/issues/59'), 'HEIC licensing review reference must remain explicit.');
+const heic = manifest.thirdPartyRuntime.find(entry => entry.package === 'heic-to');
+assert.strictEqual(heic.version, 'f37af866f9aa6212ddc84b67a279c9f2386aba4f');
+assert.strictEqual(heic.reviewStatus, 'approved', 'HEIC replacement must be approved and no longer require replacement.');
+assert(!heic.reviewReference, 'HEIC licensing review reference should be removed after replacement lands.');
 
 assert(dependabot.includes('package-ecosystem: npm'), 'Dependabot must monitor npm dependencies.');
 assert(dependabot.includes('package-ecosystem: github-actions'), 'Dependabot must monitor GitHub Actions.');

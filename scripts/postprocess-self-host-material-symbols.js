@@ -15,7 +15,7 @@ const GOOGLE_URL = `https://fonts.googleapis.com/css2?family=Material+Symbols+Ou
 
 const ASSETS = Object.freeze({
   [FONT_REL]: ['56f6255b1341a07abae9b27ad468ecbf7de7141c6522a078060fb4c5173def70', 16580],
-  [LICENSE_REL]: ['58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd', 11357]
+  [LICENSE_REL]: ['49bbe9114e49214df2ccc324cb3ac8d1d1aa1c3a0947f94c286765e86647b32e', 11558]
 });
 
 const LOCAL_CSS = `@font-face {

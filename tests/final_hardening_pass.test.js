@@ -100,7 +100,10 @@ console.log('✔ Passed: Screenshot analyzer strictly rejects 6th image, remote 
 // 7. PRIVACY: ZERO SCREENSHOT BASE64 & ZERO RAW HTML PERSISTENCE IN LOCALSTORAGE
 console.log('\n--- 7. STORAGE PRIVACY & ZERO RAW HTML SINK ---');
 assert.strictEqual(appJs.includes('// Retain uploaded screenshots in-memory only to prevent localStorage quota exhaustion'), true, 'app.js keeps screenshots in-memory only');
-assert.strictEqual(appJs.includes('if (data.uploadedFiles || data.icebreakHtml || data.optimizeHtml) {'), true, 'app.js purges legacy uploadedFiles and HTML strings on restore');
+assert.strictEqual(appJs.includes('const legacyRaw'), false, 'app.js must not read legacy transcript values during startup purge');
+assert.strictEqual(appJs.includes('JSON.parse(legacyRaw)'), false, 'app.js must not parse legacy transcript values during startup purge');
+assert.strictEqual(appJs.includes('localStorage.removeItem(SESSION_KEY)'), true, 'app.js must purge the owned localStorage transcript key directly');
+assert.strictEqual(appJs.includes('sessionStorage.removeItem(SESSION_KEY)'), true, 'app.js must purge the owned sessionStorage transcript key directly');
 assert.strictEqual(appJs.includes('icebreakHtml: iceRes ? iceRes.innerHTML : "",'), false, 'app.js must not serialize raw innerHTML into localStorage');
 assert.strictEqual(appJs.includes('optimizeHtml: optRes ? optRes.innerHTML : "",'), false, 'app.js must not serialize raw innerHTML into localStorage');
 console.log('✔ Passed: Screenshot base64 data and raw HTML strings are never persisted into localStorage.');

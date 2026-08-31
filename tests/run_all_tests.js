@@ -4,6 +4,7 @@ const path = require('path');
 const TEST_TIMEOUT_MS = 60_000;
 
 const testSuites = [
+    { name: '0. Focused Release Repair Regression Guard', file: 'focused_release_repair.test.js' },
     { name: '1. Final Technical Hardening Pass Verification', file: 'final_hardening_pass.test.js' },
     { name: '2. Codex Comprehensive Audit Verification', file: 'codex_audit_verification.test.js' },
     { name: '3. Core Hardening Verification Suite', file: 'hardening_verification.test.js' },
@@ -37,6 +38,7 @@ const testSuites = [
     { name: '31. Production Legal & Privacy Accuracy Guard', file: 'legal_production_accuracy.test.js' },
     { name: '32. Public Health Endpoint Minimal-Disclosure Guard', file: 'health_endpoint_minimal.test.js' },
     { name: '33. Netlify Release Manifest Source-Commit Truth Guard', file: 'release_manifest_source.test.js' },
+    { name: '33a. Checked-In Build Script Dependency Guard', file: 'build_script_dependencies.test.js' },
     { name: '34. Maeve Provider Runtime & Retry Guard', file: 'maeve_runtime_repair.test.js' },
     { name: '35. Feature Access Preflight UX Guard', file: 'feature_access_preflight.test.js' },
     { name: '36. Duplicate Request Concurrency Lock Race Guard', file: 'duplicate_request_lock_race.test.js' },
@@ -62,7 +64,10 @@ const testSuites = [
     { name: '56. SEO Indexing, Canonical Metadata & 404 Hardening', file: 'seo_indexing_metadata.test.js' },
     { name: '57. Misdirected Custom-Domain CORS Revocation Guard', file: 'misdirected_domain_cors.test.js' },
     { name: '58. Production CSS Compatibility Artifact Lock', file: 'production_css_compat_lock.test.js' },
-    { name: '59. Browser Vendor Provenance & Dependency Monitoring', file: 'browser_vendor_provenance.test.js' }
+    { name: '59. Browser Vendor Provenance & Dependency Monitoring', file: 'browser_vendor_provenance.test.js' },
+    { name: '60. All Dialog Accessibility Coverage', file: 'all_dialog_accessibility.test.js' },
+    { name: '61. Chat Routing, Idempotency & Stale Response Contract', file: 'chat_contract.test.js' },
+    { name: '62. Mobile Presentation Layer Browser QA', file: 'mobile_presentation_qa.test.js' }
 ];
 
 console.log('========================================================================');

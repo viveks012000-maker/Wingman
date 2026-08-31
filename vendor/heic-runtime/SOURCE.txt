@@ -1,0 +1,18 @@
+HEIC browser runtime source and rebuild information
+
+Runtime SHA-256: 9e645c9d6b73f68bd18f90f48227a4a4bbf98f071d02fa001e83537b5f7dd408
+Runtime bytes: 3168650
+
+Pinned source revisions:
+- heic-to: https://github.com/hoppergee/heic-to/commit/f37af866f9aa6212ddc84b67a279c9f2386aba4f
+- libheif: https://github.com/strukturag/libheif/releases/tag/v1.23.1
+- libde265: https://github.com/strukturag/libde265/commit/4dd701fffac01632ffd5cabc5ef10deb56accba1
+- emsdk: https://github.com/emscripten-core/emsdk/commit/e3a0604c3d130d6ab2c40e14a1861accd939a255
+- Emscripten: 6.0.7
+
+MyWingman modifications are limited to browser-build compatibility:
+1. libheif's Emscripten final link uses em++ instead of emcc and targets ENVIRONMENT=web,worker.
+2. heic-to's worker awaits the Emscripten 6 modularized factory Promise before constructing HeifDecoder.
+3. The build uses USE_WASM=0, USE_UNSAFE_EVAL=0, and only the libde265 HEVC decoder path required for HEIC.
+
+The exact modified source files are in the source/ subdirectory. The complete unmodified upstream source is available at the pinned public revisions above. The repository build recipe is scripts/build-heic-browser-runtime.sh.

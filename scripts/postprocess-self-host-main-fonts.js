@@ -11,7 +11,7 @@ const INLINE_MARKER = `data-inline-source="${CSS_REL}"`;
 const TARGETS = ['index.html', 'app.html'];
 
 const ASSETS = Object.freeze({
-  'fonts/main-fonts.css': ['57be9a5a28a7824706517e8d6bc2c1015dc10e137020b72b485ae69254984186', 27742],
+  'fonts/main-fonts.css': ['9043ed72160f5e3db827fd8d40c56918a198c929ce83d3ba3a8fc18ae3e32a29', 28489],
   'fonts/geist-normal-cyrillic-ext.woff2': ['2317fa4bb293c9c0b110e18315d529235c47a0ddd3338cea3d8c7955e927899e', 7420],
   'fonts/geist-normal-cyrillic.woff2': ['6894439694946a589d157ece003086960a6a4013d74a813dab7602efdb3d8c09', 15084],
   'fonts/geist-normal-vietnamese.woff2': ['8fa40e5d248247735eb97a0bd593b8852440430600d6ba01364c31fe0abc1fe1', 8004],
@@ -32,9 +32,9 @@ const ASSETS = Object.freeze({
   'fonts/plus-jakarta-sans-normal-vietnamese.woff2': ['b275d1258601dda240fc6a1d4a6cad56e691d898f5cdf1b0e4fd6ca0022d8e40', 8352],
   'fonts/plus-jakarta-sans-normal-latin-ext.woff2': ['38e3b8fd8045048eb311d90170a4429ed2c8f405852dc3d91b5af8452758703f', 21728],
   'fonts/plus-jakarta-sans-normal-latin.woff2': ['153fc85b70298beeb1d61a5f723331649e7f23bb77302a66e61cb3e2fbdb5e79', 27348],
-  'fonts/licenses/geist-OFL.txt': ['1781d2806a07d91c4edf4740b88449fab7d0eadad53f7c351b94cd4d4eb8c00f', 4387],
-  'fonts/licenses/inter-OFL.txt': ['5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57', 4377],
-  'fonts/licenses/plus-jakarta-sans-OFL.txt': ['995c7199cab65954f545996326755daee7b63cc6b42b06c13da1f9502ab08a99', 4402]
+  'fonts/licenses/geist-OFL.txt': ['f52b2dd3e8543035e79d44c100a69874017d0fb05342956fd2f600a426d0e991', 4479],
+  'fonts/licenses/inter-OFL.txt': ['f14f2b95a38f4f20cad4d27f7710593f37534c046641be0348da7c28365f4e39', 4470],
+  'fonts/licenses/plus-jakarta-sans-OFL.txt': ['05831cfb0b8fbbb02633f7c8968684f43a3b25cb9ea7e45db10b24078ddb922f', 4495]
 });
 
 function fail(message) { throw new Error(`[self-host-main-fonts] ${message}`); }
@@ -54,7 +54,7 @@ function verifyAndCopyAssets() {
 }
 
 function verifyCss(css) {
-  if (Buffer.byteLength(css, 'utf8') !== 27742) fail('Pinned main font CSS byte size changed');
+  if (Buffer.byteLength(css, 'utf8') !== 28489) fail('Pinned main font CSS byte size changed');
   if ((css.match(/@font-face/g) || []).length !== 83) fail('Pinned main font CSS must contain exactly 83 @font-face blocks');
   if ((css.match(/font-display:\s*swap/g) || []).length !== 83) fail('Every pinned @font-face must preserve font-display: swap');
   if (/fonts\.(?:googleapis|gstatic)\.com/i.test(css)) fail('Pinned main font CSS must not contain external Google font hosts');

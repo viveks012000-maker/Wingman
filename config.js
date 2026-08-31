@@ -9,6 +9,50 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
     API_BASE_URL: "https://wingman-production-c6ce.up.railway.app"
 };
 
+// Shared endpoint resolution used by both the landing page and dashboard.
+(function () {
+    'use strict';
+
+    function isPrivateDevelopmentHost(hostname) {
+        var host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+        if (host === 'localhost' || host.endsWith('.local') || host === '::1') return true;
+        if (/^f[cd][0-9a-f]{2}:/.test(host) || /^fe[89ab][0-9a-f]:/.test(host)) return true;
+
+        var octets = host.split('.');
+        if (octets.length !== 4 || octets.some(function (octet) {
+            return !/^\d{1,3}$/.test(octet) || Number(octet) > 255;
+        })) return false;
+
+        var first = Number(octets[0]);
+        var second = Number(octets[1]);
+        return first === 10 ||
+            (first === 172 && second >= 16 && second <= 31) ||
+            (first === 192 && second === 168) ||
+            (first === 169 && second === 254) ||
+            first === 127;
+    }
+
+    function getApiBase() {
+        if (typeof window === 'undefined' || !window.location) return '';
+        var hostname = window.location.hostname || '';
+        var protocol = window.location.protocol || '';
+        var origin = window.location.origin || '';
+        var isLoopbackEnv = protocol === 'file:' || origin === 'null' || hostname === 'localhost' ||
+            hostname === '127.0.0.1';
+        var isHttpEnv = protocol === 'http:' || protocol === 'https:';
+        var isPrivateNetworkEnv = isHttpEnv && isPrivateDevelopmentHost(hostname);
+
+        if (isLoopbackEnv) return 'http://localhost:3000';
+        if (isPrivateNetworkEnv) return (protocol === 'https:' ? 'https://' : 'http://') + hostname + ':3000';
+        if (window.WINGMAN_CONFIG && window.WINGMAN_CONFIG.API_BASE_URL) {
+            return String(window.WINGMAN_CONFIG.API_BASE_URL).replace(/\/+$/, '');
+        }
+        return origin && origin !== 'null' ? origin.replace(/\/+$/, '') : '';
+    }
+
+    window.getApiBase = getApiBase;
+})();
+
 /*
  * Production mobile runtime safeguards.
  * This file is loaded before app.js, so the patch is installed after app.js has defined its
@@ -39,39 +83,6 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             var el = document.getElementById(id);
             if (el) el.textContent = 'Credits —';
         });
-    }
-
-    function repairMobileChatGeometry() {
-        if (!isMobile()) return;
-
-        var wrapper = document.querySelector('.chatbox-wrapper');
-        if (wrapper) {
-            wrapper.style.setProperty('min-height', '350px', 'important');
-            wrapper.style.setProperty('height', 'calc(100dvh - 300px)', 'important');
-            wrapper.style.setProperty('max-height', '620px', 'important');
-            wrapper.style.setProperty('overflow', 'hidden', 'important');
-            wrapper.style.setProperty('backdrop-filter', 'none', 'important');
-            wrapper.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
-        }
-
-        var messages = document.getElementById('chatbox-messages-container');
-        if (messages) {
-            messages.style.setProperty('min-height', '0', 'important');
-            messages.style.setProperty('max-height', 'none', 'important');
-            messages.style.setProperty('overflow-y', 'auto', 'important');
-        }
-
-        var footer = document.querySelector('.chatbox-footer-sticky-wrapper');
-        if (footer) {
-            footer.style.setProperty('position', 'relative', 'important');
-            footer.style.setProperty('bottom', 'auto', 'important');
-        }
-
-        var canvas = document.getElementById('ambient-plexus-canvas');
-        if (canvas) canvas.style.setProperty('display', 'none', 'important');
-        if (typeof window.stopPlexusAnimation === 'function') {
-            try { window.stopPlexusAnimation(); } catch (_) {}
-        }
     }
 
     function patchRuntime() {
@@ -106,7 +117,6 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
                 }
 
                 refreshUnknownCreditLabels();
-                repairMobileChatGeometry();
                 return result;
             };
         }
@@ -122,7 +132,6 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
                             if (main && typeof main.scrollTo === 'function') main.scrollTo({ top: 0, left: 0, behavior: 'auto' });
                         } catch (_) {}
                         try { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); } catch (_) { window.scrollTo(0, 0); }
-                        repairMobileChatGeometry();
                     });
                 }
                 return result;
@@ -138,7 +147,6 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         }
 
         refreshUnknownCreditLabels();
-        repairMobileChatGeometry();
         if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
     }
 
@@ -156,7 +164,9 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
     window.addEventListener('load', schedulePatch, { once: true });
     window.addEventListener('resize', function () {
         if (!patched) schedulePatch();
-        else repairMobileChatGeometry();
+        else if (typeof window.stopPlexusAnimation === 'function' && isMobile()) {
+            try { window.stopPlexusAnimation(); } catch (_) {}
+        }
     }, { passive: true });
 })();
 

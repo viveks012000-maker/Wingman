@@ -3,49 +3,48 @@
   "purpose": "Exact provenance and byte-integrity inventory for third-party browser bundles copied into the public artifact.",
   "thirdPartyRuntime": [
     {
-      "path": "vendor/supabase.min.js",
-      "package": "@supabase/supabase-js",
-      "version": "2.112.3",
-      "license": "MIT",
-      "source": "https://github.com/supabase/supabase-js",
-      "provenance": "Pinned UMD browser build; file header identifies @supabase/supabase-js@2.112.3.",
-      "reviewStatus": "tracked",
-      "bytes": 212199,
-      "sha256": "cf529fe8980cbe6f2dd3e3930ecf96352ed3d3d71233b6760e4f927f89b94b9f"
+          "path": "vendor/supabase.min.js",
+          "package": "@supabase/supabase-js",
+          "version": "2.112.3",
+          "license": "MIT",
+          "source": "https://github.com/supabase/supabase-js",
+          "provenance": "Pinned UMD browser build; file header identifies @supabase/supabase-js@2.112.3.",
+          "reviewStatus": "tracked",
+          "bytes": 212215,
+          "sha256": "067bfb36a5102cf4b38b45c70e1440a9e3291903666600994b4fbacd7ab54722"
     },
     {
-      "path": "vendor/cropperjs/cropper.min.js",
-      "package": "cropperjs",
-      "version": "1.5.13",
-      "license": "MIT",
-      "source": "https://github.com/fengyuanchen/cropperjs/releases/tag/v1.5.13",
-      "provenance": "Pinned v1.5.13 browser runtime.",
-      "reviewStatus": "tracked",
-      "bytes": 37035,
-      "sha256": "615835110d07d9842d1c0a995e9fc79fb4dfa8d2c1b879ff0d648570714ee1c7"
+          "path": "vendor/cropperjs/cropper.min.js",
+          "package": "cropperjs",
+          "version": "1.5.13",
+          "license": "MIT",
+          "source": "https://github.com/fengyuanchen/cropperjs/releases/tag/v1.5.13",
+          "provenance": "Pinned v1.5.13 browser runtime.",
+          "reviewStatus": "tracked",
+          "bytes": 37044,
+          "sha256": "35424abaae82e20134fc04ec6e62169d33d922d707a425be99667a94ddd7678f"
+        },
+        {
+          "path": "vendor/cropperjs/cropper.min.css",
+          "package": "cropperjs",
+          "version": "1.5.13",
+          "license": "MIT",
+          "source": "https://github.com/fengyuanchen/cropperjs/releases/tag/v1.5.13",
+          "provenance": "Pinned v1.5.13 browser stylesheet paired with the runtime.",
+          "reviewStatus": "tracked",
+          "bytes": 3812,
+          "sha256": "266fe12c42a37a88cdb02084a59f163034656d49d5a4992e65ec3107bba5917b"
     },
     {
-      "path": "vendor/cropperjs/cropper.min.css",
-      "package": "cropperjs",
-      "version": "1.5.13",
-      "license": "MIT",
-      "source": "https://github.com/fengyuanchen/cropperjs/releases/tag/v1.5.13",
-      "provenance": "Pinned v1.5.13 browser stylesheet paired with the runtime.",
-      "reviewStatus": "tracked",
-      "bytes": 3804,
-      "sha256": "055b9c1ce54007be24408e3d02e584e82c60a9a52cd1c780e5ff08318a1d787f"
-    },
-    {
-      "path": "vendor/heic2any.min.js",
-      "package": "heic2any",
-      "version": "0.0.4",
-      "license": "Upstream package declares MIT; embedded libheif licensing is disputed upstream",
-      "source": "https://github.com/alexcorvi/heic2any/releases/tag/0.0.4",
-      "provenance": "Pinned legacy browser converter. Upstream version 0.0.4 is the latest release.",
-      "reviewStatus": "replacement-required",
-      "reviewReference": "https://github.com/alexcorvi/heic2any/issues/59",
-      "bytes": 1351840,
-      "sha256": "0963cfa50e9e1e7e6af929a40a81e3e898a673f1270eafa6917dd137e4968164"
+          "path": "vendor/heic-runtime/heic-to-csp.js",
+          "package": "heic-to",
+          "version": "f37af866f9aa6212ddc84b67a279c9f2386aba4f",
+          "license": "LGPL-3.0-or-later",
+          "source": "https://github.com/hoppergee/heic-to/commit/f37af866f9aa6212ddc84b67a279c9f2386aba4f",
+          "provenance": "Pinned heic-to browser runtime built from libheif v1.23.1 and libde265 v1.1.1 with Emscripten 6.0.7. Uses em++ final link, ENVIRONMENT=web,worker, USE_WASM=0, USE_UNSAFE_EVAL=0. No dynamic code generation.",
+          "reviewStatus": "approved",
+           "bytes": 3168650,
+            "sha256": "9e645c9d6b73f68bd18f90f48227a4a4bbf98f071d02fa001e83537b5f7dd408"
     }
   ]
 }

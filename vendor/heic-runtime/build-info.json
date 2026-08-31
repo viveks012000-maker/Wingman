@@ -1,0 +1,12 @@
+{
+  "runtime": "heic-to-csp.js",
+  "sha256": "9e645c9d6b73f68bd18f90f48227a4a4bbf98f071d02fa001e83537b5f7dd408",
+  "bytes": 3168650,
+  "heicToCommit": "f37af866f9aa6212ddc84b67a279c9f2386aba4f",
+  "libheifTag": "v1.23.1",
+  "libde265Commit": "4dd701fffac01632ffd5cabc5ef10deb56accba1",
+  "emsdkCommit": "e3a0604c3d130d6ab2c40e14a1861accd939a255",
+  "emscriptenVersion": "6.0.7",
+  "unsafeEval": false,
+  "environment": "web,worker"
+}
