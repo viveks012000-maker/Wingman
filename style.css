@@ -185,6 +185,9 @@ select,
 
     body.landing-page #compatibility-row {
         padding: 16px !important;
+        overflow-x: clip !important;
+        overflow-y: visible !important;
+        touch-action: pan-y !important;
     }
 
     body.landing-page #compatibility-row > div {
