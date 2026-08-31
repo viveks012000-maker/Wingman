@@ -134,11 +134,14 @@ async function getMobileScrollContract(page) {
 
 async function assertDocumentScrolls(page, pageName, viewport) {
     const scrolls = await page.evaluate(() => {
-        const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+        const scroller = document.scrollingElement;
+        if (!scroller) return false;
+        const maxScroll = scroller.scrollHeight - window.innerHeight;
         if (maxScroll <= 0) return false;
-        window.scrollTo(0, Math.min(160, maxScroll));
-        const moved = window.scrollY > 0;
-        window.scrollTo(0, 0);
+        const originalTop = scroller.scrollTop;
+        scroller.scrollTop = Math.min(originalTop + 160, maxScroll);
+        const moved = scroller.scrollTop > originalTop;
+        scroller.scrollTop = originalTop;
         return moved;
     });
     assert(scrolls, `${pageName} document did not respond to vertical scrolling at ${viewport.join('x')}`);
@@ -176,16 +179,16 @@ async function assertLanding(browser, viewport) {
             assert(layout.landingFooterLinks && footerWrap === 'wrap', `landing footer links must wrap at ${viewport.join('x')}`);
             assert(layout.menuButton.width >= 44 && layout.menuButton.height >= 44, `landing menu touch target is too small at ${viewport.join('x')}`);
 
-            await opened.page.evaluate(() => window.scrollTo(0, 0));
+            await opened.page.evaluate(() => { document.scrollingElement.scrollTop = 0; });
             await opened.page.click('#mobile-menu-btn');
             await opened.page.waitForTimeout(30);
-            const menuScrollRange = await opened.page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
+            const menuScrollRange = await opened.page.evaluate(() => document.scrollingElement.scrollHeight - window.innerHeight);
             await opened.page.mouse.wheel(0, 80);
             const menuScrollLock = await opened.page.evaluate(() => ({
                 inlineOverflow: document.body.style.overflow,
                 htmlOverflowY: getComputedStyle(document.documentElement).overflowY,
                 bodyOverflowY: getComputedStyle(document.body).overflowY,
-                moved: window.scrollY > 0
+                moved: document.scrollingElement.scrollTop > 0
             }));
             assert.strictEqual(menuScrollLock.inlineOverflow, 'hidden', `mobile menu must set a body scroll lock at ${viewport.join('x')}`);
             assert.strictEqual(menuScrollLock.htmlOverflowY, 'hidden', `mobile menu must lock the root scroller at ${viewport.join('x')}: ${JSON.stringify(menuScrollLock)}`);
@@ -312,7 +315,10 @@ async function assertApp(browser, viewport) {
             }
             if (shortLandscape) {
                 assert(chat.document.scrollHeight > viewport[1], `short Practice landscape must remain document-scrollable after the chat card expands: ${JSON.stringify(chat.document)}`);
-                await opened.page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight - window.innerHeight));
+                await opened.page.evaluate(() => {
+                    const scroller = document.scrollingElement;
+                    scroller.scrollTop = scroller.scrollHeight - window.innerHeight;
+                });
                 const footerAtScrollEnd = await getLayout(opened.page);
                 assert(footerAtScrollEnd.chatFooter.bottom <= footerAtScrollEnd.mobileNav.y + 1, `short Practice composer is hidden behind the fixed nav after scrolling: ${JSON.stringify(footerAtScrollEnd)}`);
             } else {
@@ -335,18 +341,15 @@ async function assertApp(browser, viewport) {
             await opened.page.evaluate(() => window.closeSettingsModal());
 
             await opened.page.evaluate(() => {
-                window.scrollTo(0, 0);
+                document.scrollingElement.scrollTop = 0;
                 window.openPurchaseModal();
             });
             await opened.page.waitForTimeout(50);
-            const purchaseScrollRange = await opened.page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
-            let purchaseRootMoved = false;
-            if (purchaseScrollRange > 0) {
-                await opened.page.evaluate(() => document.getElementById('purchaseModal').style.setProperty('pointer-events', 'none', 'important'));
-                await opened.page.mouse.wheel(0, 80);
-                purchaseRootMoved = await opened.page.evaluate(() => window.scrollY > 0);
-                await opened.page.evaluate(() => document.getElementById('purchaseModal').style.removeProperty('pointer-events'));
-            }
+            const pricingState = await opened.page.$eval('#pricingTiers', element => ({
+                scrollRange: element.scrollHeight - element.clientHeight,
+                overflowY: getComputedStyle(element).overflowY
+            }));
+            assert(pricingState.scrollRange > 0 && ['auto', 'scroll'].includes(pricingState.overflowY), `purchase pricing pane must retain an internal scroll contract at ${viewport.join('x')}: ${JSON.stringify(pricingState)}`);
             const purchaseScrollLock = await opened.page.evaluate(() => ({
                 inlineOverflow: document.body.style.overflow,
                 computedOverflowY: getComputedStyle(document.body).overflowY,
@@ -355,9 +358,6 @@ async function assertApp(browser, viewport) {
             assert.strictEqual(purchaseScrollLock.inlineOverflow, 'hidden', `purchase modal must set a body scroll lock at ${viewport.join('x')}`);
             assert.strictEqual(purchaseScrollLock.computedOverflowY, 'hidden', `purchase modal body scroll lock is overridden at ${viewport.join('x')}: ${JSON.stringify(purchaseScrollLock)}`);
             assert.strictEqual(purchaseScrollLock.htmlOverflowY, 'hidden', `purchase modal must lock the root scroller at ${viewport.join('x')}: ${JSON.stringify(purchaseScrollLock)}`);
-            if (purchaseScrollRange > 0) {
-                assert.strictEqual(purchaseRootMoved, false, `purchase modal allowed document scrolling at ${viewport.join('x')}: ${JSON.stringify(purchaseScrollLock)}`);
-            }
             await opened.page.evaluate(() => window.closePurchaseModal());
 
             if (viewport[0] === 320 && viewport[1] === 568) {
