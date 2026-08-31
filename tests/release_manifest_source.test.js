@@ -2,16 +2,19 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { resolveGitExecutable } = require('../scripts/process-tools');
 
 const root = path.join(__dirname, '..');
 const buildSource = fs.readFileSync(path.join(root, 'scripts', 'build-netlify-dist.js'), 'utf8');
-assert.ok(buildSource.indexOf("git', ['rev-parse', 'HEAD']") < buildSource.indexOf('process.env.GITHUB_SHA'),
-  'artifact source must prefer checked-out Git HEAD over GitHub workflow trigger SHA');
-assert.ok(buildSource.includes('process.env.SOURCE_COMMIT'), 'builder must retain an explicit source fallback when Git metadata is unavailable');
+const processToolsSource = fs.readFileSync(path.join(root, 'scripts', 'process-tools.js'), 'utf8');
+assert(buildSource.includes("require('./process-tools')"), 'artifact builder must use the portable process resolver');
+assert(buildSource.includes('currentGitSha(ROOT)'), 'artifact builder must prefer the checked-out Git HEAD through the resolver');
+assert.ok(processToolsSource.includes('env.SOURCE_COMMIT'), 'process resolver must retain an explicit source fallback when Git metadata is unavailable');
 
 let actualHead = null;
 try {
-  actualHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim().toLowerCase();
+  const git = resolveGitExecutable();
+  if (git) actualHead = execFileSync(git, ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim().toLowerCase();
 } catch (_) {
   // Local source archives may not include Git metadata. Exercise the explicit
   // source fallback instead of requiring Git to be installed on the machine.
