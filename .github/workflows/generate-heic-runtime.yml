@@ -10,6 +10,7 @@ on:
     paths:
       - '.github/workflows/generate-heic-runtime.yml'
       - 'scripts/build-heic-browser-runtime.sh'
+      - 'vendor/heic-runtime/**'
 
 permissions:
   contents: read
@@ -66,5 +67,4 @@ jobs:
           test -s vendor/heic-runtime/source/libheif-build-emscripten.sh
            test "$(sha256sum vendor/heic-runtime/heic-to-csp.js | awk '{print $1}')" = '9e645c9d6b73f68bd18f90f48227a4a4bbf98f071d02fa001e83537b5f7dd408'
            test "$(wc -c < vendor/heic-runtime/heic-to-csp.js | tr -d ' ')" = '3168650'
-          ! grep -Eq '(^|[^[:alnum:]_])(eval[[:space:]]*\(|new[[:space:]]+Function[[:space:]]*\()' vendor/heic-runtime/heic-to-csp.js
-
+           ! grep -Eq '(^|[^[:alnum:]_])(eval[[:space:]]*\(|new[[:space:]]+Function[[:space:]]*\()' vendor/heic-runtime/heic-to-csp.js

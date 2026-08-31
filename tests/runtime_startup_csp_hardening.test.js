@@ -23,6 +23,9 @@ assert.ok(envExample.includes('ALLOWED_ORIGINS="https://mywingman.pages.dev"'), 
 assert.ok(!envExample.includes('https://mywingman.com'), 'production origin example must not trust the misdirected mywingman.com host');
 assert.ok(!envExample.includes('netlify.app'), 'production origin example must not advertise or trust retired Netlify origins');
 assert.ok(!envExample.includes('https://*.pages.dev'), 'production origin example must not advertise wildcard preview origins');
+assert.ok(serverSource.includes("const developmentCspDefaultSources = IS_PROD ? [] : ['http://localhost:*', 'ws://localhost:*'];"), 'Railway default CSP development sources must be development-only');
+assert.ok(serverSource.includes('...developmentCspDefaultSources'), 'Railway default CSP must use the environment-scoped development sources');
+assert.ok(serverSource.includes('...developmentCspConnectSources'), 'Railway connect CSP must use the environment-scoped development sources');
 
 const output = execFileSync(process.execPath, ['-e', "require('./server'); process.stdout.write('IMPORT_OK')"], {
   cwd: root,

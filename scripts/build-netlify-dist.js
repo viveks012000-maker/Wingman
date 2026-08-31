@@ -266,7 +266,6 @@ function writeManifest(files) {
   const manifest = {
     build: 'frontend-only-netlify',
     sourceCommit: sha,
-    generatedAt: new Date().toISOString(),
     files: Object.fromEntries(files.concat(['_headers', '_redirects']).sort().map(rel => [rel, sha256(path.join(OUT, rel))]))
   };
   fs.writeFileSync(path.join(OUT, 'release.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');

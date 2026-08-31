@@ -36,12 +36,23 @@ function git(args) {
 
 const buildSource = fs.readFileSync(BUILD_SCRIPT, 'utf8');
 if (buildSource.includes("require('./process-tools')")) {
-  let tracked = false;
+  const dependencyPath = path.join(ROOT, 'scripts', 'process-tools.js');
+  assert(fs.existsSync(dependencyPath), 'build-netlify-dist.js imports scripts/process-tools.js, which must be included in source archives');
+
+  let gitAvailable = false;
   try {
-    git(['ls-files', '--error-unmatch', '--', 'scripts/process-tools.js']);
-    tracked = true;
+    git(['--version']);
+    gitAvailable = true;
   } catch (_) {}
-  assert(tracked, 'build-netlify-dist.js imports scripts/process-tools.js, which must be included in the checked-in source tree');
+
+  if (gitAvailable) {
+    let tracked = false;
+    try {
+      git(['ls-files', '--error-unmatch', '--', 'scripts/process-tools.js']);
+      tracked = true;
+    } catch (_) {}
+    assert(tracked, 'build-netlify-dist.js imports scripts/process-tools.js, which must be tracked when Git metadata is available');
+  }
 }
 
 console.log('Build-script dependency guard passed.');

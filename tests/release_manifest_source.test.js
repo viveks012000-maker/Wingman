@@ -32,4 +32,13 @@ assert.strictEqual(release.sourceCommit, actualHead || sourceFallback,
 assert.notStrictEqual(release.sourceCommit, fakeWorkflowSha,
   'reserved GitHub workflow SHA must not override the artifact checkout SHA');
 
+const firstManifest = fs.readFileSync(path.join(root, 'netlify-dist', 'release.json'), 'utf8');
+execFileSync(process.execPath, ['scripts/build-netlify-dist.js'], {
+  cwd: root,
+  stdio: 'pipe',
+  env: { ...process.env, GITHUB_SHA: fakeWorkflowSha, ...(actualHead ? {} : { SOURCE_COMMIT: sourceFallback }) }
+});
+const secondManifest = fs.readFileSync(path.join(root, 'netlify-dist', 'release.json'), 'utf8');
+assert.strictEqual(secondManifest, firstManifest, 'identical source builds must produce identical release manifests');
+
 console.log(`✔ Netlify release manifest source-commit truth guard passed (${actualHead ? 'Git HEAD' : 'SOURCE_COMMIT fallback'}).`);

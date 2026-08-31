@@ -66,8 +66,8 @@ async function runVerify(req) {
   assert.strictEqual(ipv6A, ipv6B, 'IPv6 addresses in the same /56 must share a normalized limiter key');
   assert.notStrictEqual(ipv6A, '2001:db8:abcd:1200::1', 'IPv6 limiter key must not use the raw rotating address');
 
-  // Early admission CORS must mirror the inner production policy, including configured HTTPS
-  // origins while continuing to reject wildcard, localhost and retired Netlify origins.
+  // Production CORS is limited to the verified Cloudflare Pages origin. Stale deployment
+  // configuration must not widen credentialed browser access to arbitrary HTTPS origins.
   process.env.ALLOWED_ORIGINS = [
     'https://preview.example.com',
     'https://soft-sawine-30785c.netlify.app',
@@ -76,7 +76,7 @@ async function runVerify(req) {
   ].join(',');
   let allowed = getGatewayAllowedOrigins();
   assert(GATEWAY_PRODUCTION_ALLOWED_ORIGINS.every(origin => allowed.has(origin)), 'canonical production origins must remain allowed');
-  assert(allowed.has('https://preview.example.com'), 'explicit safe HTTPS configured origin must remain allowed');
+  assert(!allowed.has('https://preview.example.com'), 'configured preview origins must not widen production CORS');
   assert(!allowed.has('https://soft-sawine-30785c.netlify.app'), 'retired Netlify origins must remain rejected');
   assert(!allowed.has('http://localhost:9999'), 'localhost configured origin must be rejected in production');
   assert(!allowed.has('*'), 'wildcard configured origin must be rejected in production');
@@ -84,7 +84,7 @@ async function runVerify(req) {
   process.env.ALLOWED_ORIGINS = 'https://mywingman.com,https://preview.mywingman.com';
   allowed = getGatewayAllowedOrigins();
   assert(!allowed.has('https://mywingman.com'), 'stale mywingman.com must remain denied even when configured');
-  assert(allowed.has('https://preview.mywingman.com'), 'other explicit HTTPS configured origins must remain available');
+  assert(!allowed.has('https://preview.mywingman.com'), 'configured custom domains must not widen production CORS');
 
   delete process.env.RAILWAY_ENVIRONMENT;
   delete process.env.ALLOWED_ORIGINS;

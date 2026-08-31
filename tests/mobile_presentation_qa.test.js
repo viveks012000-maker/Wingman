@@ -7,7 +7,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..');
-const PORT = 3912;
+let staticServerPort = null;
 const MOBILE_VIEWPORTS = [
     [320, 568], [360, 800], [375, 667], [390, 700], [390, 844],
     [393, 852], [412, 915], [430, 932]
@@ -33,7 +33,10 @@ function startStaticServer() {
         res.writeHead(200, { 'Content-Type': MIME_TYPES[path.extname(filePath)] || 'application/octet-stream' });
         res.end(fs.readFileSync(filePath));
     });
-    return new Promise(resolve => server.listen(PORT, '127.0.0.1', () => resolve(server)));
+    return new Promise(resolve => server.listen(0, '127.0.0.1', () => {
+        staticServerPort = server.address().port;
+        resolve(server);
+    }));
 }
 
 async function openPage(browser, pageName, viewport) {
@@ -43,7 +46,7 @@ async function openPage(browser, pageName, viewport) {
     const failedRequests = [];
     page.on('pageerror', error => pageErrors.push(error.message));
     page.on('requestfailed', request => failedRequests.push({ url: request.url(), error: request.failure() && request.failure().errorText }));
-    await page.goto(`http://127.0.0.1:${PORT}/${pageName}`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`http://127.0.0.1:${staticServerPort}/${pageName}`, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(180);
     await page.waitForFunction(() => {
         const hero = document.querySelector('#hero-reveal-container');

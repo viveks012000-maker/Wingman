@@ -36,14 +36,7 @@ function getGatewayAllowedOrigins() {
         ? process.env.ALLOWED_ORIGINS.split(',').map(value => value.trim()).filter(Boolean)
         : [];
 
-    const safeConfigured = configured.filter(origin => {
-        if (!isProduction) return true;
-        if (origin === '*' || origin === 'null' || origin.includes('*')) return false;
-        if (origin === 'https://mywingman.com') return false;
-        if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return false;
-        if (/^https:\/\/[^/]+\.netlify\.app$/i.test(origin)) return false;
-        return /^https:\/\//i.test(origin);
-    });
+    const safeConfigured = isProduction ? [] : configured;
 
     return new Set([...defaults, ...safeConfigured]);
 }
@@ -51,6 +44,7 @@ function getGatewayAllowedOrigins() {
 function applyAnalyzerAdmissionCors(req, res) {
     const origin = req && req.headers ? req.headers.origin : null;
     const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
+    if (origin === 'https://mywingman.com') return false;
     const isAllowedOrigin = origin && (getGatewayAllowedOrigins().has(origin) ||
         (!isProduction && isPrivateDevelopmentOrigin(origin)));
     if (!isAllowedOrigin) return false;

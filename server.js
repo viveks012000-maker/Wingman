@@ -62,20 +62,21 @@ const { isPrivateDevelopmentOrigin } = require('./middleware/developmentOrigin')
 const app = express();
 const PORT = process.env.PORT || 3000;
 const IS_PROD = isProduction;
+const developmentCspDefaultSources = IS_PROD ? [] : ['http://localhost:*', 'ws://localhost:*'];
 const developmentCspConnectSources = IS_PROD ? [] : ['http://*:*', 'ws://*:*', 'https://*:*', 'wss://*:*'];
 
 // 1. Security Headers Middleware (Helmet + Explicit Production Headers)
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
-            defaultSrc: ["'self'", "https://*.supabase.co", "http://localhost:*", "ws://localhost:*"],
+            defaultSrc: ["'self'", "https://*.supabase.co", ...developmentCspDefaultSources],
             scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.supabase.co"],
             scriptSrcElem: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.supabase.co"],
             scriptSrcAttr: ["'unsafe-inline'"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com"],
             imgSrc: ["'self'", "data:", "blob:", "https:"],
-            connectSrc: ["'self'", "https://*.supabase.co", "wss://*.supabase.co", "http://localhost:*", "ws://localhost:*", "https://aicredits.in", ...developmentCspConnectSources],
+            connectSrc: ["'self'", "https://*.supabase.co", "wss://*.supabase.co", "https://aicredits.in", ...developmentCspConnectSources],
             workerSrc: ["'self'", "blob:"],
             frameAncestors: ["'none'"],
             objectSrc: ["'none'"]
@@ -113,17 +114,9 @@ const rawConfiguredAllowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map(value => value.trim()).filter(Boolean)
     : [];
 
-// Production must use explicit HTTPS origins. Ignore wildcard/null/localhost values even if
-// an old environment variable still contains them; this prevents stale deployment settings
-// from silently reopening browser access to arbitrary preview or local origins.
-const configuredAllowedOrigins = rawConfiguredAllowedOrigins.filter(origin => {
-    if (!IS_PROD) return true;
-    if (origin === '*' || origin === 'null' || origin.includes('*')) return false;
-    if (origin === 'https://mywingman.com') return false;
-    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return false;
-    if (/^https:\/\/[^/]+\.netlify\.app$/i.test(origin)) return false;
-    return /^https:\/\//i.test(origin);
-});
+// Production has one browser client. Ignore ALLOWED_ORIGINS entirely there so stale or
+// attacker-controlled deployment configuration cannot widen credentialed browser access.
+const configuredAllowedOrigins = IS_PROD ? [] : rawConfiguredAllowedOrigins;
 const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...configuredAllowedOrigins]));
 
 function isOriginAllowed(origin, allowedList) {
@@ -131,6 +124,7 @@ function isOriginAllowed(origin, allowedList) {
     // browser CORS requests and remain allowed. Opaque browser origins are denied in prod.
     if (!origin) return true;
     if (origin === 'null') return !IS_PROD;
+    if (origin === 'https://mywingman.com') return false;
     if (allowedList.includes(origin)) return true;
 
     // Development may use arbitrary localhost ports for local tooling, but production may not.
