@@ -45,6 +45,12 @@ async function openPage(browser, pageName, viewport) {
     page.on('requestfailed', request => failedRequests.push({ url: request.url(), error: request.failure() && request.failure().errorText }));
     await page.goto(`http://127.0.0.1:${PORT}/${pageName}`, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(180);
+    await page.waitForFunction(() => {
+        const hero = document.querySelector('#hero-reveal-container');
+        if (!hero) return true;
+        const transform = getComputedStyle(hero).transform;
+        return transform === 'none' || Math.abs(new DOMMatrix(transform).m42) < 0.5;
+    }, null, { timeout: 2000 });
     return { context, page, pageErrors, failedRequests };
 }
 
