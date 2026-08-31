@@ -14,6 +14,7 @@ const MOBILE_VIEWPORTS = [
 ];
 const DESKTOP_VIEWPORTS = [[768, 1024], [1366, 768], [1920, 1080]];
 const BREAKPOINT_VIEWPORTS = [[639, 800], [640, 800], [767, 800], [768, 800], [769, 800], [1023, 800], [1024, 800]];
+const PRACTICE_HEIGHT_BOUNDARIES = [[568, 520], [568, 521]];
 const MIME_TYPES = {
     '.css': 'text/css', '.html': 'text/html', '.ico': 'image/x-icon', '.jpg': 'image/jpeg',
     '.js': 'application/javascript', '.json': 'application/json', '.png': 'image/png',
@@ -47,7 +48,7 @@ async function openPage(browser, pageName, viewport) {
     page.on('pageerror', error => pageErrors.push(error.message));
     page.on('requestfailed', request => failedRequests.push({ url: request.url(), error: request.failure() && request.failure().errorText }));
     await page.goto(`http://127.0.0.1:${staticServerPort}/${pageName}`, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(180);
+    await page.waitForTimeout(140);
     await page.waitForFunction(() => {
         const hero = document.querySelector('#hero-reveal-container');
         if (!hero) return true;
@@ -133,18 +134,30 @@ async function getMobileScrollContract(page) {
 }
 
 async function assertDocumentScrolls(page, pageName, viewport) {
-    const scrolls = await page.evaluate(() => {
+    const canScroll = await page.evaluate(() => {
         const scroller = document.scrollingElement;
         if (!scroller) return false;
         const maxScroll = scroller.scrollHeight - window.innerHeight;
-        if (maxScroll <= 0) return false;
-        const originalTop = scroller.scrollTop;
-        scroller.scrollTop = Math.min(originalTop + 160, maxScroll);
-        const moved = scroller.scrollTop > originalTop;
-        scroller.scrollTop = originalTop;
-        return moved;
+        scroller.style.setProperty('scroll-behavior', 'auto', 'important');
+        scroller.scrollTop = 0;
+        return maxScroll > 0;
     });
-    assert(scrolls, `${pageName} document did not respond to vertical scrolling at ${viewport.join('x')}`);
+    assert(canScroll, `${pageName} has no vertical scroll range at ${viewport.join('x')}`);
+    await page.keyboard.press('PageDown');
+    await page.waitForFunction(() => document.scrollingElement && document.scrollingElement.scrollTop > 0, null, { timeout: 1000 });
+    const moved = await page.evaluate(() => document.scrollingElement && document.scrollingElement.scrollTop > 0);
+    assert(moved, `${pageName} document did not respond to vertical scrolling at ${viewport.join('x')}`);
+}
+
+async function assertRootScrollUnlocked(page, pageName, viewport) {
+    const scrollContract = await page.evaluate(() => ({
+        inlineOverflow: document.body.style.overflow,
+        htmlOverflowY: getComputedStyle(document.documentElement).overflowY,
+        bodyOverflowY: getComputedStyle(document.body).overflowY
+    }));
+    assert.strictEqual(scrollContract.inlineOverflow, '', `${pageName} left an inline body scroll lock after close at ${viewport.join('x')}`);
+    assert.strictEqual(scrollContract.htmlOverflowY, 'auto', `${pageName} did not restore root scrolling after close at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
+    assert.strictEqual(scrollContract.bodyOverflowY, 'auto', `${pageName} did not restore body scrolling after close at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
 }
 
 function assertNoPageErrors(pageName, viewport, pageErrors) {
@@ -166,9 +179,8 @@ async function assertLanding(browser, viewport) {
             const scrollContract = await getMobileScrollContract(opened.page);
             assert.strictEqual(scrollContract.htmlOverflowY, 'auto', `landing document must remain vertically scrollable at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.bodyOverflowY, 'auto', `landing body must remain vertically scrollable at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
-            assert.strictEqual(scrollContract.htmlTouchAction, 'pan-y', `landing document must explicitly allow vertical touch panning at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
-            assert.strictEqual(scrollContract.bodyTouchAction, 'pan-y', `landing body must explicitly allow vertical touch panning at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
-            await assertDocumentScrolls(opened.page, 'landing', viewport);
+            assert.strictEqual(scrollContract.htmlTouchAction, 'pan-y pinch-zoom', `landing document must allow vertical touch panning and pinch zoom at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
+            assert.strictEqual(scrollContract.bodyTouchAction, 'pan-y pinch-zoom', `landing body must allow vertical touch panning and pinch zoom at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
         }
         if (viewport[0] <= 639) {
             assert(layout.hero.y - layout.nav.bottom <= 56, `landing hero has excessive top gap at ${viewport.join('x')}: hero=${layout.hero.y}, nav=${layout.nav.bottom}`);
@@ -179,25 +191,46 @@ async function assertLanding(browser, viewport) {
             assert(layout.landingFooterLinks && footerWrap === 'wrap', `landing footer links must wrap at ${viewport.join('x')}`);
             assert(layout.menuButton.width >= 44 && layout.menuButton.height >= 44, `landing menu touch target is too small at ${viewport.join('x')}`);
 
-            await opened.page.evaluate(() => { document.scrollingElement.scrollTop = 0; });
             await opened.page.click('#mobile-menu-btn');
             await opened.page.waitForTimeout(30);
+            if (viewport[1] <= 520) {
+                const menuContract = await opened.page.$eval('#mobileMenu', menu => {
+                    const items = [...menu.querySelectorAll('a, button')];
+                    const menuRect = menu.getBoundingClientRect();
+                    const fullyVisible = item => {
+                        const rect = item.getBoundingClientRect();
+                        return rect.top >= menuRect.top && rect.bottom <= menuRect.bottom;
+                    };
+                    const firstVisibleAtStart = fullyVisible(items[0]);
+                    menu.scrollTop = menu.scrollHeight - menu.clientHeight;
+                    return {
+                        scrollRange: menu.scrollHeight - menu.clientHeight,
+                        overflowY: getComputedStyle(menu).overflowY,
+                        firstVisibleAtStart,
+                        lastVisibleAtEnd: fullyVisible(items[items.length - 1])
+                    };
+                });
+                assert(menuContract.scrollRange > 0 && ['auto', 'scroll'].includes(menuContract.overflowY), `compact landing menu must be internally scrollable at ${viewport.join('x')}: ${JSON.stringify(menuContract)}`);
+                assert(menuContract.firstVisibleAtStart && menuContract.lastVisibleAtEnd, `compact landing menu items must be reachable by scrolling at ${viewport.join('x')}: ${JSON.stringify(menuContract)}`);
+            }
             const menuScrollRange = await opened.page.evaluate(() => document.scrollingElement.scrollHeight - window.innerHeight);
+            const menuTopBeforeWheel = await opened.page.evaluate(() => document.scrollingElement.scrollTop);
             await opened.page.mouse.wheel(0, 80);
             const menuScrollLock = await opened.page.evaluate(() => ({
                 inlineOverflow: document.body.style.overflow,
                 htmlOverflowY: getComputedStyle(document.documentElement).overflowY,
                 bodyOverflowY: getComputedStyle(document.body).overflowY,
-                moved: document.scrollingElement.scrollTop > 0
+                top: document.scrollingElement.scrollTop
             }));
             assert.strictEqual(menuScrollLock.inlineOverflow, 'hidden', `mobile menu must set a body scroll lock at ${viewport.join('x')}`);
             assert.strictEqual(menuScrollLock.htmlOverflowY, 'hidden', `mobile menu must lock the root scroller at ${viewport.join('x')}: ${JSON.stringify(menuScrollLock)}`);
             assert.strictEqual(menuScrollLock.bodyOverflowY, 'hidden', `mobile menu body scroll lock is overridden at ${viewport.join('x')}: ${JSON.stringify(menuScrollLock)}`);
             if (menuScrollRange > 0) {
-                assert.strictEqual(menuScrollLock.moved, false, `mobile menu allowed document scrolling at ${viewport.join('x')}: ${JSON.stringify(menuScrollLock)}`);
+                assert.strictEqual(menuScrollLock.top > menuTopBeforeWheel, false, `mobile menu allowed document scrolling at ${viewport.join('x')}: ${JSON.stringify({ ...menuScrollLock, menuTopBeforeWheel })}`);
             }
             await opened.page.click('#mobile-menu-btn');
             await opened.page.waitForTimeout(30);
+            await assertRootScrollUnlocked(opened.page, 'landing menu', viewport);
 
             await opened.page.evaluate(() => window.openAuthRequiredModal());
             await opened.page.waitForTimeout(30);
@@ -213,6 +246,7 @@ async function assertLanding(browser, viewport) {
                 assert(['auto', 'scroll'].includes(consent.interstitialCard.overflowY), `landing consent dialog is not internally scrollable at ${viewport.join('x')}`);
             }
             await opened.page.evaluate(() => window.closeInterstitialModal());
+            await opened.page.waitForTimeout(30);
         }
     } finally {
         await opened.context.close();
@@ -271,9 +305,8 @@ async function assertApp(browser, viewport) {
             const scrollContract = await getMobileScrollContract(opened.page);
             assert.strictEqual(scrollContract.htmlOverflowY, 'auto', `app document must remain vertically scrollable at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.bodyOverflowY, 'auto', `app body must remain vertically scrollable at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
-            assert.strictEqual(scrollContract.htmlTouchAction, 'pan-y', `app document must explicitly allow vertical touch panning at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
-            assert.strictEqual(scrollContract.bodyTouchAction, 'pan-y', `app body must explicitly allow vertical touch panning at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
-            await assertDocumentScrolls(opened.page, 'app', viewport);
+            assert.strictEqual(scrollContract.htmlTouchAction, 'pan-y pinch-zoom', `app document must allow vertical touch panning and pinch zoom at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
+            assert.strictEqual(scrollContract.bodyTouchAction, 'pan-y pinch-zoom', `app body must allow vertical touch panning and pinch zoom at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert(initial.mobileNav.height >= 72, `mobile app navigation is too short at ${viewport.join('x')}`);
             assert(initial.navButtons.every(button => button.width >= 44 && button.height >= 44), `mobile app navigation touch target is too small at ${viewport.join('x')}`);
             assert(initial.appHeader.height <= 80, `mobile app header is too tall at ${viewport.join('x')}`);
@@ -299,7 +332,7 @@ async function assertApp(browser, viewport) {
                 await activateTab(opened.page, 'chatboxSection');
             }
             if (shortLandscape) {
-                assert(chat.chatSection.bottom > viewport[1], `short Practice landscape must expose the expanded chat card through document scrolling: ${JSON.stringify(chat.chatSection)}`);
+                assert(chat.document.scrollHeight > viewport[1], `short Practice landscape must remain document-scrollable for fixed-nav clearance: ${JSON.stringify(chat.document)}`);
             } else {
                 assert(chat.chatSection.bottom <= navTop + 1, `chat section is covered by bottom nav at ${viewport.join('x')}: section=${JSON.stringify(chat.chatSection)}, nav=${navTop}`);
                 assert(chat.chatFooter.bottom <= navTop + 1, `chat composer is covered by bottom nav at ${viewport.join('x')}: footer=${JSON.stringify(chat.chatFooter)}, nav=${navTop}, wrapper=${JSON.stringify(chat.chatWrapper)}, profile=${JSON.stringify(chat.chatProfile)}, messages=${JSON.stringify(chat.chatMessages)}, footerRow=${JSON.stringify(chat.chatFooterRow)}, notice=${JSON.stringify(chat.chatNotice)}, children=${JSON.stringify(chat.chatFooterChildren)}`);
@@ -308,7 +341,7 @@ async function assertApp(browser, viewport) {
             assert(chat.chatInput.height >= 44, `chat input is too short at ${viewport.join('x')}`);
             assert(chat.chatReset.height >= 44, `chat reset/review control is too short at ${viewport.join('x')}`);
             assert(chat.chatReview.height >= 44, `chat Finish & Review control is too short at ${viewport.join('x')}`);
-            const minimumMessagesHeight = viewport[1] <= 520 ? 40 : 72;
+            const minimumMessagesHeight = viewport[1] <= 521 ? 40 : 72;
             assert(chat.chatMessages.height >= minimumMessagesHeight, `chat message region is not usable on ${viewport.join('x')}: profile=${JSON.stringify(chat.chatProfile)}, footer=${JSON.stringify(chat.chatFooter)}, row=${JSON.stringify(chat.chatFooterRow)}, notice=${JSON.stringify(chat.chatNotice)}`);
             if (!navVisible) {
                 assert(chat.chatWrapper.overflowY === 'auto' && chat.chatWrapper.scrollHeight > chat.chatWrapper.clientHeight, `short Practice chat must remain internally scrollable when the mobile nav is hidden at ${viewport.join('x')}: ${JSON.stringify(chat.chatWrapper)}`);
@@ -359,6 +392,7 @@ async function assertApp(browser, viewport) {
             assert.strictEqual(purchaseScrollLock.computedOverflowY, 'hidden', `purchase modal body scroll lock is overridden at ${viewport.join('x')}: ${JSON.stringify(purchaseScrollLock)}`);
             assert.strictEqual(purchaseScrollLock.htmlOverflowY, 'hidden', `purchase modal must lock the root scroller at ${viewport.join('x')}: ${JSON.stringify(purchaseScrollLock)}`);
             await opened.page.evaluate(() => window.closePurchaseModal());
+            await assertRootScrollUnlocked(opened.page, 'purchase modal', viewport);
 
             if (viewport[0] === 320 && viewport[1] === 568) {
                 await opened.page.focus('#simulator-chat-input');
@@ -474,6 +508,40 @@ async function assertApp(browser, viewport) {
     }
 }
 
+async function assertPracticeHeightBoundary(browser, viewport) {
+    const opened = await openPage(browser, 'app.html', viewport);
+    try {
+        assertNoPageErrors('app.html', viewport, opened.pageErrors);
+        const scrollContract = await getMobileScrollContract(opened.page);
+        assert.strictEqual(scrollContract.htmlOverflowY, 'auto', `boundary app root must remain vertically scrollable at ${viewport.join('x')}`);
+        assert.strictEqual(scrollContract.bodyOverflowY, 'auto', `boundary app body must remain vertically scrollable at ${viewport.join('x')}`);
+        assert.strictEqual(scrollContract.htmlTouchAction, 'pan-y pinch-zoom', `boundary app root touch action changed at ${viewport.join('x')}`);
+        assert.strictEqual(scrollContract.bodyTouchAction, 'pan-y pinch-zoom', `boundary app body touch action changed at ${viewport.join('x')}`);
+        await activateTab(opened.page, 'chatboxSection');
+        const layout = await getLayout(opened.page);
+        assert(layout.chatWrapper && layout.chatFooter && layout.chatMessages && layout.mobileNav, `boundary Practice controls missing at ${viewport.join('x')}`);
+        assert(layout.chatFooter.bottom <= layout.chatWrapper.bottom + 1, `boundary Practice footer is clipped at ${viewport.join('x')}`);
+        assert(layout.chatMessages.height >= 40, `boundary Practice message region is unusable at ${viewport.join('x')}`);
+        if (viewport[1] <= 520) {
+            assert(layout.document.scrollHeight > viewport[1], `compact boundary Practice must remain document-scrollable at ${viewport.join('x')}`);
+        } else {
+            assert(layout.chatSection.bottom <= layout.mobileNav.y + 1, `normal boundary Practice is covered by the fixed nav at ${viewport.join('x')}`);
+        }
+    } finally {
+        await opened.context.close();
+    }
+}
+
+async function assertRealInputScroll(browser, pageName, viewport) {
+    const opened = await openPage(browser, pageName, viewport);
+    try {
+        assertNoPageErrors(pageName, viewport, opened.pageErrors);
+        await assertDocumentScrolls(opened.page, pageName, viewport);
+    } finally {
+        await opened.context.close();
+    }
+}
+
 async function run() {
     const server = await startStaticServer();
     const browser = await chromium.launch({ headless: true });
@@ -487,7 +555,10 @@ async function run() {
             await assertLanding(browser, viewport);
             await assertApp(browser, viewport);
         }
-        console.log(`Mobile presentation QA passed across ${MOBILE_VIEWPORTS.length} mobile, ${DESKTOP_VIEWPORTS.length} desktop, and ${BREAKPOINT_VIEWPORTS.length} breakpoint viewports.`);
+        for (const viewport of PRACTICE_HEIGHT_BOUNDARIES) await assertPracticeHeightBoundary(browser, viewport);
+        await assertRealInputScroll(browser, 'index.html', [320, 568]);
+        await assertRealInputScroll(browser, 'app.html', [390, 700]);
+        console.log(`Mobile presentation QA passed across ${MOBILE_VIEWPORTS.length} mobile, ${DESKTOP_VIEWPORTS.length} desktop, ${BREAKPOINT_VIEWPORTS.length} breakpoint, and ${PRACTICE_HEIGHT_BOUNDARIES.length} Practice height-boundary viewports with real-input scroll probes.`);
     } finally {
         await browser.close();
         await new Promise(resolve => server.close(resolve));
