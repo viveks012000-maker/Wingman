@@ -12,6 +12,8 @@ EMSDK_COMMIT="e3a0604c3d130d6ab2c40e14a1861accd939a255"
 EMSCRIPTEN_VERSION="6.0.7"
 EXPECTED_RUNTIME_SHA256="d19857f33f41f9d21d27d515d95d60a2dff0369bcc4d4525c8eef487be7dd9a5"
 EXPECTED_RUNTIME_BYTES="3168650"
+# Keep archive and link ordering stable across build hosts.
+export CORES="${CORES:-1}"
 
 rm -rf "$WORK"
 mkdir -p "$WORK"
