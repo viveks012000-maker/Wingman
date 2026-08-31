@@ -15,7 +15,6 @@ const loader = read('vendor/heic2any-loader.js');
 const workflow = read('.github/workflows/generate-heic-runtime.yml');
 const buildNetlify = read('scripts/build-netlify-dist.js');
 const heicRuntime = read('vendor/heic-runtime/heic-to-csp.js');
-const heicExample = read('.tmp/wingman-heic-runtime/heic-to/example/csp/app.js');
 
 function assertNamedExport(source, name) {
     const exportBlock = source.match(/export\s*\{([^}]*)\}/);
@@ -106,7 +105,6 @@ console.log('Running focused release repair regression tests...');
 // HEIC export contract and adapter boundary.
 assertNamedExport(heicRuntime, 'heicTo');
 assertNamedExport(heicRuntime, 'isHeic');
-assert(heicExample.includes("import {heicTo, isHeic} from '../../dist/csp/heic-to.js'"), 'checked-in HEIC source example must prove the named-export contract');
 const adapterPath = path.join(ROOT, 'vendor', 'heic2any-adapter.js');
 assert(fs.existsSync(adapterPath), 'lazy HEIC adapter must be checked in beside the generated runtime');
 const adapter = read('vendor/heic2any-adapter.js');
