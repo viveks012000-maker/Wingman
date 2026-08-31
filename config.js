@@ -18,11 +18,13 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         var hostname = window.location.hostname || '';
         var protocol = window.location.protocol || '';
         var origin = window.location.origin || '';
-        var isLocalEnv = protocol === 'file:' || origin === 'null' || hostname === 'localhost' ||
-            hostname === '127.0.0.1' || hostname.indexOf('192.168.') === 0 ||
-            hostname.indexOf('10.') === 0 || hostname.endsWith('.local');
+        var isLoopbackEnv = protocol === 'file:' || origin === 'null' || hostname === 'localhost' ||
+            hostname === '127.0.0.1';
+        var isPrivateNetworkEnv = hostname.indexOf('192.168.') === 0 || hostname.indexOf('10.') === 0 ||
+            hostname.endsWith('.local');
 
-        if (isLocalEnv) return 'http://localhost:3000';
+        if (isLoopbackEnv) return 'http://localhost:3000';
+        if (isPrivateNetworkEnv) return 'http://' + hostname + ':3000';
         if (window.WINGMAN_CONFIG && window.WINGMAN_CONFIG.API_BASE_URL) {
             return String(window.WINGMAN_CONFIG.API_BASE_URL).replace(/\/+$/, '');
         }
