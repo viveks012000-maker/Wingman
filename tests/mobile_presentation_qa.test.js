@@ -10,7 +10,7 @@ const ROOT = path.resolve(__dirname, '..');
 let staticServerPort = null;
 const MOBILE_VIEWPORTS = [
     [320, 568], [360, 800], [375, 667], [390, 700], [390, 844],
-    [393, 852], [412, 915], [430, 932]
+    [393, 852], [412, 915], [430, 932], [568, 320]
 ];
 const DESKTOP_VIEWPORTS = [[768, 1024], [1366, 768], [1920, 1080]];
 const BREAKPOINT_VIEWPORTS = [[639, 800], [640, 800], [767, 800], [768, 800], [769, 800], [1023, 800], [1024, 800]];
@@ -132,6 +132,18 @@ async function getMobileScrollContract(page) {
     }));
 }
 
+async function assertDocumentScrolls(page, pageName, viewport) {
+    const scrolls = await page.evaluate(() => {
+        const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+        if (maxScroll <= 0) return false;
+        window.scrollTo(0, Math.min(160, maxScroll));
+        const moved = window.scrollY > 0;
+        window.scrollTo(0, 0);
+        return moved;
+    });
+    assert(scrolls, `${pageName} document did not respond to vertical scrolling at ${viewport.join('x')}`);
+}
+
 function assertNoPageErrors(pageName, viewport, pageErrors) {
     assert.deepStrictEqual(pageErrors, [], `${pageName} at ${viewport.join('x')} raised browser errors: ${pageErrors.join('; ')}`);
 }
@@ -143,12 +155,15 @@ async function assertLanding(browser, viewport) {
         const layout = await getLayout(opened.page);
         assert(layout.document.scrollWidth <= viewport[0] + 1, `landing document overflows at ${viewport.join('x')}`);
         assert(layout.document.bodyScrollWidth <= viewport[0] + 1, `landing body overflows at ${viewport.join('x')}`);
-        if (viewport[0] <= 639) {
+        if (viewport[0] < 768) {
             const scrollContract = await getMobileScrollContract(opened.page);
             assert.strictEqual(scrollContract.htmlOverflowY, 'auto', `landing document must remain vertically scrollable at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.bodyOverflowY, 'auto', `landing body must remain vertically scrollable at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.htmlTouchAction, 'pan-y', `landing document must explicitly allow vertical touch panning at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.bodyTouchAction, 'pan-y', `landing body must explicitly allow vertical touch panning at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
+            await assertDocumentScrolls(opened.page, 'landing', viewport);
+        }
+        if (viewport[0] <= 639) {
             assert(layout.hero.y - layout.nav.bottom <= 56, `landing hero has excessive top gap at ${viewport.join('x')}: hero=${layout.hero.y}, nav=${layout.nav.bottom}`);
             const maxLandingStart = viewport[0] <= 360 ? 1050 : 930;
             assert(layout.landingSection.y <= maxLandingStart, `landing content starts too low at ${viewport.join('x')}: ${layout.landingSection.y}`);
@@ -231,13 +246,15 @@ async function assertApp(browser, viewport) {
             assert.strictEqual(scrollContract.bodyOverflowY, 'auto', `app body must remain vertically scrollable at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.htmlTouchAction, 'pan-y', `app document must explicitly allow vertical touch panning at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.bodyTouchAction, 'pan-y', `app body must explicitly allow vertical touch panning at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
+            await assertDocumentScrolls(opened.page, 'app', viewport);
             assert(initial.mobileNav.height >= 72, `mobile app navigation is too short at ${viewport.join('x')}`);
             assert(initial.navButtons.every(button => button.width >= 44 && button.height >= 44), `mobile app navigation touch target is too small at ${viewport.join('x')}`);
             assert(initial.appHeader.height <= 80, `mobile app header is too tall at ${viewport.join('x')}`);
 
             await activateTab(opened.page, 'chatboxSection');
             const chat = await getLayout(opened.page);
-            const navTop = chat.mobileNav.y;
+            const navVisible = chat.mobileNav.display !== 'none' && chat.mobileNav.height > 0;
+            const navTop = navVisible ? chat.mobileNav.y : chat.viewport.visualHeight;
             assert(chat.chatSection && chat.chatWrapper && chat.chatFooter && chat.chatNotice && chat.chatInput && chat.chatReset && chat.chatReview, `chat controls missing at ${viewport.join('x')}`);
             assert(chat.chatSection.bottom <= navTop + 1, `chat section is covered by bottom nav at ${viewport.join('x')}: section=${JSON.stringify(chat.chatSection)}, nav=${navTop}`);
             assert(chat.chatFooter.bottom <= navTop + 1, `chat composer is covered by bottom nav at ${viewport.join('x')}: footer=${JSON.stringify(chat.chatFooter)}, nav=${navTop}, wrapper=${JSON.stringify(chat.chatWrapper)}, profile=${JSON.stringify(chat.chatProfile)}, messages=${JSON.stringify(chat.chatMessages)}, footerRow=${JSON.stringify(chat.chatFooterRow)}, notice=${JSON.stringify(chat.chatNotice)}, children=${JSON.stringify(chat.chatFooterChildren)}`);
@@ -245,7 +262,11 @@ async function assertApp(browser, viewport) {
             assert(chat.chatInput.height >= 44, `chat input is too short at ${viewport.join('x')}`);
             assert(chat.chatReset.height >= 44, `chat reset/review control is too short at ${viewport.join('x')}`);
             assert(chat.chatReview.height >= 44, `chat Finish & Review control is too short at ${viewport.join('x')}`);
-            assert(chat.chatMessages.height >= 72, `chat message region is not usable on ${viewport.join('x')}: profile=${JSON.stringify(chat.chatProfile)}, footer=${JSON.stringify(chat.chatFooter)}, row=${JSON.stringify(chat.chatFooterRow)}, notice=${JSON.stringify(chat.chatNotice)}`);
+            const minimumMessagesHeight = viewport[1] <= 500 ? 40 : 72;
+            assert(chat.chatMessages.height >= minimumMessagesHeight, `chat message region is not usable on ${viewport.join('x')}: profile=${JSON.stringify(chat.chatProfile)}, footer=${JSON.stringify(chat.chatFooter)}, row=${JSON.stringify(chat.chatFooterRow)}, notice=${JSON.stringify(chat.chatNotice)}`);
+            if (!navVisible) {
+                assert(chat.chatWrapper.overflowY === 'auto' && chat.chatWrapper.scrollHeight > chat.chatWrapper.clientHeight, `short Practice chat must remain internally scrollable when the mobile nav is hidden at ${viewport.join('x')}: ${JSON.stringify(chat.chatWrapper)}`);
+            }
             assert(chat.document.scrollHeight <= viewport[1] + 1, `Practice adds duplicate vertical clearance at ${viewport.join('x')}: ${JSON.stringify(chat.document)}`);
             const visualHeight = await opened.page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--wingman-visual-height').trim());
             assert(visualHeight.endsWith('px'), `visual viewport height is not published at ${viewport.join('x')}`);
