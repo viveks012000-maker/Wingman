@@ -10,7 +10,7 @@ const ROOT = path.resolve(__dirname, '..');
 let staticServerPort = null;
 const MOBILE_VIEWPORTS = [
     [320, 568], [360, 800], [375, 667], [390, 700], [390, 844],
-    [393, 852], [412, 915], [430, 932], [568, 320]
+    [393, 852], [412, 915], [430, 932], [568, 320], [568, 500], [568, 501]
 ];
 const DESKTOP_VIEWPORTS = [[768, 1024], [1366, 768], [1920, 1080]];
 const BREAKPOINT_VIEWPORTS = [[639, 800], [640, 800], [767, 800], [768, 800], [769, 800], [1023, 800], [1024, 800]];
@@ -148,6 +148,10 @@ function assertNoPageErrors(pageName, viewport, pageErrors) {
     assert.deepStrictEqual(pageErrors, [], `${pageName} at ${viewport.join('x')} raised browser errors: ${pageErrors.join('; ')}`);
 }
 
+function rectsOverlap(first, second) {
+    return first && second && first.x < second.right && first.right > second.x && first.y < second.bottom && first.bottom > second.y;
+}
+
 async function assertLanding(browser, viewport) {
     const opened = await openPage(browser, 'index.html', viewport);
     try {
@@ -255,22 +259,49 @@ async function assertApp(browser, viewport) {
             const chat = await getLayout(opened.page);
             const navVisible = chat.mobileNav.display !== 'none' && chat.mobileNav.height > 0;
             const navTop = navVisible ? chat.mobileNav.y : chat.viewport.visualHeight;
+            const shortLandscape = viewport[0] < 768 && viewport[1] <= 500;
             assert(chat.chatSection && chat.chatWrapper && chat.chatFooter && chat.chatNotice && chat.chatInput && chat.chatReset && chat.chatReview, `chat controls missing at ${viewport.join('x')}`);
-            assert(chat.chatSection.bottom <= navTop + 1, `chat section is covered by bottom nav at ${viewport.join('x')}: section=${JSON.stringify(chat.chatSection)}, nav=${navTop}`);
-            assert(chat.chatFooter.bottom <= navTop + 1, `chat composer is covered by bottom nav at ${viewport.join('x')}: footer=${JSON.stringify(chat.chatFooter)}, nav=${navTop}, wrapper=${JSON.stringify(chat.chatWrapper)}, profile=${JSON.stringify(chat.chatProfile)}, messages=${JSON.stringify(chat.chatMessages)}, footerRow=${JSON.stringify(chat.chatFooterRow)}, notice=${JSON.stringify(chat.chatNotice)}, children=${JSON.stringify(chat.chatFooterChildren)}`);
-            assert(chat.chatNotice.bottom <= navTop + 1, `chat credit notice is covered by bottom nav at ${viewport.join('x')}: notice=${chat.chatNotice.bottom}, nav=${navTop}`);
+            assert(!rectsOverlap(chat.chatFooter, chat.chatProfile), `chat composer overlaps the profile header at ${viewport.join('x')}: ${JSON.stringify(chat)}`);
+            assert(!rectsOverlap(chat.chatFooter, chat.chatMessages), `chat composer overlaps the message region at ${viewport.join('x')}: ${JSON.stringify(chat)}`);
+            if (shortLandscape) {
+                assert(navVisible && chat.mobileNav.height >= 72, `short Practice landscape must keep mobile tab navigation reachable at ${viewport.join('x')}: ${JSON.stringify(chat.mobileNav)}`);
+                await opened.page.click('#mobileNavBar button[data-tab="analyzeSection"]');
+                await opened.page.waitForTimeout(80);
+                const analyzeReachable = await opened.page.evaluate(() => {
+                    const section = document.getElementById('analyzeSection');
+                    return !!section && getComputedStyle(section).display !== 'none';
+                });
+                assert(analyzeReachable, 'short Practice landscape mobile navigation cannot return to Analyze');
+                await activateTab(opened.page, 'chatboxSection');
+            }
+            if (shortLandscape) {
+                assert(chat.chatSection.bottom > viewport[1], `short Practice landscape must expose the expanded chat card through document scrolling: ${JSON.stringify(chat.chatSection)}`);
+            } else {
+                assert(chat.chatSection.bottom <= navTop + 1, `chat section is covered by bottom nav at ${viewport.join('x')}: section=${JSON.stringify(chat.chatSection)}, nav=${navTop}`);
+                assert(chat.chatFooter.bottom <= navTop + 1, `chat composer is covered by bottom nav at ${viewport.join('x')}: footer=${JSON.stringify(chat.chatFooter)}, nav=${navTop}, wrapper=${JSON.stringify(chat.chatWrapper)}, profile=${JSON.stringify(chat.chatProfile)}, messages=${JSON.stringify(chat.chatMessages)}, footerRow=${JSON.stringify(chat.chatFooterRow)}, notice=${JSON.stringify(chat.chatNotice)}, children=${JSON.stringify(chat.chatFooterChildren)}`);
+                assert(chat.chatNotice.bottom <= navTop + 1, `chat credit notice is covered by bottom nav at ${viewport.join('x')}: notice=${chat.chatNotice.bottom}, nav=${navTop}`);
+            }
             assert(chat.chatInput.height >= 44, `chat input is too short at ${viewport.join('x')}`);
             assert(chat.chatReset.height >= 44, `chat reset/review control is too short at ${viewport.join('x')}`);
             assert(chat.chatReview.height >= 44, `chat Finish & Review control is too short at ${viewport.join('x')}`);
-            const minimumMessagesHeight = viewport[1] <= 500 ? 40 : 72;
+            const minimumMessagesHeight = viewport[1] <= 520 ? 40 : 72;
             assert(chat.chatMessages.height >= minimumMessagesHeight, `chat message region is not usable on ${viewport.join('x')}: profile=${JSON.stringify(chat.chatProfile)}, footer=${JSON.stringify(chat.chatFooter)}, row=${JSON.stringify(chat.chatFooterRow)}, notice=${JSON.stringify(chat.chatNotice)}`);
             if (!navVisible) {
                 assert(chat.chatWrapper.overflowY === 'auto' && chat.chatWrapper.scrollHeight > chat.chatWrapper.clientHeight, `short Practice chat must remain internally scrollable when the mobile nav is hidden at ${viewport.join('x')}: ${JSON.stringify(chat.chatWrapper)}`);
             }
-            assert(chat.document.scrollHeight <= viewport[1] + 1, `Practice adds duplicate vertical clearance at ${viewport.join('x')}: ${JSON.stringify(chat.document)}`);
+            if (shortLandscape) {
+                assert(chat.document.scrollHeight > viewport[1], `short Practice landscape must remain document-scrollable after the chat card expands: ${JSON.stringify(chat.document)}`);
+                await opened.page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight - window.innerHeight));
+                const footerAtScrollEnd = await getLayout(opened.page);
+                assert(footerAtScrollEnd.chatFooter.bottom <= footerAtScrollEnd.mobileNav.y + 1, `short Practice composer is hidden behind the fixed nav after scrolling: ${JSON.stringify(footerAtScrollEnd)}`);
+            } else {
+                assert(chat.document.scrollHeight <= viewport[1] + 1, `Practice adds duplicate vertical clearance at ${viewport.join('x')}: ${JSON.stringify(chat.document)}`);
+            }
             const visualHeight = await opened.page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--wingman-visual-height').trim());
             assert(visualHeight.endsWith('px'), `visual viewport height is not published at ${viewport.join('x')}`);
-            assert(chat.chatWrapper.bottom <= viewport[1] + 1, `chat wrapper is clipped below the viewport at ${viewport.join('x')}`);
+            if (!shortLandscape) {
+                assert(chat.chatWrapper.bottom <= viewport[1] + 1, `chat wrapper is clipped below the viewport at ${viewport.join('x')}`);
+            }
 
             await opened.page.evaluate(() => window.openSettingsModal());
             await opened.page.waitForTimeout(50);
@@ -281,6 +312,16 @@ async function assertApp(browser, viewport) {
                 assert(['auto', 'scroll'].includes(settings.settingsCard.overflowY), `settings dialog is not internally scrollable at ${viewport.join('x')}`);
             }
             await opened.page.evaluate(() => window.closeSettingsModal());
+
+            await opened.page.evaluate(() => window.openPurchaseModal());
+            await opened.page.waitForTimeout(50);
+            const purchaseScrollLock = await opened.page.evaluate(() => ({
+                inlineOverflow: document.body.style.overflow,
+                computedOverflowY: getComputedStyle(document.body).overflowY
+            }));
+            assert.strictEqual(purchaseScrollLock.inlineOverflow, 'hidden', `purchase modal must set a body scroll lock at ${viewport.join('x')}`);
+            assert.strictEqual(purchaseScrollLock.computedOverflowY, 'hidden', `purchase modal body scroll lock is overridden at ${viewport.join('x')}: ${JSON.stringify(purchaseScrollLock)}`);
+            await opened.page.evaluate(() => window.closePurchaseModal());
 
             if (viewport[0] === 320 && viewport[1] === 568) {
                 await opened.page.focus('#simulator-chat-input');
