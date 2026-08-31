@@ -4,6 +4,7 @@ const path = require('path');
 
 const refund = fs.readFileSync(path.join(__dirname, '..', 'refund.html'), 'utf8');
 const privacy = fs.readFileSync(path.join(__dirname, '..', 'privacy.html'), 'utf8');
+const terms = fs.readFileSync(path.join(__dirname, '..', 'terms.html'), 'utf8');
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
 assert.ok(server.includes("if (IS_PROD || process.env.ENABLE_MOCK_PAYMENTS !== 'true')"), 'production payment verification must remain disabled');
@@ -19,5 +20,7 @@ assert.ok(!privacy.includes('up to seven (7) years'), 'privacy policy must not p
 assert.ok(privacy.includes('Actual retention can also depend on infrastructure-provider settings.'), 'privacy policy must acknowledge infrastructure retention settings');
 assert.ok(privacy.includes('requirements in force at the relevant time'), 'grievance copy must avoid overclaiming a specific statutory procedure');
 assert.ok(privacy.includes('Paid checkout is currently disabled.'), 'billing privacy language must reflect production payment state');
+assert.ok(!/https:\/\/fonts\.googleapis\.com\/css2\?family=/.test(terms), 'terms page must not import an external Google font that production CSP blocks');
+assert.ok(!/https:\/\/fonts\.googleapis\.com\/css2\?family=/.test(privacy), 'privacy page must not import an external Google font that production CSP blocks');
 
 console.log('✔ Production legal/privacy accuracy guard passed.');
