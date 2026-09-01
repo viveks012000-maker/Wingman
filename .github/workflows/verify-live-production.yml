@@ -1,0 +1,220 @@
+name: MyWingman Live Production Verification
+
+on:
+  workflow_run:
+    workflows:
+      - MyWingman Production Verification Gate
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-production-verification
+  cancel-in-progress: true
+
+jobs:
+  verify-live-production:
+    if: >-
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PRODUCTION_URL: https://mywingman.pages.dev
+      EXPECTED_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Check out protected main for verifier dependencies
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked browser dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify live production release, routes, and real touch scrolling
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const { chromium } = require('playwright');
+
+          const productionUrl = process.env.PRODUCTION_URL.replace(/\/$/, '');
+          const expectedSha = process.env.EXPECTED_SHA;
+          const repository = process.env.GITHUB_REPOSITORY;
+          const token = process.env.GITHUB_TOKEN;
+
+          async function readJson(url, init = {}) {
+            const response = await fetch(url, {
+              redirect: 'manual',
+              cache: 'no-store',
+              ...init,
+              headers: {
+                accept: 'application/json',
+                'cache-control': 'no-cache',
+                ...(init.headers || {})
+              }
+            });
+            assert.equal(response.status, 200, `${url} returned HTTP ${response.status}`);
+            assert.equal(response.headers.get('location'), null, `${url} unexpectedly redirected`);
+            return response.json();
+          }
+
+          async function waitForCurrentRelease() {
+            const deadline = Date.now() + 10 * 60 * 1000;
+            let lastSeen = 'unavailable';
+            while (Date.now() < deadline) {
+              try {
+                const release = await readJson(`${productionUrl}/release.json?live_verify=${expectedSha}`);
+                lastSeen = release.sourceCommit || 'missing sourceCommit';
+                if (lastSeen === expectedSha) return release;
+                console.log(`Waiting for Pages production deployment: live=${lastSeen} expected=${expectedSha}`);
+              } catch (error) {
+                console.log(`Waiting for Pages production deployment: ${error.message}`);
+              }
+              await new Promise(resolve => setTimeout(resolve, 15_000));
+            }
+            throw new Error(`Production did not expose expected release ${expectedSha}; last live value was ${lastSeen}`);
+          }
+
+          async function assertProtectedMainIsStillExpected() {
+            const headers = {
+              accept: 'application/vnd.github+json',
+              'x-github-api-version': '2022-11-28'
+            };
+            if (token) headers.authorization = `Bearer ${token}`;
+            const branch = await readJson(`https://api.github.com/repos/${repository}/branches/main`, {
+              headers
+            });
+            assert.equal(branch.commit.sha, expectedSha, `main advanced while this deployment was being verified: main=${branch.commit.sha} expected=${expectedSha}`);
+            assert.equal(branch.protected, true, 'main must remain protected');
+          }
+
+          async function swipeUp(page, client, width, height) {
+            const x = Math.floor(width / 2);
+            const startY = Math.max(80, height - 90);
+            const endY = Math.max(24, startY - Math.min(520, height - 48));
+            await client.send('Input.dispatchTouchEvent', {
+              type: 'touchStart',
+              touchPoints: [{ id: 1, x, y: startY, radiusX: 8, radiusY: 8, force: 1 }]
+            });
+            const distance = startY - endY;
+            for (let step = 1; step <= 8; step += 1) {
+              await page.waitForTimeout(25);
+              await client.send('Input.dispatchTouchEvent', {
+                type: 'touchMove',
+                touchPoints: [{ id: 1, x, y: startY - (distance * step / 8), radiusX: 8, radiusY: 8, force: 1 }]
+              });
+            }
+            await page.waitForTimeout(25);
+            await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            await page.waitForTimeout(150);
+          }
+
+          async function verifyMobileTouchScroll(browser, width, height) {
+            const context = await browser.newContext({
+              viewport: { width, height },
+              isMobile: true,
+              hasTouch: true,
+              deviceScaleFactor: width > height ? 2 : 3,
+              userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36'
+            });
+            const page = await context.newPage();
+            const pageErrors = [];
+            page.on('pageerror', error => pageErrors.push(error.message));
+            try {
+              const response = await page.goto(`${productionUrl}/?live_verify=${expectedSha}`, { waitUntil: 'networkidle', timeout: 45_000 });
+              assert(response, `production root did not return a response at ${width}x${height}`);
+              assert.equal(response.status(), 200, `production root returned HTTP ${response.status()} at ${width}x${height}`);
+              assert.equal(new URL(page.url()).hostname, new URL(productionUrl).hostname, `production root navigated away at ${width}x${height}`);
+              const before = await page.evaluate(() => {
+                const scroller = document.scrollingElement;
+                scroller.scrollTop = 0;
+                return {
+                  scrollHeight: scroller.scrollHeight,
+                  viewportHeight: window.innerHeight,
+                  scrollTop: scroller.scrollTop,
+                  htmlOverflowY: getComputedStyle(document.documentElement).overflowY,
+                  bodyOverflowY: getComputedStyle(document.body).overflowY,
+                  htmlTouchAction: getComputedStyle(document.documentElement).touchAction,
+                  bodyTouchAction: getComputedStyle(document.body).touchAction,
+                  maxTouchPoints: navigator.maxTouchPoints
+                };
+              });
+              assert(before.scrollHeight > before.viewportHeight, `no vertical scroll range at ${width}x${height}: ${JSON.stringify(before)}`);
+              assert(before.maxTouchPoints > 0, `touch emulation was not active at ${width}x${height}`);
+              if (width < 768) {
+                assert.equal(before.htmlOverflowY, 'auto', `HTML root did not own scrolling at ${width}x${height}`);
+                assert.equal(before.bodyOverflowY, 'visible', `body became a vertical scroller at ${width}x${height}`);
+                assert.equal(before.htmlTouchAction, 'pan-y pinch-zoom', `HTML touch action changed at ${width}x${height}`);
+                assert.equal(before.bodyTouchAction, 'pan-y pinch-zoom', `body touch action changed at ${width}x${height}`);
+              }
+              const client = await context.newCDPSession(page);
+              await swipeUp(page, client, width, height);
+              const after = await page.evaluate(() => ({ scrollTop: document.scrollingElement.scrollTop, windowScrollY: window.scrollY }));
+              assert(after.scrollTop > 0 && after.windowScrollY > 0, `real vertical touch swipe did not move the page at ${width}x${height}: ${JSON.stringify({ before, after })}`);
+              assert.deepEqual(pageErrors, [], `page errors at ${width}x${height}: ${pageErrors.join('; ')}`);
+              console.log(`PASS mobile touch scroll ${width}x${height}: scrollY=${after.windowScrollY}`);
+            } finally {
+              await context.close();
+            }
+          }
+
+          async function verifyDesktopWheelScroll(browser) {
+            const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, isMobile: false, hasTouch: false });
+            const page = await context.newPage();
+            try {
+              await page.goto(`${productionUrl}/?live_verify=${expectedSha}`, { waitUntil: 'networkidle', timeout: 45_000 });
+              await page.mouse.wheel(0, 520);
+              await page.waitForTimeout(100);
+              const scrollTop = await page.evaluate(() => document.scrollingElement.scrollTop);
+              assert(scrollTop > 0, `desktop wheel scrolling did not move the page: ${scrollTop}`);
+              console.log(`PASS desktop wheel scroll 1366x768: scrollY=${scrollTop}`);
+            } finally {
+              await context.close();
+            }
+          }
+
+          (async () => {
+            assert.match(expectedSha, /^[0-9a-f]{40}$/, `invalid expected SHA: ${expectedSha}`);
+            await assertProtectedMainIsStillExpected();
+            const release = await waitForCurrentRelease();
+            assert.equal(release.sourceCommit, expectedSha, 'live release sourceCommit must equal protected main SHA');
+            for (const route of ['/', '/app', '/privacy', '/terms']) {
+              const response = await fetch(`${productionUrl}${route}?live_verify=${expectedSha}`, { redirect: 'manual', cache: 'no-store' });
+              assert.equal(response.status, 200, `${route} returned HTTP ${response.status}`);
+              assert.equal(response.headers.get('location'), null, `${route} unexpectedly redirected`);
+              console.log(`PASS live route ${route}: HTTP 200`);
+            }
+            const browser = await chromium.launch({ headless: true });
+            try {
+              for (const [width, height] of [[320, 568], [390, 844], [430, 932], [568, 320]]) {
+                await verifyMobileTouchScroll(browser, width, height);
+              }
+              await verifyDesktopWheelScroll(browser);
+            } finally {
+              await browser.close();
+            }
+            console.log(`LIVE PRODUCTION VERIFICATION PASSED: ${productionUrl} @ ${expectedSha}`);
+          })().catch(error => {
+            console.error(error.stack || error.message || error);
+            process.exitCode = 1;
+          });
+          NODE
