@@ -192,6 +192,13 @@ async function assertLanding(browser, viewport) {
             assert.strictEqual(scrollContract.bodyOverflowY, 'auto', `landing body must remain vertically scrollable at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.htmlTouchAction, 'pan-y pinch-zoom', `landing document must allow vertical touch panning and pinch zoom at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.bodyTouchAction, 'pan-y pinch-zoom', `landing body must allow vertical touch panning and pinch zoom at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
+            const heroScrollContract = await opened.page.$eval('body.landing-page > section:first-of-type', element => {
+                const style = getComputedStyle(element);
+                return { overflowX: style.overflowX, overflowY: style.overflowY, touchAction: style.touchAction };
+            });
+            assert.strictEqual(heroScrollContract.overflowX, 'clip', `landing hero must clip visual overflow without creating a mobile touch barrier at ${viewport.join('x')}: ${JSON.stringify(heroScrollContract)}`);
+            assert.strictEqual(heroScrollContract.overflowY, 'visible', `landing hero must leave vertical panning to the document at ${viewport.join('x')}: ${JSON.stringify(heroScrollContract)}`);
+            assert.strictEqual(heroScrollContract.touchAction, 'pan-y', `landing hero must allow vertical touch panning at ${viewport.join('x')}: ${JSON.stringify(heroScrollContract)}`);
             const compatibilityScrollContract = await opened.page.$eval('#compatibility-row', element => {
                 const style = getComputedStyle(element);
                 return { overflowX: style.overflowX, overflowY: style.overflowY, touchAction: style.touchAction };
@@ -331,6 +338,13 @@ async function assertApp(browser, viewport) {
 
             await activateTab(opened.page, 'chatboxSection');
             const chat = await getLayout(opened.page);
+            const scenarioScrollContract = await opened.page.$eval('#practiceScenarioBar', element => {
+                const style = getComputedStyle(element);
+                return { overflowX: style.overflowX, overflowY: style.overflowY, touchAction: style.touchAction };
+            });
+            assert.strictEqual(scenarioScrollContract.overflowX, 'auto', `Practice scenario bar must retain horizontal scrolling at ${viewport.join('x')}: ${JSON.stringify(scenarioScrollContract)}`);
+            assert.strictEqual(scenarioScrollContract.overflowY, 'hidden', `Practice scenario bar must not create a vertical scroll container at ${viewport.join('x')}: ${JSON.stringify(scenarioScrollContract)}`);
+            assert.strictEqual(scenarioScrollContract.touchAction, 'pan-x pan-y', `Practice scenario bar must allow vertical touch panning to its parent at ${viewport.join('x')}: ${JSON.stringify(scenarioScrollContract)}`);
             const navVisible = chat.mobileNav.display !== 'none' && chat.mobileNav.height > 0;
             const navTop = navVisible ? chat.mobileNav.y : chat.viewport.visualHeight;
             const shortLandscape = viewport[0] < 768 && viewport[1] <= 520;
