@@ -69,7 +69,10 @@ const testSuites = [
     { name: '59. Browser Vendor Provenance & Dependency Monitoring', file: 'browser_vendor_provenance.test.js' },
     { name: '60. All Dialog Accessibility Coverage', file: 'all_dialog_accessibility.test.js' },
     { name: '61. Chat Routing, Idempotency & Stale Response Contract', file: 'chat_contract.test.js' },
-    { name: '62. Mobile Presentation Layer Browser QA', file: 'mobile_presentation_qa.test.js', timeoutMs: 90_000 }
+    { name: '62. Mobile Presentation Layer Browser QA', file: 'mobile_presentation_qa.test.js', timeoutMs: 90_000 },
+    { name: '63. Client Image Pipeline Guard', file: 'client_image_pipeline.test.js' },
+    { name: '64. Client Privacy Boundary Guard', file: 'client_privacy_boundary.test.js' },
+    { name: '65. Mobile Viewport Behavior Guard', file: 'mobile_viewport_behavior.test.js' }
 ];
 
 console.log('========================================================================');
