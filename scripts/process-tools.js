@@ -15,7 +15,19 @@ function canRun(executable) {
     stdio: 'ignore',
     windowsHide: true
   });
-  return !result.error && result.status === 0;
+    return !result.error && result.status === 0;
+}
+
+function resolvePathCommand(executable) {
+  if (path.isAbsolute(executable)) return executable;
+  try {
+    const resolver = process.platform === 'win32' ? 'where.exe' : 'which';
+    const output = execFileSync(resolver, [executable], { encoding: 'utf8', windowsHide: true });
+    const resolved = output.split(/\r?\n/).map(value => value.trim()).find(Boolean);
+    return resolved || executable;
+  } catch (_) {
+    return executable;
+  }
 }
 
 function githubDesktopGitCandidates() {
@@ -44,13 +56,16 @@ function resolveGitExecutable() {
       path.join(process.env.ProgramW6432 || '', 'Git', 'bin', 'git.exe'),
       path.join(process.env.ProgramFiles || '', 'Git', 'bin', 'git.exe'),
       path.join(process.env['ProgramFiles(x86)'] || '', 'Git', 'bin', 'git.exe'),
+      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Git', 'cmd', 'git.exe'),
       ...githubDesktopGitCandidates()
     ] : [])
   ];
 
   for (const candidate of [...new Set(candidates)]) {
-    if (!candidate || (path.isAbsolute(candidate) && !existingFile(candidate)) || !canRun(candidate)) continue;
-    return candidate;
+    if (!candidate) continue;
+    const executable = resolvePathCommand(candidate);
+    if ((path.isAbsolute(executable) && !existingFile(executable)) || !canRun(executable)) continue;
+    return executable;
   }
   return null;
 }

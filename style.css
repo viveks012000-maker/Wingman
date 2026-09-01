@@ -988,8 +988,6 @@ select,
         padding: calc(var(--wingman-mobile-header-total-height) + 16px) 20px max(24px, env(safe-area-inset-bottom, 0px)) !important;
     }
 
-    /* Let short landscape Practice grow into a scrollable document. Keep the
-       fixed tab bar available so users can leave the conversation view. */
     body.app-page.practice-tab-active #mainContentCanvas {
         padding-bottom: var(--wingman-mobile-content-clearance) !important;
     }

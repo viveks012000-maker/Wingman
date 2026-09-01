@@ -5,8 +5,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
-const { execFileSync } = require('child_process');
 const { chromium } = require('playwright');
+const { runNpmScript } = require('../scripts/process-tools');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'netlify-dist');
@@ -18,8 +18,7 @@ function sha256(file) {
 
 function buildArtifact() {
   fs.rmSync(OUT, { recursive: true, force: true });
-  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  execFileSync(npm, ['run', 'build:netlify'], { cwd: ROOT, stdio: 'pipe', shell: process.platform === 'win32' });
+  runNpmScript('build:netlify', { cwd: ROOT, stdio: 'pipe' });
 }
 
 function contentType(file) {
