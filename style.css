@@ -946,10 +946,6 @@ select,
         filter: blur(48px) !important;
     }
 
-    #ambient-plexus-canvas {
-        display: none !important;
-    }
-
     body.app-page .cropper-point {
         width: 28px !important;
         height: 28px !important;

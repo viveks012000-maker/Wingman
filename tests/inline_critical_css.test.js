@@ -139,7 +139,7 @@ async function verifyBrowserDelivery() {
 
         if (routePath === '/') {
           const ambientDisplay = await page.evaluate(() => getComputedStyle(document.getElementById('ambient-plexus-canvas')).display);
-          assert.strictEqual(ambientDisplay, 'none', 'mobile landing page must preserve style.css ambient-canvas optimization');
+          assert.notStrictEqual(ambientDisplay, 'none', 'mobile landing page must render the ambient canvas');
         }
         if (routePath === '/app') {
           const scenarioDisplay = await page.evaluate(() => getComputedStyle(document.getElementById('practiceScenarioBar')).display);

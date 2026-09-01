@@ -2205,10 +2205,9 @@ STRICT LAWS:
 
         const plexusInput = $("settingPlexusToggle");
         if (plexusInput) {
-            const mobilePlexusDisabled = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
-            plexusInput.disabled = !!mobilePlexusDisabled;
-            plexusInput.setAttribute('aria-disabled', mobilePlexusDisabled ? 'true' : 'false');
-            plexusInput.checked = !mobilePlexusDisabled && state.showPlexus !== false;
+            plexusInput.disabled = false;
+            plexusInput.setAttribute('aria-disabled', 'false');
+            plexusInput.checked = state.showPlexus !== false;
         }
 
         const m = $("settingsModal"), c = $("settingsCard");
@@ -2277,10 +2276,9 @@ STRICT LAWS:
 
         const plexusInput = $("settingPlexusToggle");
         if (plexusInput) {
-            const mobilePlexusDisabled = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
-            plexusInput.disabled = !!mobilePlexusDisabled;
-            plexusInput.setAttribute('aria-disabled', mobilePlexusDisabled ? 'true' : 'false');
-            plexusInput.checked = !mobilePlexusDisabled && state.showPlexus !== false;
+            plexusInput.disabled = false;
+            plexusInput.setAttribute('aria-disabled', 'false');
+            plexusInput.checked = state.showPlexus !== false;
             plexusInput.addEventListener("change", function(e) {
                 state.showPlexus = e.target.checked;
                 safeStorage.set("wingman_setting_plexus", e.target.checked ? "true" : "false");
@@ -2297,12 +2295,6 @@ STRICT LAWS:
     // STAR PLEXUS CANVAS ANIMATION SYSTEM (HIGH-DPI & HIGH-CONTRAST)
     // ============================================================
     function initAmbientPlexusCanvas() {
-        // The animated high-DPI plexus is decorative and disproportionately expensive on phones.
-        if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) {
-            const mobileCanvas = document.getElementById("ambient-plexus-canvas");
-            if (mobileCanvas) mobileCanvas.style.display = 'none';
-            return;
-        }
         const canvas = document.getElementById("ambient-plexus-canvas");
         if (!canvas) return;
         const ctx = canvas.getContext("2d");

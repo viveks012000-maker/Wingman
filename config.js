@@ -164,9 +164,6 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
     window.addEventListener('load', schedulePatch, { once: true });
     window.addEventListener('resize', function () {
         if (!patched) schedulePatch();
-        else if (typeof window.stopPlexusAnimation === 'function' && isMobile()) {
-            try { window.stopPlexusAnimation(); } catch (_) {}
-        }
     }, { passive: true });
 })();
 
