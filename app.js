@@ -2299,12 +2299,13 @@ STRICT LAWS:
         if (!canvas) return;
         const ctx = canvas.getContext("2d");
 
-        let dpr = Math.max(1, window.devicePixelRatio || 1);
+        const isMobile = window.innerWidth < 768;
+        let dpr = Math.min(isMobile ? 2 : Infinity, Math.max(1, window.devicePixelRatio || 1));
         let cssWidth = window.innerWidth || document.documentElement.clientWidth;
         let cssHeight = window.innerHeight || document.documentElement.clientHeight;
 
         function resizeCanvas() {
-            dpr = Math.max(1, window.devicePixelRatio || 1);
+            dpr = Math.min(isMobile ? 2 : Infinity, Math.max(1, window.devicePixelRatio || 1));
             cssWidth = window.innerWidth || document.documentElement.clientWidth;
             cssHeight = window.innerHeight || document.documentElement.clientHeight;
 
@@ -2325,7 +2326,6 @@ STRICT LAWS:
         window.addEventListener('resize', resizeCanvas);
         window.addEventListener('orientationchange', resizeCanvas);
 
-        const isMobile = window.innerWidth < 768;
         const numParticles = Math.min(65, Math.max(isMobile ? 32 : 20, Math.floor((cssWidth * cssHeight) / (isMobile ? 9000 : 18000))));
         const particles = [];
 
@@ -2454,7 +2454,15 @@ STRICT LAWS:
             canvas.style.display = 'none';
         };
 
-        if (state.showPlexus !== false) {
+        document.addEventListener('visibilitychange', function () {
+            if (document.hidden) {
+                window.stopPlexusAnimation();
+            } else if (state.showPlexus !== false) {
+                window.startPlexusAnimation();
+            }
+        });
+
+        if (!document.hidden && state.showPlexus !== false) {
             window.startPlexusAnimation();
         } else {
             canvas.style.display = 'none';
