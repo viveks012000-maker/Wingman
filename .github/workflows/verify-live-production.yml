@@ -128,7 +128,7 @@ jobs:
             await page.waitForTimeout(150);
           }
 
-          async function verifyMobileTouchScroll(browser, width, height) {
+          async function verifyMobileTouchScroll(browser, route, width, height) {
             const context = await browser.newContext({
               viewport: { width, height },
               isMobile: true,
@@ -140,10 +140,12 @@ jobs:
             const pageErrors = [];
             page.on('pageerror', error => pageErrors.push(error.message));
             try {
-              const response = await page.goto(`${productionUrl}/?live_verify=${expectedSha}`, { waitUntil: 'networkidle', timeout: 45_000 });
-              assert(response, `production root did not return a response at ${width}x${height}`);
-              assert.equal(response.status(), 200, `production root returned HTTP ${response.status()} at ${width}x${height}`);
-              assert.equal(new URL(page.url()).hostname, new URL(productionUrl).hostname, `production root navigated away at ${width}x${height}`);
+              const response = await page.goto(`${productionUrl}${route}?live_verify=${expectedSha}`, { waitUntil: 'networkidle', timeout: 45_000 });
+              assert(response, `${route} did not return a response at ${width}x${height}`);
+              assert.equal(response.status(), 200, `${route} returned HTTP ${response.status()} at ${width}x${height}`);
+              const finalUrl = new URL(page.url());
+              assert.equal(finalUrl.hostname, new URL(productionUrl).hostname, `${route} navigated away at ${width}x${height}`);
+              assert.equal(finalUrl.pathname, route, `${route} resolved to unexpected path ${finalUrl.pathname} at ${width}x${height}`);
               const before = await page.evaluate(() => {
                 const scroller = document.scrollingElement;
                 scroller.scrollTop = 0;
@@ -169,9 +171,41 @@ jobs:
               const client = await context.newCDPSession(page);
               await swipeUp(page, client, width, height);
               const after = await page.evaluate(() => ({ scrollTop: document.scrollingElement.scrollTop, windowScrollY: window.scrollY }));
-              assert(after.scrollTop > 0 && after.windowScrollY > 0, `real vertical touch swipe did not move the page at ${width}x${height}: ${JSON.stringify({ before, after })}`);
-              assert.deepEqual(pageErrors, [], `page errors at ${width}x${height}: ${pageErrors.join('; ')}`);
-              console.log(`PASS mobile touch scroll ${width}x${height}: scrollY=${after.windowScrollY}`);
+              assert(after.scrollTop > 0 && after.windowScrollY > 0, `real vertical touch swipe did not move ${route} at ${width}x${height}: ${JSON.stringify({ before, after })}`);
+              if (route === '/app') {
+                const featureState = await page.evaluate(() => {
+                  const features = [
+                    ['Analyzer', 'analyzeSection'],
+                    ['Icebreaker', 'icebreakSection'],
+                    ['Bio Optimizer', 'optimizeSection'],
+                    ['Practice', 'chatboxSection']
+                  ];
+                  return features.map(([name, id]) => {
+                    window.switchTab(id);
+                    const section = document.getElementById(id);
+                    return { name, id, hidden: !section || section.classList.contains('hidden'), sectionHeight: section ? section.scrollHeight : 0 };
+                  });
+                });
+                assert.deepEqual(featureState, featureState.map(feature => ({ ...feature, hidden: false })), `app feature navigation failed at ${width}x${height}: ${JSON.stringify(featureState)}`);
+                const modalState = await page.evaluate(() => {
+                  window.openPurchaseModal(10);
+                  const locked = {
+                    html: document.documentElement.classList.contains('wingman-scroll-locked'),
+                    body: document.body.classList.contains('wingman-scroll-locked')
+                  };
+                  window.closePurchaseModal();
+                  const unlocked = {
+                    html: document.documentElement.classList.contains('wingman-scroll-locked'),
+                    body: document.body.classList.contains('wingman-scroll-locked'),
+                    bodyOverflowY: getComputedStyle(document.body).overflowY
+                  };
+                  return { locked, unlocked };
+                });
+                assert.deepEqual(modalState.locked, { html: true, body: true }, `app modal did not acquire the explicit scroll lock at ${width}x${height}: ${JSON.stringify(modalState)}`);
+                assert.deepEqual(modalState.unlocked, { html: false, body: false, bodyOverflowY: 'visible' }, `app modal did not release the explicit scroll lock at ${width}x${height}: ${JSON.stringify(modalState)}`);
+              }
+              assert.deepEqual(pageErrors, [], `page errors at ${route} ${width}x${height}: ${pageErrors.join('; ')}`);
+              console.log(`PASS mobile touch scroll ${route} ${width}x${height}: scrollY=${after.windowScrollY}`);
             } finally {
               await context.close();
             }
@@ -203,10 +237,16 @@ jobs:
               assert.equal(response.headers.get('location'), null, `${route} unexpectedly redirected`);
               console.log(`PASS live route ${route}: HTTP 200`);
             }
+            const appHtmlResponse = await fetch(`${productionUrl}/app.html?live_verify=${expectedSha}`, { redirect: 'manual', cache: 'no-store' });
+            assert.equal(appHtmlResponse.status, 308, `/app.html returned unexpected HTTP ${appHtmlResponse.status}`);
+            assert.equal(new URL(appHtmlResponse.headers.get('location'), productionUrl).pathname, '/app', `/app.html redirected to an unexpected path: ${appHtmlResponse.headers.get('location')}`);
+            console.log('PASS live route /app.html: HTTP 308 canonical redirect to /app');
             const browser = await chromium.launch({ headless: true });
             try {
-              for (const [width, height] of [[320, 568], [390, 844], [430, 932], [568, 320]]) {
-                await verifyMobileTouchScroll(browser, width, height);
+              for (const route of ['/', '/app']) {
+                for (const [width, height] of [[320, 568], [390, 844], [430, 932], [568, 320]]) {
+                  await verifyMobileTouchScroll(browser, route, width, height);
+                }
               }
               await verifyDesktopWheelScroll(browser);
             } finally {

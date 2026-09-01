@@ -109,15 +109,16 @@ select,
         overflow-y: auto !important;
     }
 
-    html:has(body[style*="overflow: hidden"]) {
-        overflow-y: hidden !important;
-    }
-
-    body:not([style*="overflow: hidden"]) {
+    body {
         /* Keep horizontal clipping without creating a second, non-scrolling
            body viewport. The HTML element is the sole mobile scroll root. */
         overflow-x: clip !important;
         overflow-y: visible !important;
+    }
+
+    html.wingman-scroll-locked,
+    body.wingman-scroll-locked {
+        overflow: hidden !important;
     }
 
     /* Landing page */

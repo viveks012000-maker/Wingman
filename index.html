@@ -2159,7 +2159,7 @@
                     button.setAttribute("aria-expanded", "true");
                     button.setAttribute("aria-label", "Close navigation menu");
                 }
-                document.body.style.overflow = "hidden"; // Prevent background scrolling
+                if (window.wingmanScrollLock) window.wingmanScrollLock.lock("mobile-menu");
             } else {
                 menu.classList.remove("opacity-100", "pointer-events-auto");
                 menu.classList.add("opacity-0", "pointer-events-none");
@@ -2168,7 +2168,7 @@
                     button.setAttribute("aria-expanded", "false");
                     button.setAttribute("aria-label", "Open navigation menu");
                 }
-                document.body.style.overflow = "";
+                if (window.wingmanScrollLock) window.wingmanScrollLock.unlock("mobile-menu");
             }
         };
 
