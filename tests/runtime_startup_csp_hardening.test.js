@@ -9,6 +9,10 @@ const buildSource = fs.readFileSync(path.join(root, 'scripts', 'build-netlify-di
 const envExample = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
 const indexHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const appHtml = fs.readFileSync(path.join(root, 'app.html'), 'utf8');
+function cspDirectiveIncludes(source, directive, origin) {
+  const escapedOrigin = origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`${directive}\\s+[^;]*${escapedOrigin}`).test(source);
+}
 
 assert.ok(serverSource.includes('if (require.main === module) {'), 'server must bind only as process entry point');
 assert.ok(!serverSource.includes('\nstartWingmanServer();'), 'importing server.js must not unconditionally start a listener');
@@ -26,10 +30,10 @@ assert.ok(!envExample.includes('https://*.pages.dev'), 'production origin exampl
 assert.ok(serverSource.includes("const developmentCspDefaultSources = IS_PROD ? [] : ['http://localhost:*', 'ws://localhost:*'];"), 'Railway default CSP development sources must be development-only');
 assert.ok(serverSource.includes('...developmentCspDefaultSources'), 'Railway default CSP must use the environment-scoped development sources');
 assert.ok(serverSource.includes('...developmentCspConnectSources'), 'Railway connect CSP must use the environment-scoped development sources');
-assert.ok(buildSource.includes('https://static.cloudflareinsights.com'), 'Cloudflare Pages Insights script must be allowed by the production artifact CSP');
-assert.ok(buildSource.includes('https://cloudflareinsights.com'), 'Cloudflare Pages Insights reporting endpoint must be allowed by the production artifact CSP');
-assert.ok(indexHtml.includes('https://static.cloudflareinsights.com') && appHtml.includes('https://static.cloudflareinsights.com'), 'source page CSPs must allow the Cloudflare Pages Insights script');
-assert.ok(indexHtml.includes('https://cloudflareinsights.com') && appHtml.includes('https://cloudflareinsights.com'), 'source page CSPs must allow the Cloudflare Pages Insights endpoint');
+assert.ok(cspDirectiveIncludes(buildSource, 'script-src-elem', 'https://static.cloudflareinsights.com'), 'Cloudflare Pages Insights script must be allowed by the production artifact CSP');
+assert.ok(cspDirectiveIncludes(buildSource, 'connect-src', 'https://cloudflareinsights.com'), 'Cloudflare Pages Insights reporting endpoint must be allowed by the production artifact CSP');
+assert.ok(cspDirectiveIncludes(indexHtml, 'script-src-elem', 'https://static.cloudflareinsights.com') && cspDirectiveIncludes(appHtml, 'script-src-elem', 'https://static.cloudflareinsights.com'), 'source page CSPs must allow the Cloudflare Pages Insights script');
+assert.ok(cspDirectiveIncludes(indexHtml, 'connect-src', 'https://cloudflareinsights.com') && cspDirectiveIncludes(appHtml, 'connect-src', 'https://cloudflareinsights.com'), 'source page CSPs must allow the Cloudflare Pages Insights endpoint');
 
 const output = execFileSync(process.execPath, ['-e', "require('./server'); process.stdout.write('IMPORT_OK')"], {
   cwd: root,

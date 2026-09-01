@@ -1,2 +1,12 @@
 # This generated browser bundle is byte-locked by the provenance tests.
 vendor/heic-runtime/heic-to-csp.js -text
+
+# These audited browser assets are copied byte-for-byte into production artifacts.
+output.css -text
+fonts/*.css -text
+fonts/*.woff2 -text
+fonts/licenses/*.txt -text
+fonts/licenses/material-symbols/*.txt -text
+vendor/cropperjs/*.css -text
+vendor/cropperjs/*.js -text
+vendor/supabase.min.js -text
