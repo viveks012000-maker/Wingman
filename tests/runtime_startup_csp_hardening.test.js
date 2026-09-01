@@ -10,8 +10,10 @@ const envExample = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
 const indexHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const appHtml = fs.readFileSync(path.join(root, 'app.html'), 'utf8');
 function cspDirectiveIncludes(source, directive, origin) {
-  const escapedOrigin = origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`${directive}\\s+[^;]*${escapedOrigin}`).test(source);
+  return source.split('\n').some(line => line.split(';').some(part => {
+    const segment = part.trim().replace(/^["'`]/, '');
+    return segment.startsWith(`${directive} `) && segment.includes(origin);
+  }));
 }
 
 assert.ok(serverSource.includes('if (require.main === module) {'), 'server must bind only as process entry point');

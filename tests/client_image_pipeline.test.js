@@ -55,6 +55,7 @@ const documentMock = {
 const imagePipelineStart = app.indexOf('const MAX_IMAGE_EDGE');
 const imagePipelineEnd = app.indexOf('window.processSelectedFiles', imagePipelineStart);
 const imagePipelineSource = app.slice(imagePipelineStart, imagePipelineEnd);
+// lgtm [js/code-injection] This evaluates checked-in app.js source, never request data.
 const processImage = vm.runInNewContext(`${imagePipelineSource}\nprocessImageToJpegDataUrl`, {
   FileReader: MockFileReader,
   Image: MockImage,
