@@ -39,6 +39,8 @@ const testSuites = [
     { name: '32. Public Health Endpoint Minimal-Disclosure Guard', file: 'health_endpoint_minimal.test.js' },
     { name: '33. Netlify Release Manifest Source-Commit Truth Guard', file: 'release_manifest_source.test.js' },
     { name: '33a. Checked-In Build Script Dependency Guard', file: 'build_script_dependencies.test.js' },
+    { name: '33b. Process Resolution & Deterministic Text Artifact Guard', file: 'process_tools.test.js' },
+    { name: '33c. Locked Text Artifact Byte Guard', file: 'locked_text_artifacts.test.js' },
     { name: '34. Maeve Provider Runtime & Retry Guard', file: 'maeve_runtime_repair.test.js' },
     { name: '35. Feature Access Preflight UX Guard', file: 'feature_access_preflight.test.js' },
     { name: '36. Duplicate Request Concurrency Lock Race Guard', file: 'duplicate_request_lock_race.test.js' },
@@ -67,9 +69,10 @@ const testSuites = [
     { name: '59. Browser Vendor Provenance & Dependency Monitoring', file: 'browser_vendor_provenance.test.js' },
     { name: '60. All Dialog Accessibility Coverage', file: 'all_dialog_accessibility.test.js' },
     { name: '61. Chat Routing, Idempotency & Stale Response Contract', file: 'chat_contract.test.js' },
-    // This suite exercises 23 fresh mobile/desktop contexts and is bounded separately
-    // because its measured local runtime is just over the default 60-second cap.
-    { name: '62. Mobile Presentation Layer Browser QA', file: 'mobile_presentation_qa.test.js', timeoutMs: 90_000 }
+    { name: '62. Mobile Presentation Layer Browser QA', file: 'mobile_presentation_qa.test.js', timeoutMs: 90_000 },
+    { name: '63. Client Image Pipeline Guard', file: 'client_image_pipeline.test.js' },
+    { name: '64. Client Privacy Boundary Guard', file: 'client_privacy_boundary.test.js' },
+    { name: '65. Mobile Viewport Behavior Guard', file: 'mobile_viewport_behavior.test.js' }
 ];
 
 console.log('========================================================================');

@@ -10,8 +10,8 @@
           "source": "https://github.com/supabase/supabase-js",
           "provenance": "Pinned UMD browser build; file header identifies @supabase/supabase-js@2.112.3.",
           "reviewStatus": "tracked",
-          "bytes": 212215,
-          "sha256": "067bfb36a5102cf4b38b45c70e1440a9e3291903666600994b4fbacd7ab54722"
+          "bytes": 212199,
+          "sha256": "cf529fe8980cbe6f2dd3e3930ecf96352ed3d3d71233b6760e4f927f89b94b9f"
     },
     {
           "path": "vendor/cropperjs/cropper.min.js",
@@ -21,8 +21,8 @@
           "source": "https://github.com/fengyuanchen/cropperjs/releases/tag/v1.5.13",
           "provenance": "Pinned v1.5.13 browser runtime.",
           "reviewStatus": "tracked",
-          "bytes": 37044,
-          "sha256": "35424abaae82e20134fc04ec6e62169d33d922d707a425be99667a94ddd7678f"
+          "bytes": 37035,
+          "sha256": "615835110d07d9842d1c0a995e9fc79fb4dfa8d2c1b879ff0d648570714ee1c7"
         },
         {
           "path": "vendor/cropperjs/cropper.min.css",
@@ -32,8 +32,8 @@
           "source": "https://github.com/fengyuanchen/cropperjs/releases/tag/v1.5.13",
           "provenance": "Pinned v1.5.13 browser stylesheet paired with the runtime.",
           "reviewStatus": "tracked",
-          "bytes": 3812,
-          "sha256": "266fe12c42a37a88cdb02084a59f163034656d49d5a4992e65ec3107bba5917b"
+          "bytes": 3804,
+          "sha256": "055b9c1ce54007be24408e3d02e584e82c60a9a52cd1c780e5ff08318a1d787f"
     },
     {
           "path": "vendor/heic-runtime/heic-to-csp.js",
