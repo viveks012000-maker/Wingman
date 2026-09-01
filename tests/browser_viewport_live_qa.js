@@ -152,9 +152,10 @@ async function runBrowserQA() {
                         icon: document.getElementById('menu-icon').textContent.trim(),
                         expanded: document.getElementById('mobile-menu-btn').getAttribute('aria-expanded'),
                         label: document.getElementById('mobile-menu-btn').getAttribute('aria-label'),
-                        bodyOverflow: document.body.style.overflow
+                        bodyLocked: document.body.classList.contains('wingman-scroll-locked'),
+                        htmlLocked: document.documentElement.classList.contains('wingman-scroll-locked')
                     }));
-                    if (!menuState.open || menuState.blocked || menuState.icon !== 'close' || menuState.expanded !== 'true' || menuState.label !== 'Close navigation menu' || menuState.bodyOverflow !== 'hidden') {
+                    if (!menuState.open || menuState.blocked || menuState.icon !== 'close' || menuState.expanded !== 'true' || menuState.label !== 'Close navigation menu' || !menuState.bodyLocked || !menuState.htmlLocked) {
                         throw new Error(`Mobile menu did not enter a correct open state: ${JSON.stringify(menuState)}`);
                     }
                     await page.click('#mobile-menu-btn');
@@ -164,9 +165,10 @@ async function runBrowserQA() {
                         icon: document.getElementById('menu-icon').textContent.trim(),
                         expanded: document.getElementById('mobile-menu-btn').getAttribute('aria-expanded'),
                         label: document.getElementById('mobile-menu-btn').getAttribute('aria-label'),
-                        bodyOverflow: document.body.style.overflow
+                        bodyLocked: document.body.classList.contains('wingman-scroll-locked'),
+                        htmlLocked: document.documentElement.classList.contains('wingman-scroll-locked')
                     }));
-                    if (!menuState.hidden || !menuState.blocked || menuState.icon !== 'menu' || menuState.expanded !== 'false' || menuState.label !== 'Open navigation menu' || menuState.bodyOverflow !== '') {
+                    if (!menuState.hidden || !menuState.blocked || menuState.icon !== 'menu' || menuState.expanded !== 'false' || menuState.label !== 'Open navigation menu' || menuState.bodyLocked || menuState.htmlLocked) {
                         throw new Error(`Mobile menu did not return to a correct closed state: ${JSON.stringify(menuState)}`);
                     }
 

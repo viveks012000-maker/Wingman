@@ -2108,7 +2108,7 @@ STRICT LAWS:
             }
         }
 
-        document.body.style.overflow = "hidden";
+        if (window.wingmanScrollLock) window.wingmanScrollLock.lock("purchase-modal");
         m.style.display = "flex";
         m.classList.remove("opacity-0", "pointer-events-none", "hidden");
         m.classList.add("opacity-100", "pointer-events-auto");
@@ -2138,7 +2138,7 @@ STRICT LAWS:
         if (e) e.preventDefault();
         const m = $("purchaseModal"), c = $("modalCard");
         if (!m || !c) return;
-        document.body.style.overflow = "";
+        if (window.wingmanScrollLock) window.wingmanScrollLock.unlock("purchase-modal");
         c.classList.remove("scale-100");
         c.classList.add("scale-95");
         m.classList.remove("opacity-100", "pointer-events-auto");

@@ -17,6 +17,61 @@
     window.SUPABASE_URL = window.SUPABASE_URL || "https://gstnghuhhrxtwjdafufd.supabase.co";
     window.SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdzdG5naHVoaHJ4dHdqZGFmdWZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4OTQ1NjksImV4cCI6MjEwMTQ3MDU2OX0.C-zQTjVBNjGsFJy8Yp1dhC11GWAkWD3s5ibbr0jdUuc";
 
+    // Keep modal scroll locks owned by the modal that created them. This prevents
+    // one modal from restoring a stale lock after another modal has closed.
+    if (!window.wingmanScrollLock) {
+        const activeScrollLocks = new Set();
+        let previousScrollStyles = null;
+
+        const setScrollLockClasses = (locked) => {
+            [document.documentElement, document.body].forEach((element) => {
+                if (!element || !element.classList) return;
+                if (locked) element.classList.add('wingman-scroll-locked');
+                else element.classList.remove('wingman-scroll-locked');
+            });
+        };
+
+        const restoreScrollState = () => {
+            setScrollLockClasses(false);
+            if (previousScrollStyles) {
+                if (document.documentElement && document.documentElement.style) {
+                    document.documentElement.style.overflow = previousScrollStyles.htmlOverflow;
+                }
+                if (document.body && document.body.style) {
+                    document.body.style.overflow = previousScrollStyles.bodyOverflow;
+                }
+                previousScrollStyles = null;
+            }
+        };
+
+        window.wingmanScrollLock = {
+            lock(owner) {
+                const key = String(owner || 'anonymous');
+                if (activeScrollLocks.size === 0) {
+                    previousScrollStyles = {
+                        htmlOverflow: document.documentElement && document.documentElement.style ? document.documentElement.style.overflow : '',
+                        bodyOverflow: document.body && document.body.style ? document.body.style.overflow : ''
+                    };
+                }
+                activeScrollLocks.add(key);
+                setScrollLockClasses(true);
+            },
+            unlock(owner) {
+                activeScrollLocks.delete(String(owner || 'anonymous'));
+                if (activeScrollLocks.size === 0) restoreScrollState();
+            },
+            hasActiveLocks() {
+                return activeScrollLocks.size > 0;
+            }
+        };
+
+        if (typeof window.addEventListener === 'function') {
+            window.addEventListener('pageshow', () => {
+                if (!activeScrollLocks.size) restoreScrollState();
+            });
+        }
+    }
+
     window.supabaseClient = null;
     window.currentSupabaseUser = null;
     window.currentSupabaseSession = null;
@@ -362,8 +417,6 @@
     } catch (e) {
         passwordRecoveryActive = !!(window.__memoryStore && window.__memoryStore.wingman_password_recovery_active === 'true');
     }
-    var recoveryBodyOverflow = null;
-
     function authErrorCode(error) {
         return error && error.code ? String(error.code) : '';
     }
@@ -467,12 +520,7 @@
             if (overlay && typeof overlay.remove === 'function') overlay.remove();
             else if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
         } catch (e) {}
-        try {
-            if (document.body && document.body.style && recoveryBodyOverflow !== null) {
-                document.body.style.overflow = recoveryBodyOverflow;
-            }
-        } catch (e) {}
-        recoveryBodyOverflow = null;
+        if (window.wingmanScrollLock) window.wingmanScrollLock.unlock('password-recovery-modal');
     }
 
     function createRecoveryElement(tag, attributes, text) {
@@ -500,8 +548,7 @@
         if (document.getElementById('wingmanPasswordRecoveryOverlay')) return;
 
         setPasswordRecoveryActive(true);
-        recoveryBodyOverflow = document.body.style ? (document.body.style.overflow || '') : '';
-        if (document.body.style) document.body.style.overflow = 'hidden';
+        if (window.wingmanScrollLock) window.wingmanScrollLock.lock('password-recovery-modal');
 
         var overlay = createRecoveryElement('div', {
             id: 'wingmanPasswordRecoveryOverlay',

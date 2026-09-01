@@ -162,11 +162,13 @@ async function assertDocumentScrolls(page, pageName, viewport) {
 
 async function assertRootScrollUnlocked(page, pageName, viewport) {
     const scrollContract = await page.evaluate(() => ({
-        inlineOverflow: document.body.style.overflow,
+        htmlLocked: document.documentElement.classList.contains('wingman-scroll-locked'),
+        bodyLocked: document.body.classList.contains('wingman-scroll-locked'),
         htmlOverflowY: getComputedStyle(document.documentElement).overflowY,
         bodyOverflowY: getComputedStyle(document.body).overflowY
     }));
-    assert.strictEqual(scrollContract.inlineOverflow, '', `${pageName} left an inline body scroll lock after close at ${viewport.join('x')}`);
+    assert.strictEqual(scrollContract.htmlLocked, false, `${pageName} left an explicit root scroll lock after close at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
+    assert.strictEqual(scrollContract.bodyLocked, false, `${pageName} left an explicit body scroll lock after close at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
     assert.strictEqual(scrollContract.htmlOverflowY, 'auto', `${pageName} did not restore root scrolling after close at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
     assert.strictEqual(scrollContract.bodyOverflowY, 'visible', `${pageName} did not leave vertical scrolling to the HTML root after close at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
 }
@@ -242,12 +244,14 @@ async function assertLanding(browser, viewport) {
             const menuTopBeforeWheel = await opened.page.evaluate(() => document.scrollingElement.scrollTop);
             await opened.page.mouse.wheel(0, 80);
             const menuScrollLock = await opened.page.evaluate(() => ({
-                inlineOverflow: document.body.style.overflow,
+                htmlLocked: document.documentElement.classList.contains('wingman-scroll-locked'),
+                bodyLocked: document.body.classList.contains('wingman-scroll-locked'),
                 htmlOverflowY: getComputedStyle(document.documentElement).overflowY,
                 bodyOverflowY: getComputedStyle(document.body).overflowY,
                 top: document.scrollingElement.scrollTop
             }));
-            assert.strictEqual(menuScrollLock.inlineOverflow, 'hidden', `mobile menu must set a body scroll lock at ${viewport.join('x')}`);
+            assert.strictEqual(menuScrollLock.htmlLocked, true, `mobile menu must set an explicit root scroll lock at ${viewport.join('x')}`);
+            assert.strictEqual(menuScrollLock.bodyLocked, true, `mobile menu must set an explicit body scroll lock at ${viewport.join('x')}`);
             assert.strictEqual(menuScrollLock.htmlOverflowY, 'hidden', `mobile menu must lock the root scroller at ${viewport.join('x')}: ${JSON.stringify(menuScrollLock)}`);
             assert.strictEqual(menuScrollLock.bodyOverflowY, 'hidden', `mobile menu body scroll lock is overridden at ${viewport.join('x')}: ${JSON.stringify(menuScrollLock)}`);
             if (menuScrollRange > 0) {
@@ -416,11 +420,13 @@ async function assertApp(browser, viewport) {
             }));
             assert(pricingState.scrollRange > 0 && ['auto', 'scroll'].includes(pricingState.overflowY), `purchase pricing pane must retain an internal scroll contract at ${viewport.join('x')}: ${JSON.stringify(pricingState)}`);
             const purchaseScrollLock = await opened.page.evaluate(() => ({
-                inlineOverflow: document.body.style.overflow,
+                htmlLocked: document.documentElement.classList.contains('wingman-scroll-locked'),
+                bodyLocked: document.body.classList.contains('wingman-scroll-locked'),
                 computedOverflowY: getComputedStyle(document.body).overflowY,
                 htmlOverflowY: getComputedStyle(document.documentElement).overflowY
             }));
-            assert.strictEqual(purchaseScrollLock.inlineOverflow, 'hidden', `purchase modal must set a body scroll lock at ${viewport.join('x')}`);
+            assert.strictEqual(purchaseScrollLock.htmlLocked, true, `purchase modal must set an explicit root scroll lock at ${viewport.join('x')}`);
+            assert.strictEqual(purchaseScrollLock.bodyLocked, true, `purchase modal must set an explicit body scroll lock at ${viewport.join('x')}`);
             assert.strictEqual(purchaseScrollLock.computedOverflowY, 'hidden', `purchase modal body scroll lock is overridden at ${viewport.join('x')}: ${JSON.stringify(purchaseScrollLock)}`);
             assert.strictEqual(purchaseScrollLock.htmlOverflowY, 'hidden', `purchase modal must lock the root scroller at ${viewport.join('x')}: ${JSON.stringify(purchaseScrollLock)}`);
             await opened.page.evaluate(() => window.closePurchaseModal());
