@@ -72,7 +72,8 @@ const testSuites = [
     { name: '62. Mobile Presentation Layer Browser QA', file: 'mobile_presentation_qa.test.js', timeoutMs: 90_000 },
     { name: '63. Client Image Pipeline Guard', file: 'client_image_pipeline.test.js' },
     { name: '64. Client Privacy Boundary Guard', file: 'client_privacy_boundary.test.js' },
-    { name: '65. Mobile Viewport Behavior Guard', file: 'mobile_viewport_behavior.test.js' }
+    { name: '65. Mobile Viewport Behavior Guard', file: 'mobile_viewport_behavior.test.js' },
+    { name: '66. Mobile Touch Scroll Regression', file: 'mobile_touch_scroll_regression.test.js', timeoutMs: 30_000 }
 ];
 
 console.log('========================================================================');

@@ -113,8 +113,11 @@ select,
         overflow-y: hidden !important;
     }
 
-    body {
-        overflow-y: auto;
+    body:not([style*="overflow: hidden"]) {
+        /* Keep horizontal clipping without creating a second, non-scrolling
+           body viewport. The HTML element is the sole mobile scroll root. */
+        overflow-x: clip !important;
+        overflow-y: visible !important;
     }
 
     /* Landing page */
