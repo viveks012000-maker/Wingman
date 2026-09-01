@@ -168,7 +168,7 @@ async function assertRootScrollUnlocked(page, pageName, viewport) {
     }));
     assert.strictEqual(scrollContract.inlineOverflow, '', `${pageName} left an inline body scroll lock after close at ${viewport.join('x')}`);
     assert.strictEqual(scrollContract.htmlOverflowY, 'auto', `${pageName} did not restore root scrolling after close at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
-    assert.strictEqual(scrollContract.bodyOverflowY, 'auto', `${pageName} did not restore body scrolling after close at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
+    assert.strictEqual(scrollContract.bodyOverflowY, 'visible', `${pageName} did not leave vertical scrolling to the HTML root after close at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
 }
 
 function assertNoPageErrors(pageName, viewport, pageErrors) {
@@ -189,7 +189,7 @@ async function assertLanding(browser, viewport) {
         if (viewport[0] < 768) {
             const scrollContract = await getMobileScrollContract(opened.page);
             assert.strictEqual(scrollContract.htmlOverflowY, 'auto', `landing document must remain vertically scrollable at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
-            assert.strictEqual(scrollContract.bodyOverflowY, 'auto', `landing body must remain vertically scrollable at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
+            assert.strictEqual(scrollContract.bodyOverflowY, 'visible', `landing body must leave vertical scrolling to the HTML root at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.htmlTouchAction, 'pan-y pinch-zoom', `landing document must allow vertical touch panning and pinch zoom at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.bodyTouchAction, 'pan-y pinch-zoom', `landing body must allow vertical touch panning and pinch zoom at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             const heroScrollContract = await opened.page.$eval('body.landing-page > section:first-of-type', element => {
@@ -329,7 +329,7 @@ async function assertApp(browser, viewport) {
         if (viewport[0] < 768) {
             const scrollContract = await getMobileScrollContract(opened.page);
             assert.strictEqual(scrollContract.htmlOverflowY, 'auto', `app document must remain vertically scrollable at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
-            assert.strictEqual(scrollContract.bodyOverflowY, 'auto', `app body must remain vertically scrollable at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
+            assert.strictEqual(scrollContract.bodyOverflowY, 'visible', `app body must leave vertical scrolling to the HTML root at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.htmlTouchAction, 'pan-y pinch-zoom', `app document must allow vertical touch panning and pinch zoom at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.bodyTouchAction, 'pan-y pinch-zoom', `app body must allow vertical touch panning and pinch zoom at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert(initial.mobileNav.height >= 72, `mobile app navigation is too short at ${viewport.join('x')}`);
@@ -546,7 +546,7 @@ async function assertPracticeHeightBoundary(browser, viewport) {
         assertNoPageErrors('app.html', viewport, opened.pageErrors);
         const scrollContract = await getMobileScrollContract(opened.page);
         assert.strictEqual(scrollContract.htmlOverflowY, 'auto', `boundary app root must remain vertically scrollable at ${viewport.join('x')}`);
-        assert.strictEqual(scrollContract.bodyOverflowY, 'auto', `boundary app body must remain vertically scrollable at ${viewport.join('x')}`);
+        assert.strictEqual(scrollContract.bodyOverflowY, 'visible', `boundary app body must leave vertical scrolling to the HTML root at ${viewport.join('x')}`);
         assert.strictEqual(scrollContract.htmlTouchAction, 'pan-y pinch-zoom', `boundary app root touch action changed at ${viewport.join('x')}`);
         assert.strictEqual(scrollContract.bodyTouchAction, 'pan-y pinch-zoom', `boundary app body touch action changed at ${viewport.join('x')}`);
         await activateTab(opened.page, 'chatboxSection');
