@@ -186,7 +186,11 @@ function writeSecurityFiles() {
   ].join('\n');
   fs.writeFileSync(path.join(OUT, '_headers'), security, 'utf8');
 
-  fs.writeFileSync(path.join(OUT, '_redirects'), '# Cloudflare Pages handles clean HTML URLs natively; no /app rewrite is required.\n', 'utf8');
+  fs.writeFileSync(path.join(OUT, '_redirects'), [
+    '# Redirect only the canonical project hostname; deployment preview hosts are intentionally untouched.',
+    'https://mywingman.pages.dev/* https://mywingmanapp.com/:splat 301!',
+    ''
+  ].join('\n'), 'utf8');
 }
 
 function stripDevelopmentCspSources() {

@@ -25,16 +25,16 @@ const sitemapContent = fs.readFileSync(sitemapPath, 'utf8');
 assert.strictEqual(robotsContent.includes('User-agent: *'), true, 'robots.txt must declare User-agent: *');
 assert.strictEqual(robotsContent.includes('Allow: /'), true, 'robots.txt must declare Allow: /');
 assert.strictEqual(robotsContent.includes('Disallow: /api/'), true, 'robots.txt must disallow /api/');
-assert.strictEqual(robotsContent.includes('Sitemap: https://mywingman.pages.dev/sitemap.xml'), true, 'robots.txt must reference canonical sitemap.xml');
+assert.strictEqual(robotsContent.includes('Sitemap: https://mywingmanapp.com/sitemap.xml'), true, 'robots.txt must reference canonical sitemap.xml');
 console.log('✔ Test 1 Passed: robots.txt static content and directives validated');
 
 // Validate sitemap.xml content
 assert.strictEqual(sitemapContent.startsWith('<?xml version="1.0" encoding="UTF-8"?>'), true, 'sitemap.xml must have XML declaration');
 assert.strictEqual(sitemapContent.includes('xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"'), true, 'sitemap.xml must declare sitemap 0.9 schema');
-assert.strictEqual(sitemapContent.includes('<loc>https://mywingman.pages.dev/</loc>'), true, 'sitemap.xml must include homepage');
-assert.strictEqual(sitemapContent.includes('<loc>https://mywingman.pages.dev/privacy.html</loc>'), true, 'sitemap.xml must include privacy policy');
-assert.strictEqual(sitemapContent.includes('<loc>https://mywingman.pages.dev/terms.html</loc>'), true, 'sitemap.xml must include terms of service');
-assert.strictEqual(sitemapContent.includes('<loc>https://mywingman.pages.dev/refund.html</loc>'), true, 'sitemap.xml must include refund policy');
+assert.strictEqual(sitemapContent.includes('<loc>https://mywingmanapp.com/</loc>'), true, 'sitemap.xml must include homepage');
+assert.strictEqual(sitemapContent.includes('<loc>https://mywingmanapp.com/privacy.html</loc>'), true, 'sitemap.xml must include privacy policy');
+assert.strictEqual(sitemapContent.includes('<loc>https://mywingmanapp.com/terms.html</loc>'), true, 'sitemap.xml must include terms of service');
+assert.strictEqual(sitemapContent.includes('<loc>https://mywingmanapp.com/refund.html</loc>'), true, 'sitemap.xml must include refund policy');
 
 // Ensure no private or API paths in sitemap
 assert.strictEqual(sitemapContent.includes('/api/'), false, 'sitemap.xml must not include /api/ routes');
