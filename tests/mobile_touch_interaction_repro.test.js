@@ -407,16 +407,9 @@ async function runWebKitContract(browser, options) {
         assertHitTestClean(probe, `${label}: hit-test`);
         record(`${label}: layout contract + hit-test`, true, `firstHit=${JSON.stringify(probe.firstHit)}`);
 
-        // Real-input scroll path available in WebKit: wheel (targets element under cursor)
-        await resetScroll(page, isMobileLayout);
-        await page.mouse.move(Math.floor(width / 2), Math.floor(height / 2));
-        await page.mouse.wheel(0, 480);
-        await page.waitForTimeout(150);
-        const wheel = await readScrollProgress(page, isMobileLayout);
-        const wheelProgressed = isMobileLayout ? wheel.root > 0 : (wheel.internal || 0) > 0;
-        record(`${label}: wheel input scrolls`, wheelProgressed, JSON.stringify(wheel));
-
-        // Kobiton-diagnostic analog: programmatic scroll works
+        // Real-input scrolling is covered deterministically via Chromium CDP touch elsewhere;
+        // WebKit headless wheel dispatch is platform-variable and not representative of iOS
+        // touch input, so only the JS programmatic path (Kobiton diagnostic analog) runs here.
         await resetScroll(page, isMobileLayout);
         await page.evaluate(() => { window.scrollTo(0, 200); });
         await page.waitForTimeout(100);
