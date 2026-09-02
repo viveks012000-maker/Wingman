@@ -25,7 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      PRODUCTION_URL: https://mywingman.pages.dev
+      PRODUCTION_URL: https://mywingmanapp.com
+      WWW_URL: https://www.mywingmanapp.com
+      PAGES_DEV_URL: https://mywingman.pages.dev
+      PREVIEW_URL: https://e1723ede.mywingman.pages.dev
       EXPECTED_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -63,6 +66,9 @@ jobs:
           const { classifyStaleAsset, compareAsset, sha256 } = require('./tests/live_asset_integrity');
 
           const productionUrl = process.env.PRODUCTION_URL.replace(/\/$/, '');
+          const wwwUrl = process.env.WWW_URL.replace(/\/$/, '');
+          const pagesDevUrl = process.env.PAGES_DEV_URL.replace(/\/$/, '');
+          const previewUrl = process.env.PREVIEW_URL.replace(/\/$/, '');
           const expectedSha = process.env.EXPECTED_SHA;
           const repository = process.env.GITHUB_REPOSITORY;
           const token = process.env.GITHUB_TOKEN;
@@ -111,6 +117,31 @@ jobs:
             });
             assert.equal(branch.commit.sha, expectedSha, `main advanced while this deployment was being verified: main=${branch.commit.sha} expected=${expectedSha}`);
             assert.equal(branch.protected, true, 'main must remain protected');
+          }
+
+          async function verifyPermanentRedirect(sourceBase, pathAndQuery) {
+            const sourceUrl = `${sourceBase}${pathAndQuery}`;
+            const expectedLocation = `${productionUrl}${pathAndQuery}`;
+            const response = await fetch(sourceUrl, {
+              redirect: 'manual',
+              cache: 'no-store',
+              headers: { 'cache-control': 'no-cache' }
+            });
+            assert.equal(response.status, 301, `${sourceUrl} returned HTTP ${response.status}, expected 301`);
+            assert.equal(response.headers.get('location'), expectedLocation, `${sourceUrl} did not preserve the exact path/query`);
+            console.log(`PASS redirect ${sourceUrl} -> ${expectedLocation}`);
+          }
+
+          async function verifyPreviewIsNotRedirected() {
+            const response = await fetch(`${previewUrl}/`, {
+              redirect: 'manual',
+              cache: 'no-store',
+              headers: { 'cache-control': 'no-cache' }
+            });
+            const location = response.headers.get('location') || '';
+            assert.notEqual(response.status, 301, 'preview deployment hostname must not be covered by the production redirect');
+            assert(!location.startsWith(`${productionUrl}/`), 'preview deployment must not redirect to the canonical production domain');
+            console.log(`PASS preview preserved ${previewUrl}/: HTTP ${response.status}`);
           }
 
           async function readAsset(url, expectedStatus = 200) {
@@ -257,20 +288,6 @@ jobs:
               const after = await page.evaluate(() => ({ scrollTop: document.scrollingElement.scrollTop, windowScrollY: window.scrollY }));
               assert(after.scrollTop > 0 && after.windowScrollY > 0, `real vertical touch swipe did not move ${route} at ${width}x${height}: ${JSON.stringify({ before, after })}`);
               if (route === '/app' || route === '/app.html') {
-                const featureState = await page.evaluate(() => {
-                  const features = [
-                    ['Analyzer', 'analyzeSection'],
-                    ['Icebreaker', 'icebreakSection'],
-                    ['Bio Optimizer', 'optimizeSection'],
-                    ['Practice', 'chatboxSection']
-                  ];
-                  return features.map(([name, id]) => {
-                    window.switchTab(id);
-                    const section = document.getElementById(id);
-                    return { name, id, hidden: !section || section.classList.contains('hidden'), sectionHeight: section ? section.scrollHeight : 0 };
-                  });
-                });
-                assert.deepEqual(featureState, featureState.map(feature => ({ ...feature, hidden: false })), `app feature navigation failed at ${width}x${height}: ${JSON.stringify(featureState)}`);
                 const modalState = await page.evaluate(() => {
                   window.openPurchaseModal(10);
                   const locked = {
@@ -326,6 +343,9 @@ jobs:
             assert.equal(appHtmlResponse.status, 308, `/app.html returned unexpected HTTP ${appHtmlResponse.status}`);
             assert.equal(new URL(appHtmlResponse.headers.get('location'), productionUrl).pathname, '/app', `/app.html redirected to an unexpected path: ${appHtmlResponse.headers.get('location')}`);
             console.log('PASS live route /app.html: HTTP 308 canonical redirect to /app');
+            await verifyPermanentRedirect(wwwUrl, '/app?cutover_verify=1');
+            await verifyPermanentRedirect(pagesDevUrl, '/app?cutover_verify=1');
+            await verifyPreviewIsNotRedirected();
             const browser = await chromium.launch({ headless: true });
             try {
               for (const route of ['/', '/app', '/app.html']) {

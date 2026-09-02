@@ -10,7 +10,7 @@ const OUT = path.join(ROOT, 'netlify-dist');
 const buildScript = fs.readFileSync(path.join(ROOT, 'scripts', 'build-netlify-dist.js'), 'utf8');
 const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
 
-assert.ok(server.includes("'https://mywingman.pages.dev'"), 'Cloudflare production origin must be explicitly allowed by Railway CORS');
+assert.ok(server.includes("'https://mywingman.pages.dev'"), 'Cloudflare Pages compatibility origin must remain explicitly allowed during cutover');
 assert.ok(server.includes("'https://mywingmanapp.com'"), 'Custom production origin must be explicitly allowed during cutover');
 assert.ok(!server.includes("'https://*.pages.dev'"), 'CORS must never allow every pages.dev project');
 assert.ok(buildScript.includes("'404.html'"), 'Safe frontend artifact must include a top-level 404.html');
@@ -21,7 +21,9 @@ try {
 
   const redirects = fs.readFileSync(path.join(OUT, '_redirects'), 'utf8');
   const activeRedirects = redirects.split(/\r?\n/).map(x => x.trim()).filter(x => x && !x.startsWith('#'));
-  assert.deepStrictEqual(activeRedirects, [], 'Cloudflare cutover artifact must not contain an active /app rewrite');
+  assert.deepStrictEqual(activeRedirects, [
+    'https://mywingman.pages.dev/* https://mywingmanapp.com/:splat 301!'
+  ], 'Cloudflare cutover artifact must redirect only the canonical Pages hostname');
 
   const notFoundPath = path.join(OUT, '404.html');
   assert.ok(fs.existsSync(notFoundPath), 'Top-level 404.html must be emitted for Cloudflare Pages');

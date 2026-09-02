@@ -2,7 +2,7 @@
 
 ## Authoritative delivery path
 
-- Canonical public URL: `https://mywingman.pages.dev/`.
+- Canonical public URL: `https://mywingmanapp.com/`.
 - Protected source branch: `main`.
 - Cloudflare Pages production branch: `main`.
 - Pages build command: `npm run build:production`.

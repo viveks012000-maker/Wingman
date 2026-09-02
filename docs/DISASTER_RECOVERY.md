@@ -9,7 +9,7 @@ production reset command.
 2. Revert or forward-fix through a reviewed pull request. Do not push directly to `main`.
 3. Let the protected-main Pages integration deploy the resulting commit with
    `npm run build:production` to `netlify-dist`.
-4. Wait for `release.json.sourceCommit` at `https://mywingman.pages.dev/release.json` to match
+4. Wait for `release.json.sourceCommit` at `https://mywingmanapp.com/release.json` to match
    the protected-main commit. The live verifier must pass before recovery is declared complete.
 5. If Pages is unavailable, preserve the last known-good artifact and use the provider rollback
    facility; do not upload backend files or secrets to the public artifact.
