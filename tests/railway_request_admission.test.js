@@ -132,6 +132,14 @@ async function runVerify(req) {
   assert.strictEqual(response.headers['access-control-allow-origin'], 'https://mywingman.pages.dev', 'early 401 must remain readable by Cloudflare');
   assert.strictEqual(response.headers['access-control-allow-credentials'], 'true', 'early 401 must preserve credentialed CORS semantics');
 
+  response = await request(app)
+    .post('/api/analyze')
+    .set('Origin', 'https://mywingmanapp.com')
+    .set('Content-Type', 'application/json')
+    .send('{"broken":');
+  assert.strictEqual(response.status, 401, 'custom-domain unauthenticated Analyzer request must be rejected before parsing');
+  assert.strictEqual(response.headers['access-control-allow-origin'], 'https://mywingmanapp.com', 'early 401 must remain readable by the custom production domain');
+
   const beforeMalformedJwt = remoteFetchCalls;
   response = await request(app)
     .post('/api/analyze-chat-screenshot/')

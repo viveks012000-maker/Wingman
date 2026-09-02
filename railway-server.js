@@ -18,7 +18,8 @@ const LARGE_BODY_ANALYZER_PATHS = new Set([
 ]);
 
 const GATEWAY_PRODUCTION_ALLOWED_ORIGINS = [
-    'https://mywingman.pages.dev'
+    'https://mywingman.pages.dev',
+    'https://mywingmanapp.com'
 ];
 const GATEWAY_DEVELOPMENT_ALLOWED_ORIGINS = [
     'http://localhost:3000',
@@ -51,9 +52,10 @@ function applyAnalyzerAdmissionCors(req, res) {
 
     // Early admission responses must never reflect a request-controlled Origin. The mounted
     // inner app handles normal development responses; this gateway path emits CORS only for the
-    // single fixed production frontend origin.
-    if (origin !== 'https://mywingman.pages.dev') return false;
-    res.setHeader('Access-Control-Allow-Origin', 'https://mywingman.pages.dev');
+    // fixed production frontend origin from the explicit allowlist.
+    const approvedOrigin = GATEWAY_PRODUCTION_ALLOWED_ORIGINS.find(value => value === origin);
+    if (!approvedOrigin) return false;
+    res.setHeader('Access-Control-Allow-Origin', approvedOrigin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     if (typeof res.vary === 'function') res.vary('Origin');
     else res.setHeader('Vary', 'Origin');
