@@ -21,13 +21,13 @@ for (const [label, source, declaration] of [
   assert(end > start, `${label}: production allowlist terminator missing`);
   const block = source.slice(start, end + 2);
   const originLines = block.split(/\r?\n/).map(line => line.trim());
-  assert(originLines.some(line => line === "'https://mywingman.pages.dev'," || line === "'https://mywingman.pages.dev'"), `${label}: verified Pages origin must remain trusted`);
-  assert(originLines.some(line => line === "'https://mywingmanapp.com'," || line === "'https://mywingmanapp.com'"), `${label}: verified custom origin must remain trusted during cutover`);
+  assert(!originLines.some(line => line === "'https://mywingman.pages.dev'," || line === "'https://mywingman.pages.dev'"), `${label}: legacy Pages origin must be revoked after cutover`);
+  assert(originLines.some(line => line === "'https://mywingmanapp.com'," || line === "'https://mywingmanapp.com'"), `${label}: canonical custom origin must remain trusted`);
   assert(!block.includes('https://mywingman.com'), `${label}: misdirected domain must not remain a default origin`);
   assert(source.includes("if (origin === 'https://mywingman.com') return false;"), `${label}: stale configured domain must be explicitly rejected in production`);
 }
 
-assert.strictEqual(envExample.includes('ALLOWED_ORIGINS="https://mywingman.pages.dev,https://mywingmanapp.com"'), true, 'environment template must trust both verified production origins during cutover');
+assert.strictEqual(envExample.includes('ALLOWED_ORIGINS="https://mywingmanapp.com"'), true, 'environment template must trust only the canonical production origin after cutover');
 assert.strictEqual(envExample.includes('https://mywingman.com'), false, 'environment template must not advertise stale domain trust');
 
-console.log('✅ Pages remains trusted while mywingman.com is permanently denied by both production CORS layers.');
+console.log('✅ Legacy Pages and mywingman.com are denied while the canonical custom domain remains trusted by both production CORS layers.');

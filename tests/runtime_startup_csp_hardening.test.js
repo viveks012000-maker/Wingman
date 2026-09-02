@@ -25,7 +25,7 @@ assert.ok(buildSource.includes('const strictCsp = cspFor(false);'), 'Landing/leg
 assert.ok(buildSource.includes('const appCsp = cspFor(false);'), 'Netlify dashboard CSP must remain eval-free with the CSP-safe HEIC runtime');
 assert.ok(!indexHtml.includes("'unsafe-eval'"), 'Landing-page meta CSP must remain eval-free');
 assert.ok(!appHtml.includes("'unsafe-eval'") && appHtml.includes('vendor/heic2any-loader.js'), 'Dashboard must use the CSP-safe lazy HEIC loader');
-assert.ok(envExample.includes('ALLOWED_ORIGINS="https://mywingman.pages.dev,https://mywingmanapp.com"'), 'production origin example must use only the verified production origins during cutover');
+assert.ok(envExample.includes('ALLOWED_ORIGINS="https://mywingmanapp.com"'), 'production origin example must use only the canonical production origin after cutover');
 assert.ok(!envExample.includes('https://mywingman.com'), 'production origin example must not trust the misdirected mywingman.com host');
 assert.ok(!envExample.includes('netlify.app'), 'production origin example must not advertise or trust retired Netlify origins');
 assert.ok(!envExample.includes('https://*.pages.dev'), 'production origin example must not advertise wildcard preview origins');
