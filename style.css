@@ -1047,6 +1047,133 @@ select,
         width: 6px;
         height: 6px;
     }
+
+    body.app-page #chatboxSection {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 1 0% !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        overflow: hidden !important;
+        padding: 0 !important;
+        box-sizing: border-box !important;
+    }
+
+    body.app-page #chatbox-simulator-panel {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 1 0% !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        width: 100% !important;
+        padding: 0 !important;
+        box-sizing: border-box !important;
+    }
+
+    body.app-page #chatbox-simulator-panel > div:first-child {
+        flex: 0 0 auto !important;
+        margin-bottom: 12px !important;
+    }
+
+    body.app-page #chatbox-simulator-panel > .flex.flex-col.gap-1\.5 {
+        flex: 0 0 auto !important;
+        margin-bottom: 8px !important;
+    }
+
+    body.app-page #practiceScenarioBar {
+        flex: 0 0 auto !important;
+    }
+
+    body.app-page #practiceModeSubtitle {
+        flex: 0 0 auto !important;
+        margin-top: 0 !important;
+        margin-bottom: 10px !important;
+    }
+
+    body.app-page .chatbox-wrapper {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 1 0% !important;
+        min-height: 0 !important;
+        height: 100% !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+        border-radius: 20px !important;
+        box-sizing: border-box !important;
+    }
+
+    body.app-page .gf-profile-header {
+        flex: 0 0 auto !important;
+        width: 100% !important;
+    }
+
+    body.app-page #chatbox-messages-container {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 1 0% !important;
+        min-height: 0 !important;
+        overflow-y: auto !important;
+        overscroll-behavior-y: contain !important;
+        padding: 16px 20px !important;
+        gap: 12px !important;
+    }
+
+    body.app-page .chatbox-footer-sticky-wrapper {
+        position: relative !important;
+        inset: auto !important;
+        flex: 0 0 auto !important;
+        width: 100% !important;
+        z-index: 20 !important;
+    }
+
+    body.app-page .chatbox-footer {
+        display: flex !important;
+        align-items: center !important;
+        gap: 10px !important;
+        padding: 12px 16px 6px 16px !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    body.app-page #simulator-chat-input {
+        flex: 1 1 auto !important;
+        height: 48px !important;
+        min-height: 48px !important;
+        border-radius: 12px !important;
+        padding: 0 16px !important;
+        font-size: 14px !important;
+        background: rgba(0, 0, 0, 0.4) !important;
+        border: 1px solid #2e1a47 !important;
+        color: #ffffff !important;
+    }
+
+    body.app-page #chatbox-send-btn {
+        height: 48px !important;
+        min-height: 48px !important;
+        padding: 0 24px !important;
+        border-radius: 12px !important;
+        font-weight: 700 !important;
+        font-size: 14px !important;
+        background: linear-gradient(135deg, #a855f7 0%, #6b21a8 100%) !important;
+        color: #ffffff !important;
+        border: none !important;
+        cursor: pointer !important;
+        flex-shrink: 0 !important;
+    }
+
+    body.app-page #chatbox-credit-notice {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        padding: 2px 16px 10px 16px !important;
+        font-size: 11px !important;
+        color: #94a3b8 !important;
+        font-family: 'Geist', monospace !important;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
