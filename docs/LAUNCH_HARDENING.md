@@ -34,3 +34,9 @@ modal lock cleanup, and desktop wheel movement.
 
 The live verifier intentionally checks `document.scrollingElement.scrollTop` and `window.scrollY`
 after an `Input.dispatchTouchEvent` gesture. HTTP 200 alone is never treated as scroll proof.
+
+For public-asset integrity, the verifier builds the expected `netlify-dist` artifact from the
+checked-out protected main commit. CSS, JavaScript, and other static assets require exact byte
+matches. HTML permits only the exact Cloudflare Pages Web Analytics beacon wrapper; the remainder
+must match byte-for-byte. The verifier reports that edge transformation separately and classifies
+stale production only when the release SHA, asset content, or repeated fresh requests disagree.

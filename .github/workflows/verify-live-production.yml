@@ -48,13 +48,19 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Build expected public artifact
+        run: npm run build:production
+
       - name: Verify live production release, routes, and real touch scrolling
         shell: bash
         run: |
           set -euo pipefail
           node <<'NODE'
           const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const path = require('node:path');
           const { chromium } = require('playwright');
+          const { classifyStaleAsset, compareAsset, sha256 } = require('./tests/live_asset_integrity');
 
           const productionUrl = process.env.PRODUCTION_URL.replace(/\/$/, '');
           const expectedSha = process.env.EXPECTED_SHA;
@@ -105,6 +111,78 @@ jobs:
             });
             assert.equal(branch.commit.sha, expectedSha, `main advanced while this deployment was being verified: main=${branch.commit.sha} expected=${expectedSha}`);
             assert.equal(branch.protected, true, 'main must remain protected');
+          }
+
+          async function readAsset(url, expectedStatus = 200) {
+            const response = await fetch(url, {
+              redirect: 'manual',
+              cache: 'no-store',
+              headers: {
+                accept: '*/*',
+                'cache-control': 'no-cache',
+                pragma: 'no-cache'
+              }
+            });
+            assert.equal(response.status, expectedStatus, `${url} returned HTTP ${response.status}`);
+            assert.equal(response.headers.get('location'), null, `${url} unexpectedly redirected`);
+            return {
+              body: Buffer.from(await response.arrayBuffer()),
+              headers: response.headers
+            };
+          }
+
+          async function verifyLiveAssets(release) {
+            const requiredAssetNames = new Set(['index.html', 'app.html', 'style.css', 'output.css', 'app.js']);
+            const assetNames = Object.keys(release.files || {})
+              .filter(name => !['_headers', '_redirects'].includes(name))
+              .sort();
+            const results = [];
+            let repeatedContentMatches = true;
+            for (const name of assetNames) {
+              const expectedPath = path.join(process.cwd(), 'netlify-dist', name);
+              const expectedBody = fs.readFileSync(expectedPath);
+              assert.equal(release.files?.[name], sha256(expectedBody), `${name} build hash is absent or not tied to the checked-out artifact`);
+              const routeByFile = {
+                '404.html': ['/404', 200],
+                'app.html': ['/app', 200],
+                'index.html': ['/', 200],
+                'privacy.html': ['/privacy', 200],
+                'refund.html': ['/refund', 200],
+                'terms.html': ['/terms', 200]
+              };
+              const [route, expectedStatus] = routeByFile[name] || [`/${name}`, 200];
+              const first = await readAsset(`${productionUrl}${route}?live_asset_verify=${expectedSha}-${name}`, expectedStatus);
+              const second = await readAsset(`${productionUrl}${route}?live_asset_verify=${expectedSha}-${name}-repeat`, expectedStatus);
+              const result = compareAsset(name, expectedBody, first.body);
+              const repeated = compareAsset(name, first.body, second.body);
+              assert(['PASS', 'EXPECTED CLOUDFLARE TRANSFORMATION', 'FAIL'].includes(result.rawStatus), `unrecognized raw HTML byte status for ${name}: ${result.rawStatus}`);
+              assert.equal(result.sourceMatch, true, `${name} differs from the expected public artifact: ${JSON.stringify(result)}`);
+              assert.equal(repeated.sourceMatch, true, `${name} changed between fresh repeated requests: ${JSON.stringify(repeated)}`);
+              repeatedContentMatches = repeatedContentMatches && repeated.sourceMatch;
+              if (!name.endsWith('.html')) assert.equal(result.rawMatch, true, `${name} must match exact bytes: ${JSON.stringify(result)}`);
+              if (name.endsWith('.html')) {
+                const csp = first.headers.get('content-security-policy') || '';
+                assert.match(csp, /https:\/\/static\.cloudflareinsights\.com/, `${name} CSP does not permit the observed Web Analytics beacon`);
+                assert.match(csp, /https:\/\/cloudflareinsights\.com/, `${name} CSP does not permit the observed Web Analytics connection`);
+              }
+              results.push(result);
+              console.log(`ASSET ${name}: source=${result.sourceMatch ? 'PASS' : 'FAIL'} raw=${result.rawStatus} analytics=${result.cloudflareAnalytics} expected=${result.expectedSha256} live=${result.liveSha256}`);
+            }
+            assert.deepEqual(
+              [...requiredAssetNames].sort(),
+              [...requiredAssetNames].filter(name => results.some(result => result.name === name)).sort(),
+              'required live assets were not all checked'
+            );
+            const otherAssetCount = results.filter(result => !requiredAssetNames.has(result.name)).length;
+            console.log(`SOURCE ASSET MATCH: PASS (${results.length} public assets; ${otherAssetCount} other deploy-controlled assets)`);
+            const staleIssue = classifyStaleAsset({
+              expectedSha,
+              liveSourceCommit: release.sourceCommit,
+              assetResults: results,
+              repeatedContentMatches
+            });
+            assert.equal(staleIssue, 'NOT FOUND', `CACHE/STALE-ASSET ISSUE: ${staleIssue}`);
+            console.log('CACHE/STALE-ASSET ISSUE: NOT FOUND');
           }
 
           async function swipeUp(page, client, width, height) {
@@ -232,6 +310,7 @@ jobs:
             await assertProtectedMainIsStillExpected();
             const release = await waitForCurrentRelease();
             assert.equal(release.sourceCommit, expectedSha, 'live release sourceCommit must equal protected main SHA');
+            await verifyLiveAssets(release);
             for (const route of ['/', '/app', '/privacy', '/terms']) {
               const response = await fetch(`${productionUrl}${route}?live_verify=${expectedSha}`, { redirect: 'manual', cache: 'no-store' });
               assert.equal(response.status, 200, `${route} returned HTTP ${response.status}`);
