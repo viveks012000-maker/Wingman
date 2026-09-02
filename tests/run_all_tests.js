@@ -21,6 +21,7 @@ const testSuites = [
     { name: '14. Security Hardening & Audit Verification', file: 'security_hardening_audit.test.js' },
     { name: '15. Runtime Cross-Feature Isolation & Button State', file: 'runtime_cross_feature_isolation.test.js' },
     { name: '16. Credit Balance & Authoritative Auth Runtime', file: 'credit_balance_auth_runtime.test.js' },
+    { name: '16a. Disposable Migration Replay & Recovery Smoke', file: 'migration_replay.test.js', timeoutMs: 180_000 },
     { name: '17. Migration 002 Safety & Security Audit', file: 'migration_002_safety_audit.test.js' },
     { name: '18. Migration 003 COALESCE Syntax Audit', file: 'migration_003_coalesce_audit.test.js' },
     { name: '19. System Settings & Formatting Verification', file: 'system_settings_formatting.test.js' },
@@ -73,7 +74,9 @@ const testSuites = [
     { name: '63. Client Image Pipeline Guard', file: 'client_image_pipeline.test.js' },
     { name: '64. Client Privacy Boundary Guard', file: 'client_privacy_boundary.test.js' },
     { name: '65. Mobile Viewport Behavior Guard', file: 'mobile_viewport_behavior.test.js' },
-    { name: '66. Mobile Touch Scroll Regression', file: 'mobile_touch_scroll_regression.test.js', timeoutMs: 30_000 }
+    { name: '66. Mobile Touch Scroll Regression', file: 'mobile_touch_scroll_regression.test.js', timeoutMs: 30_000 },
+    { name: '67. Security Boundary & Log Integrity Guard', file: 'security_boundaries.test.js' },
+    { name: '68. Launch Delivery & /app Verifier Contract', file: 'launch_hardening_contract.test.js' }
 ];
 
 console.log('========================================================================');

@@ -144,8 +144,9 @@ jobs:
               assert(response, `${route} did not return a response at ${width}x${height}`);
               assert.equal(response.status(), 200, `${route} returned HTTP ${response.status()} at ${width}x${height}`);
               const finalUrl = new URL(page.url());
+              const isAppHtmlAlias = route === '/app.html';
               assert.equal(finalUrl.hostname, new URL(productionUrl).hostname, `${route} navigated away at ${width}x${height}`);
-              assert.equal(finalUrl.pathname, route, `${route} resolved to unexpected path ${finalUrl.pathname} at ${width}x${height}`);
+              assert.equal(finalUrl.pathname, isAppHtmlAlias ? '/app' : route, `${route} resolved to unexpected path ${finalUrl.pathname} at ${width}x${height}`);
               const before = await page.evaluate(() => {
                 const scroller = document.scrollingElement;
                 scroller.scrollTop = 0;
@@ -172,7 +173,7 @@ jobs:
               await swipeUp(page, client, width, height);
               const after = await page.evaluate(() => ({ scrollTop: document.scrollingElement.scrollTop, windowScrollY: window.scrollY }));
               assert(after.scrollTop > 0 && after.windowScrollY > 0, `real vertical touch swipe did not move ${route} at ${width}x${height}: ${JSON.stringify({ before, after })}`);
-              if (route === '/app') {
+              if (route === '/app' || route === '/app.html') {
                 const featureState = await page.evaluate(() => {
                   const features = [
                     ['Analyzer', 'analyzeSection'],
@@ -205,7 +206,7 @@ jobs:
                 assert.deepEqual(modalState.unlocked, { html: false, body: false, bodyOverflowY: 'visible' }, `app modal did not release the explicit scroll lock at ${width}x${height}: ${JSON.stringify(modalState)}`);
               }
               assert.deepEqual(pageErrors, [], `page errors at ${route} ${width}x${height}: ${pageErrors.join('; ')}`);
-              console.log(`PASS mobile touch scroll ${route} ${width}x${height}: scrollY=${after.windowScrollY}`);
+              console.log(`PASS mobile touch scroll ${route}${isAppHtmlAlias ? ' (canonical /app)' : ''} ${width}x${height}: scrollY=${after.windowScrollY}`);
             } finally {
               await context.close();
             }
@@ -243,7 +244,7 @@ jobs:
             console.log('PASS live route /app.html: HTTP 308 canonical redirect to /app');
             const browser = await chromium.launch({ headless: true });
             try {
-              for (const route of ['/', '/app']) {
+              for (const route of ['/', '/app', '/app.html']) {
                 for (const [width, height] of [[320, 568], [390, 844], [430, 932], [568, 320]]) {
                   await verifyMobileTouchScroll(browser, route, width, height);
                 }

@@ -38,7 +38,6 @@ const {
     globalLimiter,
     authLimiter,
     apiLimiter,
-    verifyOwnership,
     sanitizeUserResponse,
     blockSensitiveFiles,
     sanitizeRequestBody,
@@ -57,6 +56,19 @@ const autoProvisionUser = createUserProvisioningMiddleware(() => db);
 const { validateImagePayload } = require('./middleware/imageValidator');
 const { forRequest } = require('./middleware/rls');
 const { isPrivateDevelopmentOrigin } = require('./middleware/developmentOrigin');
+const { configuredOrigin, AICREDITS_HOST, safeLogValue } = require('./middleware/securityBoundaries');
+
+// Outbound providers are fixed infrastructure, never request-controlled destinations. The
+// production validator rejects HTTP, credentials, ports, queries, fragments, and host changes
+// before any provider key can be used. Localhost is accepted only for narrowly-scoped tests/dev.
+const AICREDITS_BASE_URL = configuredOrigin(
+    'AICREDITS_BASE_URL',
+    process.env.AICREDITS_BASE_URL || 'https://api.aicredits.in/v1',
+    { production: isProduction, allowedHost: AICREDITS_HOST, allowedPath: '/v1' }
+);
+// Keep the actual network sink literal so static analysis and runtime both prove that provider
+// requests can never be redirected by environment or request data.
+const AICREDITS_CHAT_COMPLETIONS_URL = 'https://api.aicredits.in/v1/chat/completions';
 
 
 const app = express();
@@ -141,7 +153,7 @@ app.use(cors({
         if (isOriginAllowed(origin, allowedOrigins)) {
             return callback(null, true);
         }
-        console.warn(`[SECURITY WARN] Blocked request from unauthorized origin: ${origin}`);
+        console.warn('[SECURITY WARN] Blocked request from unauthorized origin.', safeLogValue(origin));
         // CORS is a browser response policy, not an authentication boundary. Returning false
         // omits ACAO without turning a blocked preflight into an internal-server-error response.
         return callback(null, false);
@@ -290,7 +302,7 @@ async function ensureUserProfile(uid, email) {
         );
         return uid;
     } catch (err) {
-        console.error(`[ensureUserProfile ERROR] Profile provisioning failed for ${uid}:`, err.message);
+        console.error('[ensureUserProfile ERROR] Profile provisioning failed.', safeLogValue(uid), safeLogValue(err && err.message));
         return uid;
     }
 }
@@ -315,7 +327,7 @@ async function getUserCreditsDB(req) {
             .maybeSingle();
 
         if (error) {
-            console.error(`[getUserCreditsDB Error] Failed to fetch profile for ${uid}:`, error.message);
+            console.error('[getUserCreditsDB Error] Failed to fetch profile.', safeLogValue(uid), safeLogValue(error && error.message));
             const err = new Error("Failed to fetch user profile credits.");
             err.statusCode = 503;
             throw err;
@@ -333,7 +345,7 @@ async function getUserCreditsDB(req) {
         throw missingErr;
     } catch (e) {
         if (e.statusCode) throw e;
-        console.warn(`[getUserCreditsDB Notice] Supabase query notice for ${uid}:`, e.message);
+        console.warn('[getUserCreditsDB Notice] Supabase query notice.', safeLogValue(uid), safeLogValue(e && e.message));
         const err = new Error("Failed to fetch user profile credits.");
         err.statusCode = 503;
         throw err;
@@ -767,6 +779,19 @@ function sanitizeResponseText(text) {
         .trim();
 }
 
+// Linear-time replacement for the old nested `venue.*date` expression. The input is user
+// supplied, so keep this classifier as bounded string scanning rather than a backtracking regex.
+function hasSpecificDateOffer(text) {
+    const normalized = typeof text === 'string' ? text.toLowerCase() : '';
+    const venues = ['coffee', 'drink', 'drinks', 'rooftop', 'dinner', 'lunch', 'bar'];
+    const dates = ['thursday', 'friday', 'saturday', 'sunday', 'weekend', '8 pm', '7 pm', '6 pm', '4 pm'];
+    const venuePositions = venues.map(term => normalized.indexOf(term)).filter(position => position >= 0);
+    const datePositions = dates.map(term => normalized.indexOf(term)).filter(position => position >= 0);
+    const orderedOffer = venuePositions.some(venue => datePositions.some(date => date >= venue));
+    const directOffer = /\b(?:let'?s|shall\s+we)\s+(?:grab|get|go)\s+(?:coffee|drinks?|dinner)\b/i.test(normalized);
+    return orderedOffer || directOffer;
+}
+
 function fixMidSentenceCapitalization(str) {
     if (!str || typeof str !== 'string') return str;
     const commonMidWords = [
@@ -953,8 +978,7 @@ function applyFormattingRules(text, shorthandOption, emojiOption) {
 }
 
 async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArray, temperature, maxTokens, timeoutMs, topP) {
-    const rawBaseUrl = process.env.AICREDITS_BASE_URL || "https://api.aicredits.in/v1";
-    const baseUrl = rawBaseUrl.replace(/\/+$/, '');
+    const baseUrl = AICREDITS_BASE_URL;
 
     // Support both prefixed model identifier and raw model identifier (prefer prefixed for AICREDITS)
     let candidateModels = [];
@@ -998,7 +1022,7 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
         }
 
         try {
-            const response = await fetch(baseUrl + "/chat/completions", fetchOptions);
+            const response = await fetch(AICREDITS_CHAT_COMPLETIONS_URL, fetchOptions);
             if (timer) clearTimeout(timer);
 
             if (!response.ok) {
@@ -1062,7 +1086,7 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
 
     const apiKey = isVisionStage ? process.env.AICREDITS_API_KEY_VISION : process.env.AICREDITS_API_KEY;
     const model = isVisionStage ? 'qwen/qwen3.5-flash-02-23' : 'qwen/qwen3-235b-a22b-2507';
-    const baseUrl = 'https://api.aicredits.in/v1';
+    const baseUrl = AICREDITS_BASE_URL;
 
     if (!apiKey) {
         const err = new Error(`Missing required Screenshot Analyzer API key for ${stage} stage.`);
@@ -1079,7 +1103,7 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
     const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
 
     try {
-        const response = await fetch(baseUrl + '/chat/completions', {
+        const response = await fetch(AICREDITS_CHAT_COMPLETIONS_URL, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -1153,7 +1177,7 @@ async function queryMaeveProvider(messagesArray, temperature = 0.7, maxTokens = 
         process.env.AICREDITS_API_KEY
     ].filter(Boolean))];
     const model = 'qwen/qwen3-235b-a22b-2507';
-    const baseUrl = 'https://api.aicredits.in/v1';
+    const baseUrl = AICREDITS_BASE_URL;
 
     if (keysToTry.length === 0) {
         const err = new Error('Maeve provider key is not configured.');
@@ -1169,7 +1193,7 @@ async function queryMaeveProvider(messagesArray, temperature = 0.7, maxTokens = 
             const controller = new AbortController();
             const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
             try {
-                const response = await fetch(baseUrl + '/chat/completions', {
+                const response = await fetch(AICREDITS_CHAT_COMPLETIONS_URL, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${apiKey}`,
@@ -1282,7 +1306,7 @@ async function queryOpenRouter(modelIdentifier, messagesArray, temperature = 0.7
             return result;
         } catch (err) {
             lastError = err;
-            console.warn(`API key attempt failed for model ${modelIdentifier} (${err.message}). Trying fallback API key...`);
+            console.warn('[Provider failover] API key attempt failed; trying fallback key.', safeLogValue(modelIdentifier));
         }
     }
 
@@ -1553,7 +1577,7 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
   "match_has_replied": false
 }`;
 
-            console.log(`Executing Stage 1: Optical Vision & Spatial Parsing for ${imageList.length} screenshot(s) using qwen3.5-flash-02-23...`);
+                    console.log('[Analyzer] Executing Stage 1 optical vision parsing.', imageList.length);
             const transcriptionPromises = imageList.map(async (imgUrl, i) => {
                 const positionTag = (i === imageList.length - 1)
                     ? `SCREENSHOT ${i + 1} OF ${imageList.length} (LATEST SCREENSHOT - CONTAINS FINAL MESSAGE)`
@@ -1772,7 +1796,7 @@ ${formattingRule}`;
             { role: "user", content: `Here is the parsed conversation JSON state from Stage 1:\n"${extractedTextContext}"\n\nActive Response Mode: ${modeConfig.name}. Return the JSON object with 10 state-aware options matching this mode now.` }
         ];
 
-        console.log(`Executing Stage 2: Generating 10 strategic response cards for mode ${modeConfig.name} using qwen3-235b-a22b-2507...`);
+            console.log('[Analyzer] Executing Stage 2 response-card generation.', safeLogValue(modeConfig.name));
         let finalCardsOutput = "";
         finalCardsOutput = await queryAnalyzerProvider('main', generationMessages, 0.20, 800, 25000);
 
@@ -1838,7 +1862,7 @@ ${formattingRule}`;
 
         const settleResult = await settleCreditsDB(req, reqId);
         if (!settleResult || !settleResult.success) {
-            console.error(`[Ledger Error] Failed to settle credits for analyzer reqId ${reqId}:`, settleResult ? settleResult.error : "Unknown");
+            console.error('[Ledger Error] Failed to settle analyzer credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
                 success: false,
                 error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -2110,7 +2134,7 @@ GENERAL ICEBREAKER LAWS:
 
         const settleResult = await settleCreditsDB(req, reqId);
         if (!settleResult || !settleResult.success) {
-            console.error(`[Ledger Error] Failed to settle credits for icebreaker reqId ${reqId}:`, settleResult ? settleResult.error : "Unknown");
+            console.error('[Ledger Error] Failed to settle icebreaker credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
                 success: false,
                 error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -2525,7 +2549,7 @@ FORMATTING: Use ${casingInstruction}.`;
 
         const settleResult = await settleCreditsDB(req, reqId);
         if (!settleResult || !settleResult.success) {
-            console.error(`[Ledger Error] Failed to settle credits for bio reqId ${reqId}:`, settleResult ? settleResult.error : "Unknown");
+            console.error('[Ledger Error] Failed to settle bio credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
                 success: false,
                 error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -2735,7 +2759,7 @@ CONVERSATIONAL FREEDOM & LAWS:
 
             const settleResult = await settleCreditsDB(req, reqId);
             if (!settleResult || !settleResult.success) {
-                console.error(`[Ledger Error] Failed to settle credits for hotline reqId ${reqId}:`, settleResult ? settleResult.error : "Unknown");
+                console.error('[Ledger Error] Failed to settle hotline credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
                 return res.status(503).json({
                     success: false,
                     error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -2899,7 +2923,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
         let alternative = "";
 
         const isApology = /sorry|apologize|my\s*bad|forgive\s*me/i.test(userText);
-        const hasSpecificDateOffer = /(coffee|drinks?|rooftop|dinner|lunch|bar)\b.*(this|on|at|around)?\s*(thursday|friday|saturday|sunday|weekend|8\s*pm|7\s*pm|6\s*pm|4\s*pm)/i.test(userText) || /(let'?s|shall\s*we)\s*(grab|get|go)\s*(coffee|drinks?|dinner)/i.test(userText);
+        const hasDateOffer = hasSpecificDateOffer(userText);
 
         if (isNonsense) {
             score = 15;
@@ -2921,7 +2945,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
             status = "NEEDS_IMPROVEMENT";
             critique = "Avoid unnecessary apologies ('my bad', 'sorry'). Over-apologizing projects insecurity. Own your interest with confident humor!";
             alternative = "sounds like I'm keeping things spicy then 😏 what are you up to tonight?";
-        } else if (hasSpecificDateOffer) {
+        } else if (hasDateOffer) {
             score = 95;
             status = "PASSED";
             critique = "High-status date proposal! Proposing a specific venue + time removes decision friction and projects confidence.";
@@ -2935,7 +2959,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
 
         const settleResult = await settleCreditsDB(req, reqId);
         if (!settleResult || !settleResult.success) {
-            console.error(`[Ledger Error] Failed to settle credits for roleplay reqId ${reqId}:`, settleResult ? settleResult.error : "Unknown");
+            console.error('[Ledger Error] Failed to settle roleplay credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
                 success: false,
                 error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -3181,7 +3205,7 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
 
         const settleResult = await settleCreditsDB(req, reqId);
         if (!settleResult || !settleResult.success) {
-            console.error(`[Ledger Error] Failed to settle credits for review reqId ${reqId}:`, settleResult ? settleResult.error : "Unknown");
+            console.error('[Ledger Error] Failed to settle review credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
                 success: false,
                 error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -3567,7 +3591,7 @@ app.post('/api/user/delete-account', requireSupabaseAuth, apiLimiter, async (req
             try {
                 const { error: tblErr } = await supabaseAdmin.from(table).delete().eq('user_id', uid);
                 if (tblErr && !isMissingOptionalTableError(tblErr)) {
-                    console.error(`[delete-account ${table} error]:`, tblErr.message);
+                    console.error('[delete-account] Saved-content purge failed.', safeLogValue(table), safeLogValue(tblErr && tblErr.message));
                     return res.status(500).json({ success: false, error: 'Failed to purge saved account content.' });
                 }
             } catch (e) {
@@ -3656,7 +3680,7 @@ app.post('/api/analytics/event', (req, res) => {
             }
         }
         if (!IS_PROD && process.env.DEBUG_PAYLOADS === 'true') {
-            console.log(`[ANALYTICS] ${event}:`, safeMeta);
+            console.log('[ANALYTICS] Accepted event.', safeLogValue(event), safeMeta);
         }
         res.json({ success: true });
     } catch (e) {

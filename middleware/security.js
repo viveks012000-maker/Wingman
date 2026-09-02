@@ -2,11 +2,7 @@ const rateLimitModule = require('express-rate-limit');
 const rateLimit = rateLimitModule.rateLimit || rateLimitModule;
 const { ipKeyGenerator } = rateLimitModule;
 const net = require('net');
-const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-
-// VULN-04 FIX: Generate cryptographically strong JWT secret if not provided via .env
-const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
 
 // Railway's edge provides X-Real-IP as the client address. Trust that header only when the
 // process is actually running inside Railway, validate it as a literal IP, and otherwise fall
@@ -131,56 +127,6 @@ function clearHttpOnlyCookie(res, name) {
     res.setHeader('Set-Cookie', cookieStr);
 }
 
-// Middleware: Verify JWT Bearer Token or HttpOnly Session Cookie
-function authenticateToken(req, res, next) {
-    const cookies = parseCookies(req);
-    const authHeader = req.headers['authorization'];
-    const token = (cookies && cookies.wingman_session) || (authHeader && authHeader.split(' ')[1]);
-
-    if (!token) {
-        return res.status(401).json({ success: false, error: 'Access denied. Authentication token missing.' });
-    }
-
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) {
-            return res.status(403).json({ success: false, error: 'Invalid or expired authentication token.' });
-        }
-        req.user = user;
-        next();
-    });
-}
-
-// Optional Auth Middleware (attaches req.user if valid token provided)
-function optionalAuthenticateToken(req, res, next) {
-    const cookies = parseCookies(req);
-    const authHeader = req.headers['authorization'];
-    const token = (cookies && cookies.wingman_session) || (authHeader && authHeader.split(' ')[1]);
-
-    if (!token) {
-        return next();
-    }
-
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (!err && user) {
-            req.user = user;
-        }
-        next();
-    });
-}
-
-// Middleware: IDOR Ownership Checker (verifies req.user.id === requested resource owner)
-function verifyOwnership(req, res, next) {
-    const resourceUserId = req.params.userId || req.params.id || req.body.userId;
-    if (!req.user || !req.user.id) {
-        return res.status(401).json({ success: false, error: 'Unauthorized user context.' });
-    }
-
-    if (resourceUserId && String(req.user.id) !== String(resourceUserId)) {
-        return res.status(403).json({ success: false, error: 'Access forbidden: You do not own this resource (IDOR Protection).' });
-    }
-    next();
-}
-
 // Response Sanitizer Helper
 function sanitizeUserResponse(userObject) {
     if (!userObject) return null;
@@ -228,32 +174,11 @@ function blockSensitiveFiles(req, res, next) {
     next();
 }
 
-// Helper: Sanitize string inputs recursively
-function sanitizeString(str) {
-    if (typeof str !== 'string') return str;
-    return str
-        .replace(/<script\b[\s\S]*?<\/script>/gi, '')
-        .replace(/javascript:/gi, '')
-        .replace(/onerror=/gi, '')
-        .replace(/onload=/gi, '');
-}
-
-function sanitizeObject(obj) {
-    if (!obj || typeof obj !== 'object' || obj === null) return;
-    for (const key of Object.keys(obj)) {
-        if (typeof obj[key] === 'string') {
-            obj[key] = sanitizeString(obj[key]);
-        } else if (typeof obj[key] === 'object' && obj[key] !== null) {
-            sanitizeObject(obj[key]);
-        }
-    }
-}
-
-// Global Input Sanitizer: Strip dangerous HTML/script patterns from all string fields in request body
+// Request bodies contain user text, prompts, and structured feature data. They are data, not
+// HTML. A global regex "sanitizer" both corrupts legitimate prompts and cannot be correct for
+// every output context. Each renderer uses textContent/validated URL sinks; this middleware
+// intentionally leaves the parsed request unchanged.
 function sanitizeRequestBody(req, res, next) {
-    if (req.body && typeof req.body === 'object') {
-        sanitizeObject(req.body);
-    }
     next();
 }
 
@@ -300,9 +225,6 @@ module.exports = {
     getRateLimitClientIp,
     getRateLimitIpKey,
     getApiRateLimitKey,
-    authenticateToken,
-    optionalAuthenticateToken,
-    verifyOwnership,
     sanitizeUserResponse,
     blockSensitiveFiles,
     sanitizeRequestBody,
@@ -310,6 +232,5 @@ module.exports = {
     setHttpOnlyCookie,
     clearHttpOnlyCookie,
     generateCsrfToken,
-    validateCsrfToken,
-    JWT_SECRET
+    validateCsrfToken
 };

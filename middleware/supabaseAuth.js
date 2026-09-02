@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { installAnalyzerTransportRetry } = require('./analyzerTransportRetry');
 const { installCreditSettlementTransportRetry } = require('./creditSettlementTransportRetry');
+const { configuredOrigin, DEFAULT_SUPABASE_HOST } = require('./securityBoundaries');
 
 // Install the Analyzer provider retry before other clients. It only matches the exact
 // Screenshot Analyzer vision endpoint + model; all other fetches pass through untouched.
@@ -8,7 +9,12 @@ installAnalyzerTransportRetry();
 
 const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
 
-const SUPABASE_URL = (process.env.SUPABASE_URL || 'https://gstnghuhhrxtwjdafufd.supabase.co').replace(/\/+$/, '');
+const SUPABASE_URL = configuredOrigin(
+    'SUPABASE_URL',
+    process.env.SUPABASE_URL || 'https://gstnghuhhrxtwjdafufd.supabase.co',
+    { production: isProduction, supabase: true }
+);
+const SUPABASE_AUTH_USER_URL = `https://${DEFAULT_SUPABASE_HOST}/auth/v1/user`;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_oh5nDsBwEw56TLZFelxrvQ_A75_y-4j';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -88,7 +94,7 @@ async function verifySupabaseToken(req, res, next) {
         }
 
         // Standard Supabase REST user token validation fallback
-        const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        const response = await fetch(SUPABASE_AUTH_USER_URL, {
             headers: {
                 Authorization: `Bearer ${token}`,
                 apikey: SUPABASE_ANON_KEY

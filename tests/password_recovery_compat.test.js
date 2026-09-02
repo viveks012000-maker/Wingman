@@ -191,8 +191,9 @@ function createEnvironment(options = {}) {
     message: 'This password is known to be compromised.',
     reasons: ['pwned']
   });
-  assert.strictEqual(successfulWeakLoginEnv.localStore.get('wingman_authenticated'), 'true');
-  assert.strictEqual(successfulWeakLoginEnv.localStore.get('wingman_user_authenticated'), 'true');
+  assert.strictEqual(successfulWeakLoginEnv.localStore.get('wingman_authenticated'), undefined, 'auth state must not be persisted in localStorage');
+  assert.strictEqual(successfulWeakLoginEnv.window.__memoryStore.wingman_authenticated, 'true', 'successful login may retain only an in-memory compatibility flag');
+  assert.strictEqual(successfulWeakLoginEnv.window.__memoryStore.wingman_user_authenticated, 'true');
   assert.strictEqual(successfulWeakLoginEnv.calls.toasts.length > 0, true);
   const pwnedToast = successfulWeakLoginEnv.calls.toasts[successfulWeakLoginEnv.calls.toasts.length - 1];
   assert.strictEqual(pwnedToast.type, 'warning');

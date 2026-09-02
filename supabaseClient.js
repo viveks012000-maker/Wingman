@@ -79,47 +79,18 @@
     window.__memoryStore = window.__memoryStore || {};
 
     function safeGet(key, defaultVal) {
-        try {
-            if (typeof window !== 'undefined' && window.localStorage) {
-                const v = localStorage.getItem(key);
-                if (v !== null) return v;
-            }
-        } catch (e) {}
-        try {
-            if (typeof window !== 'undefined' && window.sessionStorage) {
-                const vS = sessionStorage.getItem(key);
-                if (vS !== null) return vS;
-            }
-        } catch (e) {}
         return (window.__memoryStore && window.__memoryStore[key] !== undefined) ? window.__memoryStore[key] : (defaultVal !== undefined ? defaultVal : null);
     }
 
     function safeSet(key, val) {
         const strVal = (val !== null && val !== undefined) ? String(val) : "";
-        try {
-            if (typeof window !== 'undefined' && window.localStorage) {
-                localStorage.setItem(key, strVal);
-            }
-        } catch (e) {}
-        try {
-            if (typeof window !== 'undefined' && window.sessionStorage) {
-                sessionStorage.setItem(key, strVal);
-            }
-        } catch (e) {}
+        // Authentication state and email are derived from the live Supabase session. Keep this
+        // compatibility helper memory-only so access/session information is never copied into
+        // browser storage by application code.
         if (window.__memoryStore) window.__memoryStore[key] = strVal;
     }
 
     function safeRemove(key) {
-        try {
-            if (typeof window !== 'undefined' && window.localStorage) {
-                localStorage.removeItem(key);
-            }
-        } catch (e) {}
-        try {
-            if (typeof window !== 'undefined' && window.sessionStorage) {
-                sessionStorage.removeItem(key);
-            }
-        } catch (e) {}
         if (window.__memoryStore) delete window.__memoryStore[key];
     }
 
@@ -395,9 +366,9 @@
             if (user && user.email) {
                 userEmailBadge.textContent = user.email;
                 userEmailBadge.classList.remove('hidden');
-            } else if (safeGet('wingman_user_email')) {
-                userEmailBadge.textContent = safeGet('wingman_user_email');
-                userEmailBadge.classList.remove('hidden');
+            } else {
+                userEmailBadge.textContent = '';
+                userEmailBadge.classList.add('hidden');
             }
         }
 

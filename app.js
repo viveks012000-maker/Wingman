@@ -886,7 +886,10 @@ STRICT LAWS:
                     thumb.className = "relative aspect-[3/4] rounded-xl overflow-hidden border border-white/25 bg-black group cursor-pointer hover:border-violet-400 transition-all shadow-md select-none";
                     thumb.style.touchAction = "none";
                     thumb.setAttribute("data-thumb-index", String(index));
-                    thumb.setAttribute("onclick", "window.editThumbnail(" + index + ", event)");
+                    thumb.addEventListener("click", function (event) {
+                        if (event.target.closest("button")) return;
+                        window.editThumbnail(index, event);
+                    });
 
                     const safeUrl = (typeof url === 'string' && url.startsWith('data:image/')) ? url : '';
                     const isLast = index === state.uploadedFiles.length - 1;
@@ -897,13 +900,45 @@ STRICT LAWS:
                         ? "bg-violet-600 border-violet-400 text-white shadow-[0_0_10px_rgba(139,92,246,0.6)]"
                         : "bg-black/80 border-white/20 text-slate-300";
 
-                    thumb.innerHTML = '<div class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-mono font-extrabold border z-10 pointer-events-none ' + badgeStyle + '">' + badgeText + '</div>'
-                        + '<img src="' + safeUrl + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none" draggable="false"/>'
-                        + '<div class="absolute inset-0 bg-violet-950/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity pointer-events-none gap-1 p-1 text-center">'
-                        + '<span class="material-symbols-outlined text-white text-[20px] bg-black/70 p-1.5 rounded-full border border-violet-400/60 shadow-lg">crop</span>'
-                        + '<span class="text-[9px] font-bold text-white uppercase tracking-wider bg-black/70 px-1.5 py-0.5 rounded">Click to Edit</span></div>'
-                        + '<button type="button" onclick="window.removeThumbnail(' + index + ', event)" class="absolute top-1.5 right-1.5 bg-red-600/90 hover:bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center shadow-md opacity-90 hover:opacity-100 transition-opacity z-10" title="Delete Screenshot">'
-                        + '<span class="material-symbols-outlined text-[13px]">close</span></button>';
+                    const badge = document.createElement("div");
+                    badge.className = "absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-mono font-extrabold border z-10 pointer-events-none " + badgeStyle;
+                    badge.textContent = badgeText;
+
+                    const image = document.createElement("img");
+                    image.className = "w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none";
+                    image.draggable = false;
+                    image.alt = "Uploaded screenshot " + (index + 1);
+                    image.src = safeUrl;
+
+                    const editOverlay = document.createElement("div");
+                    editOverlay.className = "absolute inset-0 bg-violet-950/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity pointer-events-none gap-1 p-1 text-center";
+                    const cropIcon = document.createElement("span");
+                    cropIcon.className = "material-symbols-outlined text-white text-[20px] bg-black/70 p-1.5 rounded-full border border-violet-400/60 shadow-lg";
+                    cropIcon.textContent = "crop";
+                    const editLabel = document.createElement("span");
+                    editLabel.className = "text-[9px] font-bold text-white uppercase tracking-wider bg-black/70 px-1.5 py-0.5 rounded";
+                    editLabel.textContent = "Click to Edit";
+                    editOverlay.appendChild(cropIcon);
+                    editOverlay.appendChild(editLabel);
+
+                    const removeButton = document.createElement("button");
+                    removeButton.type = "button";
+                    removeButton.className = "absolute top-1.5 right-1.5 bg-red-600/90 hover:bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center shadow-md opacity-90 hover:opacity-100 transition-opacity z-10";
+                    removeButton.title = "Delete Screenshot";
+                    removeButton.setAttribute("aria-label", "Delete Screenshot " + (index + 1));
+                    removeButton.addEventListener("click", function (event) {
+                        event.stopPropagation();
+                        window.removeThumbnail(index, event);
+                    });
+                    const closeIcon = document.createElement("span");
+                    closeIcon.className = "material-symbols-outlined text-[13px]";
+                    closeIcon.textContent = "close";
+                    removeButton.appendChild(closeIcon);
+
+                    thumb.appendChild(badge);
+                    thumb.appendChild(image);
+                    thumb.appendChild(editOverlay);
+                    thumb.appendChild(removeButton);
                     grid.appendChild(thumb);
                     cardEls.push(thumb);
                 });
@@ -3510,15 +3545,41 @@ STRICT LAWS:
         }
     };
 
+    function stripDelimitedSegments(value, opening, closing) {
+        const source = String(value || '');
+        const folded = source.toLowerCase();
+        const openToken = opening.toLowerCase();
+        const closeToken = closing.toLowerCase();
+        let cursor = 0;
+        let output = '';
+        while (cursor < source.length) {
+            const start = folded.indexOf(openToken, cursor);
+            if (start < 0) {
+                output += source.slice(cursor);
+                break;
+            }
+            const end = folded.indexOf(closeToken, start + openToken.length);
+            if (end < 0) {
+                // Match the old UI behavior for an incomplete block: leave it visible rather
+                // than dropping the user's/provider's remaining text.
+                output += source.slice(cursor);
+                break;
+            }
+            output += source.slice(cursor, start);
+            cursor = end + closeToken.length;
+        }
+        return output;
+    }
+
     window.renderChatboxBubble = function(text, sender) {
         const container = $("chatbox-messages-container");
         if (!container) return;
 
         let cleanText = text;
         if (typeof cleanText === "string") {
-            cleanText = cleanText.replace(/<think>[\s\S]*?<\/think>/gi, "");
-            cleanText = cleanText.replace(/```json[\s\S]*?```/gi, "");
-            cleanText = cleanText.replace(/```[\s\S]*?```/gi, "");
+            cleanText = stripDelimitedSegments(cleanText, "<think>", "</think>");
+            cleanText = stripDelimitedSegments(cleanText, "```json", "```");
+            cleanText = stripDelimitedSegments(cleanText, "```", "```");
             cleanText = cleanText.replace(/[\{\}\[\]]/g, "");
             cleanText = cleanText.replace(/[\#\*\_\|\`\>]/g, "");
             cleanText = cleanText.replace(/^\s*[\-\*]\s+/gm, "• ");
@@ -3609,20 +3670,44 @@ STRICT LAWS:
 
         const card = document.createElement("div");
         card.className = "animate-chat-bubble turn-eval-card";
-        card.style.cssText = "align-self: center; width: 94%; max-width: 520px; background: rgba(18, 14, 32, 0.95); border: 1px solid " + badgeBorder + "; border-radius: 14px; padding: 12px 16px; font-size: 12px; color: #e2e8f0; font-family: sans-serif; line-height: 1.5; margin: 8px 0; box-shadow: 0 6px 20px rgba(0,0,0,0.4); border-left: 4px solid " + badgeColor + ";";
+        card.style.cssText = "align-self: center; width: 94%; max-width: 520px; background: rgba(18, 14, 32, 0.95); border-radius: 14px; padding: 12px 16px; font-size: 12px; color: #e2e8f0; font-family: sans-serif; line-height: 1.5; margin: 8px 0; box-shadow: 0 6px 20px rgba(0,0,0,0.4);";
+        card.style.border = "1px solid " + badgeBorder;
+        card.style.borderLeft = "4px solid " + badgeColor;
 
-        let html = '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">';
-        html += '<span style="background: ' + badgeBg + '; border: 1px solid ' + badgeBorder + '; color: ' + badgeColor + '; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 9999px; font-family: monospace;">' + badgeText + '</span>';
-        html += '<button type="button" onclick="window.retryLastTurn()" style="background: rgba(168, 85, 247, 0.2); border: 1px solid rgba(168, 85, 247, 0.4); color: #c084fc; font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; font-weight: 600;">↺ Retry Turn</button>';
-        html += '</div>';
+        const header = document.createElement("div");
+        header.style.cssText = "display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;";
+        const badge = document.createElement("span");
+        badge.style.cssText = "font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 9999px; font-family: monospace;";
+        badge.style.background = badgeBg;
+        badge.style.border = "1px solid " + badgeBorder;
+        badge.style.color = badgeColor;
+        badge.textContent = badgeText;
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.style.cssText = "background: rgba(168, 85, 247, 0.2); border: 1px solid rgba(168, 85, 247, 0.4); color: #c084fc; font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; font-weight: 600;";
+        retry.textContent = "↺ Retry Turn";
+        retry.addEventListener("click", function () { window.retryLastTurn(); });
+        header.appendChild(badge);
+        header.appendChild(retry);
 
-        html += '<div style="color: #cbd5e1; font-size: 12px; margin-bottom: 4px;"><strong>Feedback:</strong> ' + esc(evalData.critique || '') + '</div>';
+        const feedback = document.createElement("div");
+        feedback.style.cssText = "color: #cbd5e1; font-size: 12px; margin-bottom: 4px;";
+        const feedbackLabel = document.createElement("strong");
+        feedbackLabel.textContent = "Feedback: ";
+        feedback.appendChild(feedbackLabel);
+        feedback.appendChild(document.createTextNode(typeof evalData.critique === "string" ? evalData.critique : ""));
 
+        card.appendChild(header);
+        card.appendChild(feedback);
         if (evalData.alternative) {
-            html += '<div style="color: #a855f7; font-size: 11.5px; background: rgba(168, 85, 247, 0.1); padding: 6px 10px; border-radius: 8px; border: 1px dashed rgba(168, 85, 247, 0.3); margin-top: 4px;"><strong>Suggested High-Status Line:</strong> "' + esc(evalData.alternative || '') + '"</div>';
+            const alternative = document.createElement("div");
+            alternative.style.cssText = "color: #a855f7; font-size: 11.5px; background: rgba(168, 85, 247, 0.1); padding: 6px 10px; border-radius: 8px; border: 1px dashed rgba(168, 85, 247, 0.3); margin-top: 4px;";
+            const alternativeLabel = document.createElement("strong");
+            alternativeLabel.textContent = "Suggested High-Status Line: ";
+            alternative.appendChild(alternativeLabel);
+            alternative.appendChild(document.createTextNode('"' + (typeof evalData.alternative === "string" ? evalData.alternative : "") + '"'));
+            card.appendChild(alternative);
         }
-
-        card.innerHTML = html;
         container.appendChild(card);
         window.scrollToBottom(true);
     };

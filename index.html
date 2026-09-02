@@ -1533,15 +1533,13 @@
                 }
                 return;
             }
-            const isAuth = sessionStorage.getItem("wingman_authenticated") === "true" || localStorage.getItem("wingman_user_authenticated") === "true";
-            if (!isAuth) {
-                if (typeof window.closeInterstitialModal === "function") window.closeInterstitialModal();
-                if (typeof window.openAuthRequiredModal === "function") window.openAuthRequiredModal();
-                return;
-            }
-
             try {
                 const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
+                if (!authHeaders.Authorization) {
+                    if (typeof window.closeInterstitialModal === "function") window.closeInterstitialModal();
+                    if (typeof window.openAuthRequiredModal === "function") window.openAuthRequiredModal();
+                    return;
+                }
                 const res = await fetch(window.getApiBase() + '/api/consent', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', ...authHeaders },
@@ -1830,12 +1828,6 @@
                 return;
             }
 
-            // Hydrate session storage ONLY AFTER successful Supabase authentication
-            sessionStorage.setItem("wingman_authenticated", "true");
-            sessionStorage.setItem("wingman_login_agreed", "true");
-            localStorage.setItem("wingman_user_authenticated", "true");
-            localStorage.setItem("wingman_user_email", email);
-
             // Close modal and navigate to app.html dashboard
             window.closeAuthRequiredModal();
             if (typeof window.showToast === "function") {
@@ -1848,7 +1840,7 @@
 
         window.handlePricingPurchase = function (e, targetUrl) {
             if (e) e.preventDefault();
-            const isAuthenticated = sessionStorage.getItem("wingman_authenticated") === "true" || localStorage.getItem("wingman_user_authenticated") === "true";
+            const isAuthenticated = !!(window.currentSupabaseUser && window.currentSupabaseSession && window.currentSupabaseSession.access_token);
             if (isAuthenticated) {
                 window.location.href = targetUrl;
             } else {
@@ -1903,8 +1895,8 @@
             // Intercept dashboard workspace navigation links
             document.querySelectorAll('a[href^="app.html"]').forEach(function (link) {
                 link.addEventListener("click", function (e) {
-                    const isAuth = sessionStorage.getItem("wingman_authenticated") === "true" || localStorage.getItem("wingman_user_authenticated") === "true";
-                    const agreed = sessionStorage.getItem("wingman_login_agreed") === "true";
+                    const isAuth = !!(window.currentSupabaseUser && window.currentSupabaseSession && window.currentSupabaseSession.access_token);
+                    const agreed = isAuth;
                     if (!isAuth && !agreed) {
                         e.preventDefault();
                         window.openInterstitialModal();
