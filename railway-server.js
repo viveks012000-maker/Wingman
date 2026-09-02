@@ -18,7 +18,6 @@ const LARGE_BODY_ANALYZER_PATHS = new Set([
 ]);
 
 const GATEWAY_PRODUCTION_ALLOWED_ORIGINS = [
-    'https://mywingman.pages.dev',
     'https://mywingmanapp.com'
 ];
 const GATEWAY_DEVELOPMENT_ALLOWED_ORIGINS = [
@@ -62,7 +61,7 @@ function applyAnalyzerAdmissionCors(req, res) {
     return true;
 }
 
-// Railway is the backend only. Cloudflare Pages is the sole frontend origin.
+// Railway is the backend only. The canonical custom domain is the sole frontend origin.
 // Keep a tiny root probe for platform/load-balancer diagnostics, but never expose
 // repository files, frontend assets, tests, migrations or build internals from Railway.
 app.disable('x-powered-by');
@@ -99,8 +98,8 @@ app.use((req, res, next) => {
     }
 
     // Admission can terminate with 401/429 before the mounted application's CORS middleware.
-    // Mirror the same production allowlist here so the verified Cloudflare browser origin
-    // can read those errors, while stale/retired origins still receive no CORS grant.
+    // Mirror the same production allowlist here so the canonical browser origin can read
+    // those errors, while stale/retired origins still receive no CORS grant.
     applyAnalyzerAdmissionCors(req, res);
 
     return analyzerAdmissionLimiter(req, res, () => {

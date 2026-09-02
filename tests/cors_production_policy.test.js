@@ -8,8 +8,9 @@ const productionOriginsBlock = server.match(/const productionAllowedOrigins = \[
 assert.ok(productionOriginsBlock, 'Production CORS origin block must exist');
 assert.ok(!productionOriginsBlock[1].includes('netlify.app'), 'Production CORS defaults must not trust any Netlify origin after Cloudflare cutover');
 assert.ok(!productionOriginsBlock[1].includes('https://mywingman.com'), 'Misdirected mywingman.com must not be a production CORS default');
-assert.ok(server.includes("'https://mywingman.pages.dev'"), 'Exact Cloudflare Pages production origin must be explicitly allowed');
-assert.ok(server.includes("'https://mywingmanapp.com'"), 'Exact custom production origin must be explicitly allowed during cutover');
+const productionOriginLines = productionOriginsBlock[1].split(/\r?\n/).map(line => line.trim());
+assert.ok(!productionOriginLines.some(line => line === "'https://mywingman.pages.dev'," || line === "'https://mywingman.pages.dev'"), 'Legacy Cloudflare Pages origin must be revoked after cutover');
+assert.ok(server.includes("'https://mywingmanapp.com'"), 'Exact custom production origin must be explicitly allowed');
 assert.ok(!server.includes("'https://*.pages.dev'"), 'Production defaults must not trust every Cloudflare Pages project');
 assert.ok(server.includes("if (origin === 'null') return !IS_PROD;"), 'Opaque/null browser origins must be denied in production');
 assert.ok(server.includes('const configuredAllowedOrigins = IS_PROD ? [] : rawConfiguredAllowedOrigins;'), 'production must ignore every configured browser origin');
@@ -32,7 +33,7 @@ const runtimeProbe = `
       .options('/api/csrf-token')
       .set('Origin', 'https://mywingman.pages.dev')
       .set('Access-Control-Request-Method', 'GET');
-    assert.strictEqual(pages.headers['access-control-allow-origin'], 'https://mywingman.pages.dev');
+    assert.strictEqual(pages.headers['access-control-allow-origin'], undefined);
     const custom = await request(app)
       .options('/api/csrf-token')
       .set('Origin', 'https://mywingmanapp.com')

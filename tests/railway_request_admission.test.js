@@ -66,7 +66,7 @@ async function runVerify(req) {
   assert.strictEqual(ipv6A, ipv6B, 'IPv6 addresses in the same /56 must share a normalized limiter key');
   assert.notStrictEqual(ipv6A, '2001:db8:abcd:1200::1', 'IPv6 limiter key must not use the raw rotating address');
 
-  // Production CORS is limited to the verified Cloudflare Pages origin. Stale deployment
+  // Production CORS is limited to the canonical custom origin. Stale deployment
   // configuration must not widen credentialed browser access to arbitrary HTTPS origins.
   process.env.ALLOWED_ORIGINS = [
     'https://preview.example.com',
@@ -75,7 +75,9 @@ async function runVerify(req) {
     '*'
   ].join(',');
   let allowed = getGatewayAllowedOrigins();
-  assert(GATEWAY_PRODUCTION_ALLOWED_ORIGINS.every(origin => allowed.has(origin)), 'canonical production origins must remain allowed');
+  assert.deepStrictEqual(GATEWAY_PRODUCTION_ALLOWED_ORIGINS, ['https://mywingmanapp.com'], 'only the canonical production origin must remain allowed');
+  assert(allowed.has('https://mywingmanapp.com'), 'canonical production origin must remain allowed');
+  assert(!allowed.has('https://mywingman.pages.dev'), 'legacy Cloudflare Pages origin must be revoked after cutover');
   assert(!allowed.has('https://preview.example.com'), 'configured preview origins must not widen production CORS');
   assert(!allowed.has('https://soft-sawine-30785c.netlify.app'), 'retired Netlify origins must remain rejected');
   assert(!allowed.has('http://localhost:9999'), 'localhost configured origin must be rejected in production');
@@ -122,15 +124,15 @@ async function runVerify(req) {
   // Missing/malformed auth must be rejected BEFORE the 38 MB Analyzer JSON parser. Invalid
   // JSON would be a 400 parser error if parsing happened first; the correct gateway result is 401.
   // Because this response terminates before the inner CORS middleware, the gateway itself must
-  // grant the legitimate Cloudflare origin permission to read the 401.
+  // grant the canonical production origin permission to read the 401.
   let response = await request(app)
     .post('/api/analyze')
     .set('Origin', 'https://mywingman.pages.dev')
     .set('Content-Type', 'application/json')
     .send('{"broken":');
   assert.strictEqual(response.status, 401, 'unauthenticated Analyzer malformed JSON must be rejected before parsing');
-  assert.strictEqual(response.headers['access-control-allow-origin'], 'https://mywingman.pages.dev', 'early 401 must remain readable by Cloudflare');
-  assert.strictEqual(response.headers['access-control-allow-credentials'], 'true', 'early 401 must preserve credentialed CORS semantics');
+  assert.strictEqual(response.headers['access-control-allow-origin'], undefined, 'legacy Pages origin must receive no early CORS permission');
+  assert.strictEqual(response.headers['access-control-allow-credentials'], undefined, 'legacy Pages origin must receive no credentialed CORS permission');
 
   response = await request(app)
     .post('/api/analyze')
@@ -139,6 +141,7 @@ async function runVerify(req) {
     .send('{"broken":');
   assert.strictEqual(response.status, 401, 'custom-domain unauthenticated Analyzer request must be rejected before parsing');
   assert.strictEqual(response.headers['access-control-allow-origin'], 'https://mywingmanapp.com', 'early 401 must remain readable by the custom production domain');
+  assert.strictEqual(response.headers['access-control-allow-credentials'], 'true', 'custom-domain early 401 must preserve credentialed CORS semantics');
 
   const beforeMalformedJwt = remoteFetchCalls;
   response = await request(app)
@@ -168,15 +171,23 @@ async function runVerify(req) {
     .set('Content-Type', 'application/json')
     .send('{"broken":');
   assert.strictEqual(response.status, 400, 'authenticated malformed JSON must reach the normal parser and fail as bad JSON');
-  assert.strictEqual(response.headers['access-control-allow-origin'], 'https://mywingman.pages.dev', 'authenticated parser errors must remain readable by Cloudflare');
+  assert.strictEqual(response.headers['access-control-allow-origin'], undefined, 'legacy Pages origin must receive no parser-error CORS permission');
 
-  // Preflight must bypass admission auth and be answered by the existing inner CORS middleware.
+  // A revoked origin must not receive the unauthenticated preflight shortcut or any CORS grant.
   response = await request(app)
     .options('/api/analyze')
     .set('Origin', 'https://mywingman.pages.dev')
     .set('Access-Control-Request-Method', 'POST');
-  assert.strictEqual(response.status, 204, 'Analyzer CORS preflight must remain unauthenticated');
-  assert.strictEqual(response.headers['access-control-allow-origin'], 'https://mywingman.pages.dev');
+  assert.strictEqual(response.status, 401, 'revoked-origin Analyzer preflight must not bypass admission auth');
+  assert.strictEqual(response.headers['access-control-allow-origin'], undefined, 'revoked-origin preflight must receive no CORS permission');
+
+  // The canonical origin still receives the existing unauthenticated preflight response.
+  response = await request(app)
+    .options('/api/analyze')
+    .set('Origin', 'https://mywingmanapp.com')
+    .set('Access-Control-Request-Method', 'POST');
+  assert.strictEqual(response.status, 204, 'canonical Analyzer CORS preflight must remain unauthenticated');
+  assert.strictEqual(response.headers['access-control-allow-origin'], 'https://mywingmanapp.com');
 
   // Unrelated small-body APIs keep their prior middleware order/behavior; the outer gateway is
   // intentionally scoped only to the two 38 MB Analyzer routes.

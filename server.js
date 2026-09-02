@@ -110,7 +110,6 @@ app.use((req, res, next) => {
 
 // 2. Configure Locked CORS Policy
 const productionAllowedOrigins = [
-    'https://mywingman.pages.dev',
     'https://mywingmanapp.com'
 ];
 const developmentAllowedOrigins = [

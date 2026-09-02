@@ -10,8 +10,8 @@ const OUT = path.join(ROOT, 'netlify-dist');
 const buildScript = fs.readFileSync(path.join(ROOT, 'scripts', 'build-netlify-dist.js'), 'utf8');
 const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
 
-assert.ok(server.includes("'https://mywingman.pages.dev'"), 'Cloudflare Pages compatibility origin must remain explicitly allowed during cutover');
-assert.ok(server.includes("'https://mywingmanapp.com'"), 'Custom production origin must be explicitly allowed during cutover');
+assert.ok(!server.includes("'https://mywingman.pages.dev'"), 'Legacy Cloudflare Pages origin must be revoked after cutover');
+assert.ok(server.includes("'https://mywingmanapp.com'"), 'Custom production origin must be explicitly allowed after cutover');
 assert.ok(!server.includes("'https://*.pages.dev'"), 'CORS must never allow every pages.dev project');
 assert.ok(buildScript.includes("'404.html'"), 'Safe frontend artifact must include a top-level 404.html');
 assert.ok(!buildScript.includes("'/app /app.html 200\\n'"), 'Artifact must not generate the Cloudflare /app self-rewrite loop');
@@ -33,7 +33,7 @@ try {
   assert.ok(release.files && release.files['404.html'], 'release.json must fingerprint 404.html');
   assert.ok(release.files['_redirects'], 'release.json must fingerprint _redirects');
 
-  console.log('✔ Cloudflare Pages cutover guard passed: clean /app routing artifact, real 404 asset, exact CORS origin.');
+  console.log('✔ Cloudflare Pages cutover guard passed: clean /app routing artifact, real 404 asset, and revoked legacy CORS origin.');
 } finally {
   fs.rmSync(OUT, { recursive: true, force: true });
 }
