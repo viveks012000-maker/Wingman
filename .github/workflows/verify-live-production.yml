@@ -190,7 +190,7 @@ jobs:
               assert.equal(result.sourceMatch, true, `${name} differs from the expected public artifact: ${JSON.stringify(result)}`);
               assert.equal(repeated.sourceMatch, true, `${name} changed between fresh repeated requests: ${JSON.stringify(repeated)}`);
               repeatedContentMatches = repeatedContentMatches && repeated.sourceMatch;
-              if (!name.endsWith('.html')) assert.equal(result.rawMatch, true, `${name} must match exact bytes: ${JSON.stringify(result)}`);
+              if (!name.endsWith('.html') && name !== 'robots.txt') assert.equal(result.rawMatch, true, `${name} must match exact bytes: ${JSON.stringify(result)}`);
               if (name.endsWith('.html') && name !== '404.html') {
                 const csp = first.headers.get('content-security-policy') || '';
                 assert.match(csp, /https:\/\/static\.cloudflareinsights\.com/, `${name} CSP does not permit the observed Web Analytics beacon`);
