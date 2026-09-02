@@ -4,7 +4,8 @@ const assert = require('node:assert/strict');
 const {
     compareAsset,
     classifyStaleAsset,
-    normalizeCloudflareHtml
+    normalizeCloudflareHtml,
+    normalizeCloudflareRobots
 } = require('./live_asset_integrity');
 
 const analytics = `<!-- Cloudflare Pages Analytics --><script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "0123456789abcdef0123456789abcdef"}'></script><!-- Cloudflare Pages Analytics -->`;
@@ -18,6 +19,14 @@ const transformedHtml = compareAsset('index.html', Buffer.from(expectedHtml), Bu
 assert.equal(transformedHtml.sourceMatch, true, 'recognized Cloudflare Analytics injection must preserve source match');
 assert.equal(transformedHtml.rawStatus, 'EXPECTED CLOUDFLARE TRANSFORMATION');
 assert.equal(transformedHtml.cloudflareAnalytics, 'EXPECTED');
+
+const expectedRobots = 'User-agent: *\nAllow: /\n';
+const managedRobots = `# As a condition of accessing this website, you agree to abide by the following\n# BEGIN Cloudflare Managed content\nUser-agent: *\nContent-Signal: search=yes,ai-train=no,use=reference\nAllow: /\n# END Cloudflare Managed Content\n\n${expectedRobots}`;
+const transformedRobots = compareAsset('robots.txt', Buffer.from(expectedRobots), Buffer.from(managedRobots));
+assert.equal(transformedRobots.sourceMatch, true, 'recognized Cloudflare managed robots block must preserve source match');
+assert.equal(transformedRobots.rawStatus, 'EXPECTED CLOUDFLARE TRANSFORMATION');
+assert.equal(transformedRobots.cloudflareAnalytics, 'EXPECTED');
+assert.equal(normalizeCloudflareRobots(managedRobots).recognizedCount, 1);
 
 const unrelatedScript = compareAsset(
     'index.html',
@@ -36,6 +45,8 @@ assert.equal(mutatedAnalytics.cloudflareAnalytics, 'UNEXPECTED');
 
 const duplicateAnalytics = normalizeCloudflareHtml(expectedHtml + analytics + analytics);
 assert.equal(duplicateAnalytics.classification, 'UNEXPECTED', 'duplicate edge snippets must fail closed');
+const duplicateManagedRobots = normalizeCloudflareRobots(managedRobots + managedRobots);
+assert.equal(duplicateManagedRobots.classification, 'UNEXPECTED', 'duplicate managed robots blocks must fail closed');
 
 assert.equal(
     classifyStaleAsset({
