@@ -78,7 +78,10 @@ const testSuites = [
     { name: '67. Security Boundary & Log Integrity Guard', file: 'security_boundaries.test.js' },
     { name: '68. Launch Delivery & /app Verifier Contract', file: 'launch_hardening_contract.test.js' },
     { name: '69. Live Asset Integrity & Cloudflare Transformation Guard', file: 'live_asset_integrity.test.js' },
-    { name: '70. Mobile Touch Interaction & Modal Reachability Repro', file: 'mobile_touch_interaction_repro.test.js', timeoutMs: 240_000 }
+    { name: '70. Mobile Touch Interaction & Modal Reachability Repro', file: 'mobile_touch_interaction_repro.test.js', timeoutMs: 240_000 },
+    { name: '71. RLS Ownership Binding & Error Propagation Hardening', file: 'rls_hardening.test.js' },
+    { name: '72. Credit Release Transport Resilience', file: 'credit_release_resilience.test.js' },
+    { name: '73. Prompt-Injection Boundary Resilience', file: 'prompt_injection_resilience.test.js' }
 ];
 
 console.log('========================================================================');
