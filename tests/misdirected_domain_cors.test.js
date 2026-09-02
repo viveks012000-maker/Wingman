@@ -20,12 +20,14 @@ for (const [label, source, declaration] of [
   const end = source.indexOf('];', start);
   assert(end > start, `${label}: production allowlist terminator missing`);
   const block = source.slice(start, end + 2);
-  assert(block.includes('https://mywingman.pages.dev'), `${label}: verified Pages origin must remain trusted`);
+  const originLines = block.split(/\r?\n/).map(line => line.trim());
+  assert(originLines.some(line => line === "'https://mywingman.pages.dev'," || line === "'https://mywingman.pages.dev'"), `${label}: verified Pages origin must remain trusted`);
+  assert(originLines.some(line => line === "'https://mywingmanapp.com'," || line === "'https://mywingmanapp.com'"), `${label}: verified custom origin must remain trusted during cutover`);
   assert(!block.includes('https://mywingman.com'), `${label}: misdirected domain must not remain a default origin`);
   assert(source.includes("if (origin === 'https://mywingman.com') return false;"), `${label}: stale configured domain must be explicitly rejected in production`);
 }
 
-assert.strictEqual(envExample.includes('ALLOWED_ORIGINS="https://mywingman.pages.dev"'), true, 'environment template must trust only Pages by default');
+assert.strictEqual(envExample.includes('ALLOWED_ORIGINS="https://mywingman.pages.dev,https://mywingmanapp.com"'), true, 'environment template must trust both verified production origins during cutover');
 assert.strictEqual(envExample.includes('https://mywingman.com'), false, 'environment template must not advertise stale domain trust');
 
 console.log('✅ Pages remains trusted while mywingman.com is permanently denied by both production CORS layers.');

@@ -11,6 +11,7 @@ const buildScript = fs.readFileSync(path.join(ROOT, 'scripts', 'build-netlify-di
 const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
 
 assert.ok(server.includes("'https://mywingman.pages.dev'"), 'Cloudflare production origin must be explicitly allowed by Railway CORS');
+assert.ok(server.includes("'https://mywingmanapp.com'"), 'Custom production origin must be explicitly allowed during cutover');
 assert.ok(!server.includes("'https://*.pages.dev'"), 'CORS must never allow every pages.dev project');
 assert.ok(buildScript.includes("'404.html'"), 'Safe frontend artifact must include a top-level 404.html');
 assert.ok(!buildScript.includes("'/app /app.html 200\\n'"), 'Artifact must not generate the Cloudflare /app self-rewrite loop');
