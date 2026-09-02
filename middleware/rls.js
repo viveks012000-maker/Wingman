@@ -9,7 +9,11 @@
  * =========================================================================================
  */
 
-const { getAuthenticatedUid } = require('./auth');
+// Bind SQLite fallback rows directly to the identity already established by the canonical
+// Supabase middleware. Do not import the retired JWT/session compatibility layer here.
+function getAuthenticatedUid(req) {
+    return req && req.user && req.user.id ? String(req.user.id) : null;
+}
 
 // Tables whose rows are strictly owned by a single authenticated user.
 const USER_SCOPED_TABLES = ['user_profiles', 'saved_bios', 'saved_chat_analyses', 'saved_chat_histories', 'credit_purchases', 'credit_deductions'];

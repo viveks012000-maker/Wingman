@@ -46,7 +46,7 @@ const output = execFileSync(process.execPath, ['-e', "require('./server'); proce
     NODE_ENV: 'production',
     AICREDITS_API_KEY: 'test_key',
     AICREDITS_API_KEY_VISION: 'test_vision_key',
-    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_URL: 'https://gstnghuhhrxtwjdafufd.supabase.co',
     SUPABASE_ANON_KEY: 'test_anon',
     SUPABASE_SERVICE_ROLE_KEY: 'test_service_role'
   }

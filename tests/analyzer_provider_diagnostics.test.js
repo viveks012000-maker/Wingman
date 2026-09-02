@@ -7,7 +7,7 @@ const source = fs.readFileSync('server.js', 'utf8');
 // Protected Analyzer provider contract must remain exact.
 assert(source.includes("const apiKey = isVisionStage ? process.env.AICREDITS_API_KEY_VISION : process.env.AICREDITS_API_KEY;"));
 assert(source.includes("const model = isVisionStage ? 'qwen/qwen3.5-flash-02-23' : 'qwen/qwen3-235b-a22b-2507';"));
-assert(source.includes("const baseUrl = 'https://api.aicredits.in/v1';"));
+assert(source.includes('const baseUrl = AICREDITS_BASE_URL;'));
 const providerStart = source.indexOf('async function queryAnalyzerProvider');
 const providerEnd = source.indexOf('// Strict Maeve provider path', providerStart);
 assert(providerStart >= 0 && providerEnd > providerStart);

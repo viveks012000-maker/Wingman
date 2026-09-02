@@ -11,7 +11,7 @@ assert(serverSource.includes('releaseUserConcurrencyLock(uid, reqId);'));
 assert(serverSource.includes('queryMaeveProvider(hotlinePayload, 0.7, 1500)'));
 assert(serverSource.includes('queryMaeveProvider(openRouterMessages, 0.6, 120)'));
 assert(serverSource.includes("const model = 'qwen/qwen3-235b-a22b-2507';"));
-assert(serverSource.includes("const baseUrl = 'https://api.aicredits.in/v1';"));
+assert(serverSource.includes('const baseUrl = AICREDITS_BASE_URL;'));
 assert(serverSource.includes('code: providerCode'));
 assert(appSource.includes('chatSendBtn.classList.toggle("chat-send-active", !isChatDisabled)'));
 

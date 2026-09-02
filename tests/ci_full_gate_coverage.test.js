@@ -24,7 +24,7 @@ assert(/group:\s*production-gate-\$\{\{ github\.ref \}\}/.test(workflow), 'concu
 assert(/test \"\$actual\" = \"\$GITHUB_SHA\"/.test(workflow), 'workflow must verify checkout equals the triggering SHA');
 assert(/npm test/.test(workflow), 'full regression suite must remain mandatory');
 assert(/npm audit --omit=dev --audit-level=high/.test(workflow), 'production dependency audit must remain mandatory');
-assert(/npm run build:netlify/.test(workflow), 'strict public artifact build must remain mandatory until the build-script terminology is migrated separately');
+assert(/npm run build:production/.test(workflow), 'authoritative strict public artifact build must remain mandatory');
 assert(/test \"\$\(jq -r \.sourceCommit netlify-dist\/release\.json\)\" = \"\$GITHUB_SHA\"/.test(workflow), 'artifact source-commit truth must remain enforced');
 
 console.log('✅ Production verification workflow covers every main PR/push with no path-filter bypass.');

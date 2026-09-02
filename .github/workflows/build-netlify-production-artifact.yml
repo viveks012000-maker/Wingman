@@ -52,7 +52,7 @@ jobs:
           npm audit --omit=dev --audit-level=high
 
       - name: Build strict public artifact
-        run: npm run build:netlify
+        run: npm run build:production
 
       - name: Verify release truth, API path and public allowlist
         shell: bash
