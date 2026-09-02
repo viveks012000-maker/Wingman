@@ -25,6 +25,8 @@ assert.match(workflow, /npm run build:production/);
 assert.match(workflow, /EXPECTED CLOUDFLARE TRANSFORMATION/);
 assert.match(workflow, /CACHE\/STALE-ASSET ISSUE/);
 assert.match(workflow, /cloudflareinsights/);
+assert.match(workflow, /name !== '404\.html'/);
+assert.match(workflow, /Pages special 404 response does not expose normal _headers CSP/);
 assert.match(launchDoc, /mywingman\.pages\.dev/);
 assert.match(launchDoc, /HTTP 200 alone is never treated as scroll proof/);
 assert.match(recoveryDoc, /supabase db reset --linked/);
