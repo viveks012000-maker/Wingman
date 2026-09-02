@@ -21,9 +21,7 @@ try {
 
   const redirects = fs.readFileSync(path.join(OUT, '_redirects'), 'utf8');
   const activeRedirects = redirects.split(/\r?\n/).map(x => x.trim()).filter(x => x && !x.startsWith('#'));
-  assert.deepStrictEqual(activeRedirects, [
-    'https://mywingman.pages.dev/* https://mywingmanapp.com/:splat 301!'
-  ], 'Cloudflare cutover artifact must redirect only the canonical Pages hostname');
+  assert.deepStrictEqual(activeRedirects, [], 'Pages artifact must not contain unsupported hostname redirects; use Cloudflare Bulk Redirects');
 
   const notFoundPath = path.join(OUT, '404.html');
   assert.ok(fs.existsSync(notFoundPath), 'Top-level 404.html must be emitted for Cloudflare Pages');
