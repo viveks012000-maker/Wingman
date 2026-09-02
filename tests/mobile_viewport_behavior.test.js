@@ -14,7 +14,8 @@ assert(app.includes('--wingman-visual-height'), 'mobile layout must publish the 
 assert(!html.includes('min-height: calc(100vh - 160px) !important'), 'mobile chat must not use a fixed layout viewport height');
 assert(!html.includes('min-height: calc(100vh - 240px) !important'), 'mobile chat wrapper must not use a fixed layout viewport height');
 assert(!html.includes('max-height: calc(100vh - 380px) !important'), 'mobile chat messages must not use a fixed layout viewport height');
-assert(/settingPlexusToggle[\s\S]{0,700}(?:disabled|mobile)/i.test(html), 'mobile Plexus control must truthfully expose its unavailable state');
+assert(/id="settingPlexusToggle"[\s\S]{0,500}checked/i.test(html), 'Plexus control must be enabled by default');
+assert(!app.includes('mobilePlexusDisabled'), 'Plexus control must not be hard-disabled on mobile');
 assert(css.includes('env(safe-area-inset-bottom'), 'mobile layout must reserve the bottom safe area');
 assert(css.includes('100dvh'), 'mobile layout must use a dynamic viewport unit');
 

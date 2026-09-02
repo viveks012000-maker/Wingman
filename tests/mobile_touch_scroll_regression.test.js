@@ -205,6 +205,100 @@ async function assertAppFeatureNavigation(browser, port) {
     }
 }
 
+async function assertMobilePlexusCanvas(browser, port) {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
+    const page = await context.newPage();
+    try {
+        await page.goto(`http://127.0.0.1:${port}/app`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(300);
+        const firstFrame = await page.evaluate(() => {
+            const canvas = document.getElementById('ambient-plexus-canvas');
+            const toggle = document.getElementById('settingPlexusToggle');
+            const pixels = canvas && canvas.width && canvas.height ? canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data : [];
+            let paintedPixels = 0;
+            for (let index = 3; index < pixels.length; index += 4) if (pixels[index] > 0) paintedPixels += 1;
+            return {
+                display: canvas ? getComputedStyle(canvas).display : 'missing',
+                width: canvas ? canvas.getBoundingClientRect().width : 0,
+                height: canvas ? canvas.getBoundingClientRect().height : 0,
+                backingWidth: canvas ? canvas.width : 0,
+                backingHeight: canvas ? canvas.height : 0,
+                paintedPixels,
+                toggleDisabled: toggle ? toggle.disabled : true,
+                toggleChecked: toggle ? toggle.checked : false,
+                stateEnabled: window.state ? window.state.showPlexus !== false : false
+            };
+        });
+        assert.notStrictEqual(firstFrame.display, 'none', `mobile plexus canvas was hidden: ${JSON.stringify(firstFrame)}`);
+        assert(firstFrame.width > 0 && firstFrame.height > 0, `mobile plexus canvas has no rendered viewport: ${JSON.stringify(firstFrame)}`);
+        assert(firstFrame.paintedPixels > 0, `mobile plexus canvas is not painting: ${JSON.stringify(firstFrame)}`);
+        assert(firstFrame.backingWidth <= firstFrame.width * 2, `mobile plexus backing width is too large for a phone: ${JSON.stringify(firstFrame)}`);
+        assert(firstFrame.backingHeight <= firstFrame.height * 2, `mobile plexus backing height is too large for a phone: ${JSON.stringify(firstFrame)}`);
+        assert.strictEqual(firstFrame.toggleDisabled, false, `mobile plexus setting is hard-disabled: ${JSON.stringify(firstFrame)}`);
+        assert.strictEqual(firstFrame.toggleChecked, true, `mobile plexus setting is not enabled by default: ${JSON.stringify(firstFrame)}`);
+        assert.strictEqual(firstFrame.stateEnabled, true, `mobile plexus state is disabled at startup: ${JSON.stringify(firstFrame)}`);
+
+        await page.evaluate(() => window.openSettingsModal());
+        await page.waitForTimeout(50);
+        await page.locator('label:has(#settingPlexusToggle)').click();
+        await page.waitForTimeout(50);
+        const disabledFrame = await page.evaluate(() => ({
+            display: getComputedStyle(document.getElementById('ambient-plexus-canvas')).display,
+            checked: document.getElementById('settingPlexusToggle').checked,
+            stateEnabled: window.state.showPlexus
+        }));
+        assert.strictEqual(disabledFrame.display, 'none', `mobile plexus did not hide when toggled off: ${JSON.stringify(disabledFrame)}`);
+        assert.strictEqual(disabledFrame.checked, false, `mobile plexus toggle did not switch off: ${JSON.stringify(disabledFrame)}`);
+        assert.strictEqual(disabledFrame.stateEnabled, false, `mobile plexus state did not persist off: ${JSON.stringify(disabledFrame)}`);
+
+        await page.locator('label:has(#settingPlexusToggle)').click();
+        await page.waitForTimeout(100);
+        const reenabledFrame = await page.evaluate(() => ({
+            display: getComputedStyle(document.getElementById('ambient-plexus-canvas')).display,
+            checked: document.getElementById('settingPlexusToggle').checked,
+            stateEnabled: window.state.showPlexus
+        }));
+        assert.notStrictEqual(reenabledFrame.display, 'none', `mobile plexus did not restart when toggled on: ${JSON.stringify(reenabledFrame)}`);
+        assert.strictEqual(reenabledFrame.checked, true, `mobile plexus toggle did not switch on: ${JSON.stringify(reenabledFrame)}`);
+        assert.strictEqual(reenabledFrame.stateEnabled, true, `mobile plexus state did not persist on: ${JSON.stringify(reenabledFrame)}`);
+
+        await page.evaluate(() => {
+            Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await page.waitForTimeout(50);
+        assert.strictEqual(await page.locator('#ambient-plexus-canvas').evaluate(canvas => getComputedStyle(canvas).display), 'none', 'mobile plexus must pause while the document is hidden');
+
+        await page.evaluate(() => {
+            Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await page.waitForTimeout(100);
+        assert.notStrictEqual(await page.locator('#ambient-plexus-canvas').evaluate(canvas => getComputedStyle(canvas).display), 'none', 'mobile plexus must resume when the document is visible');
+    } finally {
+        await context.close();
+    }
+}
+
+async function assertMobilePlexusPreferenceOff(browser, port) {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, storageState: { cookies: [], origins: [{ origin: `http://127.0.0.1:${port}`, localStorage: [{ name: 'wingman_setting_plexus', value: 'false' }] }] } });
+    const page = await context.newPage();
+    try {
+        await page.goto(`http://127.0.0.1:${port}/app`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(300);
+        const frame = await page.evaluate(() => ({
+            display: getComputedStyle(document.getElementById('ambient-plexus-canvas')).display,
+            checked: document.getElementById('settingPlexusToggle').checked,
+            stateEnabled: window.state.showPlexus
+        }));
+        assert.strictEqual(frame.display, 'none', `mobile plexus ignored persisted off preference: ${JSON.stringify(frame)}`);
+        assert.strictEqual(frame.checked, false, `mobile plexus toggle ignored persisted off preference: ${JSON.stringify(frame)}`);
+        assert.strictEqual(frame.stateEnabled, false, `mobile plexus state ignored persisted off preference: ${JSON.stringify(frame)}`);
+    } finally {
+        await context.close();
+    }
+}
+
 async function assertDesktopWheelScroll(browser, port) {
     const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, isMobile: false, hasTouch: false });
     const page = await context.newPage();
@@ -230,6 +324,8 @@ async function run() {
             for (const viewport of viewports) await assertMobileTouchScroll(browser, port, viewport, route);
         }
         await assertAppFeatureNavigation(browser, port);
+        await assertMobilePlexusCanvas(browser, port);
+        await assertMobilePlexusPreferenceOff(browser, port);
         await assertModalScrollLockOwnership(browser, port);
         await assertDesktopWheelScroll(browser, port);
         console.log(`Mobile touch scroll regression passed across ${MOBILE_ROUTES.join(', ')} at ${MOBILE_VIEWPORTS.map(viewport => viewport.join('x')).join(', ')}; modal lock ownership and desktop wheel scroll remained functional.`);
