@@ -77,7 +77,8 @@ const testSuites = [
     { name: '66. Mobile Touch Scroll Regression', file: 'mobile_touch_scroll_regression.test.js', timeoutMs: 30_000 },
     { name: '67. Security Boundary & Log Integrity Guard', file: 'security_boundaries.test.js' },
     { name: '68. Launch Delivery & /app Verifier Contract', file: 'launch_hardening_contract.test.js' },
-    { name: '69. Live Asset Integrity & Cloudflare Transformation Guard', file: 'live_asset_integrity.test.js' }
+    { name: '69. Live Asset Integrity & Cloudflare Transformation Guard', file: 'live_asset_integrity.test.js' },
+    { name: '70. Mobile Touch Interaction & Modal Reachability Repro', file: 'mobile_touch_interaction_repro.test.js', timeoutMs: 240_000 }
 ];
 
 console.log('========================================================================');

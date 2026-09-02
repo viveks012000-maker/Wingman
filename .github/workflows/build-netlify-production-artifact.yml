@@ -44,7 +44,7 @@ jobs:
           test "$actual" = "$GITHUB_SHA"
 
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium webkit
 
       - name: Full regression and production dependency gate
         run: |
