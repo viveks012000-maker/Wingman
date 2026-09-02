@@ -305,6 +305,17 @@ async function assertDesktopWheelScroll(browser, port) {
     try {
         await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'domcontentloaded' });
         await page.waitForTimeout(200);
+        const before = await page.evaluate(() => {
+            window.scrollTo(0, 0);
+            return {
+                scrollHeight: document.scrollingElement.scrollHeight,
+                viewportHeight: window.innerHeight,
+                scrollTop: document.scrollingElement.scrollTop
+            };
+        });
+        assert(before.scrollHeight > before.viewportHeight, `desktop page has no vertical scroll range: ${JSON.stringify(before)}`);
+        assert.strictEqual(before.scrollTop, 0, `desktop page did not start at the top: ${JSON.stringify(before)}`);
+        await page.mouse.move(683, 384);
         await page.mouse.wheel(0, 520);
         await page.waitForTimeout(100);
         const scrollTop = await page.evaluate(() => document.scrollingElement.scrollTop);
