@@ -59,6 +59,10 @@ try {
     for (let attempt = 0; attempt < 90; attempt += 1) {
         try {
             docker(['exec', container, 'pg_isready', '-U', 'postgres', '-d', 'wingman_replay']);
+            // pg_isready can report the server as accepting connections while the
+            // POSTGRES_DB init step is still creating the named database. Prove the
+            // actual target database is queryable before applying any SQL.
+            psql('SELECT 1;');
             ready = true;
             break;
         } catch (_) {
