@@ -7,6 +7,8 @@ const crypto = require('node:crypto');
 // unrelated scripts or markup can never be normalized away.
 const CLOUDFLARE_ANALYTICS_BLOCK = /<!-- Cloudflare Pages Analytics -->\s*<script\s+defer\s+src=(['"])https:\/\/static\.cloudflareinsights\.com\/beacon\.min\.js\1\s+data-cf-beacon=(['"])\{\s*"token"\s*:\s*"[A-Za-z0-9_-]{16,128}"\s*\}\2\s*><\/script>\s*<!-- Cloudflare Pages Analytics -->/g;
 const CLOUDFLARE_ANALYTICS_MARKER = /<!-- Cloudflare Pages Analytics -->|https:\/\/static\.cloudflareinsights\.com\/beacon\.min\.js/;
+const CLOUDFLARE_MANAGED_ROBOTS_BLOCK = /^# As a condition of accessing this website, you agree to abide by the following\r?\n[\s\S]*?^# END Cloudflare Managed Content\r?\n\r?\n/gm;
+const CLOUDFLARE_MANAGED_ROBOTS_MARKER = /# As a condition of accessing this website, you agree to abide by the following|# BEGIN Cloudflare Managed content|# END Cloudflare Managed Content/;
 
 function toBuffer(value) {
     return Buffer.isBuffer(value) ? value : Buffer.from(String(value), 'utf8');
@@ -38,10 +40,53 @@ function normalizeCloudflareHtml(value) {
     };
 }
 
+function normalizeCloudflareRobots(value) {
+    const robots = toBuffer(value).toString('utf8');
+    let recognizedCount = 0;
+    const normalized = robots.replace(CLOUDFLARE_MANAGED_ROBOTS_BLOCK, () => {
+        recognizedCount += 1;
+        return '';
+    });
+    const hasUnrecognizedMarker = CLOUDFLARE_MANAGED_ROBOTS_MARKER.test(normalized);
+    const classification = recognizedCount === 1 && !hasUnrecognizedMarker
+        ? 'EXPECTED'
+        : recognizedCount === 0 && !hasUnrecognizedMarker
+            ? 'ABSENT'
+            : 'UNEXPECTED';
+
+    return {
+        buffer: Buffer.from(normalized, 'utf8'),
+        classification,
+        recognizedCount,
+        hasUnrecognizedMarker
+    };
+}
+
 function compareAsset(name, expected, live) {
     const expectedBuffer = toBuffer(expected);
     const liveBuffer = toBuffer(live);
     const rawMatch = expectedBuffer.equals(liveBuffer);
+
+    if (name === 'robots.txt') {
+        const expectedRobots = normalizeCloudflareRobots(expectedBuffer);
+        const liveRobots = normalizeCloudflareRobots(liveBuffer);
+        const sourceMatch = expectedRobots.classification !== 'UNEXPECTED'
+            && liveRobots.classification !== 'UNEXPECTED'
+            && expectedRobots.buffer.equals(liveRobots.buffer);
+        return {
+            name,
+            expectedSha256: sha256(expectedBuffer),
+            liveSha256: sha256(liveBuffer),
+            rawMatch,
+            sourceMatch,
+            rawStatus: rawMatch
+                ? 'PASS'
+                : liveRobots.classification === 'EXPECTED'
+                    ? 'EXPECTED CLOUDFLARE TRANSFORMATION'
+                    : 'FAIL',
+            cloudflareAnalytics: liveRobots.classification
+        };
+    }
 
     if (!name.endsWith('.html')) {
         return {
@@ -89,5 +134,6 @@ module.exports = {
     classifyStaleAsset,
     compareAsset,
     normalizeCloudflareHtml,
+    normalizeCloudflareRobots,
     sha256
 };
