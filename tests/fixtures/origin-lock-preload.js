@@ -1,14 +1,17 @@
 'use strict';
 /**
  * Preload stub for the live-provider origin-lock probe.
- * Intercepts ALL fetches in the child process, records {url, auth, model} to ORIGIN_LOG,
+ * Intercepts ALL fetches in the child process, records {url, auth, model} to a fixed
+ * file in the operating system temp directory,
  * and serves deterministic in-process responses for the OFFICIAL origin (no network):
  *   - Stage 1 vision model -> choices with parsed content
  *   - Stage 2 generation model -> choices with a 10-option JSON payload
  * Any non-official URL gets a 403 and is flagged. No real network call is ever made.
  */
 const fs = require('fs');
-const LOG = process.env.ORIGIN_LOG;
+const os = require('os');
+const path = require('path');
+const LOG = path.join(os.tmpdir(), 'wingman-origin-lock-probe.json');
 const attempts = [];
 
 function stageReply(body) {
@@ -27,7 +30,7 @@ globalThis.fetch = async function originLockFetch(input, init = {}) {
     const auth = headers['Authorization'] || headers.authorization || '';
     const official = url.startsWith('https://api.aicredits.in/v1');
     attempts.push({ url: String(url), hasAuth: Boolean(auth), official });
-    if (LOG) fs.writeFileSync(LOG, JSON.stringify(attempts, null, 1));
+    fs.writeFileSync(LOG, JSON.stringify(attempts, null, 1));
     if (!official) {
         return { ok: false, status: 403, json: async () => ({ error: 'origin-lock-stub-nonofficial' }), arrayBuffer: async () => Buffer.from('{}'), text: async () => '{}' };
     }

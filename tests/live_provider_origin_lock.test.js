@@ -66,27 +66,20 @@ async function run() {
     console.log('PASS | malformed/hostile origin variants absent from the destination construction');
 
     // ---------- Behavioral proof: env attack value + dummy key + full fetch stub ----------
-    const logFile = path.join(os.tmpdir(), `wingman-origin-log-${Date.now()}.json`);
+    const logFile = path.join(os.tmpdir(), 'wingman-origin-lock-probe.json');
     const preloadPath = path.join(__dirname, 'fixtures', 'origin-lock-preload.js');
     const childEnv = {
         ...process.env,
         AICREDITS_BASE_URL: 'https://attacker.invalid/v1',
         AICREDITS_API_KEY: 'DUMMY_TEST_KEY_NOT_REAL',
         AICREDITS_API_KEY_VISION: 'DUMMY_TEST_KEY_NOT_REAL',
-        ORIGIN_LOG: logFile,
         NODE_OPTIONS: '--require ' + JSON.stringify(preloadPath),
         NODE_ENV: 'test'
     };
     delete childEnv.RAILWAY_ENVIRONMENT;
 
-    let childStatus = 0;
-    try {
-        execFileSync(process.execPath, [TEST_FILE], { env: childEnv, stdio: 'ignore', timeout: 120000 });
-    } catch (e) {
-        childStatus = e.status === undefined ? -1 : e.status;
-        // The child is EXPECTED to exit non-zero: the stub answers 401, so the live
-        // test fails its own HTTP-200 assertion. That is fine — we prove destinations.
-    }
+    if (fs.existsSync(logFile)) fs.unlinkSync(logFile);
+    execFileSync(process.execPath, [TEST_FILE], { env: childEnv, stdio: 'ignore', timeout: 120000 });
 
     assert.ok(fs.existsSync(logFile), 'fetch interception log must exist');
     const attempts = JSON.parse(fs.readFileSync(logFile, 'utf8'));
