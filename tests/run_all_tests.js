@@ -81,7 +81,11 @@ const testSuites = [
     { name: '70. Mobile Touch Interaction & Modal Reachability Repro', file: 'mobile_touch_interaction_repro.test.js', timeoutMs: 240_000 },
     { name: '71. RLS Ownership Binding & Error Propagation Hardening', file: 'rls_hardening.test.js' },
     { name: '72. Credit Release Transport Resilience', file: 'credit_release_resilience.test.js' },
-    { name: '73. Prompt-Injection Boundary Resilience', file: 'prompt_injection_resilience.test.js' }
+    { name: '73. Prompt-Injection Boundary Resilience', file: 'prompt_injection_resilience.test.js' },
+    { name: '74. Trust Boundary & Error-Disclosure Hardening', file: 'trust_boundary_hardening.test.js' },
+    { name: '75. Raw Provider Error Disclosure (delete-account / consent)', file: 'error_disclosure.test.js', timeoutMs: 120_000 },
+    { name: '76. Roleplay & Hotline Real Provider Path', file: 'roleplay_provider_path.test.js', timeoutMs: 120_000 },
+    { name: '77. UI/API Product-Contract Matrix (16 mode checks)', file: 'ui_api_contract.test.js', timeoutMs: 120_000 }
 ];
 
 console.log('========================================================================');
