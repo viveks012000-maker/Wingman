@@ -3,6 +3,12 @@
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 const DEFAULT_MAX_ATTEMPTS = 3;
 
+// Idempotent credit-finalization RPCs. Both functions return explicit idempotent
+// success markers for replays (migrations 003 and 008), so bounded transport retry
+// can never restore or deduct credits twice. reserve_credits is deliberately
+// EXCLUDED: it is a reservation, not an idempotent finalization.
+const CREDIT_FINALIZATION_RPCS = new Set(['settle_credits', 'release_credits']);
+
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -17,7 +23,7 @@ function isAbortError(error, signal) {
     return Boolean((signal && signal.aborted) || (error && error.name === 'AbortError'));
 }
 
-function isSettlementRequest(input, init, supabaseUrl) {
+function isCreditFinalizationRequest(input, init, supabaseUrl) {
     const method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
     if (method !== 'POST') return false;
 
@@ -26,9 +32,24 @@ function isSettlementRequest(input, init, supabaseUrl) {
 
     const base = String(supabaseUrl || '').replace(/\/+$/, '');
     if (!base) return false;
-    const expected = base + '/rest/v1/rpc/settle_credits';
     const actual = getRequestUrl(input).split('?')[0];
-    return actual === expected;
+    for (const rpc of CREDIT_FINALIZATION_RPCS) {
+        if (actual === base + '/rest/v1/rpc/' + rpc) return true;
+    }
+    return false;
+}
+
+/**
+ * Back-compat alias: the settlement matcher predates release support.
+ * Retained so existing integrations keep their exact behavior.
+ */
+function isSettlementRequest(input, init, supabaseUrl) {
+    const base = String(supabaseUrl || '').replace(/\/+$/, '');
+    if (!base) return false;
+    const actual = getRequestUrl(input).split('?')[0];
+    return actual === base + '/rest/v1/rpc/settle_credits'
+        && String((init && init.method) || (input && input.method) || 'GET').toUpperCase() === 'POST'
+        && Boolean(init && typeof init.body === 'string');
 }
 
 function createCreditSettlementRetryFetch(originalFetch, supabaseUrl, options = {}) {
@@ -40,7 +61,7 @@ function createCreditSettlementRetryFetch(originalFetch, supabaseUrl, options = 
     const wait = typeof options.sleep === 'function' ? options.sleep : sleep;
 
     return async function creditSettlementRetryFetch(input, init) {
-        if (!isSettlementRequest(input, init, supabaseUrl)) {
+        if (!isCreditFinalizationRequest(input, init, supabaseUrl)) {
             return originalFetch(input, init);
         }
 
@@ -66,18 +87,18 @@ function createCreditSettlementRetryFetch(originalFetch, supabaseUrl, options = 
                     else if (response && typeof response.text === 'function') await response.text();
                 } catch (_) {}
 
-                console.warn(`[Credit Settlement Retry] Supabase settlement returned HTTP ${status}; retrying attempt ${attempt + 1}/${maxAttempts}.`);
+                console.warn(`[Credit Settlement Retry] Supabase credit finalization returned HTTP ${status}; retrying attempt ${attempt + 1}/${maxAttempts}.`);
             } catch (error) {
                 if (isAbortError(error, signal)) throw error;
                 lastError = error;
                 if (attempt >= maxAttempts) throw error;
-                console.warn(`[Credit Settlement Retry] Supabase settlement transport failed; retrying attempt ${attempt + 1}/${maxAttempts}.`);
+                console.warn(`[Credit Settlement Retry] Supabase credit finalization transport failed; retrying attempt ${attempt + 1}/${maxAttempts}.`);
             }
 
             await wait(150 * Math.pow(2, attempt - 1));
         }
 
-        throw lastError || new Error('Credit settlement request failed.');
+        throw lastError || new Error('Credit finalization request failed.');
     };
 }
 
@@ -98,7 +119,9 @@ function installCreditSettlementTransportRetry(supabaseUrl) {
 
 module.exports = {
     RETRYABLE_STATUSES,
+    CREDIT_FINALIZATION_RPCS,
     createCreditSettlementRetryFetch,
     installCreditSettlementTransportRetry,
+    isCreditFinalizationRequest,
     isSettlementRequest
 };

@@ -16,7 +16,7 @@ function getAuthenticatedUid(req) {
 }
 
 // Tables whose rows are strictly owned by a single authenticated user.
-const USER_SCOPED_TABLES = ['user_profiles', 'saved_bios', 'saved_chat_analyses', 'saved_chat_histories', 'credit_purchases', 'credit_deductions'];
+const USER_SCOPED_TABLES = ['user_profiles', 'saved_bios', 'saved_chat_analyses', 'saved_icebreakers', 'saved_chat_histories', 'credit_purchases', 'credit_deductions'];
 
 class RlsError extends Error {
     constructor(message) {
@@ -27,6 +27,33 @@ class RlsError extends Error {
 
 const SAFE_ORDER_BY = ['created_at DESC', 'created_at ASC'];
 
+// Strict identifier policy for dynamically accepted column names. Identifiers that fail
+// this pattern are never interpolated into SQL or forwarded to the provider.
+const SAFE_COLUMN_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+// Ownership columns are always bound server-side; callers may never supply them.
+const FORBIDDEN_IDENTITY_COLUMNS = ['user_id'];
+
+function assertSafeColumns(columns) {
+    if (!Array.isArray(columns)) {
+        throw new RlsError('RLS: invalid insert column specification.');
+    }
+    for (const column of columns) {
+        if (typeof column !== 'string' || !SAFE_COLUMN_PATTERN.test(column)) {
+            throw new RlsError('RLS: invalid insert column name.');
+        }
+        if (FORBIDDEN_IDENTITY_COLUMNS.includes(column)) {
+            throw new RlsError('RLS: identity columns are bound server-side and cannot be caller-supplied.');
+        }
+    }
+}
+
+function logSafeDiagnostic(operation, table, error) {
+    // Structured, bounded diagnostic. Never includes SQL text, params, or provider payloads.
+    const message = error && typeof error.message === 'string' ? error.message.slice(0, 200) : 'unknown error';
+    console.error(`[RLS] ${operation} failed for table ${table}: ${message}`);
+}
+
 let supabaseAdmin = null;
 try {
     supabaseAdmin = require('./supabaseAuth').supabaseAdmin;
@@ -36,9 +63,12 @@ try {
  * Build a scoped data-access handle bound to the authenticated request.
  * Every returned helper refuses to run without a server-validated user id and always
  * scopes the query by that exact id.
+ *
+ * options.supabaseAdmin (test seam) overrides the module-level admin client.
  */
-function forRequest(req, db) {
+function forRequest(req, db, options = {}) {
     const uid = getAuthenticatedUid(req);
+    const admin = options && options.supabaseAdmin !== undefined ? options.supabaseAdmin : supabaseAdmin;
 
     function assertAuthenticated() {
         if (!uid) {
@@ -67,56 +97,82 @@ function forRequest(req, db) {
                 try {
                     return await db.all(`SELECT * FROM ${table} WHERE user_id = ? ORDER BY ${order}`, uid);
                 } catch (e) {
-                    return [];
+                    logSafeDiagnostic('list', table, e);
+                    throw new RlsError('RLS: scoped data is temporarily unavailable.');
                 }
             }
-            if (supabaseAdmin) {
-                try {
-                    const { data } = await supabaseAdmin.from(table).select('*').eq('user_id', uid);
-                    return data || [];
-                } catch (e) {
-                    return [];
+            if (admin) {
+                const { data, error } = await admin.from(table).select('*').eq('user_id', uid);
+                if (error) {
+                    logSafeDiagnostic('list', table, error);
+                    throw new RlsError('RLS: scoped data is temporarily unavailable.');
                 }
+                return Array.isArray(data) ? data : [];
             }
             return [];
         },
 
-        /** INSERT a row with user_id forced to the validated uid (client cannot set owner). */
+        /**
+         * INSERT a row whose user_id is exclusively the validated uid.
+         * Caller-supplied identity columns are rejected outright; the owner binding is
+         * applied last so no later assignment can replace it.
+         */
         async create(table, columns, values) {
             assertAuthenticated();
             assertScopedTable(table);
+            assertSafeColumns(columns);
             if (db) {
                 const cols = [...columns, 'user_id'];
                 const params = [...values, uid];
                 const placeholders = params.map(() => '?').join(', ');
                 return db.run(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders})`, params);
             }
-            if (supabaseAdmin) {
-                try {
-                    const rowObj = { user_id: uid };
-                    columns.forEach((col, idx) => { rowObj[col] = values[idx]; });
-                    return await supabaseAdmin.from(table).insert([rowObj]);
-                } catch (e) {}
+            if (admin) {
+                const rowObj = {};
+                columns.forEach((col, idx) => { rowObj[col] = values[idx]; });
+                rowObj.user_id = uid; // Owner binding is forced LAST by design.
+                const { error } = await admin.from(table).insert([rowObj]);
+                if (error) {
+                    logSafeDiagnostic('create', table, error);
+                    throw new RlsError('RLS: insert failed.');
+                }
+                return { success: true };
             }
+            return undefined;
         },
 
-        /** Hard-delete EVERY row owned by the validated uid across all scoped tables. */
+        /**
+         * Hard-delete EVERY row owned by the validated uid across all scoped tables.
+         * Every table is attempted; any failure fails closed with a controlled error so
+         * account deletion can never report success after a partial purge.
+         */
         async purgeAll() {
             assertAuthenticated();
+            const failures = [];
+            const attemptDelete = async (store, table, run) => {
+                try {
+                    await run();
+                } catch (e) {
+                    logSafeDiagnostic('purgeAll', table, e);
+                    failures.push({ store, table });
+                }
+            };
+
             if (db) {
                 for (const table of USER_SCOPED_TABLES) {
-                    try {
-                        await db.run(`DELETE FROM ${table} WHERE user_id = ?`, uid);
-                    } catch (e) {}
+                    await attemptDelete('sqlite', table, () => db.run(`DELETE FROM ${table} WHERE user_id = ?`, uid));
                 }
             }
-            if (supabaseAdmin) {
+            if (admin) {
                 for (const table of USER_SCOPED_TABLES) {
-                    try {
-                        await supabaseAdmin.from(table).delete().eq('user_id', uid);
-                    } catch (e) {}
+                    await attemptDelete('supabase', table, () => admin.from(table).delete().eq('user_id', uid));
                 }
             }
+
+            if (failures.length > 0) {
+                throw new RlsError('RLS: account data purge failed for one or more scoped tables.');
+            }
+            return { purged: true };
         }
     };
 }

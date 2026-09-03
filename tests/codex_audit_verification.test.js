@@ -37,7 +37,8 @@ console.log('✔ Test 3 Passed: Atomic reserve, settle, and release RPCs, row lo
 
 // 4. TEST ACCOUNT DELETION FULL STACK (SUPABASE DATA + AUTH IDENTITY + SAFE CLIENT)
 assert.strictEqual(serverFile.includes("const { error: authDelErr } = await supabaseAdmin.auth.admin.deleteUser(uid);"), true, 'delete-account must delete Supabase Auth identity');
-assert.strictEqual(serverFile.includes("if (authDelErr) {") && serverFile.includes("Failed to delete authentication account: ' + authDelErr.message"), true, 'delete-account must fail-safe if auth deletion fails');
+assert.strictEqual(serverFile.includes("if (authDelErr) {") && serverFile.includes("code: 'ACCOUNT_DELETE_FAILED'") && serverFile.includes('Unable to delete the account at this time.'), true, 'delete-account must fail-safe with a sanitized client response');
+assert.strictEqual(serverFile.includes("+ authDelErr.message"), false, 'raw provider error detail must never reach the client');
 
 const appJs = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 assert.strictEqual(appJs.includes('window.confirmPermanentDeletion = async function'), true, 'Frontend deletion must be async');
