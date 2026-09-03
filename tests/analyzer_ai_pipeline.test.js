@@ -66,10 +66,15 @@ assert.strictEqual(
 console.log('✔ Test 4 Passed: Spatial alignment, reel isolation, and conversation state laws preserved');
 
 // 2. Live AICREDITS Provider Execution Test
+// SECURITY INVARIANT (CodeQL #31/#32): credential-bearing live-provider requests in
+// this test may ONLY target the official AICREDITS HTTPS origin. The environment
+// must never control where a real AICREDITS key is sent, so the destination is an
+// immutable constant — AICREDITS_BASE_URL is deliberately NOT read here.
+const LIVE_AICREDITS_BASE_URL = 'https://api.aicredits.in/v1';
+
 async function testLiveAICredits() {
     const visionKey = process.env.AICREDITS_API_KEY_VISION || process.env.AICREDITS_API_KEY;
     const textKey = process.env.AICREDITS_API_KEY;
-    const baseUrl = (process.env.AICREDITS_BASE_URL || 'https://api.aicredits.in/v1').replace(/\/+$/, '');
 
     if (!textKey) {
         console.log('⚠️ Skipping live AI provider call: AICREDITS_API_KEY not configured.');
@@ -77,7 +82,7 @@ async function testLiveAICredits() {
     }
 
     console.log('\n--- LIVE AI PIPELINE EXECUTION ---');
-    console.log('Provider Base URL:', baseUrl);
+    console.log('Provider Base URL:', LIVE_AICREDITS_BASE_URL);
 
     // Create valid 150x150 BMP base64 test image
     function createBmpBase64(w, h) {
@@ -113,7 +118,7 @@ async function testLiveAICredits() {
 
     // Stage 1 Live Call: qwen/qwen3.5-flash-02-23
     console.log('Executing Stage 1 Live Vision Call (qwen/qwen3.5-flash-02-23)...');
-    const vRes = await fetch(baseUrl + '/chat/completions', {
+    const vRes = await fetch(LIVE_AICREDITS_BASE_URL + '/chat/completions', {
         method: 'POST',
         headers: {
             'Authorization': 'Bearer ' + visionKey,
@@ -145,7 +150,7 @@ async function testLiveAICredits() {
 
     // Stage 2 Live Call: qwen/qwen3-235b-a22b-2507
     console.log('Executing Stage 2 Live Main Generation Call (qwen/qwen3-235b-a22b-2507)...');
-    const tRes = await fetch(baseUrl + '/chat/completions', {
+    const tRes = await fetch(LIVE_AICREDITS_BASE_URL + '/chat/completions', {
         method: 'POST',
         headers: {
             'Authorization': 'Bearer ' + textKey,
