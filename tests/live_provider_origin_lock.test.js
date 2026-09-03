@@ -19,6 +19,7 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
@@ -65,14 +66,15 @@ async function run() {
     console.log('PASS | malformed/hostile origin variants absent from the destination construction');
 
     // ---------- Behavioral proof: env attack value + dummy key + full fetch stub ----------
-    const logFile = path.join(__dirname, '..', 'tmp', `origin-log-${Date.now()}.json`);
+    const logFile = path.join(os.tmpdir(), `wingman-origin-log-${Date.now()}.json`);
+    const preloadPath = path.join(__dirname, 'fixtures', 'origin-lock-preload.js');
     const childEnv = {
         ...process.env,
         AICREDITS_BASE_URL: 'https://attacker.invalid/v1',
         AICREDITS_API_KEY: 'DUMMY_TEST_KEY_NOT_REAL',
         AICREDITS_API_KEY_VISION: 'DUMMY_TEST_KEY_NOT_REAL',
         ORIGIN_LOG: logFile,
-        NODE_OPTIONS: '--require ' + JSON.stringify(path.join(__dirname, '..', 'tmp', 'origin-lock-preload.js')),
+        NODE_OPTIONS: '--require ' + JSON.stringify(preloadPath),
         NODE_ENV: 'test'
     };
     delete childEnv.RAILWAY_ENVIRONMENT;
