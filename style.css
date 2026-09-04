@@ -89,6 +89,21 @@ select,
     justify-content: center !important;
 }
 
+@media (min-width: 768px) {
+    /* Keep the landing hero at the reference scale without changing other pages. */
+    body.landing-page #hero-reveal-container h1 {
+        font-size: 4.5rem !important;
+        line-height: 1.1 !important;
+    }
+}
+
+@media (min-width: 640px) {
+    body.landing-page > nav button[onclick*="openAuthRequiredModal"],
+    body.landing-page > nav a[href="app.html"] {
+        display: inline-flex !important;
+    }
+}
+
 #analyzeEmptyState > p:nth-child(3),
 #screenshotPreviewContainer > div > p:nth-child(3) {
     color: #9ca3af !important;
