@@ -79,9 +79,14 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         var hasAuthoritativeNumber = state.creditsStatus === 'loaded' && typeof state.credits === 'number';
         if (hasAuthoritativeNumber) return;
 
+        // Only show "0 Credits" for signed-out state.
+        // If authenticated, leave display so the loading/unknown state
+        // resolves once the authoritative balance is restored.
+        if (window.currentSupabaseSession && window.currentSupabaseSession.access_token) return;
+
         ['desktopCreditCount', 'mobileCreditCount'].forEach(function (id) {
             var el = document.getElementById(id);
-            if (el) el.textContent = 'Credits —';
+            if (el) el.textContent = '0 Credits';
         });
     }
 
