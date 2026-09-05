@@ -427,7 +427,7 @@ STRICT LAWS:
                     inFlightCreditCheckPromises.delete(currentUserId);
                 }
             }
-        });
+        })();
 
         // Store this user's in-flight promise in the Map so subsequent
         // calls for the same user are coalesced (same-user concurrent requests).
