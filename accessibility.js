@@ -313,3 +313,215 @@
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadProductionRuntime, { once: true });
     else loadProductionRuntime();
 })();
+
+/* Credit read safety override: app.js loads first; this replaces only the credit-balance read path. */
+(function installCreditReadSafetyOverride() {
+    'use strict';
+
+    if (!window || typeof window.checkCreditBalance !== 'function' || !window.state) return;
+
+    const inFlightCreditReads = new Map();
+
+    function getActiveCreditUserId() {
+        if (window.currentSupabaseUser && window.currentSupabaseUser.id) {
+            return window.currentSupabaseUser.id;
+        }
+        if (window.currentSupabaseSession && window.currentSupabaseSession.user && window.currentSupabaseSession.user.id) {
+            return window.currentSupabaseSession.user.id;
+        }
+        return null;
+    }
+
+    function staleResult() {
+        return { success: false, status: 'stale', credits: window.state.credits };
+    }
+
+    window.checkCreditBalance = function () {
+        const initialUserId = getActiveCreditUserId();
+        const mapKey = initialUserId;
+
+        if (mapKey && inFlightCreditReads.has(mapKey)) {
+            return inFlightCreditReads.get(mapKey);
+        }
+
+        let requestUserId = initialUserId;
+        let requestPromise;
+
+        requestPromise = (async function () {
+            window.state.creditsStatus = 'loading';
+
+            try {
+                let session = null;
+
+                if (window.supabaseClient && window.supabaseClient.auth && typeof window.supabaseClient.auth.getSession === 'function') {
+                    try {
+                        const sessionResult = await window.supabaseClient.auth.getSession();
+                        if (!sessionResult.error && sessionResult.data && sessionResult.data.session) {
+                            session = sessionResult.data.session;
+                        }
+                    } catch (sessionError) {
+                        console.warn('[CreditSync] Notice querying Supabase session:', sessionError);
+                    }
+                }
+
+                if (!session) {
+                    session = window.currentSupabaseSession || null;
+                }
+
+                const sessionUserId = session && session.user && session.user.id ? session.user.id : null;
+                const activeBeforeSessionCommit = getActiveCreditUserId();
+
+                if (requestUserId && sessionUserId && sessionUserId !== requestUserId) {
+                    return staleResult();
+                }
+                if (requestUserId && activeBeforeSessionCommit && activeBeforeSessionCommit !== requestUserId) {
+                    return staleResult();
+                }
+                if (!requestUserId && activeBeforeSessionCommit && sessionUserId && activeBeforeSessionCommit !== sessionUserId) {
+                    return staleResult();
+                }
+
+                if (!requestUserId && sessionUserId) {
+                    requestUserId = sessionUserId;
+                }
+
+                if (session && sessionUserId) {
+                    window.currentSupabaseSession = session;
+                    window.currentSupabaseUser = session.user;
+                }
+
+                const user = session && session.user ? session.user : window.currentSupabaseUser;
+                const userId = user && user.id ? user.id : null;
+
+                if (!userId) {
+                    if (getActiveCreditUserId()) return staleResult();
+                    window.state.creditsStatus = 'idle';
+                    return { success: false, status: 'unauthenticated', credits: window.state.credits };
+                }
+
+                if (!requestUserId) requestUserId = userId;
+                if (userId !== requestUserId || getActiveCreditUserId() !== requestUserId) {
+                    return staleResult();
+                }
+
+                function requestIsCurrent() {
+                    return !!requestUserId && getActiveCreditUserId() === requestUserId;
+                }
+
+                // 1. Direct authoritative profile read. Errors fall through to the existing fallbacks.
+                if (window.supabaseClient && typeof window.supabaseClient.from === 'function') {
+                    try {
+                        const directResult = await window.supabaseClient
+                            .from('profiles')
+                            .select('credits')
+                            .eq('id', userId)
+                            .maybeSingle();
+
+                        if (!requestIsCurrent()) return staleResult();
+
+                        if (!directResult.error && directResult.data && typeof directResult.data.credits === 'number') {
+                            window.updateUICredits(directResult.data.credits);
+                            return { success: true, status: 'loaded', credits: directResult.data.credits };
+                        }
+
+                        if (!directResult.error && !directResult.data) {
+                            window.state.credits = null;
+                            window.state.creditsStatus = 'missing_profile';
+                            return { success: false, status: 'missing_profile', code: 'PROFILE_MISSING' };
+                        }
+                    } catch (dbError) {
+                        console.warn('[CreditSync] Supabase direct profiles query notice:', dbError);
+                    }
+                }
+
+                if (!requestIsCurrent()) return staleResult();
+
+                // 2. Existing client fallback. It receives only the authoritative Supabase user ID.
+                if (typeof window.fetchProfileCredits === 'function') {
+                    try {
+                        const creditsResult = await window.fetchProfileCredits(userId);
+                        if (!requestIsCurrent()) return staleResult();
+
+                        if (typeof creditsResult === 'number') {
+                            window.updateUICredits(creditsResult);
+                            return { success: true, status: 'loaded', credits: creditsResult };
+                        }
+
+                        if (creditsResult && creditsResult.profileMissing) {
+                            window.state.credits = null;
+                            window.state.creditsStatus = 'missing_profile';
+                            return { success: false, status: 'missing_profile', code: 'PROFILE_MISSING' };
+                        }
+                    } catch (profileError) {
+                        console.warn('[CreditSync] fetchProfileCredits notice:', profileError);
+                    }
+                }
+
+                if (!requestIsCurrent()) return staleResult();
+
+                // 3. Authenticated API fallback.
+                const apiBase = typeof window.getApiBase === 'function' ? window.getApiBase() : '';
+                const authHeaders = typeof window.getSupabaseAuthHeaders === 'function'
+                    ? await window.getSupabaseAuthHeaders()
+                    : {};
+
+                if (!requestIsCurrent()) return staleResult();
+
+                if (authHeaders && authHeaders.Authorization) {
+                    const response = await fetch((apiBase || '') + '/api/credits', { headers: authHeaders });
+                    if (!requestIsCurrent()) return staleResult();
+
+                    if (response.status === 404) {
+                        const errorData = await response.json().catch(function () { return {}; });
+                        if (!requestIsCurrent()) return staleResult();
+
+                        if (errorData && (errorData.error === 'PROFILE_MISSING' || errorData.code === 'PROFILE_MISSING')) {
+                            window.state.credits = null;
+                            window.state.creditsStatus = 'missing_profile';
+                            return { success: false, status: 'missing_profile', code: 'PROFILE_MISSING' };
+                        }
+                    }
+
+                    if (response.ok) {
+                        const responseJson = await response.json();
+                        if (!requestIsCurrent()) return staleResult();
+
+                        if (responseJson && typeof responseJson.credits === 'number') {
+                            window.updateUICredits(responseJson.credits);
+                            return { success: true, status: 'loaded', credits: responseJson.credits };
+                        }
+
+                        if (responseJson && responseJson.data && typeof responseJson.data.credits_inr === 'number') {
+                            const creditCount = Math.round(responseJson.data.credits_inr * 10);
+                            window.updateUICredits(creditCount);
+                            return { success: true, status: 'loaded', credits: creditCount };
+                        }
+                    }
+                }
+
+                if (!requestIsCurrent()) return staleResult();
+                window.state.creditsStatus = 'error';
+                return { success: false, status: 'error', credits: window.state.credits };
+            } catch (error) {
+                console.warn('[CreditSync] Error syncing credits from Supabase profiles:', error);
+                if (requestUserId && getActiveCreditUserId() !== requestUserId) {
+                    return staleResult();
+                }
+                window.state.creditsStatus = 'error';
+                return { success: false, status: 'error', credits: window.state.credits, error: error };
+            } finally {
+                if (mapKey && inFlightCreditReads.get(mapKey) === requestPromise) {
+                    inFlightCreditReads.delete(mapKey);
+                }
+            }
+        })();
+
+        if (mapKey) {
+            inFlightCreditReads.set(mapKey, requestPromise);
+        }
+
+        return requestPromise;
+    };
+
+    window.fetchAndSyncUserCredits = window.checkCreditBalance;
+})();
