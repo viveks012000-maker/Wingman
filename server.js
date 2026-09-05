@@ -367,7 +367,9 @@ async function getUserCreditsDB(req) {
             err.statusCode = 503;
             throw err;
         } finally {
-            inFlightUserCreditQueries.delete(uid);
+            if (inFlightUserCreditQueries.get(uid) === queryPromise) {
+                inFlightUserCreditQueries.delete(uid);
+            }
         }
     })();
 
