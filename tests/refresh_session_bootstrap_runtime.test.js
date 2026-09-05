@@ -220,5 +220,30 @@ domReady.forEach((fn) => fn());
     assert.strictEqual(location.href, 'https://mywingmanapp.com/app',
         'signed-out Sign In / Account must remain on the dashboard page');
 
+    console.log('▶ delayed Supabase restore: reconciliation must hydrate canonical session before rendering signed-out UI');
+    windowMock.currentSupabaseSession = null;
+    windowMock.currentSupabaseUser = null;
+    windowMock.state.credits = null;
+    windowMock.state.creditsStatus = 'idle';
+    elements.get('desktopCreditCount').textContent = 'Credits —';
+    elements.get('mobileCreditCount').textContent = 'Credits —';
+    elements.get('sidebarUserCard').classList.add('hidden');
+    elements.get('desktopAuthBtn').classList.remove('hidden');
+    supabaseClient.auth.getSession = async () => ({ data: { session: restoredSession }, error: null });
+
+    await Promise.resolve(windowMock.reconcileDashboardSession());
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    assert.strictEqual(windowMock.currentSupabaseSession, restoredSession,
+        'reconciliation must hydrate currentSupabaseSession from canonical Supabase getSession()');
+    assert.strictEqual(windowMock.currentSupabaseUser, restoredSession.user,
+        'reconciliation must hydrate currentSupabaseUser from the restored canonical session');
+    assert(elements.get('desktopAuthBtn').classList.contains('hidden'),
+        'hydrated restored session must hide stale Sign In / Account button');
+    assert(!elements.get('sidebarUserCard').classList.contains('hidden'),
+        'hydrated restored session must reveal account card');
+    assert.strictEqual(elements.get('desktopCreditCount').textContent, '47 Credits',
+        'hydrated restored session must refresh authoritative credits');
+
     console.log('PASS: refresh session bootstrap keeps credits/auth UI synchronized and the visible desktop auth control is functional');
 })();
