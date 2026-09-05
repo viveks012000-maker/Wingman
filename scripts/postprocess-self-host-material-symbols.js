@@ -12,6 +12,8 @@ const INLINE_MARKER = 'data-self-hosted-material-symbols';
 const TARGETS = ['index.html', 'app.html'];
 const ICON_NAMES = 'analytics,arrow_back,arrow_forward,auto_awesome,bolt,broken_image,cancel,check,check_circle,close,content_copy,corporate_fare,crop,delete_forever,edit_note,electric_bolt,error,event_available,forum,home,image_search,info,insights,local_fire_department,lock,menu,play_arrow,progress_activity,psychology,refresh,replay,restart_alt,rocket_launch,rotate_right,settings,shield,smart_toy,support_agent,tips_and_updates,tune,verified,verified_user,visibility,visibility_off,warning';
 const GOOGLE_URL = `https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&icon_names=${ICON_NAMES}&display=block`;
+const GOOGLE_URL_PREFIX = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&icon_names=';
+const GOOGLE_URL_SUFFIX = '&display=block';
 
 const ASSETS = Object.freeze({
   [FONT_REL]: ['56f6255b1341a07abae9b27ad468ecbf7de7141c6522a078060fb4c5173def70', 16580],
@@ -92,6 +94,24 @@ function removeGoogleFontCspHosts(text, label, expectedEach) {
   return tightened;
 }
 
+function verifyRequestedIconSubset(decodedHref, relativeFile) {
+  if (!decodedHref.startsWith(GOOGLE_URL_PREFIX) || !decodedHref.endsWith(GOOGLE_URL_SUFFIX)) {
+    fail(`${relativeFile} Material Symbols URL shape drifted from the approved variable-font request`);
+  }
+
+  const requestedPart = decodedHref.slice(GOOGLE_URL_PREFIX.length, -GOOGLE_URL_SUFFIX.length);
+  const requested = requestedPart ? requestedPart.split(',') : [];
+  if (!requested.length) fail(`${relativeFile} Material Symbols request contains no icon_names`);
+  if (new Set(requested).size !== requested.length) fail(`${relativeFile} Material Symbols request contains duplicate icon_names`);
+
+  const sorted = [...requested].sort((a, b) => a.localeCompare(b));
+  if (requested.some((icon, index) => icon !== sorted[index])) fail(`${relativeFile} Material Symbols icon_names are not sorted`);
+
+  const pinned = new Set(ICON_NAMES.split(','));
+  const unsupported = requested.filter(icon => !pinned.has(icon));
+  if (unsupported.length) fail(`${relativeFile} Material Symbols request contains icons outside the pinned local 45-icon font: ${unsupported.join(',')}`);
+}
+
 function replaceExternalLink(relativeFile) {
   const file = path.join(OUT, relativeFile);
   let html = fs.readFileSync(file, 'utf8');
@@ -103,7 +123,7 @@ function replaceExternalLink(relativeFile) {
   const hrefMatch = tag.match(/href=["']([^"']+)["']/i);
   if (!hrefMatch) fail(`${relativeFile} Material Symbols link has no href`);
   const decodedHref = hrefMatch[1].replace(/&amp;/g, '&');
-  if (decodedHref !== GOOGLE_URL) fail(`${relativeFile} Material Symbols URL drifted from the pinned 45-icon subset`);
+  verifyRequestedIconSubset(decodedHref, relativeFile);
   if ((html.match(new RegExp(INLINE_MARKER, 'g')) || []).length) fail(`${relativeFile} already contains local Material Symbols marker`);
 
   html = html.replace(tag, `<style ${INLINE_MARKER}>\n${LOCAL_CSS}\n</style>`);
@@ -139,7 +159,7 @@ function run() {
   manifest.files['_headers'] = sha256(path.join(OUT, '_headers'));
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
 
-  console.log(`[self-host-material-symbols] Replaced external Material Symbols CSS with pinned local 45-icon subset on ${TARGETS.join(', ')}, removed obsolete Google Fonts preconnects, and tightened CSP.`);
+  console.log(`[self-host-material-symbols] Replaced approved used-icon subsets with the pinned local 45-icon font on ${TARGETS.join(', ')}, removed obsolete Google Fonts preconnects, and tightened CSP.`);
 }
 
 if (require.main === module) run();
