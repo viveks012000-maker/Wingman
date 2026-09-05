@@ -292,6 +292,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 
     var reconcileTimer = null;
     var reconcileInFlight = false;
+    var sessionHydrationInFlight = null;
 
     function hasRestoredDashboardSession() {
         var session = window.currentSupabaseSession;
@@ -305,6 +306,52 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 
     function logRefreshFailure(err) {
         console.warn('[SessionBootstrap] Credit refresh failed:', err && err.message ? err.message : err);
+    }
+
+    function logSessionFailure(err) {
+        console.warn('[SessionBootstrap] Session reconciliation failed:', err && err.message ? err.message : err);
+    }
+
+    function hydrateCanonicalDashboardSession() {
+        if (hasRestoredDashboardSession()) {
+            return Promise.resolve(window.currentSupabaseSession);
+        }
+
+        if (!window.supabaseClient || !window.supabaseClient.auth || typeof window.supabaseClient.auth.getSession !== 'function') {
+            return Promise.resolve(null);
+        }
+
+        if (sessionHydrationInFlight) return sessionHydrationInFlight;
+
+        var hydrationPromise;
+        hydrationPromise = (async function () {
+            try {
+                var result = await window.supabaseClient.auth.getSession();
+                if (result && result.error) throw result.error;
+
+                // Do not replace a newer authenticated session that may have arrived while the
+                // canonical getSession() call was pending.
+                if (hasRestoredDashboardSession()) {
+                    return window.currentSupabaseSession;
+                }
+
+                var session = result && result.data ? result.data.session : null;
+                if (session && session.access_token && session.user && session.user.id) {
+                    window.currentSupabaseSession = session;
+                    window.currentSupabaseUser = session.user;
+                    return session;
+                }
+
+                return null;
+            } finally {
+                if (sessionHydrationInFlight === hydrationPromise) {
+                    sessionHydrationInFlight = null;
+                }
+            }
+        })();
+
+        sessionHydrationInFlight = hydrationPromise;
+        return hydrationPromise;
     }
 
     function refreshAuthoritativeCredits() {
@@ -327,9 +374,17 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         }
     }
 
-    function reconcileDashboardSession() {
+    async function reconcileDashboardSession() {
         if (!window.state) return false;
 
+        try {
+            await hydrateCanonicalDashboardSession();
+        } catch (err) {
+            logSessionFailure(err);
+        }
+
+        // Render only after the canonical browser session has had a chance to hydrate. This
+        // prevents a valid persisted session from being painted as signed-out during refresh.
         if (typeof window.checkDashboardAuth === 'function') {
             window.checkDashboardAuth();
         }
@@ -364,7 +419,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
                 // The visible Sign In / Account control is never a logout control. If a restored
                 // session exists but the DOM is stale, reconcile it in-place rather than signing out.
                 if (hasRestoredDashboardSession()) {
-                    reconcileDashboardSession();
+                    reconcileDashboardSession().catch(logSessionFailure);
                     return false;
                 }
 
@@ -388,13 +443,29 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         return reconcileDashboardSession();
     }
 
+    function runSessionBootstrap() {
+        var result;
+        try {
+            result = patchSessionBootstrap();
+        } catch (err) {
+            logSessionFailure(err);
+            return false;
+        }
+
+        if (result && typeof result.then === 'function') {
+            result.catch(logSessionFailure);
+            return true;
+        }
+        return result;
+    }
+
     function scheduleSessionBootstrap(delay) {
         if (reconcileTimer) clearTimeout(reconcileTimer);
         reconcileTimer = setTimeout(function () {
             reconcileTimer = null;
-            if (!patchSessionBootstrap()) {
+            if (!runSessionBootstrap()) {
                 // app.js may still be defining handlers. Retry briefly without creating a loop.
-                setTimeout(patchSessionBootstrap, 120);
+                setTimeout(runSessionBootstrap, 120);
             }
         }, delay || 0);
     }
