@@ -173,7 +173,6 @@ Object.assign(global, {
     CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init && init.detail; } },
     FileReader: class FileReader {},
     Image: class Image {},
-    navigator: { clipboard: { writeText: async () => {} } },
     getComputedStyle: () => ({ display: 'block', visibility: 'visible', zIndex: '0' }),
     confirm: () => true
 });
