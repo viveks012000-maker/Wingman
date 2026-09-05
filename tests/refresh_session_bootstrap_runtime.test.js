@@ -28,6 +28,7 @@ class MockElement {
         this.children = [];
         this._listeners = new Map();
         this.nextElementSibling = null;
+        this.onclick = null;
     }
     addEventListener(type, fn) {
         if (!this._listeners.has(type)) this._listeners.set(type, []);
@@ -201,15 +202,23 @@ domReady.forEach((fn) => fn());
     assert.strictEqual(location.href, originalHref,
         'stale Sign In / Account control must never navigate to the landing page');
 
-    console.log('▶ signed-out click: Sign In / Account must open auth modal in place');
+    console.log('▶ signed-out click: the visible desktop Sign In / Account control must be wired to the auth modal');
     windowMock.currentSupabaseSession = null;
     windowMock.currentSupabaseUser = null;
     windowMock.openAuthRequiredModal = function () { authModalCalls += 1; };
-    windowMock.handleAuthBtnClick({ preventDefault() {} });
+    windowMock.checkDashboardAuth();
+
+    const desktopAuthBtn = elements.get('desktopAuthBtn');
+    assert(!desktopAuthBtn.classList.contains('hidden'),
+        'signed-out desktop Sign In / Account control must be visible');
+    assert.strictEqual(typeof desktopAuthBtn.onclick, 'function',
+        'signed-out desktop Sign In / Account control must have a real click handler');
+
+    desktopAuthBtn.onclick({ preventDefault() {} });
     assert.strictEqual(authModalCalls, 1,
-        'signed-out Sign In / Account must open the canonical auth modal');
+        'clicking the visible desktop Sign In / Account control must open the canonical auth modal');
     assert.strictEqual(location.href, 'https://mywingmanapp.com/app',
         'signed-out Sign In / Account must remain on the dashboard page');
 
-    console.log('PASS: refresh session bootstrap keeps credits/auth UI synchronized and prevents accidental logout redirect');
+    console.log('PASS: refresh session bootstrap keeps credits/auth UI synchronized and the visible desktop auth control is functional');
 })();
