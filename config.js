@@ -340,27 +340,45 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         return true;
     }
 
-    function installSessionSafeAuthButton() {
-        if (!window.state || typeof window.handleAuthBtnClick !== 'function') return false;
-        if (window.handleAuthBtnClick.__wingmanSessionSafe) return true;
+    function bindAuthButton(elementId) {
+        var button = document.getElementById(elementId);
+        if (!button || button.__wingmanSessionSafeBound) return;
 
-        var safeHandler = function (e) {
+        button.__wingmanSessionSafeBound = true;
+        button.onclick = function (e) {
+            if (typeof window.handleAuthBtnClick === 'function') {
+                return window.handleAuthBtnClick(e);
+            }
             if (e && typeof e.preventDefault === 'function') e.preventDefault();
-
-            // The visible Sign In / Account control is never a logout control. If a restored
-            // session exists but the DOM is stale, reconcile it in-place rather than signing out.
-            if (hasRestoredDashboardSession()) {
-                reconcileDashboardSession();
-                return false;
-            }
-
-            if (typeof window.openAuthRequiredModal === 'function') {
-                window.openAuthRequiredModal(e);
-            }
             return false;
         };
-        safeHandler.__wingmanSessionSafe = true;
-        window.handleAuthBtnClick = safeHandler;
+    }
+
+    function installSessionSafeAuthButton() {
+        if (!window.state || typeof window.handleAuthBtnClick !== 'function') return false;
+
+        if (!window.handleAuthBtnClick.__wingmanSessionSafe) {
+            var safeHandler = function (e) {
+                if (e && typeof e.preventDefault === 'function') e.preventDefault();
+
+                // The visible Sign In / Account control is never a logout control. If a restored
+                // session exists but the DOM is stale, reconcile it in-place rather than signing out.
+                if (hasRestoredDashboardSession()) {
+                    reconcileDashboardSession();
+                    return false;
+                }
+
+                if (typeof window.openAuthRequiredModal === 'function') {
+                    window.openAuthRequiredModal(e);
+                }
+                return false;
+            };
+            safeHandler.__wingmanSessionSafe = true;
+            window.handleAuthBtnClick = safeHandler;
+        }
+
+        bindAuthButton('desktopAuthBtn');
+        bindAuthButton('mobileAuthBtn');
         return true;
     }
 
