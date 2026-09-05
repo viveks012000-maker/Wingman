@@ -295,112 +295,127 @@ STRICT LAWS:
         }
     };
 
+    // In-flight credit check promise to coalesce simultaneous identical requests
+    let inFlightCreditCheckPromise = null;
+
     // Supabase Postgres Direct Profile Credit Sync – Reads 'profiles' table directly
-    window.checkCreditBalance = async function () {
-        state.creditsStatus = "loading";
-        try {
-            // Authoritative session retrieval via Supabase auth.getSession()
-            let session = null;
-            if (window.supabaseClient && window.supabaseClient.auth && typeof window.supabaseClient.auth.getSession === 'function') {
-                try {
-                    const { data, error } = await window.supabaseClient.auth.getSession();
-                    if (!error && data && data.session) {
-                        session = data.session;
-                        window.currentSupabaseSession = session;
-                        window.currentSupabaseUser = session.user;
-                    }
-                } catch (sessErr) {
-                    console.warn('[CreditSync] Notice querying Supabase session:', sessErr);
-                }
-            }
-            if (!session) {
-                session = window.currentSupabaseSession;
-            }
-
-            const user = session ? session.user : window.currentSupabaseUser;
-            const userId = user ? (user.id || user.email) : null;
-            if (!userId) {
-                // Session is still restoring or user is not logged in.
-                // DO NOT set credits to 0!
-                state.creditsStatus = "idle";
-                return { success: false, status: "unauthenticated", credits: state.credits };
-            }
-
-            // 1. Direct Supabase 'profiles' table query
-            if (window.supabaseClient && typeof window.supabaseClient.from === 'function') {
-                try {
-                    const { data, error } = await window.supabaseClient
-                        .from('profiles')
-                        .select('credits')
-                        .eq('id', user.id || userId)
-                        .maybeSingle();
-
-                    if (!error && data && typeof data.credits === 'number') {
-                        window.updateUICredits(data.credits);
-                        return { success: true, status: "loaded", credits: data.credits };
-                    }
-                    if (!error && !data) {
-                        // Profile row missing in Supabase
-                        state.credits = null;
-                        state.creditsStatus = "missing_profile";
-                        return { success: false, status: "missing_profile", code: "PROFILE_MISSING" };
-                    }
-                } catch (dbErr) {
-                    console.warn('[CreditSync] Supabase direct profiles query notice:', dbErr);
-                }
-            }
-
-            // 2. Fetch via fetchProfileCredits
-            if (typeof window.fetchProfileCredits === 'function') {
-                try {
-                    const creditsRes = await window.fetchProfileCredits(user.id || userId);
-                    if (typeof creditsRes === 'number') {
-                        window.updateUICredits(creditsRes);
-                        return { success: true, status: "loaded", credits: creditsRes };
-                    } else if (creditsRes && creditsRes.profileMissing) {
-                        state.credits = null;
-                        state.creditsStatus = "missing_profile";
-                        return { success: false, status: "missing_profile", code: "PROFILE_MISSING" };
-                    }
-                } catch (fErr) {
-                    console.warn('[CreditSync] fetchProfileCredits notice:', fErr);
-                }
-            }
-
-            // 3. Fallback: Authenticated query to /api/credits
-            const apiBase = typeof window.getApiBase === 'function' ? window.getApiBase() : '';
-            const authHeaders = typeof window.getSupabaseAuthHeaders === 'function' ? await window.getSupabaseAuthHeaders() : {};
-            if (authHeaders && authHeaders.Authorization) {
-                const resp = await fetch((apiBase || '') + '/api/credits', { headers: authHeaders });
-                if (resp.status === 404) {
-                    const errData = await resp.json().catch(() => ({}));
-                    if (errData && (errData.error === 'PROFILE_MISSING' || errData.code === 'PROFILE_MISSING')) {
-                        state.credits = null;
-                        state.creditsStatus = "missing_profile";
-                        return { success: false, status: "missing_profile", code: "PROFILE_MISSING" };
-                    }
-                }
-                if (resp.ok) {
-                    const resJson = await resp.json();
-                    if (resJson && typeof resJson.credits === 'number') {
-                        window.updateUICredits(resJson.credits);
-                        return { success: true, status: "loaded", credits: resJson.credits };
-                    } else if (resJson && resJson.data && typeof resJson.data.credits_inr === 'number') {
-                        const count = Math.round(resJson.data.credits_inr * 10);
-                        window.updateUICredits(count);
-                        return { success: true, status: "loaded", credits: count };
-                    }
-                }
-            }
-
-            // If balance cannot be verified, record error state without setting credits to 0
-            state.creditsStatus = "error";
-            return { success: false, status: "error", credits: state.credits };
-        } catch (e) {
-            console.warn('[CreditSync] Error syncing credits from Supabase profiles:', e);
-            state.creditsStatus = "error";
-            return { success: false, status: "error", credits: state.credits, error: e };
+    window.checkCreditBalance = function () {
+        if (inFlightCreditCheckPromise) {
+            return inFlightCreditCheckPromise;
         }
+
+        inFlightCreditCheckPromise = (async function () {
+            state.creditsStatus = "loading";
+            try {
+                // Authoritative session retrieval via Supabase auth.getSession()
+                let session = null;
+                if (window.supabaseClient && window.supabaseClient.auth && typeof window.supabaseClient.auth.getSession === 'function') {
+                    try {
+                        const { data, error } = await window.supabaseClient.auth.getSession();
+                        if (!error && data && data.session) {
+                            session = data.session;
+                            window.currentSupabaseSession = session;
+                            window.currentSupabaseUser = session.user;
+                        }
+                    } catch (sessErr) {
+                        console.warn('[CreditSync] Notice querying Supabase session:', sessErr);
+                    }
+                }
+                if (!session) {
+                    session = window.currentSupabaseSession;
+                }
+
+                const user = session ? session.user : window.currentSupabaseUser;
+                const userId = user ? (user.id || user.email) : null;
+                if (!userId) {
+                    // Session is still restoring or user is not logged in.
+                    // DO NOT set credits to 0!
+                    state.creditsStatus = "idle";
+                    return { success: false, status: "unauthenticated", credits: state.credits };
+                }
+
+                // 1. Direct Supabase 'profiles' table query
+                let directQueryAttempted = false;
+                if (window.supabaseClient && typeof window.supabaseClient.from === 'function') {
+                    directQueryAttempted = true;
+                    try {
+                        const { data, error } = await window.supabaseClient
+                            .from('profiles')
+                            .select('credits')
+                            .eq('id', user.id || userId)
+                            .maybeSingle();
+
+                        if (!error && data && typeof data.credits === 'number') {
+                            window.updateUICredits(data.credits);
+                            return { success: true, status: "loaded", credits: data.credits };
+                        }
+                        if (!error && !data) {
+                            // Profile row missing in Supabase
+                            state.credits = null;
+                            state.creditsStatus = "missing_profile";
+                            return { success: false, status: "missing_profile", code: "PROFILE_MISSING" };
+                        }
+                    } catch (dbErr) {
+                        console.warn('[CreditSync] Supabase direct profiles query notice:', dbErr);
+                    }
+                }
+
+                // 2. Fetch via fetchProfileCredits (only when direct client was unavailable)
+                if (!directQueryAttempted && typeof window.fetchProfileCredits === 'function') {
+                    try {
+                        const creditsRes = await window.fetchProfileCredits(user.id || userId);
+                        if (typeof creditsRes === 'number') {
+                            window.updateUICredits(creditsRes);
+                            return { success: true, status: "loaded", credits: creditsRes };
+                        } else if (creditsRes && creditsRes.profileMissing) {
+                            state.credits = null;
+                            state.creditsStatus = "missing_profile";
+                            return { success: false, status: "missing_profile", code: "PROFILE_MISSING" };
+                        }
+                    } catch (fErr) {
+                        console.warn('[CreditSync] fetchProfileCredits notice:', fErr);
+                    }
+                }
+
+                // 3. Fallback: Authenticated query to /api/credits
+                const apiBase = typeof window.getApiBase === 'function' ? window.getApiBase() : '';
+                const authHeaders = typeof window.getSupabaseAuthHeaders === 'function' ? await window.getSupabaseAuthHeaders() : {};
+                if (authHeaders && authHeaders.Authorization) {
+                    const resp = await fetch((apiBase || '') + '/api/credits', { headers: authHeaders });
+                    if (resp.status === 404) {
+                        const errData = await resp.json().catch(() => ({}));
+                        if (errData && (errData.error === 'PROFILE_MISSING' || errData.code === 'PROFILE_MISSING')) {
+                            state.credits = null;
+                            state.creditsStatus = "missing_profile";
+                            return { success: false, status: "missing_profile", code: "PROFILE_MISSING" };
+                        }
+                    }
+                    if (resp.ok) {
+                        const resJson = await resp.json();
+                        if (resJson && typeof resJson.credits === 'number') {
+                            window.updateUICredits(resJson.credits);
+                            return { success: true, status: "loaded", credits: resJson.credits };
+                        } else if (resJson && resJson.data && typeof resJson.data.credits_inr === 'number') {
+                            const count = Math.round(resJson.data.credits_inr * 10);
+                            window.updateUICredits(count);
+                            return { success: true, status: "loaded", credits: count };
+                        }
+                    }
+                }
+
+                // If balance cannot be verified, record error state without setting credits to 0
+                state.creditsStatus = "error";
+                return { success: false, status: "error", credits: state.credits };
+            } catch (e) {
+                console.warn('[CreditSync] Error syncing credits from Supabase profiles:', e);
+                state.creditsStatus = "error";
+                return { success: false, status: "error", credits: state.credits, error: e };
+            } finally {
+                inFlightCreditCheckPromise = null;
+            }
+        })();
+
+        return inFlightCreditCheckPromise;
     };
     window.fetchAndSyncUserCredits = window.checkCreditBalance;
 
