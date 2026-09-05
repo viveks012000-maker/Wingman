@@ -311,6 +311,15 @@ async function ensureUserProfile(uid, email) {
 // Canonical Initial Free Credits for all newly provisioned accounts
 const INITIAL_FREE_CREDITS = 50;
 
+// In-flight read query coalescing per authenticated user ID (Deduplicates concurrent credit reads)
+const inFlightUserCreditQueries = new Map();
+
+function invalidateInFlightCreditQuery(userId) {
+    if (userId) {
+        inFlightUserCreditQueries.delete(String(userId));
+    }
+}
+
 // Read credits from Supabase Postgres 'profiles' table (Authoritative Source of Truth)
 async function getUserCreditsDB(req) {
     const uid = getUserIdFromReq(req);
@@ -320,37 +329,52 @@ async function getUserCreditsDB(req) {
         throw err;
     }
 
-    try {
-        const { data, error } = await supabaseAdmin
-            .from('profiles')
-            .select('credits')
-            .eq('id', uid)
-            .maybeSingle();
+    // Coalesce concurrent identical in-flight read queries for the same authenticated user
+    const existing = inFlightUserCreditQueries.get(uid);
+    if (existing) {
+        return await existing;
+    }
 
-        if (error) {
-            console.error('[getUserCreditsDB Error] Failed to fetch profile.', safeLogValue(uid), safeLogValue(error && error.message));
+    const queryPromise = (async () => {
+        try {
+            const { data, error } = await supabaseAdmin
+                .from('profiles')
+                .select('credits')
+                .eq('id', uid)
+                .maybeSingle();
+
+            if (error) {
+                console.error('[getUserCreditsDB Error] Failed to fetch profile.', safeLogValue(uid), safeLogValue(error && error.message));
+                const err = new Error("Failed to fetch user profile credits.");
+                err.statusCode = 503;
+                throw err;
+            }
+
+            if (data && typeof data.credits === 'number') {
+                // Return existing stored credit balance without modifying it
+                return Number(data.credits) / CREDITS_PER_INR;
+            }
+
+            // Profile does NOT exist in Supabase: Explicit PROFILE_MISSING condition (Do NOT auto-grant 50 credits)
+            const missingErr = new Error("PROFILE_MISSING");
+            missingErr.statusCode = 404;
+            missingErr.code = "PROFILE_MISSING";
+            throw missingErr;
+        } catch (e) {
+            if (e.statusCode) throw e;
+            console.warn('[getUserCreditsDB Notice] Supabase query notice.', safeLogValue(uid), safeLogValue(e && e.message));
             const err = new Error("Failed to fetch user profile credits.");
             err.statusCode = 503;
             throw err;
+        } finally {
+            if (inFlightUserCreditQueries.get(uid) === queryPromise) {
+                inFlightUserCreditQueries.delete(uid);
+            }
         }
+    })();
 
-        if (data && typeof data.credits === 'number') {
-            // Return existing stored credit balance without modifying it
-            return Number(data.credits) / CREDITS_PER_INR;
-        }
-
-        // Profile does NOT exist in Supabase: Explicit PROFILE_MISSING condition (Do NOT auto-grant 50 credits)
-        const missingErr = new Error("PROFILE_MISSING");
-        missingErr.statusCode = 404;
-        missingErr.code = "PROFILE_MISSING";
-        throw missingErr;
-    } catch (e) {
-        if (e.statusCode) throw e;
-        console.warn('[getUserCreditsDB Notice] Supabase query notice.', safeLogValue(uid), safeLogValue(e && e.message));
-        const err = new Error("Failed to fetch user profile credits.");
-        err.statusCode = 503;
-        throw err;
-    }
+    inFlightUserCreditQueries.set(uid, queryPromise);
+    return await queryPromise;
 }
 
 async function withTransactionRetry(db, callback, retries = 5) {
@@ -493,6 +517,7 @@ async function verifyAndDeductCreditsDB(req, costParam, featureName = 'ai_featur
     }
 
     const reqId = idempotencyKey || ('req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    invalidateInFlightCreditQuery(uid);
 
     // Priority 1: Authoritative Atomic Postgres RPC function 'reserve_credits'
     try {
@@ -599,6 +624,7 @@ async function verifyAndDeductCreditsDB(req, costParam, featureName = 'ai_featur
 // Settle Credit Reservation in Supabase Postgres on successful AI completion
 async function settleCreditsDB(req, reqId) {
     const uid = getUserIdFromReq(req);
+    invalidateInFlightCreditQuery(uid);
     if (!uid || uid === 'guest_user' || !reqId) return { success: true };
     try {
         if (supabaseAdmin && supabaseAdmin.rpc) {
@@ -626,6 +652,7 @@ async function settleCreditsDB(req, reqId) {
 // Release / Cancel Credit Reservation on AI failure (Failed generation costs user ZERO credits)
 async function releaseCreditsDB(req, reqId, reason = 'ai_failure') {
     const uid = getUserIdFromReq(req);
+    invalidateInFlightCreditQuery(uid);
     if (!uid || uid === 'guest_user' || !reqId) return { success: false, remainingCredits: 0 };
     try {
         if (supabaseAdmin && supabaseAdmin.rpc) {
@@ -712,6 +739,7 @@ async function verifyAndDeductCreditsSQLite(req, costInr, featureName, idempoten
 // Persistent Credit Top-Up in Supabase Postgres ('profiles', 'payments' & 'credit_transactions')
 async function addUserCreditsDB(req, amountCreditsOrInr, tierName = 'purchase', paymentId = null, orderId = null, amountInr = 0, signature = null) {
     const uid = getUserIdFromReq(req);
+    invalidateInFlightCreditQuery(uid);
     if (!uid || uid === 'guest_user') {
         const err = new Error('Authentication required to top up credits.');
         err.statusCode = 401;
@@ -3595,6 +3623,7 @@ app.post('/api/credits/purchase', requireSupabaseAuth, apiLimiter, (req, res) =>
 app.post('/api/user/delete-account', requireSupabaseAuth, apiLimiter, async (req, res) => {
     try {
         const uid = getUserIdFromReq(req);
+        invalidateInFlightCreditQuery(uid);
         if (!uid || uid === 'guest_user') {
             return res.status(401).json({ success: false, error: 'Unauthorized: valid authentication token required.' });
         }
@@ -3766,6 +3795,9 @@ async function startWingmanServer() {
 // Importing the application must not open a network listener. Runtime entry points call
 // startWingmanServer explicitly; tests and tooling can safely import the Express app.
 module.exports = { app, startWingmanServer, supabaseAdmin };
+module.exports.getUserCreditsDB = getUserCreditsDB;
+module.exports.inFlightUserCreditQueries = inFlightUserCreditQueries;
+module.exports.invalidateInFlightCreditQuery = invalidateInFlightCreditQuery;
 module.exports.queryMaeveProvider = queryMaeveProvider;
 module.exports.getMaeveProviderFailureCode = getMaeveProviderFailureCode;
 

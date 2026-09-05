@@ -22,6 +22,7 @@ const testSuites = [
     { name: '15. Runtime Cross-Feature Isolation & Button State', file: 'runtime_cross_feature_isolation.test.js' },
     { name: '16. Credit Balance & Authoritative Auth Runtime', file: 'credit_balance_auth_runtime.test.js' },
     { name: '16a. Disposable Migration Replay & Recovery Smoke', file: 'migration_replay.test.js', timeoutMs: 180_000 },
+    { name: '16b. Deterministic Credit Coalescing & Latency Profiler', file: 'credit_coalescing_benchmark.test.js' },
     { name: '17. Migration 002 Safety & Security Audit', file: 'migration_002_safety_audit.test.js' },
     { name: '18. Migration 003 COALESCE Syntax Audit', file: 'migration_003_coalesce_audit.test.js' },
     { name: '19. System Settings & Formatting Verification', file: 'system_settings_formatting.test.js' },
