@@ -28,6 +28,7 @@ class MockElement {
         this.children = [];
         this._listeners = new Map();
         this.nextElementSibling = null;
+        this.onclick = null;
     }
     addEventListener(type, fn) {
         if (!this._listeners.has(type)) this._listeners.set(type, []);
@@ -201,15 +202,48 @@ domReady.forEach((fn) => fn());
     assert.strictEqual(location.href, originalHref,
         'stale Sign In / Account control must never navigate to the landing page');
 
-    console.log('▶ signed-out click: Sign In / Account must open auth modal in place');
+    console.log('▶ signed-out click: the visible desktop Sign In / Account control must be wired to the auth modal');
     windowMock.currentSupabaseSession = null;
     windowMock.currentSupabaseUser = null;
     windowMock.openAuthRequiredModal = function () { authModalCalls += 1; };
-    windowMock.handleAuthBtnClick({ preventDefault() {} });
+    windowMock.checkDashboardAuth();
+
+    const desktopAuthBtn = elements.get('desktopAuthBtn');
+    assert(!desktopAuthBtn.classList.contains('hidden'),
+        'signed-out desktop Sign In / Account control must be visible');
+    assert.strictEqual(typeof desktopAuthBtn.onclick, 'function',
+        'signed-out desktop Sign In / Account control must have a real click handler');
+
+    desktopAuthBtn.onclick({ preventDefault() {} });
     assert.strictEqual(authModalCalls, 1,
-        'signed-out Sign In / Account must open the canonical auth modal');
+        'clicking the visible desktop Sign In / Account control must open the canonical auth modal');
     assert.strictEqual(location.href, 'https://mywingmanapp.com/app',
         'signed-out Sign In / Account must remain on the dashboard page');
 
-    console.log('PASS: refresh session bootstrap keeps credits/auth UI synchronized and prevents accidental logout redirect');
+    console.log('▶ delayed Supabase restore: reconciliation must hydrate canonical session before rendering signed-out UI');
+    windowMock.currentSupabaseSession = null;
+    windowMock.currentSupabaseUser = null;
+    windowMock.state.credits = null;
+    windowMock.state.creditsStatus = 'idle';
+    elements.get('desktopCreditCount').textContent = 'Credits —';
+    elements.get('mobileCreditCount').textContent = 'Credits —';
+    elements.get('sidebarUserCard').classList.add('hidden');
+    elements.get('desktopAuthBtn').classList.remove('hidden');
+    supabaseClient.auth.getSession = async () => ({ data: { session: restoredSession }, error: null });
+
+    await Promise.resolve(windowMock.reconcileDashboardSession());
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    assert.strictEqual(windowMock.currentSupabaseSession, restoredSession,
+        'reconciliation must hydrate currentSupabaseSession from canonical Supabase getSession()');
+    assert.strictEqual(windowMock.currentSupabaseUser, restoredSession.user,
+        'reconciliation must hydrate currentSupabaseUser from the restored canonical session');
+    assert(elements.get('desktopAuthBtn').classList.contains('hidden'),
+        'hydrated restored session must hide stale Sign In / Account button');
+    assert(!elements.get('sidebarUserCard').classList.contains('hidden'),
+        'hydrated restored session must reveal account card');
+    assert.strictEqual(elements.get('desktopCreditCount').textContent, '47 Credits',
+        'hydrated restored session must refresh authoritative credits');
+
+    console.log('PASS: refresh session bootstrap keeps credits/auth UI synchronized and the visible desktop auth control is functional');
 })();
