@@ -277,3 +277,121 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 
     window.addEventListener('load', attachPlanRuntime, { once: true });
 })();
+
+/*
+ * Dashboard refresh/session reconciliation.
+ * Supabase is intentionally loaded before app.js. On a fast refresh it can restore a valid
+ * browser session before app.js has defined the dashboard UI handlers. The auth event is then
+ * already over by the time those handlers exist, which can leave the source placeholders
+ * ("Credits —" and "Sign In / Account") on screen. This catch-up layer reconciles the already
+ * restored canonical Supabase session once app.js is ready. It never authenticates from local
+ * flags, never invents a balance, and never changes backend credit accounting.
+ */
+(function () {
+    'use strict';
+
+    var reconcileTimer = null;
+    var reconcileInFlight = false;
+
+    function hasRestoredDashboardSession() {
+        var session = window.currentSupabaseSession;
+        return !!(
+            session &&
+            session.access_token &&
+            session.user &&
+            session.user.id
+        );
+    }
+
+    function logRefreshFailure(err) {
+        console.warn('[SessionBootstrap] Credit refresh failed:', err && err.message ? err.message : err);
+    }
+
+    function refreshAuthoritativeCredits() {
+        if (!hasRestoredDashboardSession() || typeof window.checkCreditBalance !== 'function') return;
+        if (reconcileInFlight) return;
+
+        reconcileInFlight = true;
+        try {
+            var result = window.checkCreditBalance();
+            if (result && typeof result.then === 'function') {
+                result.catch(logRefreshFailure).finally(function () {
+                    reconcileInFlight = false;
+                });
+            } else {
+                reconcileInFlight = false;
+            }
+        } catch (err) {
+            reconcileInFlight = false;
+            logRefreshFailure(err);
+        }
+    }
+
+    function reconcileDashboardSession() {
+        if (!window.state) return false;
+
+        if (typeof window.checkDashboardAuth === 'function') {
+            window.checkDashboardAuth();
+        }
+
+        if (hasRestoredDashboardSession()) {
+            refreshAuthoritativeCredits();
+        }
+        return true;
+    }
+
+    function installSessionSafeAuthButton() {
+        if (!window.state || typeof window.handleAuthBtnClick !== 'function') return false;
+        if (window.handleAuthBtnClick.__wingmanSessionSafe) return true;
+
+        var safeHandler = function (e) {
+            if (e && typeof e.preventDefault === 'function') e.preventDefault();
+
+            // The visible Sign In / Account control is never a logout control. If a restored
+            // session exists but the DOM is stale, reconcile it in-place rather than signing out.
+            if (hasRestoredDashboardSession()) {
+                reconcileDashboardSession();
+                return false;
+            }
+
+            if (typeof window.openAuthRequiredModal === 'function') {
+                window.openAuthRequiredModal(e);
+            }
+            return false;
+        };
+        safeHandler.__wingmanSessionSafe = true;
+        window.handleAuthBtnClick = safeHandler;
+        return true;
+    }
+
+    function patchSessionBootstrap() {
+        if (!window.state) return false;
+        installSessionSafeAuthButton();
+        return reconcileDashboardSession();
+    }
+
+    function scheduleSessionBootstrap(delay) {
+        if (reconcileTimer) clearTimeout(reconcileTimer);
+        reconcileTimer = setTimeout(function () {
+            reconcileTimer = null;
+            if (!patchSessionBootstrap()) {
+                // app.js may still be defining handlers. Retry briefly without creating a loop.
+                setTimeout(patchSessionBootstrap, 120);
+            }
+        }, delay || 0);
+    }
+
+    window.reconcileDashboardSession = reconcileDashboardSession;
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () {
+            scheduleSessionBootstrap(0);
+        }, { once: true });
+    } else {
+        scheduleSessionBootstrap(0);
+    }
+
+    window.addEventListener('load', function () {
+        scheduleSessionBootstrap(0);
+    }, { once: true });
+})();
