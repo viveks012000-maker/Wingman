@@ -5,6 +5,7 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const config = fs.readFileSync(path.join(root, 'config.js'), 'utf8');
+const landing = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 
 let passed = 0;
 let failed = 0;
@@ -76,8 +77,9 @@ test('C. authenticated authoritative zero: refreshUnknownCreditLabels checks has
 test('D. authenticated authoritative nonzero: refreshUnknownCreditLabels checks typeof state.credits', () => {
     const body = getRefreshBody();
     if (!body) throw new Error('refreshUnknownCreditLabels not found in config.js');
-    if (!body.includes('typeof state.credits === "number"')) {
-        throw new Error('refreshUnknownCreditLabels must check typeof state.credits === "number"');
+    // Accept either single or double quotes around 'number'
+    if (!/typeof\s+state\.credits\s*===\s*['"]number['"]/.test(body)) {
+        throw new Error('refreshUnknownCreditLabels must check typeof state.credits === number (either quote style)');
     }
 });
 
@@ -135,8 +137,8 @@ test('AUTHENTICATED: handleSignOut authenticated path redirects to index.html', 
 
 // landing hero Sign In → canonical auth interface
 test('landing hero Sign In: canonical auth modal trigger', () => {
-    // Check in both app.js and config.js for the modal trigger pattern
-    const hasTrigger = app.match(/onclick="window\.openAuthRequiredModal\(event\)"/) !== null;
+    // The landing page Sign In is in index.html (PR #126)
+    const hasTrigger = landing.match(/onclick="window\.openAuthRequiredModal\(event\)"/) !== null;
     if (!hasTrigger) {
         throw new Error('landing hero must expose the canonical Sign In modal trigger');
     }
