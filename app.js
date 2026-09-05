@@ -2045,9 +2045,9 @@ STRICT LAWS:
         state.creditsStatus = "idle";
 
         const desk = $("desktopCreditCount");
-        if (desk) desk.textContent = "Credits —";
+        if (desk) desk.textContent = "0 Credits";
         const mob = $("mobileCreditCount");
-        if (mob) mob.textContent = "Credits —";
+        if (mob) mob.textContent = "0 Credits";
 
         const analyzeCards = $("analyzeResultsCards");
         if (analyzeCards) analyzeCards.innerHTML = "";
