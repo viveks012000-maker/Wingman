@@ -295,16 +295,27 @@ STRICT LAWS:
         }
     };
 
-    // In-flight credit check promise to coalesce simultaneous identical requests
-    let inFlightCreditCheckPromise = null;
+    // In-flight credit check promises keyed by user ID to coalesce simultaneous
+    // identical requests per user while isolating different sessions.
+    const inFlightCreditCheckPromises = new Map();
 
     // Supabase Postgres Direct Profile Credit Sync – Reads 'profiles' table directly
     window.checkCreditBalance = function () {
-        if (inFlightCreditCheckPromise) {
-            return inFlightCreditCheckPromise;
+        // Determine the current user ID for session isolation
+        let currentUserId = null;
+        if (window.currentSupabaseUser && window.currentSupabaseUser.id) {
+            currentUserId = window.currentSupabaseUser.id;
+        } else if (window.currentSupabaseSession && window.currentSupabaseSession.user && window.currentSupabaseSession.user.id) {
+            currentUserId = window.currentSupabaseSession.user.id;
         }
 
-        inFlightCreditCheckPromise = (async function () {
+        // If there is an in-flight promise for the SAME user, return it (coalescing)
+        if (currentUserId !== null && inFlightCreditCheckPromises.has(currentUserId)) {
+            return inFlightCreditCheckPromises.get(currentUserId);
+        }
+
+        // Otherwise, create a new promise for this user
+        const newPromise = (async function () {
             state.creditsStatus = "loading";
             try {
                 // Authoritative session retrieval via Supabase auth.getSession()
@@ -410,12 +421,27 @@ STRICT LAWS:
                 console.warn('[CreditSync] Error syncing credits from Supabase profiles:', e);
                 state.creditsStatus = "error";
                 return { success: false, status: "error", credits: state.credits, error: e };
-            } finally {
-                inFlightCreditCheckPromise = null;
+} finally {
+                // Clear only this user's in-flight entry; other users' entries remain
+                if (currentUserId !== null) {
+                    inFlightCreditCheckPromises.delete(currentUserId);
+                }
             }
-        })();
+        });
 
-        return inFlightCreditCheckPromise;
+        // Store this user's in-flight promise in the Map so subsequent
+        // calls for the same user are coalesced (same-user concurrent requests).
+        if (currentUserId !== null) {
+            inFlightCreditCheckPromises.set(currentUserId, newPromise);
+        }
+
+        // Return the promise for the current user, cleaning up the Map entry
+        // after it resolves/rejects. If no user is identified, return the promise
+        // directly (no Map keying for unauthenticated sessions).
+        if (currentUserId !== null) {
+            return inFlightCreditCheckPromises.get(currentUserId);
+        }
+        return newPromise;
     };
     window.fetchAndSyncUserCredits = window.checkCreditBalance;
 
