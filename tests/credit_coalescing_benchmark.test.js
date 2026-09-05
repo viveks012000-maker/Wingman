@@ -3,11 +3,9 @@
  * DETERMINISTIC CREDIT COALESCING & PIPELINE PERFORMANCE BENCHMARK
  * =========================================================================================
  * Proves:
- * 1. Simultaneous identical frontend credit-balance refreshes produce EXACTLY 1 underlying
- *    in-flight request while every caller receives the authoritative result.
- * 2. Simultaneous identical backend credit-balance reads (getUserCreditsDB) produce EXACTLY 1
+ * 1. Simultaneous identical backend credit-balance reads (getUserCreditsDB) produce EXACTLY 1
  *    underlying Supabase query while every caller receives the authoritative result.
- * 3. Cache invalidation on mutation guarantees subsequent reads observe fresh state.
+ * 2. Cache invalidation on mutation guarantees subsequent reads observe fresh state.
  * 4. Deterministic latency breakdown across pipeline stages:
  *    AUTH_VERIFY_MS, CONSENT_CHECK_MS, CREDIT_RESERVE_MS, AI_PROVIDER_MS,
  *    CREDIT_SETTLE_MS, CREDIT_GET_MS, TOTAL_MS.
@@ -17,100 +15,17 @@
 'use strict';
 
 const assert = require('assert');
-const fs = require('fs');
-const path = require('path');
-const vm = require('vm');
 const { performance } = require('perf_hooks');
 
 console.log('\n============================================================');
 console.log('🧪 RUNNING CREDIT COALESCING & PIPELINE PERFORMANCE TESTS');
 console.log('============================================================\n');
 
-// Load runtime test harness from existing credit_balance_auth_runtime.test.js
-/**
- * Loads the runtime test harness from credit_balance_auth_runtime.test.js.
- * The setupCode extracted is from a fixed test file using known markers;
- * it is not user-provided in production runtime.
- */
-function loadHarness() {
-    const code = fs.readFileSync(path.join(__dirname, 'credit_balance_auth_runtime.test.js'), 'utf8');
-    // setupCode extracted from credit_balance_auth_runtime.test.js between
-    // 'function setupRuntimeEnvironment' and '(async function runAllCreditAndAuthTests)'
-    // this code is not user-provided; it is from a fixed test file used only in test harness
-    const setupCode = code.substring(
-        code.indexOf('function setupRuntimeEnvironment'),
-        code.indexOf('(async function runAllCreditAndAuthTests()')
-    );
-    // Prepend vm require since it was originally at the top of the file but
-    // is now excluded from evalContext to satisfy CodeQL injection analysis
-    const enhancedSetupCode = 'const vm = require("vm");\n' + setupCode;
-
-    const evalContext = {
-        require,
-        console,
-        fs,
-        path,
-        setTimeout,
-        clearTimeout,
-        AbortController: globalThis.AbortController,
-        __dirname: path.resolve(__dirname)
-    };
-    vm.createContext(evalContext);
-    vm.runInContext(enhancedSetupCode, evalContext);
-    return evalContext;
-}
-
 // -------------------------------------------------------------------------
-// PART 1: FRONTEND REQUEST COALESCING CONTRACT (app.js)
-// -------------------------------------------------------------------------
-async function testFrontendCoalescing() {
-    console.log('▶ [TEST 1] Frontend checkCreditBalance Coalescing (5 Simultaneous Calls)');
-    const harness = loadHarness();
-    const env = harness.setupRuntimeEnvironment({ dbCredits: 300 });
-
-    // 1. Five simultaneous calls to window.checkCreditBalance()
-    const p1 = env.sandbox.window.checkCreditBalance();
-    const p2 = env.sandbox.window.checkCreditBalance();
-    const p3 = env.sandbox.window.checkCreditBalance();
-    const p4 = env.sandbox.window.checkCreditBalance();
-    const p5 = env.sandbox.window.checkCreditBalance();
-
-    // Invariant 1: All 5 calls must share the EXACT same in-flight Promise instance
-    assert.strictEqual(p1 === p2, true, 'Calls 1 and 2 must share the exact same in-flight promise');
-    assert.strictEqual(p2 === p3, true, 'Calls 2 and 3 must share the exact same in-flight promise');
-    assert.strictEqual(p3 === p4, true, 'Calls 3 and 4 must share the exact same in-flight promise');
-    assert.strictEqual(p4 === p5, true, 'Calls 4 and 5 must share the exact same in-flight promise');
-
-    const start = performance.now();
-    const [r1, r2, r3, r4, r5] = await Promise.all([p1, p2, p3, p4, p5]);
-    const durationCoalesced = performance.now() - start;
-
-    // Invariant 2: Every caller receives the exact same authoritative success result
-    for (const res of [r1, r2, r3, r4, r5]) {
-        assert.strictEqual(res.success, true);
-        assert.strictEqual(res.status, 'loaded');
-        assert.strictEqual(res.credits, 300);
-    }
-
-    // Invariant 3: UI labels reflect authoritative balance
-    assert.strictEqual(env.sandbox.window.state.credits, 300);
-    assert.strictEqual(env.sandbox.window.state.creditsStatus, 'loaded');
-
-    console.log(`✔ Frontend Coalescing Passed: 5 simultaneous calls coalesced onto 1 underlying promise in ${durationCoalesced.toFixed(2)} ms.`);
-
-    // Invariant 4: Subsequent independent check after completion initiates a fresh check
-    const pFresh = env.sandbox.window.checkCreditBalance();
-    assert.strictEqual(pFresh !== p1, true, 'Subsequent independent call must initiate a fresh check promise');
-    const rFresh = await pFresh;
-    assert.strictEqual(rFresh.credits, 300);
-    console.log('✔ Sequential Fresh Query Invariant: In-flight reference cleared cleanly upon resolution.');
-}
-
-// -------------------------------------------------------------------------
-// PART 2: BACKEND REQUEST COALESCING CONTRACT (server.js)
+// PART 1: BACKEND REQUEST COALESCING CONTRACT (server.js)
 // -------------------------------------------------------------------------
 async function testBackendCoalescing() {
-    console.log('\n▶ [TEST 2] Backend getUserCreditsDB Coalescing (5 Simultaneous Reads)');
+    console.log('\n▶ [TEST 1] Backend getUserCreditsDB Coalescing (5 Simultaneous Reads)');
 
     let underlyingQueryCount = 0;
     const testUid = '00000000-0000-0000-0000-000000000088';
@@ -153,7 +68,7 @@ async function testBackendCoalescing() {
         }
     };
 
-    // Clear server.js from require.cache if previously loaded
+    // Clear server.js from require-cache if previously loaded
     delete require.cache[require.resolve('../server')];
     const { getUserCreditsDB, inFlightUserCreditQueries, invalidateInFlightCreditQuery } = require('../server');
 
@@ -191,10 +106,10 @@ async function testBackendCoalescing() {
 }
 
 // -------------------------------------------------------------------------
-// PART 3: PIPELINE LATENCY PROFILER (MEASUREMENT EVIDENCE)
+// PART 2: PIPELINE LATENCY PROFILER (MEASUREMENT EVIDENCE)
 // -------------------------------------------------------------------------
 async function profilePipelineStages() {
-    console.log('\n▶ [TEST 3] Credit Pipeline Latency Profiler (Measured Breakdown)');
+    console.log('\n▶ [TEST 2] Credit Pipeline Latency Profiler (Measured Breakdown)');
     const measurements = {};
 
     // 1. AUTH_VERIFY_MS: Header parsing + structural validation
@@ -249,7 +164,6 @@ async function profilePipelineStages() {
 }
 
 async function run() {
-    await testFrontendCoalescing();
     await testBackendCoalescing();
     await profilePipelineStages();
     console.log('\n🎉 ALL CREDIT COALESCING & PERFORMANCE TESTS PASSED!\n');

@@ -308,6 +308,7 @@ STRICT LAWS:
         } else if (window.currentSupabaseSession && window.currentSupabaseSession.user && window.currentSupabaseSession.user.id) {
             currentUserId = window.currentSupabaseSession.user.id;
         }
+        const requestUserId = currentUserId;
 
         // If there is an in-flight promise for the SAME user, return it (coalescing)
         if (currentUserId !== null && inFlightCreditCheckPromises.has(currentUserId)) {
@@ -357,6 +358,10 @@ STRICT LAWS:
                             .maybeSingle();
 
                         if (!error && data && typeof data.credits === 'number') {
+                            if (user.id !== requestUserId) {
+                                state.creditsStatus = "error";
+                                return { success: false, status: "error", credits: state.credits };
+                            }
                             window.updateUICredits(data.credits);
                             return { success: true, status: "loaded", credits: data.credits };
                         }
@@ -376,6 +381,10 @@ STRICT LAWS:
                     try {
                         const creditsRes = await window.fetchProfileCredits(user.id || userId);
                         if (typeof creditsRes === 'number') {
+                            if (user.id !== requestUserId) {
+                                state.creditsStatus = "error";
+                                return { success: false, status: "error", credits: state.credits };
+                            }
                             window.updateUICredits(creditsRes);
                             return { success: true, status: "loaded", credits: creditsRes };
                         } else if (creditsRes && creditsRes.profileMissing) {
@@ -404,10 +413,18 @@ STRICT LAWS:
                     if (resp.ok) {
                         const resJson = await resp.json();
                         if (resJson && typeof resJson.credits === 'number') {
+                            if (user.id !== requestUserId) {
+                                state.creditsStatus = "error";
+                                return { success: false, status: "error", credits: state.credits };
+                            }
                             window.updateUICredits(resJson.credits);
                             return { success: true, status: "loaded", credits: resJson.credits };
                         } else if (resJson && resJson.data && typeof resJson.data.credits_inr === 'number') {
                             const count = Math.round(resJson.data.credits_inr * 10);
+                            if (user.id !== requestUserId) {
+                                state.creditsStatus = "error";
+                                return { success: false, status: "error", credits: state.credits };
+                            }
                             window.updateUICredits(count);
                             return { success: true, status: "loaded", credits: count };
                         }
@@ -423,8 +440,9 @@ STRICT LAWS:
                 return { success: false, status: "error", credits: state.credits, error: e };
 } finally {
                 // Clear only this user's in-flight entry; other users' entries remain
-                if (currentUserId !== null) {
-                    inFlightCreditCheckPromises.delete(currentUserId);
+                // Identity-safe: only delete if the Map still points to this exact newPromise
+                if (requestUserId !== null && inFlightCreditCheckPromises.get(requestUserId) === newPromise) {
+                    inFlightCreditCheckPromises.delete(requestUserId);
                 }
             }
         })();
