@@ -2275,7 +2275,7 @@ STRICT LAWS:
 
         const btnTextEl = $("purchaseBtnText");
         if (btnTextEl) {
-            const label = tierValue === 'starter' ? 'Starter Bundle' : (tierValue === 'pro' ? 'Pro Bundle' : 'Elite Bundle');
+            const label = tierValue === 'starter' ? 'Starter Bundle' : (tierValue === 'pro' ? 'Pro Bundle' : (tierValue === 'limited' ? 'VIP Bundle (Limited Offer)' : 'Elite Bundle'));
             btnTextEl.textContent = "Acquire " + label + " - $" + price.toFixed(2);
         }
     };
@@ -2674,6 +2674,7 @@ STRICT LAWS:
         if (typeof window.checkServerConsentStatus === "function") {
             window.checkServerConsentStatus();
         }
+        handleUrlTierParameters();
     }
 
     if (document.readyState === "loading") {
@@ -2852,16 +2853,13 @@ STRICT LAWS:
             const tier = params.get("tier");
             if (!tier) return;
 
-            const isAuth = !!(window.currentSupabaseSession && window.currentSupabaseSession.access_token);
-            if (!isAuth) {
-                window.openAuthRequiredModal();
-                return;
-            }
-
-            const creditMap = { starter: 250, pro: 600, elite: 3000 };
-            const nameMap = { starter: "Starter Pack", pro: "Pro Pack", elite: "Elite Pack" };
+            const creditMap = { starter: 250, pro: 600, elite: 3000, limited: 100000 };
+            const nameMap = { starter: "Starter Pack", pro: "Pro Pack", elite: "Elite Pack", limited: "VIP Pack (Limited Time Offer)" };
 
             if (creditMap[tier]) {
+                if (typeof window.openPurchaseModal === 'function') {
+                    window.openPurchaseModal();
+                }
                 // Payment processing is intentionally fail-closed. A tier query parameter
                 // must never imply that credits were purchased or minted.
                 window.simulateDemoPurchase(creditMap[tier]);
@@ -4059,6 +4057,17 @@ STRICT LAWS:
         try {
             const isAuth = !!(window.currentSupabaseSession && window.currentSupabaseSession.access_token);
             if (!isAuth) {
+                const guestAccepted = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('wingman_guest_terms_accepted') === 'true');
+                if (guestAccepted) {
+                    state.isTermsAccepted = true;
+                    state.consentStatus = 'active_local';
+                    safeStorage.set('wingman_terms_accepted', 'true');
+                    safeStorage.set('wingman_consent_version', '2026.1');
+                    if (typeof window.closeInterstitialModal === 'function') window.closeInterstitialModal();
+                    if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+                    if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
+                    return true;
+                }
                 state.isTermsAccepted = false;
                 state.consentStatus = 'unauthenticated';
                 safeStorage.remove('wingman_terms_accepted');
@@ -4141,8 +4150,27 @@ STRICT LAWS:
 
         const isAuth = !!(window.currentSupabaseSession && window.currentSupabaseSession.access_token);
         if (!isAuth) {
-            if (typeof window.openAuthRequiredModal === 'function') {
-                window.openAuthRequiredModal("Please sign in or create an account to record your 18+ verification and consent.");
+            try {
+                if (typeof sessionStorage !== 'undefined') {
+                    sessionStorage.setItem('wingman_guest_terms_accepted', 'true');
+                }
+            } catch (_) {}
+            safeStorage.set('wingman_terms_accepted', 'true');
+            safeStorage.set('wingman_consent_version', '2026.1');
+            safeStorage.set('wingman_consent_accepted_at', new Date().toISOString());
+            state.isTermsAccepted = true;
+            state.consentStatus = 'active_local';
+
+            const modal = document.getElementById('interstitialModal');
+            if (modal) {
+                modal.classList.add('hidden', 'opacity-0', 'pointer-events-none');
+                modal.classList.remove('opacity-100', 'pointer-events-auto');
+                modal.style.display = 'none';
+            }
+            if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+            if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
+            if (typeof window.showToast === 'function') {
+                window.showToast("18+ Age verification & legal terms accepted.", "success");
             }
             return;
         }
