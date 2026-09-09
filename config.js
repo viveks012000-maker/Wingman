@@ -196,6 +196,8 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
     function setPlanBadge(text) {
         var badge = getPlanBadge();
         if (badge) badge.textContent = text;
+        var desktopPlan = document.getElementById('desktopPlanBadge');
+        if (desktopPlan) desktopPlan.textContent = text;
     }
 
     async function getAuthenticatedUser() {
@@ -401,6 +403,11 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 
         button.__wingmanSessionSafeBound = true;
         button.onclick = function (e) {
+            if (elementId === 'mobileAuthBtn' && hasRestoredDashboardSession()) {
+                if (typeof window.handleSignOut === 'function') {
+                    return window.handleSignOut(e);
+                }
+            }
             if (typeof window.handleAuthBtnClick === 'function') {
                 return window.handleAuthBtnClick(e);
             }
