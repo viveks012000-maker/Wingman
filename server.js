@@ -3579,14 +3579,15 @@ app.post('/api/payments/verify', requireSupabaseAuth, apiLimiter, async (req, re
         const tierMap = {
             starter: { credits: 250, price: 4.99 },
             pro: { credits: 600, price: 9.99 },
-            elite: { credits: 3000, price: 19.99 }
+            elite: { credits: 3000, price: 19.99 },
+            limited: { credits: 100000, price: 49.00 }
         };
 
         const tierData = tierMap[tier];
         const targetCredits = Number(credits) || (tierData ? tierData.credits : 0);
         const addAmountInr = amountInr ? Number(amountInr) : (targetCredits > 0 ? targetCredits / CREDITS_PER_INR : 0);
 
-        if (isNaN(addAmountInr) || addAmountInr <= 0 || addAmountInr > 1000) {
+        if (isNaN(addAmountInr) || addAmountInr <= 0 || addAmountInr > 20000) {
             return res.status(400).json({ success: false, error: "Invalid credit top-up parameters." });
         }
 
