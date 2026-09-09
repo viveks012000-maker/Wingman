@@ -2165,15 +2165,35 @@ STRICT LAWS:
 
         const mobileLabel = $("mobileAuthBtnLabel");
         const mobileBtn = $("mobileAuthBtn");
-        if (mobileLabel && isAuth) mobileLabel.textContent = "Sign Out";
-        else if (mobileLabel) mobileLabel.textContent = "Sign In";
-
-        if (mobileBtn && isAuth) {
-            mobileBtn.onclick = function (e) { window.handleSignOut(e); };
-        } else if (mobileBtn) {
-            mobileBtn.onclick = function (e) {
-                if (typeof window.openAuthRequiredModal === 'function') window.openAuthRequiredModal(e);
-            };
+        const mobileIcon = $("mobileAuthBtnIcon");
+        if (isAuth) {
+            if (mobileLabel) {
+                mobileLabel.textContent = "Sign Out";
+                mobileLabel.className = "text-[11px] font-semibold text-red-400 whitespace-nowrap";
+            }
+            if (mobileBtn) {
+                mobileBtn.className = "h-8 px-2.5 rounded-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer shadow-sm shrink-0 font-label text-xs font-semibold";
+                mobileBtn.title = "Sign Out";
+                mobileBtn.onclick = function (e) { window.handleSignOut(e); };
+            }
+            if (mobileIcon) {
+                mobileIcon.innerHTML = '<svg class="w-3.5 h-3.5 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>';
+            }
+        } else {
+            if (mobileLabel) {
+                mobileLabel.textContent = "Sign In";
+                mobileLabel.className = "text-[11px] font-bold text-white whitespace-nowrap";
+            }
+            if (mobileBtn) {
+                mobileBtn.className = "h-8 px-2.5 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 border border-violet-400/40 text-white flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shrink-0 font-label text-xs font-bold";
+                mobileBtn.title = "Sign In";
+                mobileBtn.onclick = function (e) {
+                    if (typeof window.openAuthRequiredModal === 'function') window.openAuthRequiredModal(e);
+                };
+            }
+            if (mobileIcon) {
+                mobileIcon.innerHTML = '<svg class="w-3.5 h-3.5 text-white shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" /></svg>';
+            }
         }
 
         const b = $("topAuthBanner");
@@ -2583,8 +2603,14 @@ STRICT LAWS:
         }
 
         const chatInput = $("simulator-chat-input");
-        if (chatInput && document.body && window.innerHeight) {
-            const keyboardOpen = document.activeElement === chatInput && height < window.innerHeight * 0.85;
+        if (chatInput && document.body) {
+            const isChatActive = document.activeElement === chatInput;
+            const isMobile = window.innerWidth < 768;
+            const keyboardOpen = isChatActive && (
+                isMobile ||
+                (window.visualViewport && window.innerHeight && window.visualViewport.height < window.innerHeight * 0.85) ||
+                (window.screen && window.screen.height && window.innerHeight < window.screen.height * 0.75)
+            );
             document.body.classList.toggle('chat-keyboard-open', keyboardOpen);
         }
     }
@@ -2625,8 +2651,36 @@ STRICT LAWS:
             ci.addEventListener("input", function() { window.updateButtonStates(); });
             ci.addEventListener("keyup", function() { window.updateButtonStates(); });
             ci.addEventListener("paste", function() { setTimeout(window.updateButtonStates, 50); });
-            ci.addEventListener("focus", function() { setTimeout(updateVisualViewportHeight, 0); });
-            ci.addEventListener("blur", function() { setTimeout(updateVisualViewportHeight, 0); });
+            ci.addEventListener("focus", function() {
+                if (window.innerWidth < 768) {
+                    document.body.classList.add("chat-keyboard-open");
+                }
+                setTimeout(function() {
+                    updateVisualViewportHeight();
+                    try {
+                        ci.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        if (typeof window.scrollToBottom === 'function') window.scrollToBottom(true);
+                    } catch(e) {}
+                }, 100);
+                setTimeout(function() {
+                    updateVisualViewportHeight();
+                    try {
+                        ci.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        if (typeof window.scrollToBottom === 'function') window.scrollToBottom(true);
+                    } catch(e) {}
+                }, 300);
+            });
+            ci.addEventListener("blur", function() {
+                document.body.classList.remove("chat-keyboard-open");
+                setTimeout(updateVisualViewportHeight, 100);
+                setTimeout(function() {
+                    updateVisualViewportHeight();
+                    // On iOS Safari, resetting window scroll after keyboard dismiss eliminates residual viewport shift
+                    if (/iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent))) {
+                        window.scrollTo(0, 0);
+                    }
+                }, 350);
+            });
         }
 
         const si = $("screenshotInput");

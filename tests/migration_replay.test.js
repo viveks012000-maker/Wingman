@@ -14,7 +14,7 @@ const migrations = fs.readdirSync(migrationDir)
     .filter(name => name.endsWith('.sql'))
     .sort();
 assert.deepEqual(migrations.map(name => name.slice(0, 3)), [
-    '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012'
+    '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013'
 ], 'tracked migration order must remain explicit and stable');
 
 const container = `wingman-migration-replay-${process.pid}`;
@@ -82,31 +82,32 @@ try {
 BEGIN;
 INSERT INTO auth.users(id) VALUES ('${userId}'), ('${otherId}');
 DO $$ BEGIN
-  IF (SELECT credits FROM public.profiles WHERE id = '${userId}') <> 50 THEN RAISE EXCEPTION 'signup must grant exactly 50 credits'; END IF;
+  IF (SELECT credits FROM public.profiles WHERE id = '${userId}') <> 20 THEN RAISE EXCEPTION 'signup must grant exactly 20 credits'; END IF;
+  IF (SELECT has_paid_credits FROM public.profiles WHERE id = '${userId}') <> false THEN RAISE EXCEPTION 'signup must be on Free Plan'; END IF;
 END $$;
 SELECT set_config('request.jwt.claim.role', 'service_role', true);
 DO $$ DECLARE result json; BEGIN
   result := public.reserve_credits('${userId}', 10, 'analyzer', 'replay-1');
-  IF result->>'success' <> 'true' OR (result->>'remainingCredits')::int <> 40 THEN RAISE EXCEPTION 'reservation failed: %', result; END IF;
+  IF result->>'success' <> 'true' OR (result->>'remainingCredits')::int <> 10 THEN RAISE EXCEPTION 'reservation failed: %', result; END IF;
   result := public.reserve_credits('${userId}', 10, 'analyzer', 'replay-1');
-  IF result->>'duplicate' <> 'true' OR (result->>'remainingCredits')::int <> 40 THEN RAISE EXCEPTION 'reservation was not idempotent: %', result; END IF;
+  IF result->>'duplicate' <> 'true' OR (result->>'remainingCredits')::int <> 10 THEN RAISE EXCEPTION 'reservation was not idempotent: %', result; END IF;
   result := public.settle_credits('${userId}', 'replay-1');
   IF result->>'success' <> 'true' THEN RAISE EXCEPTION 'settlement failed: %', result; END IF;
   result := public.settle_credits('${userId}', 'replay-1');
   IF result->>'success' <> 'true' THEN RAISE EXCEPTION 'settlement replay failed: %', result; END IF;
   result := public.reserve_credits('${userId}', 10, 'analyzer', 'replay-2');
-  IF result->>'success' <> 'true' OR (result->>'remainingCredits')::int <> 30 THEN RAISE EXCEPTION 'second reservation failed: %', result; END IF;
+  IF result->>'success' <> 'true' OR (result->>'remainingCredits')::int <> 0 THEN RAISE EXCEPTION 'second reservation failed: %', result; END IF;
   result := public.release_credits('${userId}', 'replay-2', 'test');
-  IF result->>'released' <> 'true' OR (result->>'remainingCredits')::int <> 40 THEN RAISE EXCEPTION 'release failed: %', result; END IF;
+  IF result->>'released' <> 'true' OR (result->>'remainingCredits')::int <> 10 THEN RAISE EXCEPTION 'release failed: %', result; END IF;
   result := public.release_credits('${userId}', 'replay-2', 'test');
-  IF result->>'already_settled_or_released' <> 'true' OR (result->>'remainingCredits')::int <> 40 THEN RAISE EXCEPTION 'release replay was not idempotent: %', result; END IF;
+  IF result->>'already_settled_or_released' <> 'true' OR (result->>'remainingCredits')::int <> 10 THEN RAISE EXCEPTION 'release replay was not idempotent: %', result; END IF;
   result := public.reserve_credits('${userId}', 1000, 'analyzer', 'replay-insufficient');
   IF result->>'error' <> 'INSUFFICIENT_CREDITS' THEN RAISE EXCEPTION 'insufficient balance was not rejected: %', result; END IF;
   result := public.record_user_consent('terms-v1', 'privacy-v1', true, true, NULL, NULL, '${userId}');
   IF result->>'success' <> 'true' OR result->>'user_id' <> '${userId}' THEN RAISE EXCEPTION 'consent flow failed: %', result; END IF;
 END $$;
 DO $$ BEGIN
-  IF (SELECT credits FROM public.profiles WHERE id = '${userId}') <> 40 THEN RAISE EXCEPTION 'balance invariant failed'; END IF;
+  IF (SELECT credits FROM public.profiles WHERE id = '${userId}') <> 10 THEN RAISE EXCEPTION 'balance invariant failed'; END IF;
 END $$;
 DELETE FROM auth.users WHERE id = '${userId}';
 DO $$ BEGIN

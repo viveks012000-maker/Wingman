@@ -762,6 +762,7 @@ select,
         min-height: 40px !important;
         max-height: none !important;
         overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
         overscroll-behavior-y: contain;
         padding: 12px !important;
     }
@@ -862,6 +863,15 @@ select,
         padding-bottom: 16px !important;
     }
 
+    /* Maximize conversation viewport while typing on mobile by hiding drill scenario chips and subtitle */
+    body.app-page.chat-keyboard-open #practiceScenarioContainer,
+    body.app-page.chat-keyboard-open #practiceScenarioBar,
+    body.app-page.chat-keyboard-open #chatbox-simulator-panel > .flex.flex-col.gap-1\.5,
+    body.app-page.chat-keyboard-open #chatbox-simulator-panel > p#practiceModeSubtitle,
+    body.app-page.chat-keyboard-open #simulatorReviewActionRow {
+        display: none !important;
+    }
+
     body.app-page.chat-keyboard-open #chatbox-credit-notice {
         display: flex !important;
         opacity: 1 !important;
@@ -869,6 +879,55 @@ select,
         min-height: 0 !important;
         padding: 0 8px 2px !important;
         overflow: visible !important;
+    }
+
+    /* iOS Safari 16px font-size guarantee across all app inputs to prevent automatic zoom */
+    body.app-page input,
+    body.app-page textarea,
+    body.app-page select,
+    body.app-page .bio-input-field {
+        font-size: 16px !important;
+    }
+
+    body.app-page #mobileAuthBtn {
+        -webkit-appearance: none;
+        appearance: none;
+        padding-left: 10px !important;
+        padding-right: 10px !important;
+        gap: 5px !important;
+    }
+
+    @media (max-width: 359px) {
+        body.app-page > header {
+            padding-left: 6px !important;
+            padding-right: 6px !important;
+        }
+        body.app-page > header > div:last-child {
+            gap: 4px !important;
+        }
+        body.app-page #mobileAuthBtn {
+            padding-left: 7px !important;
+            padding-right: 7px !important;
+            gap: 3px !important;
+            font-size: 10px !important;
+        }
+        body.app-page #mobileAuthBtn svg {
+            width: 12px !important;
+            height: 12px !important;
+        }
+        body.app-page #mobileCreditPill {
+            padding-left: 6px !important;
+            padding-right: 4px !important;
+            gap: 3px !important;
+        }
+        body.app-page #mobileCreditCount {
+            font-size: 10px !important;
+        }
+        body.app-page #mobileCreditPill span:last-child {
+            padding-left: 5px !important;
+            padding-right: 5px !important;
+            font-size: 9.5px !important;
+        }
     }
 
     /* All mobile app dialogs share one viewport/scroll contract. */
