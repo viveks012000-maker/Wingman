@@ -8,6 +8,7 @@ const root = path.join(__dirname, '..');
 const migrationPath = path.join(root, 'migrations', '015_provision_profile_after_email_verification.sql');
 const supabaseClientSrc = fs.readFileSync(path.join(root, 'supabaseClient.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const appSrc = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const replaySrc = fs.readFileSync(path.join(root, 'tests', 'migration_replay.test.js'), 'utf8');
 
 let passed = 0;
@@ -82,9 +83,11 @@ test('5. Safely recoverable confirmed users missing profiles are backfilled with
 
 test('6. Pending signup UI accurately says verification finishes signup and activates credits', () => {
   assert.ok(!supabaseClientSrc.includes('Account created! Please check your email to confirm your account and sign in.'), 'pending signup toast must not claim Account created');
-  assert.ok(!indexHtml.includes('Account created. Check your email to verify it before signing in.'), 'pending signup inline message must not claim Account created');
+  assert.ok(!indexHtml.includes('Account created. Check your email to verify it before signing in.'), 'landing pending-signup message must not claim Account created');
+  assert.ok(!appSrc.includes('Account created. Check your email to verify it before signing in.'), 'dashboard pending-signup message must not claim Account created');
   assert.ok(supabaseClientSrc.includes(pendingMessage), 'Supabase signup helper must show the canonical pending-verification message');
   assert.ok(indexHtml.includes(pendingMessage), 'landing auth form must show the canonical pending-verification message');
+  assert.ok(appSrc.includes(pendingMessage), 'dashboard auth form must show the canonical pending-verification message');
 });
 
 test('7. Pending signup remains explicitly unauthenticated until Supabase returns a real session', () => {
@@ -92,10 +95,14 @@ test('7. Pending signup remains explicitly unauthenticated until Supabase return
   assert.ok(/confirmationRequired:\s*true/.test(supabaseClientSrc), 'confirmation-required signup marker must remain present');
 });
 
-test('8. Migration replay is extended through migration 015', () => {
-  assert.ok(replaySrc.includes('015_provision_profile_after_email_verification.sql'), 'migration replay must include migration 015');
+test('8. Migration replay is extended through migration 015 and exercises its repair paths', () => {
+  assert.ok(
+    /'013'\s*,\s*'014'\s*,\s*'015'/.test(replaySrc),
+    'migration replay must assert the tracked migration chain through 015'
+  );
   assert.ok(replaySrc.includes('unconfirmed signup must not receive a profile or credits'), 'replay must prove pending signups receive no profile/credits');
   assert.ok(replaySrc.includes('confirmed-at-insert user must receive exactly 20 credits'), 'replay must prove confirmed-at-insert/OAuth provisioning');
+  assert.ok(replaySrc.includes('Confirmed identity missing a profile and with no credit history must be safely backfilled to 20'), 'replay must prove safe confirmed-profile backfill behavior');
 });
 
 console.log(`\nResults: ${passed} passed, ${failed} failed.`);
