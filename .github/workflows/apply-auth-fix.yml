@@ -1,0 +1,228 @@
+name: Apply Fail-Closed Auth Fix
+
+on:
+  push:
+    branches:
+      - fix/fail-closed-email-auth
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/fail-closed-email-auth
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Apply minimal fail-closed authentication patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'Expected source block not found in {path}')
+              p.write_text(text.replace(old, new, 1))
+
+          # Central session verifier: UI auth decisions must be backed by a current Supabase
+          # session whose user identity is verified by the Auth server.
+          replace_once(
+              'supabaseClient.js',
+              "    var emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\n\n    // 1. Email/Password Signup",
+              "    var emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\n\n    // Return only a currently authenticated Supabase session whose user identity can be\n    // verified by the Auth server. Callers must fail closed when this returns null.\n    window.getCurrentAuthenticatedSession = async function () {\n        const client = await initSupabase();\n        if (!client || !client.auth) return null;\n\n        try {\n            const sessionResp = await client.auth.getSession();\n            if (sessionResp && sessionResp.error) return null;\n            const session = sessionResp && sessionResp.data ? sessionResp.data.session : null;\n            if (!session || !session.user || !isValidToken(session.access_token)) return null;\n\n            const userResp = await client.auth.getUser();\n            const verifiedUser = userResp && userResp.data ? userResp.data.user : null;\n            if ((userResp && userResp.error) || !verifiedUser || verifiedUser.id !== session.user.id) return null;\n\n            return Object.assign({}, session, { user: verifiedUser });\n        } catch (err) {\n            console.warn('[SupabaseClient] Auth session verification failed:', err && err.message ? err.message : err);\n            return null;\n        }\n    };\n\n    // 1. Email/Password Signup"
+          )
+
+          replace_once(
+              'supabaseClient.js',
+              "                    return { success: true, user: resp.data.user, session: resp.data.session };",
+              "                    return { success: true, authenticated: true, user: resp.data.user, session: resp.data.session };"
+          )
+          replace_once(
+              'supabaseClient.js',
+              "                    return { success: true, user: resp.data.user, session: null, confirmationRequired: true };",
+              "                    return { success: true, authenticated: false, user: resp.data.user, session: null, confirmationRequired: true };"
+          )
+          replace_once(
+              'supabaseClient.js',
+              "                    return { success: true, user: resp.data.user, session: resp.data.session, weakPassword: weakPassword };",
+              "                    return { success: true, authenticated: true, user: resp.data.user, session: resp.data.session, weakPassword: weakPassword };"
+          )
+
+          # App auth form: refuse account switching while already authenticated; never set
+          # logged-in UI state unless the credential result and a fresh verified session agree.
+          replace_once(
+              'app.js',
+              "        if (errBox) errBox.classList.add(\"hidden\");\n\n        if (!email || !email.includes(\"@\") || !email.includes(\".\")) {",
+              "        if (errBox) errBox.classList.add(\"hidden\");\n\n        if (typeof window.getCurrentAuthenticatedSession !== \"function\") {\n            if (errBox) {\n                errBox.textContent = \"Authentication service is initializing. Please try again.\";\n                errBox.classList.remove(\"hidden\");\n            }\n            return;\n        }\n\n        const sessionBeforeAttempt = await window.getCurrentAuthenticatedSession();\n        const localSessionBeforeAttempt = window.currentSupabaseSession;\n        if ((sessionBeforeAttempt && sessionBeforeAttempt.user && sessionBeforeAttempt.access_token) ||\n            (localSessionBeforeAttempt && localSessionBeforeAttempt.user && localSessionBeforeAttempt.access_token)) {\n            if (errBox) {\n                errBox.textContent = \"You are already signed in. Sign out first to switch accounts.\";\n                errBox.classList.remove(\"hidden\");\n            }\n            return;\n        }\n\n        if (!email || !email.includes(\"@\") || !email.includes(\".\")) {"
+          )
+
+          old_app = '''            if (!authResult.success) {
+                if (errBox) {
+                    errBox.textContent = authResult.error || "Authentication failed. Please check your credentials.";
+                    errBox.classList.remove("hidden");
+                }
+                return;
+            }
+
+            safeStorage.set("wingman_authenticated", "true");
+            safeStorage.set("wingman_login_agreed", "true");
+            safeStorage.set("wingman_user_authenticated", "true");
+            safeStorage.set("wingman_user_email", email);
+
+            if (typeof window.closeAuthRequiredModal === "function") window.closeAuthRequiredModal();
+            if (typeof window.checkDashboardAuth === "function") window.checkDashboardAuth();
+            if (typeof window.checkCreditBalance === "function") window.checkCreditBalance();
+            if (typeof window.checkServerConsentStatus === "function") window.checkServerConsentStatus();
+            if (typeof window.showToast === "function") {
+                const actionText = window.isSignupMode ? "Account created as " : "Signed in as ";
+                window.showToast(actionText + email + " 🚀", "success");
+            }
+
+            if (window.pendingPurchaseTargetUrl) {
+                const targetUrl = window.pendingPurchaseTargetUrl;
+                window.pendingPurchaseTargetUrl = null;
+                window.location.href = targetUrl;
+            }'''
+          new_app = '''            if (authResult.confirmationRequired && authResult.authenticated !== true) {
+                if (errBox) {
+                    errBox.textContent = "Account created. Check your email to verify it before signing in.";
+                    errBox.classList.remove("hidden");
+                }
+                return;
+            }
+
+            if (!authResult.success || authResult.authenticated !== true || !authResult.user ||
+                !authResult.session || !authResult.session.access_token) {
+                if (errBox) {
+                    errBox.textContent = authResult.error || "Authentication failed. Please check your credentials.";
+                    errBox.classList.remove("hidden");
+                }
+                return;
+            }
+
+            const verifiedSession = await window.getCurrentAuthenticatedSession();
+            if (!verifiedSession || !verifiedSession.user || !verifiedSession.access_token ||
+                verifiedSession.user.id !== authResult.user.id) {
+                if (errBox) {
+                    errBox.textContent = "Authentication could not be verified. Please sign in again.";
+                    errBox.classList.remove("hidden");
+                }
+                return;
+            }
+
+            window.currentSupabaseSession = verifiedSession;
+            window.currentSupabaseUser = verifiedSession.user;
+            const verifiedEmail = verifiedSession.user.email || email;
+
+            safeStorage.set("wingman_authenticated", "true");
+            safeStorage.set("wingman_login_agreed", "true");
+            safeStorage.set("wingman_user_authenticated", "true");
+            safeStorage.set("wingman_user_email", verifiedEmail);
+
+            if (typeof window.closeAuthRequiredModal === "function") window.closeAuthRequiredModal();
+            if (typeof window.checkDashboardAuth === "function") window.checkDashboardAuth();
+            if (typeof window.checkCreditBalance === "function") window.checkCreditBalance();
+            if (typeof window.checkServerConsentStatus === "function") window.checkServerConsentStatus();
+            if (typeof window.showToast === "function") {
+                const actionText = window.isSignupMode ? "Account created as " : "Signed in as ";
+                window.showToast(actionText + verifiedEmail + " 🚀", "success");
+            }
+
+            if (window.pendingPurchaseTargetUrl) {
+                const targetUrl = window.pendingPurchaseTargetUrl;
+                window.pendingPurchaseTargetUrl = null;
+                window.location.href = targetUrl;
+            }'''
+          replace_once('app.js', old_app, new_app)
+
+          # Landing-page auth form receives the same fail-closed rules before it may redirect.
+          replace_once(
+              'index.html',
+              "            if (errBox) errBox.classList.add(\"hidden\");\n\n            // STRICT VALIDATION: EMAIL AND PASSWORD ARE MANDATORY",
+              "            if (errBox) errBox.classList.add(\"hidden\");\n\n            if (typeof window.getCurrentAuthenticatedSession !== \"function\") {\n                if (errBox) {\n                    errBox.textContent = \"Authentication service is initializing. Please try again.\";\n                    errBox.classList.remove(\"hidden\");\n                }\n                return;\n            }\n\n            const sessionBeforeAttempt = await window.getCurrentAuthenticatedSession();\n            const localSessionBeforeAttempt = window.currentSupabaseSession;\n            if ((sessionBeforeAttempt && sessionBeforeAttempt.user && sessionBeforeAttempt.access_token) ||\n                (localSessionBeforeAttempt && localSessionBeforeAttempt.user && localSessionBeforeAttempt.access_token)) {\n                if (errBox) {\n                    errBox.textContent = \"You are already signed in. Sign out first to switch accounts.\";\n                    errBox.classList.remove(\"hidden\");\n                }\n                return;\n            }\n\n            // STRICT VALIDATION: EMAIL AND PASSWORD ARE MANDATORY"
+          )
+
+          old_index = '''                if (!authResult.success) {
+                    if (errBox) {
+                        errBox.textContent = authResult.error || "Authentication failed. Please check your credentials.";
+                        errBox.classList.remove("hidden");
+                    }
+                    return;
+                }
+
+                // Close modal and navigate to app.html dashboard
+                window.closeAuthRequiredModal();
+                if (typeof window.showToast === "function") {
+                    const actionText = window.isSignupMode ? "Account created as " : "Signed in as ";
+                    window.showToast(actionText + email + " 🚀", "success");
+                }
+
+                window.location.href = "app.html";'''
+          new_index = '''                if (authResult.confirmationRequired && authResult.authenticated !== true) {
+                    if (errBox) {
+                        errBox.textContent = "Account created. Check your email to verify it before signing in.";
+                        errBox.classList.remove("hidden");
+                    }
+                    return;
+                }
+
+                if (!authResult.success || authResult.authenticated !== true || !authResult.user ||
+                    !authResult.session || !authResult.session.access_token) {
+                    if (errBox) {
+                        errBox.textContent = authResult.error || "Authentication failed. Please check your credentials.";
+                        errBox.classList.remove("hidden");
+                    }
+                    return;
+                }
+
+                const verifiedSession = await window.getCurrentAuthenticatedSession();
+                if (!verifiedSession || !verifiedSession.user || !verifiedSession.access_token ||
+                    verifiedSession.user.id !== authResult.user.id) {
+                    if (errBox) {
+                        errBox.textContent = "Authentication could not be verified. Please sign in again.";
+                        errBox.classList.remove("hidden");
+                    }
+                    return;
+                }
+
+                window.currentSupabaseSession = verifiedSession;
+                window.currentSupabaseUser = verifiedSession.user;
+                const verifiedEmail = verifiedSession.user.email || email;
+
+                // Redirect only after a real Supabase session is independently verified.
+                window.closeAuthRequiredModal();
+                if (typeof window.showToast === "function") {
+                    const actionText = window.isSignupMode ? "Account created as " : "Signed in as ";
+                    window.showToast(actionText + verifiedEmail + " 🚀", "success");
+                }
+
+                window.location.href = "app.html";'''
+          replace_once('index.html', old_index, new_index)
+          PY
+      - name: Remove temporary red/apply workflows from final branch state
+        run: rm -f .github/workflows/auth-fail-closed-red.yml .github/workflows/apply-auth-fix.yml
+      - name: Verify targeted regression
+        run: node tests/auth_fail_closed_signup.test.js
+      - name: Install dependencies
+        run: npm ci
+      - name: Run full regression suite
+        run: npm test
+      - name: Verify migrations unchanged and replayable
+        run: npm run verify:migrations
+      - name: Build production artifact
+        run: npm run build:production
+      - name: Commit verified fix back to feature branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabaseClient.js app.js index.html package.json tests/auth_fail_closed_signup.test.js .github/workflows/auth-fail-closed-red.yml .github/workflows/apply-auth-fix.yml
+          git commit -m "fix(auth): require verified Supabase session before logged-in UI"
+          git push origin HEAD:fix/fail-closed-email-auth
