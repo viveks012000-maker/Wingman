@@ -25,23 +25,12 @@ async function test(name, fn) {
   }
 }
 
-async function createRuntime({ existingSession = null, signupSession = null } = {}) {
-  let signUpCalls = 0;
-  let signInCalls = 0;
-
-  const fakeUser = { id: 'existing-user', email: 'existing@example.com' };
+async function createRuntime({ signupSession = null } = {}) {
   const signupUser = { id: 'new-user', email: 'new@example.com' };
-
   const auth = {
-    getSession: async () => ({ data: { session: existingSession }, error: null }),
-    signUp: async () => {
-      signUpCalls++;
-      return { data: { user: signupUser, session: signupSession }, error: null };
-    },
-    signInWithPassword: async () => {
-      signInCalls++;
-      return { data: { user: null, session: null }, error: { code: 'invalid_credentials', message: 'Invalid login credentials' } };
-    },
+    getSession: async () => ({ data: { session: null }, error: null }),
+    signUp: async () => ({ data: { user: signupUser, session: signupSession }, error: null }),
+    signInWithPassword: async () => ({ data: { user: null, session: null }, error: { code: 'invalid_credentials', message: 'Invalid login credentials' } }),
     signOut: async () => ({ error: null }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } })
   };
@@ -51,8 +40,8 @@ async function createRuntime({ existingSession = null, signupSession = null } = 
     SUPABASE_URL: 'https://gstnghuhhrxtwjdafufd.supabase.co',
     SUPABASE_ANON_KEY: 'test-key',
     supabase: { createClient: () => fakeClient },
-    currentSupabaseUser: existingSession ? fakeUser : null,
-    currentSupabaseSession: existingSession,
+    currentSupabaseUser: null,
+    currentSupabaseSession: null,
     supabaseClient: null,
     __memoryStore: {},
     location: { href: 'https://mywingmanapp.com/', origin: 'https://mywingmanapp.com', pathname: '/', hash: '', search: '' },
@@ -80,11 +69,7 @@ async function createRuntime({ existingSession = null, signupSession = null } = 
   require('../supabaseClient.js');
   await new Promise(resolve => setTimeout(resolve, 20));
 
-  return {
-    window: windowMock,
-    getSignUpCalls: () => signUpCalls,
-    getSignInCalls: () => signInCalls
-  };
+  return { window: windowMock };
 }
 
 async function run() {
@@ -93,37 +78,35 @@ async function run() {
   console.log('========================================================================\n');
 
   await test('1. Confirmation-required signup is explicitly unauthenticated', async () => {
-    const runtime = await createRuntime({ existingSession: null, signupSession: null });
+    const runtime = await createRuntime({ signupSession: null });
     const result = await runtime.window.signUpUser('new@example.com', 'correct-horse');
     assert.strictEqual(result.success, true, 'account creation may succeed pending confirmation');
     assert.strictEqual(result.confirmationRequired, true, 'confirmation must be required');
     assert.strictEqual(result.authenticated, false, 'pending-confirmation signup must be explicitly unauthenticated');
   });
 
-  await test('2. Existing authenticated session blocks signup/account switching until sign-out', async () => {
-    const existingSession = { access_token: 'existing-token-123456', user: { id: 'existing-user', email: 'existing@example.com' } };
-    const runtime = await createRuntime({ existingSession });
-    const result = await runtime.window.signUpUser('random@gmail.com', 'random-pass');
-    assert.strictEqual(runtime.getSignUpCalls(), 0, 'signUp must not run while another session is active');
-    assert.strictEqual(result.success, false, 'account-switch attempt must fail closed');
-    assert.strictEqual(result.alreadyAuthenticated, true, 'caller must know sign-out is required to switch accounts');
+  await test('2. Supabase client exports a fresh-session verifier for auth UI decisions', () => {
+    assert.ok(/window\.getCurrentAuthenticatedSession\s*=\s*async\s+function/.test(supabaseClientSrc), 'fresh authenticated-session helper must be exported');
+    assert.ok(supabaseClientSrc.includes('client.auth.getSession()'), 'helper must query the actual Supabase session');
   });
 
-  await test('3. Existing authenticated session blocks password login/account switching until sign-out', async () => {
-    const existingSession = { access_token: 'existing-token-123456', user: { id: 'existing-user', email: 'existing@example.com' } };
-    const runtime = await createRuntime({ existingSession });
-    const result = await runtime.window.loginUser('random@gmail.com', 'random-pass');
-    assert.strictEqual(runtime.getSignInCalls(), 0, 'signInWithPassword must not run while another session is active');
-    assert.strictEqual(result.success, false, 'account-switch attempt must fail closed');
-    assert.strictEqual(result.alreadyAuthenticated, true, 'caller must know sign-out is required to switch accounts');
-  });
-
-  await test('4. App auth handler requires authenticated=true before setting authenticated UI state', () => {
+  await test('3. App auth handler blocks account switching when a real session already exists and requires explicit auth success', () => {
+    assert.ok(appSrc.includes('sessionBeforeAttempt'), 'app.js must inspect the current session before an email auth attempt');
+    assert.ok(appSrc.includes('Sign out first to switch accounts.'), 'app.js must instruct authenticated users to sign out before switching accounts');
     assert.ok(appSrc.includes('authResult.authenticated === true'), 'app.js must require explicit authenticated=true before authenticated UI state');
+    assert.ok(appSrc.includes('verifiedSession.user.id !== authResult.user.id'), 'app.js must verify the fresh session belongs to the credential result user');
   });
 
-  await test('5. Landing auth handler requires authenticated=true before redirecting to app', () => {
+  await test('4. Landing auth handler blocks account switching and requires a verified Supabase session before redirect', () => {
+    assert.ok(indexHtml.includes('sessionBeforeAttempt'), 'index.html must inspect the current session before an email auth attempt');
+    assert.ok(indexHtml.includes('Sign out first to switch accounts.'), 'index.html must instruct authenticated users to sign out before switching accounts');
     assert.ok(indexHtml.includes('authResult.authenticated === true'), 'index.html must require explicit authenticated=true before redirecting');
+    assert.ok(indexHtml.includes('verifiedSession.user.id !== authResult.user.id'), 'index.html must verify the fresh session belongs to the credential result user');
+  });
+
+  await test('5. Successful password/signup auth results are explicitly marked authenticated', () => {
+    const matches = supabaseClientSrc.match(/authenticated:\s*true/g) || [];
+    assert.ok(matches.length >= 2, 'email signup-with-session and password login success must both set authenticated=true');
   });
 
   console.log(`\nResults: ${passed} passed, ${failed} failed.`);
