@@ -2101,7 +2101,7 @@ STRICT LAWS:
 
             if (authResult.confirmationRequired && authResult.authenticated !== true) {
                 if (errBox) {
-                    errBox.textContent = "Account created. Check your email to verify it before signing in.";
+                    errBox.textContent = "Check your email to finish signup. Your account and 20 free credits activate after verification.";
                     errBox.classList.remove("hidden");
                 }
                 return;
