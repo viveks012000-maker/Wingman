@@ -96,16 +96,40 @@ async function runTests() {
             return true;
         }
 
-        assert.strictEqual(simulate014Filter({ id: 'u1', credits: 50, has_paid_credits: false }, []), true,
-            'Untouched 50-credit account must be eligible for correction');
-        assert.strictEqual(simulate014Filter({ id: 'u2', credits: 50, has_paid_credits: false }, [{ user_id: 'u2', amount: 50, type: 'purchase' }]), false,
-            '50-credit account with transactions must be EXCLUDED');
-        assert.strictEqual(simulate014Filter({ id: 'u3', credits: 98, has_paid_credits: false }, []), false,
-            '98-credit account must be EXCLUDED');
-        assert.strictEqual(simulate014Filter({ id: 'u4', credits: 18, has_paid_credits: false }, []), false,
-            '18-credit account must be EXCLUDED');
-        assert.strictEqual(simulate014Filter({ id: 'u5', credits: 50, has_paid_credits: true }, []), false,
-            'Paid account must be EXCLUDED');
+        // Untouched 50-credit signup account
+        assert.strictEqual(
+            simulate014Filter({ id: 'u1', credits: 50, has_paid_credits: false }, []),
+            true,
+            'Untouched 50-credit account must be eligible for correction'
+        );
+
+        // 50-credit account with purchase or other transaction
+        assert.strictEqual(
+            simulate014Filter({ id: 'u2', credits: 50, has_paid_credits: false }, [{ user_id: 'u2', amount: 50, type: 'purchase' }]),
+            false,
+            '50-credit account with transactions must be EXCLUDED'
+        );
+
+        // Account with 98 credits
+        assert.strictEqual(
+            simulate014Filter({ id: 'u3', credits: 98, has_paid_credits: false }, []),
+            false,
+            '98-credit account must be EXCLUDED'
+        );
+
+        // Account with 18 credits
+        assert.strictEqual(
+            simulate014Filter({ id: 'u4', credits: 18, has_paid_credits: false }, []),
+            false,
+            '18-credit account must be EXCLUDED'
+        );
+
+        // Paid account (has_paid_credits = true)
+        assert.strictEqual(
+            simulate014Filter({ id: 'u5', credits: 50, has_paid_credits: true }, []),
+            false,
+            'Paid account must be EXCLUDED'
+        );
     });
 
     // 9. Existing auth/logout/login functionality still passes
@@ -116,7 +140,7 @@ async function runTests() {
         assert.ok(authTestSrc.includes('logoutUser must be an asynchronous function'), 'auth test must be comprehensive');
     });
 
-    // 10. Migration replay from clean database succeeds and includes both historical repair migrations.
+    // 10. Migration replay from clean database succeeds
     await test('10. Tracked migrations chain includes 014 and 015 in strict order', () => {
         const migrations = fs.readdirSync(migrationDir).filter(f => f.endsWith('.sql')).sort();
         assert.ok(migrations.some(f => f.startsWith('014')), 'Migration 014 must be present in migrations directory');
@@ -133,9 +157,14 @@ async function runTests() {
         const post013 = migrations.filter(f => f >= '013');
         for (const f of post013) {
             const sql = fs.readFileSync(path.join(migrationDir, f), 'utf8');
-            assert.ok(!sql.includes('DEFAULT 50'), `Migration ${f} must NOT restore DEFAULT 50`);
-            assert.ok(!/VALUES\s*\(\s*NEW\.id\s*,\s*50\s*,/i.test(sql),
-                `Migration ${f} must NOT insert 50 credits in handle_new_user`);
+            assert.ok(
+                !sql.includes('DEFAULT 50'),
+                `Migration ${f} must NOT restore DEFAULT 50`
+            );
+            assert.ok(
+                !/VALUES\s*\(\s*NEW\.id\s*,\s*50\s*,/i.test(sql),
+                `Migration ${f} must NOT insert 50 credits in handle_new_user`
+            );
         }
     });
 
