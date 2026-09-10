@@ -14,14 +14,17 @@ const migrations = fs.readdirSync(migrationDir)
     .filter(name => name.endsWith('.sql'))
     .sort();
 assert.deepEqual(migrations.map(name => name.slice(0, 3)), [
-    '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013', '014'
+    '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013', '014', '015'
 ], 'tracked migration order must remain explicit and stable');
 
 const container = `wingman-migration-replay-${process.pid}`;
 const bootstrap = `
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE SCHEMA auth;
-CREATE TABLE auth.users (id uuid PRIMARY KEY);
+CREATE TABLE auth.users (
+  id uuid PRIMARY KEY,
+  email_confirmed_at timestamptz
+);
 CREATE ROLE anon NOLOGIN;
 CREATE ROLE authenticated NOLOGIN;
 CREATE ROLE service_role NOLOGIN;
@@ -79,12 +82,14 @@ try {
             // 2. 50-credit account with purchase transaction history
             // 3. 98-credit legitimate balance account
             // 4. 50-credit paid account (has_paid_credits = true)
+            // These rows are marked confirmed so migration 015 must not classify them as
+            // pending-signup profiles later in the replay.
             psql(`
-                INSERT INTO auth.users(id) VALUES 
-                    ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
-                    ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
-                    ('cccccccc-cccc-4ccc-8ccc-cccccccccccc'),
-                    ('dddddddd-dddd-4ddd-8ddd-dddddddddddd');
+                INSERT INTO auth.users(id, email_confirmed_at) VALUES 
+                    ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', pg_catalog.now()),
+                    ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', pg_catalog.now()),
+                    ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', pg_catalog.now()),
+                    ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', pg_catalog.now());
                 UPDATE public.profiles SET credits = 50, has_paid_credits = false WHERE id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
                 UPDATE public.profiles SET credits = 50, has_paid_credits = false WHERE id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
                 INSERT INTO public.credit_transactions(user_id, amount, type, feature, request_id, status)
@@ -93,10 +98,29 @@ try {
                 UPDATE public.profiles SET credits = 50, has_paid_credits = true WHERE id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
             `);
         }
+        if (name.startsWith('015')) {
+            // Reproduce the exact legacy defects immediately before the repair:
+            // - the old auth.users INSERT trigger creates profiles before email verification;
+            // - one safely recoverable confirmed identity can exist without a profile.
+            psql(`
+                INSERT INTO auth.users(id, email_confirmed_at) VALUES
+                    ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', NULL),
+                    ('ffffffff-ffff-4fff-8fff-ffffffffffff', NULL),
+                    ('99999999-9999-4999-8999-999999999999', NULL),
+                    ('77777777-7777-4777-8777-777777777777', pg_catalog.now());
+                INSERT INTO public.credit_transactions(user_id, amount, type, feature, request_id, status)
+                VALUES ('ffffffff-ffff-4fff-8fff-ffffffffffff', 1, 'purchase', 'fixture', 'tx_pending_history', 'completed');
+                UPDATE public.profiles
+                SET has_paid_credits = true
+                WHERE id = '99999999-9999-4999-8999-999999999999';
+                DELETE FROM public.profiles
+                WHERE id = '77777777-7777-4777-8777-777777777777';
+            `);
+        }
         psql(fs.readFileSync(path.join(migrationDir, name), 'utf8'));
     }
 
-    // Verify Migration 014 historical reconciliation results
+    // Verify Migration 014 historical reconciliation results.
     assert.equal(scalar("SELECT credits FROM public.profiles WHERE id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';"), '20',
         'Untouched 50-credit historical account must be reconciled to 20 by migration 014');
     assert.equal(scalar("SELECT credits FROM public.profiles WHERE id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';"), '50',
@@ -106,15 +130,50 @@ try {
     assert.equal(scalar("SELECT credits FROM public.profiles WHERE id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';"), '50',
         'Paid account must remain untouched');
 
+    // Verify Migration 015 cleanup is narrow: only untouched unconfirmed free-signup
+    // profiles are removed. Transactional and paid rows must survive.
+    assert.equal(scalar("SELECT COUNT(*) FROM public.profiles WHERE id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';"), '0',
+        'Untouched unconfirmed free-signup profile must be removed by migration 015');
+    assert.equal(scalar("SELECT COUNT(*) FROM public.profiles WHERE id = 'ffffffff-ffff-4fff-8fff-ffffffffffff';"), '1',
+        'Unconfirmed profile with transaction history must be preserved');
+    assert.equal(scalar("SELECT COUNT(*) FROM public.profiles WHERE id = '99999999-9999-4999-8999-999999999999';"), '1',
+        'Unconfirmed paid profile must be preserved');
+    assert.equal(scalar("SELECT credits FROM public.profiles WHERE id = '77777777-7777-4777-8777-777777777777';"), '20',
+        'Confirmed identity missing a profile and with no credit history must be safely backfilled to 20');
+
     const userId = '11111111-1111-4111-8111-111111111111';
     const otherId = '22222222-2222-4222-8222-222222222222';
     const smoke = `
 BEGIN;
-INSERT INTO auth.users(id) VALUES ('${userId}'), ('${otherId}');
+
+-- Email/password signup starts unconfirmed: no profile and no free credits yet.
+INSERT INTO auth.users(id, email_confirmed_at) VALUES ('${userId}', NULL);
 DO $$ BEGIN
-  IF (SELECT credits FROM public.profiles WHERE id = '${userId}') <> 20 THEN RAISE EXCEPTION 'signup must grant exactly 20 credits'; END IF;
-  IF (SELECT has_paid_credits FROM public.profiles WHERE id = '${userId}') <> false THEN RAISE EXCEPTION 'signup must be on Free Plan'; END IF;
+  IF EXISTS (SELECT 1 FROM public.profiles WHERE id = '${userId}') THEN
+    RAISE EXCEPTION 'unconfirmed signup must not receive a profile or credits';
+  END IF;
 END $$;
+
+-- The first NULL -> non-NULL email confirmation transition provisions exactly once.
+UPDATE auth.users SET email_confirmed_at = pg_catalog.now() WHERE id = '${userId}';
+DO $$ BEGIN
+  IF (SELECT credits FROM public.profiles WHERE id = '${userId}') <> 20 THEN RAISE EXCEPTION 'verified signup must grant exactly 20 credits'; END IF;
+  IF (SELECT has_paid_credits FROM public.profiles WHERE id = '${userId}') <> false THEN RAISE EXCEPTION 'verified signup must be on Free Plan'; END IF;
+END $$;
+
+-- Subsequent updates cannot re-award signup credits.
+UPDATE auth.users SET email_confirmed_at = email_confirmed_at WHERE id = '${userId}';
+DO $$ BEGIN
+  IF (SELECT credits FROM public.profiles WHERE id = '${userId}') <> 20 THEN RAISE EXCEPTION 'confirmation replay changed signup credits'; END IF;
+END $$;
+
+-- OAuth-like users that are already confirmed at INSERT still provision immediately.
+INSERT INTO auth.users(id, email_confirmed_at) VALUES ('${otherId}', pg_catalog.now());
+DO $$ BEGIN
+  IF (SELECT credits FROM public.profiles WHERE id = '${otherId}') <> 20 THEN RAISE EXCEPTION 'confirmed-at-insert user must receive exactly 20 credits'; END IF;
+  IF (SELECT has_paid_credits FROM public.profiles WHERE id = '${otherId}') <> false THEN RAISE EXCEPTION 'confirmed-at-insert user must be on Free Plan'; END IF;
+END $$;
+
 SELECT set_config('request.jwt.claim.role', 'service_role', true);
 DO $$ DECLARE result json; BEGIN
   result := public.reserve_credits('${userId}', 10, 'analyzer', 'replay-1');
