@@ -99,18 +99,22 @@ try {
             `);
         }
         if (name.startsWith('015')) {
-            // Reproduce the exact legacy defect immediately before the repair:
-            // the old auth.users INSERT trigger creates profiles before email verification.
+            // Reproduce the exact legacy defects immediately before the repair:
+            // - the old auth.users INSERT trigger creates profiles before email verification;
+            // - one safely recoverable confirmed identity can exist without a profile.
             psql(`
                 INSERT INTO auth.users(id, email_confirmed_at) VALUES
                     ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', NULL),
                     ('ffffffff-ffff-4fff-8fff-ffffffffffff', NULL),
-                    ('99999999-9999-4999-8999-999999999999', NULL);
+                    ('99999999-9999-4999-8999-999999999999', NULL),
+                    ('77777777-7777-4777-8777-777777777777', pg_catalog.now());
                 INSERT INTO public.credit_transactions(user_id, amount, type, feature, request_id, status)
                 VALUES ('ffffffff-ffff-4fff-8fff-ffffffffffff', 1, 'purchase', 'fixture', 'tx_pending_history', 'completed');
                 UPDATE public.profiles
                 SET has_paid_credits = true
                 WHERE id = '99999999-9999-4999-8999-999999999999';
+                DELETE FROM public.profiles
+                WHERE id = '77777777-7777-4777-8777-777777777777';
             `);
         }
         psql(fs.readFileSync(path.join(migrationDir, name), 'utf8'));
@@ -134,6 +138,8 @@ try {
         'Unconfirmed profile with transaction history must be preserved');
     assert.equal(scalar("SELECT COUNT(*) FROM public.profiles WHERE id = '99999999-9999-4999-8999-999999999999';"), '1',
         'Unconfirmed paid profile must be preserved');
+    assert.equal(scalar("SELECT credits FROM public.profiles WHERE id = '77777777-7777-4777-8777-777777777777';"), '20',
+        'Confirmed identity missing a profile and with no credit history must be safely backfilled to 20');
 
     const userId = '11111111-1111-4111-8111-111111111111';
     const otherId = '22222222-2222-4222-8222-222222222222';
