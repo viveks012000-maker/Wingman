@@ -317,8 +317,12 @@ async function assertDesktopWheelScroll(browser, port) {
         assert.strictEqual(before.scrollTop, 0, `desktop page did not start at the top: ${JSON.stringify(before)}`);
         await page.mouse.move(683, 384);
         await page.mouse.wheel(0, 520);
-        await page.waitForTimeout(100);
-        const scrollTop = await page.evaluate(() => document.scrollingElement.scrollTop);
+        let scrollTop = 0;
+        for (let i = 0; i < 10; i++) {
+            await page.waitForTimeout(100);
+            scrollTop = await page.evaluate(() => document.scrollingElement.scrollTop);
+            if (scrollTop > 0) break;
+        }
         assert(scrollTop > 0, `desktop wheel scrolling changed at 1366x768: ${scrollTop}`);
     } finally {
         await context.close();

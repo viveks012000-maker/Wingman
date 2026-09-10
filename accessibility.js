@@ -9,7 +9,8 @@
         cropModal: { close: 'closeCropModal', label: 'Crop image' },
         deleteAccountModal: { close: 'closeDeleteAccountModal', label: 'Delete account' },
         activationModal: { close: 'closeActivationModal', label: 'Activation' },
-        unreadableErrorModal: { close: 'closeUnreadableErrorModal', label: 'Unreadable image' }
+        unreadableErrorModal: { close: 'closeUnreadableErrorModal', label: 'Unreadable image' },
+        setPasswordModal: { close: 'closeSetPasswordModal', label: 'Set or change password' }
     };
     var states = new Map();
 
