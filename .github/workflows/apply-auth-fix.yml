@@ -26,6 +26,8 @@ jobs:
         run: node tests/auth_fail_closed_signup.test.js
       - name: Install dependencies
         run: npm ci
+      - name: Install Playwright browsers for full browser QA
+        run: npx playwright install --with-deps chromium webkit
       - name: Run full regression suite
         run: npm test
       - name: Verify migrations unchanged and replayable
