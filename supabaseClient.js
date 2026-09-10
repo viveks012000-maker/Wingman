@@ -411,6 +411,12 @@
             return 'This password does not meet the current security requirements. Choose a stronger password and try again.';
         }
 
+        var isInvalidCredentials = code === 'invalid_credentials' ||
+            (error && error.message && error.message.toLowerCase().indexOf('invalid login credentials') !== -1);
+        if (isInvalidCredentials) {
+            return 'Email or password is incorrect. If you originally joined with Google, continue with Google or use Forgot Password to set an email password.';
+        }
+
         if (error && error.message) return String(error.message);
         return fallbackMessage || 'Authentication request failed.';
     }
@@ -714,7 +720,7 @@
 
         try {
             const resp = await client.auth.signInWithPassword({
-                email: email,
+                email: cleanEmail,
                 password: password
             });
 
@@ -789,6 +795,71 @@
         return { success: false };
     };
 
+    // 4b. Set or Change Password for Authenticated User
+    window.updateUserPassword = async function (newPassword, confirmPassword, nonce) {
+        var password = String(newPassword || '');
+        var confirmation = String(confirmPassword || '');
+
+        if (!password || password.length < 8) {
+            var lenMsg = 'Password must be at least 8 characters long.';
+            notifyUser(lenMsg, 'warning');
+            return { success: false, error: lenMsg };
+        }
+        if (password !== confirmation) {
+            var matchMsg = 'Passwords do not match.';
+            notifyUser(matchMsg, 'warning');
+            return { success: false, error: matchMsg };
+        }
+
+        var client = await initSupabase();
+        if (!client || !client.auth) {
+            var initMsg = 'Authentication service is initializing. Please try again.';
+            notifyUser(initMsg, 'warning');
+            return { success: false, error: initMsg };
+        }
+
+        try {
+            var sessionResp = await client.auth.getSession();
+            var session = sessionResp && sessionResp.data ? sessionResp.data.session : null;
+            if (!session || !session.user) {
+                var noSessionMsg = 'Active session not found. Please sign in again.';
+                notifyUser(noSessionMsg, 'warning');
+                return { success: false, error: noSessionMsg };
+            }
+
+            var updateAttributes = { password: password };
+            var updateOptions = {};
+            if (nonce && String(nonce).trim().length > 0) {
+                updateOptions.nonce = String(nonce).trim();
+            }
+
+            var resp = await client.auth.updateUser(updateAttributes, updateOptions);
+            if (resp.error) {
+                var code = authErrorCode(resp.error).toLowerCase();
+                if (code === 'reauthentication_needed') {
+                    try {
+                        await client.auth.reauthenticate();
+                    } catch (_) {}
+                    return {
+                        success: false,
+                        requiresReauth: true,
+                        error: 'Recent authentication required. A verification code has been sent to your email. Enter it below to complete setting your password.'
+                    };
+                }
+                var message = formatAuthError(resp.error, 'Unable to update password.');
+                notifyUser(message, 'warning');
+                return { success: false, error: message, code: authErrorCode(resp.error), reasons: authErrorReasons(resp.error) };
+            }
+
+            notifyUser('Password set successfully! You can now sign in with email or Google.', 'success');
+            return { success: true, user: resp.data && resp.data.user ? resp.data.user : null };
+        } catch (err) {
+            var errMsg = formatAuthError(err, 'Unable to update password.');
+            notifyUser(errMsg, 'warning');
+            return { success: false, error: errMsg, code: authErrorCode(err), reasons: authErrorReasons(err) };
+        }
+    };
+
     // 4. Password Reset via Email
     window.resetPasswordForEmail = async function (email) {
         const cleanEmail = (email || "").trim().toLowerCase();
@@ -806,7 +877,7 @@
                 ? (window.location.origin + '/app.html?type=recovery')
                 : 'http://localhost:3000/app.html?type=recovery';
 
-            const resp = await client.auth.resetPasswordForEmail(email, {
+            const resp = await client.auth.resetPasswordForEmail(cleanEmail, {
                 redirectTo: redirectTo
             });
 

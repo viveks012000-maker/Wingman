@@ -310,7 +310,7 @@ async function runTests() {
 
         const res = await runtime.window.loginUser('user@example.com', 'wrong-password');
         assert.strictEqual(res.success, false, 'Login must report failure');
-        assert.strictEqual(res.error, 'Invalid login credentials', 'Controlled error message returned');
+        assert.strictEqual(res.error, 'Email or password is incorrect. If you originally joined with Google, continue with Google or use Forgot Password to set an email password.', 'Controlled error message returned');
         assert.strictEqual(runtime.window.currentSupabaseSession, null, 'Session must remain null');
     });
 

@@ -937,6 +937,10 @@
                         </div>
                     </div>
                 </div>
+                <button id="sidebarSetPasswordBtn" type="button" onclick="window.openSetPasswordModal(event)" class="w-full mb-1.5 py-1.5 px-3 rounded-lg bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 text-xs font-medium transition flex items-center justify-center gap-2 border border-violet-500/20 cursor-pointer">
+                    <span class="material-symbols-outlined text-[14px]">lock</span>
+                    Set or Change Password
+                </button>
                 <button id="signOutBtn" type="button" onclick="window.handleSignOut(event)" class="w-full py-1.5 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium transition flex items-center justify-center gap-2 border border-red-500/20 cursor-pointer">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
                     Sign Out
@@ -1649,6 +1653,18 @@
                     </button>
                 </div>
 
+                <!-- Account Security: Set or Change Password -->
+                <div class="border-t border-white/10 pt-4 flex flex-col gap-2.5" id="settingsAccountSecuritySection">
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-sm font-semibold text-white">Account Password</span>
+                        <span class="text-[11px] text-slate-400">Set or update your password for email sign-in</span>
+                    </div>
+                    <button type="button" id="openSetPasswordBtn" class="w-full bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 font-label text-xs py-3 rounded-xl border border-violet-500/30 transition-all font-bold cursor-pointer text-center active:scale-95 flex items-center justify-center gap-1.5" onclick="window.openSetPasswordFromSettings(event)">
+                        <span class="material-symbols-outlined text-[16px]">lock</span>
+                        <span>Set or Change Password</span>
+                    </button>
+                </div>
+
                 <!-- Destructive Actions -->
                 <div class="border-t border-white/10 pt-4 flex flex-col gap-2">
                     <button type="button" class="w-full bg-red-600/10 hover:bg-red-600/20 text-red-400 font-label text-xs py-3.5 rounded-xl border border-red-500/20 transition-all font-bold cursor-pointer text-center active:scale-95 flex items-center justify-center gap-1.5" onclick="window.openDeleteFromSettings(event)">
@@ -1698,6 +1714,62 @@
         </div>
     </div>
 
+    <!-- ==================== SET OR CHANGE PASSWORD MODAL ==================== -->
+    <div id="setPasswordModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300 overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="setPasswordTitle">
+        <div class="relative w-full max-w-md bg-[#090d16] rounded-3xl border border-violet-500/30 shadow-[0_0_50px_rgba(139,92,246,0.3)] flex flex-col p-6 space-y-4 my-auto transform scale-95 transition-all duration-300" id="setPasswordCard">
+            
+            <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors p-1 cursor-pointer" onclick="window.closeSetPasswordModal(event)" aria-label="Close set password modal">
+                <span class="material-symbols-outlined block text-[20px]">close</span>
+            </button>
+
+            <div class="text-center space-y-1.5 pt-1">
+                <div class="w-12 h-12 rounded-2xl bg-violet-950/80 border border-violet-500/40 flex items-center justify-center text-violet-300 mx-auto">
+                    <span class="material-symbols-outlined text-[24px]">lock</span>
+                </div>
+                <h3 class="font-headline text-lg font-bold text-white tracking-tight" id="setPasswordTitle">Set or Change Password</h3>
+                <p class="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto" id="setPasswordDesc">
+                    Create or update your MyWingman password to enable sign-in with your email address.
+                </p>
+            </div>
+
+            <form id="setPasswordForm" onsubmit="window.handleSetPasswordSubmit(event); return false;" novalidate class="space-y-3">
+                <div class="space-y-1 text-left">
+                    <label class="text-[11px] font-label uppercase tracking-wider text-slate-400" for="newPasswordInput">New Password</label>
+                    <div class="relative">
+                        <input type="password" id="newPasswordInput" placeholder="At least 8 characters" minlength="8" autocomplete="new-password" required class="w-full bg-black/50 border border-white/15 rounded-xl p-2.5 pr-10 text-sm text-white focus:border-violet-500 focus:outline-none transition-all"/>
+                        <button type="button" id="toggleNewPasswordBtn" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors cursor-pointer" onclick="window.togglePasswordVisibility('newPasswordInput')" tabindex="-1" aria-label="Toggle password visibility">
+                            <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 0;">visibility_off</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="space-y-1 text-left">
+                    <label class="text-[11px] font-label uppercase tracking-wider text-slate-400" for="confirmPasswordInput">Confirm New Password</label>
+                    <div class="relative">
+                        <input type="password" id="confirmPasswordInput" placeholder="Repeat your password" minlength="8" autocomplete="new-password" required class="w-full bg-black/50 border border-white/15 rounded-xl p-2.5 pr-10 text-sm text-white focus:border-violet-500 focus:outline-none transition-all"/>
+                        <button type="button" id="toggleConfirmPasswordBtn" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors cursor-pointer" onclick="window.togglePasswordVisibility('confirmPasswordInput')" tabindex="-1" aria-label="Toggle confirm password visibility">
+                            <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 0;">visibility_off</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Reauthentication Nonce / Code Input (Hidden unless required by project policy) -->
+                <div id="setPasswordNonceGroup" class="hidden space-y-1 text-left">
+                    <label class="text-[11px] font-label uppercase tracking-wider text-amber-300" for="setPasswordNonceInput">Verification Code from Email</label>
+                    <input type="text" id="setPasswordNonceInput" placeholder="6-digit code" autocomplete="one-time-code" class="w-full bg-black/50 border border-amber-500/40 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none transition-all"/>
+                    <p class="text-[10px] text-slate-400">Enter the verification code sent to your email to verify your identity.</p>
+                </div>
+
+                <div id="setPasswordErrorMessage" class="hidden text-xs text-red-400 bg-red-950/50 border border-red-500/30 p-2 rounded-lg text-center font-medium" role="alert" aria-live="assertive"></div>
+                <div id="setPasswordSuccessMessage" class="hidden text-xs text-emerald-400 bg-emerald-950/50 border border-emerald-500/30 p-2 rounded-lg text-center font-medium" role="status" aria-live="polite"></div>
+
+                <button type="submit" id="setPasswordSubmitBtn" class="w-full bg-violet-600 hover:bg-violet-500 text-white font-label text-sm py-3 rounded-xl font-bold transition-all shadow-lg cursor-pointer active:scale-95">
+                    Save Password
+                </button>
+            </form>
+        </div>
+    </div>
+
     <!-- ==================== SIGN IN REQUIRED MODAL POPUP FOR CREDIT PURCHASES & AUTH ==================== -->
     <div id="authRequiredModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300 overflow-y-auto">
         <div class="relative w-full max-w-md bg-[#090d16] rounded-3xl border border-violet-500/30 shadow-[0_0_50px_rgba(139,92,246,0.3)] flex flex-col p-6 space-y-4 my-auto transform scale-95 transition-all duration-300" id="authRequiredCard">
@@ -1732,6 +1804,7 @@
                 <span class="text-[11px] font-mono text-slate-400 uppercase">OR EMAIL</span>
                 <div class="h-px bg-white/10 flex-1"></div>
             </div>
+            <p class="text-[11px] text-slate-400 text-center leading-normal px-2">If you created your account with Google, continue with Google above. You can add an email password later in your account settings.</p>
             <form id="supabaseAuthForm" onsubmit="window.handleSupabaseAuthSubmit(event); return false;" novalidate class="space-y-3">
                 <!-- Domain 5: Bot Defense Honeypot Input Field -->
                 <input type="text" id="website_hp" name="website_hp" tabindex="-1" autocomplete="off" style="display:none !important;" aria-hidden="true" />

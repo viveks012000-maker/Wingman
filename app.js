@@ -1870,9 +1870,9 @@ STRICT LAWS:
         }
     };
 
-    window.togglePasswordVisibility = function () {
-        const pwInput = $("authPasswordInput");
-        const toggleBtn = $("togglePasswordBtn");
+    window.togglePasswordVisibility = function (targetId) {
+        const pwInput = $(targetId || "authPasswordInput");
+        const toggleBtn = targetId ? (pwInput && pwInput.parentElement ? pwInput.parentElement.querySelector("button") : null) : $("togglePasswordBtn");
         if (!pwInput || !toggleBtn) return;
 
         const iconEl = toggleBtn.querySelector(".material-symbols-outlined");
@@ -1936,7 +1936,7 @@ STRICT LAWS:
         const resetErr = $("resetErrorMessage");
         const resetSuccess = $("resetSuccessMessage");
         const resetBtn = $("resetPasswordSubmitBtn");
-        const email = (resetEmailInput && resetEmailInput.value) ? resetEmailInput.value.trim() : "";
+        const email = (resetEmailInput && resetEmailInput.value) ? resetEmailInput.value.trim().toLowerCase() : "";
 
         if (resetErr) resetErr.classList.add("hidden");
         if (resetSuccess) resetSuccess.classList.add("hidden");
@@ -2029,7 +2029,7 @@ STRICT LAWS:
         const emailInput = $("authEmailInput");
         const passwordInput = $("authPasswordInput");
         const submitBtn = $("authSubmitBtn");
-        const email = (emailInput && emailInput.value) ? emailInput.value.trim() : "";
+        const email = (emailInput && emailInput.value) ? emailInput.value.trim().toLowerCase() : "";
         const password = (passwordInput && passwordInput.value) ? passwordInput.value : "";
         const errBox = $("authErrorMessage");
 
@@ -2336,6 +2336,187 @@ STRICT LAWS:
         if (e && typeof e.preventDefault === 'function') e.preventDefault();
         if (typeof window.showToast === 'function') {
             window.showToast("Credit purchasing is currently unavailable while payment gateway upgrades are underway. Please enjoy your free starting credits!", "warning");
+        }
+    };
+
+    // ============================================================
+    // SET OR CHANGE PASSWORD MODAL (AUTHENTICATED USERS)
+    // ============================================================
+    let setPasswordInFlight = false;
+
+    window.openSetPasswordModal = function (e) {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+
+        // Check if user is authenticated
+        const isAuth = !!(window.currentSupabaseUser || (window.currentSupabaseSession && window.currentSupabaseSession.access_token));
+        if (!isAuth) {
+            if (typeof window.openAuthRequiredModal === 'function') {
+                window.openAuthRequiredModal(e);
+            }
+            if (typeof window.showToast === 'function') {
+                window.showToast('Please sign in to set or change your password.', 'info');
+            }
+            return;
+        }
+
+        const newPassInput = $("newPasswordInput");
+        const confirmPassInput = $("confirmPasswordInput");
+        const nonceInput = $("setPasswordNonceInput");
+        const errBox = $("setPasswordErrorMessage");
+        const succBox = $("setPasswordSuccessMessage");
+        const nonceGroup = $("setPasswordNonceGroup");
+
+        if (newPassInput) newPassInput.value = "";
+        if (confirmPassInput) confirmPassInput.value = "";
+        if (nonceInput) nonceInput.value = "";
+        if (errBox) {
+            errBox.textContent = "";
+            errBox.classList.add("hidden");
+        }
+        if (succBox) {
+            succBox.textContent = "";
+            succBox.classList.add("hidden");
+        }
+        if (nonceGroup) nonceGroup.classList.add("hidden");
+
+        const m = $("setPasswordModal"), c = $("setPasswordCard");
+        if (m) {
+            m.style.display = "flex";
+            m.classList.remove("opacity-0", "pointer-events-none", "hidden");
+            m.classList.add("opacity-100", "pointer-events-auto");
+        }
+        if (c) {
+            c.classList.remove("scale-95");
+            c.classList.add("scale-100");
+        }
+        if (window.wingmanScrollLock) window.wingmanScrollLock.lock('set-password-modal');
+        if (newPassInput) {
+            setTimeout(function () { newPassInput.focus(); }, 100);
+        }
+    };
+
+    window.closeSetPasswordModal = function (e) {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        const m = $("setPasswordModal"), c = $("setPasswordCard");
+        if (c) {
+            c.classList.remove("scale-100");
+            c.classList.add("scale-95");
+        }
+        if (m) {
+            m.classList.remove("opacity-100", "pointer-events-auto");
+            m.classList.add("opacity-0", "pointer-events-none", "hidden");
+            m.style.display = "none";
+        }
+        if (window.wingmanScrollLock) window.wingmanScrollLock.unlock('set-password-modal');
+    };
+
+    window.openSetPasswordFromSettings = function (e) {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        if (typeof window.closeSettingsModal === 'function') window.closeSettingsModal(e);
+        setTimeout(function () {
+            window.openSetPasswordModal(e);
+        }, 200);
+    };
+
+    window.handleSetPasswordSubmit = async function (e) {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        if (setPasswordInFlight) return false;
+
+        const newPassInput = $("newPasswordInput");
+        const confirmPassInput = $("confirmPasswordInput");
+        const nonceInput = $("setPasswordNonceInput");
+        const submitBtn = $("setPasswordSubmitBtn");
+        const errBox = $("setPasswordErrorMessage");
+        const succBox = $("setPasswordSuccessMessage");
+        const nonceGroup = $("setPasswordNonceGroup");
+
+        if (errBox) errBox.classList.add("hidden");
+        if (succBox) succBox.classList.add("hidden");
+
+        const newPass = (newPassInput && newPassInput.value) ? newPassInput.value : "";
+        const confirmPass = (confirmPassInput && confirmPassInput.value) ? confirmPassInput.value : "";
+        const nonce = (nonceInput && nonceInput.value) ? nonceInput.value.trim() : "";
+
+        if (!newPass || newPass.length < 8) {
+            if (errBox) {
+                errBox.textContent = "Password must be at least 8 characters long.";
+                errBox.classList.remove("hidden");
+            }
+            if (newPassInput) newPassInput.focus();
+            return false;
+        }
+
+        if (newPass !== confirmPass) {
+            if (errBox) {
+                errBox.textContent = "Passwords do not match.";
+                errBox.classList.remove("hidden");
+            }
+            if (confirmPassInput) confirmPassInput.focus();
+            return false;
+        }
+
+        setPasswordInFlight = true;
+        const originalText = submitBtn ? submitBtn.textContent : "Save Password";
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.classList.add("opacity-70", "cursor-not-allowed");
+            submitBtn.textContent = "Saving...";
+        }
+
+        try {
+            if (typeof window.updateUserPassword !== 'function') {
+                if (errBox) {
+                    errBox.textContent = "Password service is initializing. Please try again.";
+                    errBox.classList.remove("hidden");
+                }
+                return false;
+            }
+
+            const result = await window.updateUserPassword(newPass, confirmPass, nonce);
+
+            if (result && result.requiresReauth) {
+                if (nonceGroup) nonceGroup.classList.remove("hidden");
+                if (errBox) {
+                    errBox.textContent = result.error;
+                    errBox.classList.remove("hidden");
+                }
+                if (nonceInput) nonceInput.focus();
+                return false;
+            }
+
+            if (!result || !result.success) {
+                if (errBox) {
+                    errBox.textContent = (result && result.error) || "Failed to update password. Please try again.";
+                    errBox.classList.remove("hidden");
+                }
+                return false;
+            }
+
+            if (succBox) {
+                succBox.textContent = "Password updated successfully! You can now sign in with email or Google.";
+                succBox.classList.remove("hidden");
+            }
+            if (typeof window.showToast === 'function') {
+                window.showToast("Password updated successfully! 🚀", "success");
+            }
+
+            setTimeout(function () {
+                window.closeSetPasswordModal();
+            }, 1200);
+            return true;
+        } catch (err) {
+            if (errBox) {
+                errBox.textContent = (err && err.message) ? err.message : "An unexpected error occurred.";
+                errBox.classList.remove("hidden");
+            }
+            return false;
+        } finally {
+            setPasswordInFlight = false;
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.classList.remove("opacity-70", "cursor-not-allowed");
+                submitBtn.textContent = originalText;
+            }
         }
     };
 
