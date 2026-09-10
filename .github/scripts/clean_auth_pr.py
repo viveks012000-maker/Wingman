@@ -17,7 +17,7 @@ def run(*args):
 def restore_from_main():
     if DIST.exists():
         shutil.rmtree(DIST)
-    run("git", "checkout", "origin/main", "--", "netlify-dist", "index.html")
+    run("git", "checkout", "origin/main", "--", "index.html")
 
 
 def patch_index_handler():
@@ -168,7 +168,6 @@ def patch_index_handler():
 def finalize():
     if DIST.exists():
         shutil.rmtree(DIST)
-    run("git", "checkout", "origin/main", "--", "netlify-dist")
     if WORKFLOW.exists():
         WORKFLOW.unlink()
     if SELF.exists():
