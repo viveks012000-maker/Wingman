@@ -640,6 +640,29 @@
 
     var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+    // Return only a currently authenticated Supabase session whose user identity is
+    // verified by the Auth server. Auth UI decisions must fail closed when this is null.
+    window.getCurrentAuthenticatedSession = async function () {
+        const client = await initSupabase();
+        if (!client || !client.auth) return null;
+
+        try {
+            const sessionResp = await client.auth.getSession();
+            if (sessionResp && sessionResp.error) return null;
+            const session = sessionResp && sessionResp.data ? sessionResp.data.session : null;
+            if (!session || !session.user || !isValidToken(session.access_token)) return null;
+
+            const userResp = await client.auth.getUser();
+            const verifiedUser = userResp && userResp.data ? userResp.data.user : null;
+            if ((userResp && userResp.error) || !verifiedUser || verifiedUser.id !== session.user.id) return null;
+
+            return Object.assign({}, session, { user: verifiedUser });
+        } catch (err) {
+            console.warn('[SupabaseClient] Auth session verification failed:', err && err.message ? err.message : err);
+            return null;
+        }
+    };
+
     // 1. Email/Password Signup
     window.signUpUser = async function (email, password) {
         const cleanEmail = (email || "").trim().toLowerCase();
@@ -682,10 +705,10 @@
                     safeSet('wingman_user_email', resp.data.user.email || cleanEmail);
                     updateAuthUIState(resp.data.user);
                     notifyUser('Account created! Welcome to MyWingman.', 'success');
-                    return { success: true, user: resp.data.user, session: resp.data.session };
+                    return { success: true, authenticated: true, user: resp.data.user, session: resp.data.session };
                 } else {
                     notifyUser('Account created! Please check your email to confirm your account and sign in.', 'info');
-                    return { success: true, user: resp.data.user, session: null, confirmationRequired: true };
+                    return { success: true, authenticated: false, user: resp.data.user, session: null, confirmationRequired: true };
                 }
             }
             return { success: false, error: 'Sign up failed.' };
@@ -744,7 +767,7 @@
                     } else {
                         notifyUser('Signed in successfully!', 'success');
                     }
-                    return { success: true, user: resp.data.user, session: resp.data.session, weakPassword: weakPassword };
+                    return { success: true, authenticated: true, user: resp.data.user, session: resp.data.session, weakPassword: weakPassword };
                 } else {
                     notifyUser('Please check your email to confirm your account before signing in.', 'warning');
                     return { success: false, error: 'Email confirmation required.', confirmationRequired: true };

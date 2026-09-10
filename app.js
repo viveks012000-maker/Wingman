@@ -2035,6 +2035,25 @@ STRICT LAWS:
 
         if (errBox) errBox.classList.add("hidden");
 
+        if (typeof window.getCurrentAuthenticatedSession !== "function") {
+            if (errBox) {
+                errBox.textContent = "Authentication service is initializing. Please try again.";
+                errBox.classList.remove("hidden");
+            }
+            return;
+        }
+
+        const sessionBeforeAttempt = await window.getCurrentAuthenticatedSession();
+        const localSessionBeforeAttempt = window.currentSupabaseSession;
+        if ((sessionBeforeAttempt && sessionBeforeAttempt.user && sessionBeforeAttempt.access_token) ||
+            (localSessionBeforeAttempt && localSessionBeforeAttempt.user && localSessionBeforeAttempt.access_token)) {
+            if (errBox) {
+                errBox.textContent = "You are already signed in. Sign out first to switch accounts.";
+                errBox.classList.remove("hidden");
+            }
+            return;
+        }
+
         if (!email || !email.includes("@") || !email.includes(".")) {
             if (errBox) {
                 errBox.textContent = "Please enter a valid email address (e.g. name@domain.com).";
@@ -2080,7 +2099,16 @@ STRICT LAWS:
                 authResult = await window.loginUser(email, password);
             }
 
-            if (!authResult.success) {
+            if (authResult.confirmationRequired && authResult.authenticated !== true) {
+                if (errBox) {
+                    errBox.textContent = "Account created. Check your email to verify it before signing in.";
+                    errBox.classList.remove("hidden");
+                }
+                return;
+            }
+
+            if (!authResult.success || authResult.authenticated !== true || !authResult.user ||
+                !authResult.session || !authResult.session.access_token) {
                 if (errBox) {
                     errBox.textContent = authResult.error || "Authentication failed. Please check your credentials.";
                     errBox.classList.remove("hidden");
@@ -2088,10 +2116,24 @@ STRICT LAWS:
                 return;
             }
 
+            const verifiedSession = await window.getCurrentAuthenticatedSession();
+            if (!verifiedSession || !verifiedSession.user || !verifiedSession.access_token ||
+                verifiedSession.user.id !== authResult.user.id) {
+                if (errBox) {
+                    errBox.textContent = "Authentication could not be verified. Please sign in again.";
+                    errBox.classList.remove("hidden");
+                }
+                return;
+            }
+
+            window.currentSupabaseSession = verifiedSession;
+            window.currentSupabaseUser = verifiedSession.user;
+            const verifiedEmail = verifiedSession.user.email || email;
+
             safeStorage.set("wingman_authenticated", "true");
             safeStorage.set("wingman_login_agreed", "true");
             safeStorage.set("wingman_user_authenticated", "true");
-            safeStorage.set("wingman_user_email", email);
+            safeStorage.set("wingman_user_email", verifiedEmail);
 
             if (typeof window.closeAuthRequiredModal === "function") window.closeAuthRequiredModal();
             if (typeof window.checkDashboardAuth === "function") window.checkDashboardAuth();
@@ -2099,7 +2141,7 @@ STRICT LAWS:
             if (typeof window.checkServerConsentStatus === "function") window.checkServerConsentStatus();
             if (typeof window.showToast === "function") {
                 const actionText = window.isSignupMode ? "Account created as " : "Signed in as ";
-                window.showToast(actionText + email + " 🚀", "success");
+                window.showToast(actionText + verifiedEmail + " 🚀", "success");
             }
 
             if (window.pendingPurchaseTargetUrl) {
