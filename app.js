@@ -1797,11 +1797,11 @@ STRICT LAWS:
     // ============================================================
     // AUTHENTICATION GATES
     // ============================================================
-    window.handleAuthBtnClick = function (e) {
+    window.handleAuthBtnClick = async function (e) {
         if (e && typeof e.preventDefault === 'function') e.preventDefault();
         const isAuth = !!(window.currentSupabaseSession && window.currentSupabaseSession.access_token);
         if (isAuth) {
-            if (typeof window.logoutUser === 'function') window.logoutUser(e);
+            if (typeof window.logoutUser === 'function') await window.logoutUser(e);
             else {
                 try { safeStorage.clear(); } catch (_) {}
                 window.location.href = "index.html";
@@ -2020,10 +2020,15 @@ STRICT LAWS:
         }
     };
 
+    let authSubmitInFlight = false;
+
     window.handleSupabaseAuthSubmit = async function (e) {
         if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        if (authSubmitInFlight) return false;
+
         const emailInput = $("authEmailInput");
         const passwordInput = $("authPasswordInput");
+        const submitBtn = $("authSubmitBtn");
         const email = (emailInput && emailInput.value) ? emailInput.value.trim() : "";
         const password = (passwordInput && passwordInput.value) ? passwordInput.value : "";
         const errBox = $("authErrorMessage");
@@ -2058,40 +2063,57 @@ STRICT LAWS:
             return;
         }
 
-        let authResult = { success: false, error: 'Authentication service unavailable.' };
-
-        if (typeof window.signUpUser === 'function' && window.isSignupMode) {
-            authResult = await window.signUpUser(email, password);
-        } else if (typeof window.loginUser === 'function') {
-            authResult = await window.loginUser(email, password);
+        authSubmitInFlight = true;
+        const originalBtnText = submitBtn ? submitBtn.textContent : "";
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.classList.add("opacity-70", "cursor-not-allowed");
+            submitBtn.textContent = window.isSignupMode ? "Creating Account..." : "Signing In...";
         }
 
-        if (!authResult.success) {
-            if (errBox) {
-                errBox.textContent = authResult.error || "Authentication failed. Please check your credentials.";
-                errBox.classList.remove("hidden");
+        try {
+            let authResult = { success: false, error: 'Authentication service unavailable.' };
+
+            if (typeof window.signUpUser === 'function' && window.isSignupMode) {
+                authResult = await window.signUpUser(email, password);
+            } else if (typeof window.loginUser === 'function') {
+                authResult = await window.loginUser(email, password);
             }
-            return;
-        }
 
-        safeStorage.set("wingman_authenticated", "true");
-        safeStorage.set("wingman_login_agreed", "true");
-        safeStorage.set("wingman_user_authenticated", "true");
-        safeStorage.set("wingman_user_email", email);
+            if (!authResult.success) {
+                if (errBox) {
+                    errBox.textContent = authResult.error || "Authentication failed. Please check your credentials.";
+                    errBox.classList.remove("hidden");
+                }
+                return;
+            }
 
-        if (typeof window.closeAuthRequiredModal === "function") window.closeAuthRequiredModal();
-        if (typeof window.checkDashboardAuth === "function") window.checkDashboardAuth();
-        if (typeof window.checkCreditBalance === "function") window.checkCreditBalance();
-        if (typeof window.checkServerConsentStatus === "function") window.checkServerConsentStatus();
-        if (typeof window.showToast === "function") {
-            const actionText = window.isSignupMode ? "Account created as " : "Signed in as ";
-            window.showToast(actionText + email + " 🚀", "success");
-        }
+            safeStorage.set("wingman_authenticated", "true");
+            safeStorage.set("wingman_login_agreed", "true");
+            safeStorage.set("wingman_user_authenticated", "true");
+            safeStorage.set("wingman_user_email", email);
 
-        if (window.pendingPurchaseTargetUrl) {
-            const targetUrl = window.pendingPurchaseTargetUrl;
-            window.pendingPurchaseTargetUrl = null;
-            window.location.href = targetUrl;
+            if (typeof window.closeAuthRequiredModal === "function") window.closeAuthRequiredModal();
+            if (typeof window.checkDashboardAuth === "function") window.checkDashboardAuth();
+            if (typeof window.checkCreditBalance === "function") window.checkCreditBalance();
+            if (typeof window.checkServerConsentStatus === "function") window.checkServerConsentStatus();
+            if (typeof window.showToast === "function") {
+                const actionText = window.isSignupMode ? "Account created as " : "Signed in as ";
+                window.showToast(actionText + email + " 🚀", "success");
+            }
+
+            if (window.pendingPurchaseTargetUrl) {
+                const targetUrl = window.pendingPurchaseTargetUrl;
+                window.pendingPurchaseTargetUrl = null;
+                window.location.href = targetUrl;
+            }
+        } finally {
+            authSubmitInFlight = false;
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.classList.remove("opacity-70", "cursor-not-allowed");
+                submitBtn.textContent = originalBtnText || (window.isSignupMode ? "Sign Up with Email" : "Sign In with Email");
+            }
         }
     };
 
@@ -2135,11 +2157,14 @@ STRICT LAWS:
         try { safeStorage.clear(); } catch(e){}
     };
 
-    window.handleSignOut = function (e) {
+    window.handleSignOut = async function (e) {
         if (e && typeof e.preventDefault === 'function') e.preventDefault();
         window.clearAppState();
-        if (typeof window.logoutUser === 'function') window.logoutUser(e);
-        else window.location.href = "index.html";
+        if (typeof window.logoutUser === 'function') {
+            await window.logoutUser(e);
+        } else {
+            window.location.href = "index.html";
+        }
     };
 
     window.checkDashboardAuth = function () {
