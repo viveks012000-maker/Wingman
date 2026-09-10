@@ -3,7 +3,6 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const vm = require('vm');
 
 const root = path.join(__dirname, '..');
 const supabaseClientSrc = fs.readFileSync(path.join(root, 'supabaseClient.js'), 'utf8');
@@ -189,31 +188,23 @@ async function runTests() {
             set(val) { navigatedTo = val; }
         });
 
-        // Run supabaseClient.js in VM sandbox
-        const context = vm.createContext({
-            window: windowMock,
-            document: {
-                readyState: 'complete',
-                addEventListener() {},
-                removeEventListener() {},
-                getElementById() { return null; },
-                querySelector() { return null; },
-                querySelectorAll() { return []; },
-                documentElement: { classList: { add() {}, remove() {}, contains() { return false; } }, style: {} },
-                body: { classList: { add() {}, remove() {}, contains() { return false; } }, style: {} }
-            },
-            localStorage: localStorageMock,
-            sessionStorage: sessionStorageMock,
-            setTimeout,
-            clearTimeout,
-            Promise,
-            Set,
-            URL,
-            Array,
-            console: windowMock.console
-        });
+        // Run supabaseClient.js natively
+        global.window = windowMock;
+        global.document = {
+            readyState: 'complete',
+            addEventListener() {},
+            removeEventListener() {},
+            getElementById() { return null; },
+            querySelector() { return null; },
+            querySelectorAll() { return []; },
+            documentElement: { classList: { add() {}, remove() {}, contains() { return false; } }, style: {} },
+            body: { classList: { add() {}, remove() {}, contains() { return false; } }, style: {} }
+        };
+        global.localStorage = localStorageMock;
+        global.sessionStorage = sessionStorageMock;
 
-        vm.runInContext(supabaseClientSrc, context);
+        delete require.cache[require.resolve('../supabaseClient.js')];
+        require('../supabaseClient.js');
 
         // Allow microtasks and initSupabase to resolve
         await new Promise((resolve) => setTimeout(resolve, 20));
