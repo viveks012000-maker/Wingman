@@ -823,34 +823,104 @@
         }
     };
 
-    // 5. Logout User & Clear Session
-    window.logoutUser = function (e) {
-        // Do NOT call e.preventDefault() — it can block navigation
+    let logoutInFlight = null;
 
-        // 1. Wipe only MyWingman's owned runtime keys; preserve unrelated origin data.
+    // Helper: Safely identify the Supabase auth storage key for this application without deleting unrelated data
+    function getApplicationAuthStorageKeys() {
+        const keys = new Set();
         try {
-            window.currentSupabaseUser = null;
-            window.currentSupabaseSession = null;
-            window.__memoryStore = {};
-            const storages = [window.localStorage, window.sessionStorage];
-            storages.forEach(function (storage) {
-                if (!storage) return;
-                for (let i = storage.length - 1; i >= 0; i -= 1) {
-                    const key = storage.key(i);
-                    if (key && key.indexOf('wingman_') === 0) storage.removeItem(key);
-                }
-            });
-        } catch (err) {}
-
-        // 2. Background Supabase SignOut (fire-and-forget)
-        try {
-            if (window.supabaseClient && window.supabaseClient.auth) {
-                window.supabaseClient.auth.signOut();
+            if (window.supabaseClient && window.supabaseClient.storageKey) {
+                keys.add(window.supabaseClient.storageKey);
+                keys.add(window.supabaseClient.storageKey + '-code-verifier');
+                keys.add(window.supabaseClient.storageKey + '-user');
             }
-        } catch (err) {}
+            if (window.supabaseClient && window.supabaseClient.auth && window.supabaseClient.auth.storageKey) {
+                keys.add(window.supabaseClient.auth.storageKey);
+                keys.add(window.supabaseClient.auth.storageKey + '-code-verifier');
+                keys.add(window.supabaseClient.auth.storageKey + '-user');
+            }
+            const url = window.SUPABASE_URL || "https://gstnghuhhrxtwjdafufd.supabase.co";
+            try {
+                const parsedUrl = new URL(url);
+                const hostPart = parsedUrl.hostname.split('.')[0];
+                if (hostPart) {
+                    keys.add(`sb-${hostPart}-auth-token`);
+                    keys.add(`sb-${hostPart}-auth-token-code-verifier`);
+                    keys.add(`sb-${hostPart}-auth-token-user`);
+                }
+            } catch (_) {}
+            keys.add('sb-gstnghuhhrxtwjdafufd-auth-token');
+            keys.add('sb-gstnghuhhrxtwjdafufd-auth-token-code-verifier');
+        } catch (_) {}
+        return Array.from(keys);
+    }
 
-        // 3. Navigate to landing page
-        window.location.href = 'index.html';
+    // 5. Logout User & Clear Session (Asynchronous with In-Flight Guard & Storage Purge)
+    window.logoutUser = async function (e) {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        if (logoutInFlight) return logoutInFlight;
+
+        logoutInFlight = (async function () {
+            // 1. Immediately wipe in-memory session globals to prevent ghost reads
+            try {
+                window.currentSupabaseUser = null;
+                window.currentSupabaseSession = null;
+                window.__memoryStore = {};
+            } catch (_) {}
+
+            // 2. Clear application-owned runtime keys from storage
+            try {
+                const storages = [window.localStorage, window.sessionStorage];
+                storages.forEach(function (storage) {
+                    if (!storage) return;
+                    for (let i = storage.length - 1; i >= 0; i -= 1) {
+                        const key = storage.key(i);
+                        if (key && key.indexOf('wingman_') === 0) storage.removeItem(key);
+                    }
+                });
+            } catch (_) {}
+
+            // 3. Await Supabase auth.signOut() with timeout safeguard (local session scope preferred)
+            try {
+                if (window.supabaseClient && window.supabaseClient.auth && typeof window.supabaseClient.auth.signOut === 'function') {
+                    await Promise.race([
+                        window.supabaseClient.auth.signOut({ scope: 'local' }),
+                        new Promise(function (resolve) { setTimeout(resolve, 2500); })
+                    ]);
+                }
+            } catch (signOutErr) {
+                console.warn('[SupabaseClient] auth.signOut notice:', signOutErr && signOutErr.message ? signOutErr.message : signOutErr);
+            }
+
+            // 4. Authoritative fallback: Ensure exact application Supabase auth tokens are purged
+            try {
+                const appAuthKeys = getApplicationAuthStorageKeys();
+                const storages = [window.localStorage, window.sessionStorage];
+                storages.forEach(function (storage) {
+                    if (!storage) return;
+                    appAuthKeys.forEach(function (k) {
+                        try { storage.removeItem(k); } catch (_) {}
+                    });
+                });
+            } catch (_) {}
+
+            // 5. Update UI to signed-out state if still in DOM
+            try {
+                if (typeof updateAuthUIState === 'function') updateAuthUIState(null);
+                if (typeof window.checkDashboardAuth === 'function') window.checkDashboardAuth();
+            } catch (_) {}
+
+            // 6. Navigate only after all cleanup is fully settled
+            try {
+                window.location.href = 'index.html';
+            } catch (_) {
+                window.location.assign('index.html');
+            }
+        })().finally(function () {
+            logoutInFlight = null;
+        });
+
+        return logoutInFlight;
     };
     window.forceSignOut = window.logoutUser;
 
