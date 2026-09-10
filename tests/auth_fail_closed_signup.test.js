@@ -72,6 +72,11 @@ async function createRuntime({ signupSession = null } = {}) {
   return { window: windowMock };
 }
 
+function requiresExplicitAuthenticatedTrue(source) {
+  // Both forms below are strict fail-closed checks: only the literal boolean true is accepted.
+  return source.includes('authResult.authenticated === true') || source.includes('authResult.authenticated !== true');
+}
+
 async function run() {
   console.log('========================================================================');
   console.log('🔒 FAIL-CLOSED EMAIL AUTH REGRESSION SUITE');
@@ -93,14 +98,14 @@ async function run() {
   await test('3. App auth handler blocks account switching when a real session already exists and requires explicit auth success', () => {
     assert.ok(appSrc.includes('sessionBeforeAttempt'), 'app.js must inspect the current session before an email auth attempt');
     assert.ok(appSrc.includes('Sign out first to switch accounts.'), 'app.js must instruct authenticated users to sign out before switching accounts');
-    assert.ok(appSrc.includes('authResult.authenticated === true'), 'app.js must require explicit authenticated=true before authenticated UI state');
+    assert.ok(requiresExplicitAuthenticatedTrue(appSrc), 'app.js must require explicit authenticated=true before authenticated UI state');
     assert.ok(appSrc.includes('verifiedSession.user.id !== authResult.user.id'), 'app.js must verify the fresh session belongs to the credential result user');
   });
 
   await test('4. Landing auth handler blocks account switching and requires a verified Supabase session before redirect', () => {
     assert.ok(indexHtml.includes('sessionBeforeAttempt'), 'index.html must inspect the current session before an email auth attempt');
     assert.ok(indexHtml.includes('Sign out first to switch accounts.'), 'index.html must instruct authenticated users to sign out before switching accounts');
-    assert.ok(indexHtml.includes('authResult.authenticated === true'), 'index.html must require explicit authenticated=true before redirecting');
+    assert.ok(requiresExplicitAuthenticatedTrue(indexHtml), 'index.html must require explicit authenticated=true before redirecting');
     assert.ok(indexHtml.includes('verifiedSession.user.id !== authResult.user.id'), 'index.html must verify the fresh session belongs to the credential result user');
   });
 
