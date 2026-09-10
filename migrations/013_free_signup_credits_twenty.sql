@@ -5,10 +5,14 @@
 
 BEGIN;
 
--- 1. Update default column value for newly created profile rows
+-- 1. Ensure has_paid_credits column exists with default false
+ALTER TABLE public.profiles
+    ADD COLUMN IF NOT EXISTS has_paid_credits pg_catalog.bool NOT NULL DEFAULT false;
+
+-- 2. Update default column value for newly created profile rows
 ALTER TABLE public.profiles ALTER COLUMN credits SET DEFAULT 20;
 
--- 2. Update new user trigger to grant 20 credits once on Auth signup
+-- 3. Update new user trigger to grant 20 credits once on Auth signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -22,5 +26,43 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+
+-- 4. Rebind trigger on auth.users if auth schema is available
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'auth' AND table_name = 'users') THEN
+        DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+        CREATE TRIGGER on_auth_user_created
+            AFTER INSERT ON auth.users
+            FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+    END IF;
+END $$;
+
+-- 5. Fix plan state: any user with no purchase transactions must be has_paid_credits = false ('Free Plan')
+UPDATE public.profiles p
+SET has_paid_credits = false
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.credit_transactions t
+    WHERE t.user_id = p.id
+      AND t.status = 'completed'
+      AND t.type = 'purchase'
+      AND t.amount > 0
+);
+
+-- 6. For existing accounts that were granted 50 free credits and have never spent any credits,
+-- adjust their initial free balance to 20
+UPDATE public.profiles p
+SET credits = 20
+WHERE credits = 50
+  AND has_paid_credits = false
+  AND NOT EXISTS (
+      SELECT 1 FROM public.credit_transactions t
+      WHERE t.user_id = p.id
+        AND t.status = 'completed'
+        AND t.amount < 0
+  );
+
+-- 7. Ensure authenticated role can read own profile
+GRANT SELECT ON public.profiles TO authenticated;
 
 COMMIT;

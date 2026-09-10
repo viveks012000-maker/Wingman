@@ -174,7 +174,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 
 /*
  * Account plan badge.
- * "Free Plan" means the account has only ever received the canonical 50 signup credits.
+ * "Free Plan" means the account has only ever received the canonical 20 signup credits.
  * "Paid Plan" means the account has ever had credits beyond that signup grant. The database
  * persists this monotonic fact on the authenticated user's RLS-protected profile so refreshes
  * stay O(1) regardless of credit-ledger size.
@@ -229,14 +229,13 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
                 return;
             }
 
-            setPlanBadge('Plan —');
             var plan = await determinePlan(user.id);
             if (plan === 'paid') setPlanBadge('Paid Plan');
             else if (plan === 'free') setPlanBadge('Free Plan');
-            else setPlanBadge('Plan —');
+            else setPlanBadge('Free Plan');
         } catch (err) {
             console.warn('[PlanBadge] Unable to determine account plan:', err && err.message ? err.message : err);
-            setPlanBadge('Plan —');
+            setPlanBadge('Free Plan');
         }
     }
 

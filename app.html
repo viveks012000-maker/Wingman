@@ -912,12 +912,14 @@
         <div class="flex flex-col gap-3 pt-6 border-t border-white/10">
             <!-- Sidebar Balance Card Trigger with + Add Button -->
             <div class="flex items-center justify-between p-3 rounded-xl bg-violet-950/40 border border-violet-500/30 hover:border-violet-500/60 transition-all cursor-pointer shadow-lg" onclick="window.openPurchaseModal()" title="Buy Credits">
-                <div class="flex items-center gap-2">
-                    <span class="material-symbols-outlined text-amber-400 text-[20px]">bolt</span>
-                    <span class="font-label text-sm font-bold text-white tracking-wide" id="desktopCreditCount">Credits —</span>
-                    <span class="text-[10px] text-slate-400 font-medium pl-7 truncate" id="desktopPlanBadge">Free Plan</span>
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="material-symbols-outlined text-amber-400 text-[20px] shrink-0">bolt</span>
+                    <div class="flex flex-col min-w-0">
+                        <span class="font-label text-sm font-bold text-white tracking-wide whitespace-nowrap leading-tight" id="desktopCreditCount">Credits —</span>
+                        <span class="text-[11px] text-violet-300/80 font-medium tracking-wide whitespace-nowrap leading-tight" id="desktopPlanBadge">Free Plan</span>
+                    </div>
                 </div>
-                <button type="button" id="add-credits-btn" class="bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs px-3 py-1 rounded-lg transition-transform active:scale-95 shadow-md" onclick="window.openPurchaseModal()">
+                <button type="button" id="add-credits-btn" class="bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs px-3 py-1 rounded-lg transition-transform active:scale-95 shadow-md shrink-0" onclick="window.openPurchaseModal()">
                     + Add
                 </button>
             </div>
