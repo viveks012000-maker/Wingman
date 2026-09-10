@@ -14,7 +14,7 @@ const migrations = fs.readdirSync(migrationDir)
     .filter(name => name.endsWith('.sql'))
     .sort();
 assert.deepEqual(migrations.map(name => name.slice(0, 3)), [
-    '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013'
+    '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013', '014'
 ], 'tracked migration order must remain explicit and stable');
 
 const container = `wingman-migration-replay-${process.pid}`;
@@ -73,8 +73,38 @@ try {
     psql(bootstrap);
 
     for (const name of migrations) {
+        if (name.startsWith('014')) {
+            // Before applying 014, create historical test fixtures in the disposable container:
+            // 1. Untouched 50-credit legacy signup account (0 transactions)
+            // 2. 50-credit account with purchase transaction history
+            // 3. 98-credit legitimate balance account
+            // 4. 50-credit paid account (has_paid_credits = true)
+            psql(`
+                INSERT INTO auth.users(id) VALUES 
+                    ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
+                    ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
+                    ('cccccccc-cccc-4ccc-8ccc-cccccccccccc'),
+                    ('dddddddd-dddd-4ddd-8ddd-dddddddddddd');
+                UPDATE public.profiles SET credits = 50, has_paid_credits = false WHERE id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+                UPDATE public.profiles SET credits = 50, has_paid_credits = false WHERE id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+                INSERT INTO public.credit_transactions(user_id, amount, type, feature, request_id, status)
+                VALUES ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 50, 'purchase', 'starter', 'tx_test_b', 'completed');
+                UPDATE public.profiles SET credits = 98, has_paid_credits = false WHERE id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+                UPDATE public.profiles SET credits = 50, has_paid_credits = true WHERE id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+            `);
+        }
         psql(fs.readFileSync(path.join(migrationDir, name), 'utf8'));
     }
+
+    // Verify Migration 014 historical reconciliation results
+    assert.equal(scalar("SELECT credits FROM public.profiles WHERE id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';"), '20',
+        'Untouched 50-credit historical account must be reconciled to 20 by migration 014');
+    assert.equal(scalar("SELECT credits FROM public.profiles WHERE id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';"), '50',
+        '50-credit account with purchase transaction must remain untouched');
+    assert.equal(scalar("SELECT credits FROM public.profiles WHERE id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';"), '98',
+        'Account with legitimate 98-credit balance must remain untouched');
+    assert.equal(scalar("SELECT credits FROM public.profiles WHERE id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';"), '50',
+        'Paid account must remain untouched');
 
     const userId = '11111111-1111-4111-8111-111111111111';
     const otherId = '22222222-2222-4222-8222-222222222222';

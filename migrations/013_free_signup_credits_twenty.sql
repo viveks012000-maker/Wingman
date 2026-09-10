@@ -49,20 +49,7 @@ WHERE NOT EXISTS (
       AND t.amount > 0
 );
 
--- 6. For existing accounts that were granted 50 free credits and have never spent any credits,
--- adjust their initial free balance to 20
-UPDATE public.profiles p
-SET credits = 20
-WHERE credits = 50
-  AND has_paid_credits = false
-  AND NOT EXISTS (
-      SELECT 1 FROM public.credit_transactions t
-      WHERE t.user_id = p.id
-        AND t.status = 'completed'
-        AND t.amount < 0
-  );
-
--- 7. Ensure authenticated role can read own profile
+-- 6. Ensure authenticated role can read own profile
 GRANT SELECT ON public.profiles TO authenticated;
 
 COMMIT;
