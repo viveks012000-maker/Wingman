@@ -51,4 +51,23 @@ WHERE p.id = u.id
       WHERE t.user_id = p.id
   );
 
+-- Repair safely-recoverable historical confirmed identities that have no profile at all.
+-- A user with any credit ledger history is intentionally excluded because a fresh 20-credit
+-- balance could be wrong for that user and requires a separate ledger-aware audit.
+INSERT INTO public.profiles (id, credits, created_at, updated_at, has_paid_credits)
+SELECT u.id, 20, pg_catalog.now(), pg_catalog.now(), false
+FROM auth.users u
+WHERE u.email_confirmed_at IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1
+      FROM public.profiles p
+      WHERE p.id = u.id
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM public.credit_transactions t
+      WHERE t.user_id = u.id
+  )
+ON CONFLICT (id) DO NOTHING;
+
 COMMIT;
