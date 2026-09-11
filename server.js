@@ -1064,8 +1064,7 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
             if (timer) clearTimeout(timer);
 
             if (!response.ok) {
-                const errText = await response.text();
-                const err = new Error(`AI API Failure [${targetModel}]: ${response.status} - ${errText}`);
+                const err = new Error(`AI API Failure [${targetModel}]: HTTP ${response.status}.`);
                 err.statusCode = response.status;
                 lastErr = err;
                 if (response.status === 400 || response.status === 404) {
@@ -1075,10 +1074,10 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
             }
             const data = await response.json();
             if (data.error) {
-                throw new Error(`AI API Error: ${data.error.message || JSON.stringify(data.error)}`);
+                throw new Error('AI API returned an error response.');
             }
             if (!data.choices || data.choices.length === 0) {
-                throw new Error(`AI API returned no choices. Response: ${JSON.stringify(data)}`);
+                throw new Error('AI API returned no choices.');
             }
             const msg = data.choices[0].message;
             const outputContent = typeof msg === 'string' ? msg : (msg ? (msg.content || msg.reasoning || '') : '');
@@ -1154,15 +1153,14 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
         });
 
         if (!response.ok) {
-            const errText = await response.text();
-            const err = new Error(`Screenshot Analyzer AI API Failure [${model}]: ${response.status} - ${errText}`);
+            const err = new Error(`Screenshot Analyzer AI API Failure [${model}]: HTTP ${response.status}.`);
             err.statusCode = response.status;
             throw err;
         }
 
         const data = await response.json();
         if (data.error) {
-            const err = new Error(`Screenshot Analyzer AI API Error: ${data.error.message || JSON.stringify(data.error)}`);
+            const err = new Error('Screenshot Analyzer AI API returned an error response.');
             const numericStatus = Number(data.error.status || data.error.code);
             if (Number.isFinite(numericStatus) && numericStatus > 0) err.statusCode = numericStatus;
             throw err;
@@ -1633,7 +1631,7 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
             
             if (!IS_PROD && process.env.DEBUG_PAYLOADS === 'true') {
                 console.log("\n================ [STAGE 1 VISION JSON OUTPUT] ================");
-                console.log(extractedTextContext);
+                console.log('[Analyzer] Stage 1 vision output received; raw OCR content is intentionally not logged.');
                 console.log("==============================================================\n");
             }
         }
