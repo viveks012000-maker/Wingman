@@ -300,6 +300,10 @@ async function assertLegal(browser, pageName, viewport) {
 
 async function activateTab(page, tabId) {
     await page.evaluate(tab => window.switchTab(tab), tabId);
+    await page.waitForFunction(tab => {
+        const el = document.getElementById(tab);
+        return el && getComputedStyle(el).display !== "none";
+    }, tabId, { timeout: 3000 });
     await page.waitForTimeout(80);
 }
 

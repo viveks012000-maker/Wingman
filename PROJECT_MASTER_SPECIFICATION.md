@@ -168,5 +168,5 @@ This document serves as the permanent, unalterable single source of truth for th
 - **Global AbortController Timeout:** **25 seconds** across all 4 feature endpoints (`timeoutMs: 25000`).
 - **Local Port:** 3000.
 - **Third-Party AI Provider:** **AICREDITS** (`aicredits.in`).
-- **Data Fiduciary:** MyWingman (Naresh Kumar, Churu, Rajasthan, India) under DPDP Act 2023.
+- **Data Fiduciary:** MyWingman (Pooja, Haridwar, Uttarakhand, India) under DPDP Act 2023.
 - **Support Contact:** `support.mywingman@gmail.com`.

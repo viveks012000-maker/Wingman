@@ -4,7 +4,7 @@
     "extractedAt": "2026-08-08T10:37:00Z",
     "extractionType": "READ_ONLY_SNAPSHOT",
     "architectureVersion": "2026.08.MASTER_ARCHITECTURAL_SPEC",
-    "dataFiduciary": "MyWingman (Naresh Kumar, Churu, Rajasthan, India)",
+    "dataFiduciary": "MyWingman (Pooja, Haridwar, Uttarakhand, India)",
     "apiGateway": "https://aicredits.in/v1",
     "backendServer": "server.js (Localhost:3000)",
     "globalTimeoutMs": 25000
