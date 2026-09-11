@@ -85,6 +85,7 @@ const testSuites = [
     { name: '73. Prompt-Injection Boundary Resilience', file: 'prompt_injection_resilience.test.js' },
     { name: '74. Trust Boundary & Error-Disclosure Hardening', file: 'trust_boundary_hardening.test.js' },
     { name: '75. Raw Provider Error Disclosure (delete-account / consent)', file: 'error_disclosure.test.js', timeoutMs: 120_000 },
+    { name: '75a. Provider Error Log Safety', file: 'provider_error_log_safety.test.js' },
     { name: '76. Roleplay & Hotline Real Provider Path', file: 'roleplay_provider_path.test.js', timeoutMs: 120_000 },
     { name: '77. UI/API Product-Contract Matrix (16 mode checks)', file: 'ui_api_contract.test.js', timeoutMs: 120_000 },
     { name: '78. Auth Sign-In & Credit Regression Guard', file: 'auth_signin_regression.test.js', timeoutMs: 30_000 }
