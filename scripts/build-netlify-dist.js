@@ -182,6 +182,18 @@ function writeSecurityFiles() {
     '  Cache-Control: no-cache, must-revalidate',
     '/style.css',
     '  Cache-Control: no-cache, must-revalidate',
+    '/fonts/*',
+    '  Cache-Control: public, max-age=31536000, immutable',
+    '/vendor/*',
+    '  Cache-Control: public, max-age=31536000, immutable',
+    '/logo-384.webp',
+    '  Cache-Control: public, max-age=31536000, immutable',
+    '/logo.png',
+    '  Cache-Control: public, max-age=31536000, immutable',
+    '/maeve.jpg',
+    '  Cache-Control: public, max-age=31536000, immutable',
+    '/favicon.ico',
+    '  Cache-Control: public, max-age=31536000, immutable',
     ''
   ].join('\n');
   fs.writeFileSync(path.join(OUT, '_headers'), security, 'utf8');
