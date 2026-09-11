@@ -526,7 +526,7 @@ assert.strictEqual(
 
 // 17.2 Parse all script tags in index.html to prove zero syntax errors
 const vm = require('vm');
-const scriptRegex = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
+const scriptRegex = /<script\b([^>]*)>([\s\S]*?)<\/script[^>]*>/gi;
 let match;
 let scriptIndex = 0;
 while ((match = scriptRegex.exec(indexHtmlCode)) !== null) {
