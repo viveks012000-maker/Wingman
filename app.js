@@ -2697,8 +2697,8 @@ STRICT LAWS:
             }
         }
 
-        window.addEventListener('resize', resizeCanvas);
-        window.addEventListener('orientationchange', resizeCanvas);
+        window.addEventListener('resize', resizeCanvas, { passive: true });
+        window.addEventListener('orientationchange', resizeCanvas, { passive: true });
 
         const numParticles = Math.min(65, Math.max(isMobile ? 32 : 20, Math.floor((cssWidth * cssHeight) / (isMobile ? 9000 : 18000))));
         const particles = [];
@@ -2722,14 +2722,13 @@ STRICT LAWS:
                 mouse.y = null;
                 return;
             }
-            const rect = canvas.getBoundingClientRect();
-            mouse.x = e.clientX - rect.left;
-            mouse.y = e.clientY - rect.top;
-        });
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+        }, { passive: true });
         window.addEventListener("mouseleave", function () {
             mouse.x = null;
             mouse.y = null;
-        });
+        }, { passive: true });
 
         let animId = null;
 
@@ -2789,13 +2788,17 @@ STRICT LAWS:
                 ctx.fill();
                 ctx.closePath();
 
+                const maxDist = isMobile ? 110 : 135;
+                const maxDistSq = maxDist * maxDist;
                 for (let j = i + 1; j < numParticles; j++) {
                     const p2 = particles[j];
                     const dx = p.x - p2.x;
+                    if (Math.abs(dx) >= maxDist) continue;
                     const dy = p.y - p2.y;
-                    const dist = Math.hypot(dx, dy);
-                    const maxDist = isMobile ? 110 : 135;
-                    if (dist < maxDist) {
+                    if (Math.abs(dy) >= maxDist) continue;
+                    const distSq = dx * dx + dy * dy;
+                    if (distSq < maxDistSq) {
+                        const dist = Math.sqrt(distSq);
                         ctx.beginPath();
                         ctx.moveTo(p.x, p.y);
                         ctx.lineTo(p2.x, p2.y);
@@ -2843,11 +2846,14 @@ STRICT LAWS:
         }
     }
 
+    let _lastVisualHeight = 0;
     function updateVisualViewportHeight() {
         const viewport = window.visualViewport;
         const height = viewport && Number.isFinite(viewport.height) ? viewport.height : window.innerHeight;
-        if (height && document.documentElement && document.documentElement.style) {
-            document.documentElement.style.setProperty('--wingman-visual-height', `${Math.round(height)}px`);
+        const rounded = Math.round(height);
+        if (rounded && rounded !== _lastVisualHeight && document.documentElement && document.documentElement.style) {
+            _lastVisualHeight = rounded;
+            document.documentElement.style.setProperty('--wingman-visual-height', `${rounded}px`);
         }
 
         const chatInput = $("simulator-chat-input");
@@ -2867,10 +2873,10 @@ STRICT LAWS:
         if (window._wingmanVisualViewportReady) return;
         window._wingmanVisualViewportReady = true;
         updateVisualViewportHeight();
-        window.addEventListener('resize', updateVisualViewportHeight);
+        window.addEventListener('resize', updateVisualViewportHeight, { passive: true });
         if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', updateVisualViewportHeight);
-            window.visualViewport.addEventListener('scroll', updateVisualViewportHeight);
+            window.visualViewport.addEventListener('resize', updateVisualViewportHeight, { passive: true });
+            window.visualViewport.addEventListener('scroll', updateVisualViewportHeight, { passive: true });
         }
     }
 
