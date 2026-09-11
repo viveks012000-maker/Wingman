@@ -4,6 +4,17 @@
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
     <title>Privacy Policy | MyWingman</title>
+    <link rel="canonical" href="https://mywingmanapp.com/privacy.html" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="MyWingman" />
+    <meta property="og:title" content="Privacy Policy | MyWingman" />
+    <meta property="og:description" content="Privacy Policy, Data Governance, and Retention Disclosures for MyWingman." />
+    <meta property="og:url" content="https://mywingmanapp.com/privacy.html" />
+    <meta property="og:image" content="https://mywingmanapp.com/logo-384.webp" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Privacy Policy | MyWingman" />
+    <meta name="twitter:description" content="Privacy Policy, Data Governance, and Retention Disclosures for MyWingman." />
+    <meta name="twitter:image" content="https://mywingmanapp.com/logo-384.webp" />
     <meta name="description" content="Privacy Policy, DPDP Compliance Framework, and Data Retention Disclosures for MyWingman."/>
     
     <link rel="stylesheet" href="output.css">
@@ -33,7 +44,7 @@
         <div class="border-b border-white/10 pb-6 mb-10">
             <span class="font-mono text-xs uppercase tracking-widest text-violet-400 font-bold">Data Governance</span>
             <h1 class="text-3xl md:text-4xl font-extrabold text-white mt-2 tracking-tight">Privacy Policy</h1>
-            <p class="font-mono text-xs text-slate-400 mt-2">Effective Date: July 28, 2026</p>
+            <p class="font-mono text-xs text-slate-400 mt-2">Effective Date: September 11, 2026</p>
         </div>
 
         <div class="space-y-10 text-slate-300 text-sm leading-relaxed font-normal">
@@ -42,7 +53,7 @@
             <section class="bg-neutral-950/80 border border-white/10 p-6 md:p-8 rounded-2xl space-y-3">
                 <h2 class="text-base font-bold text-white uppercase tracking-wide font-mono text-violet-300">SECTION 1: DATA PROTECTION SCOPE</h2>
                 <p>
-                    This Policy explains how we collect, process, manage, use, and protect your personal information. Operating out of Churu, Rajasthan, India, our data architecture is designed to align with applicable digital privacy standards, including the Digital Personal Data Protection (DPDP) Act 2023 of India and its associated operational rules. Under the DPDP Act 2023, MyWingman operates as the 'Data Fiduciary'.
+                    This Policy explains how we collect, process, manage, use, and protect your personal information. Operating out of Haridwar, Uttarakhand, India, our data architecture is designed to align with applicable digital privacy standards, including the Digital Personal Data Protection Act, 2023 of India and its implementing rules as they come into phased commencement. Under the DPDP Act 2023, MyWingman operates as the 'Data Fiduciary'.
                 </p>
             </section>
 
@@ -53,10 +64,12 @@
                     We process specific categories of data to deliver services, manage user credit wallets, and secure system infrastructure:
                 </p>
                 <div class="space-y-3 pl-4 border-l-2 border-violet-500/40">
-                    <p><strong class="text-white">a) Identity & Profile Information:</strong> Your Google account email address, unique persistent OAuth subject identifier, and public profile name (if provided during authentication workflows).</p>
+                    <p><strong class="text-white">a) Identity & Profile Information:</strong> Your email address and account credentials (whether provided via Google OAuth 2.0 or Email & Password Authentication), authentication identifier (such as Supabase user ID), account status, and public profile name (if provided during authentication workflows).</p>
                     <p><strong class="text-white">b) Transactional & Billing Metadata:</strong> Paid checkout is currently disabled. If paid checkout is enabled in the future, we may process payment transaction identifiers, purchase amounts, currencies, payment statuses, and credit-purchase records needed to reconcile transactions. Payment credentials such as full card numbers or banking passwords should be handled by the applicable payment service provider rather than stored in our application database.</p>
                     <p><strong class="text-white">c) Conversational Transcripts & Inputs:</strong> User text submissions or extracted dialogue logs derived during session executions are processed in real-time memory to generate AI communication suggestions. MyWingman does not retain these private inputs, transcripts, or generated results in localStorage, sessionStorage, or other browser persistence after the current tab session.</p>
-                    <p><strong class="text-white">d) Technical Logs & Identifiers:</strong> IP address and related security metadata, which we minimize or truncate where technically feasible, alongside browser types, session cookies, authentication tokens, and account status fields.</p>
+                    <p><strong class="text-white">d) Technical Logs & Identifiers:</strong> IP address and related security metadata, which we minimize or truncate where technically feasible, alongside browser types, security cookies (such as our HttpOnly, Secure, SameSite=Lax <code class="text-violet-300 font-mono">wingman_csrf</code> protection cookie), authentication tokens, and account status fields.</p>
+                    <p><strong class="text-white">e) Local Browser Storage:</strong> We use browser localStorage solely for client authentication tokens and local user interface preferences (such as animation settings). Uploaded screenshots, extracted text, and chat messages are never persisted in localStorage or sessionStorage.</p>
+                    <p><strong class="text-white">f) Analytics & Telemetry:</strong> We use lightweight, privacy-preserving Cloudflare Pages Web Analytics (a cookie-less edge beacon) for aggregated site performance metrics, alongside a privacy-safe internal server endpoint (/api/analytics/event) that logs non-persistent operational events in memory. We do not use third-party behavioral advertising trackers, commercial tracking pixels, or external marketing analytics SDKs.</p>
                 </div>
             </section>
 
@@ -64,7 +77,7 @@
             <section class="bg-neutral-950/80 border border-white/10 p-6 md:p-8 rounded-2xl space-y-3">
                 <h2 class="text-base font-bold text-white uppercase tracking-wide font-mono text-violet-300">SECTION 3: SCREENSHOT HANDLING & DATA RETENTION POLICY</h2>
                 <p class="text-slate-300 leading-relaxed font-body text-sm">
-                    Chat screenshots uploaded to the Screenshot Analyzer are processed in browser memory and transmitted over secure TLS connections to our Third-Party AI processor (AICREDITS) for optical text extraction and conversational analysis. Uploaded screenshots are not stored in our application database or server-side persistent storage. They may remain temporarily in your browser session until cleared, replaced, or the session is reset.
+                    Chat screenshots uploaded to the Screenshot Analyzer are processed in browser memory and transmitted over secure TLS connections to our Third-Party AI processor (AICREDITS) for optical text extraction and conversational analysis. Uploaded screenshots are not stored in our application database or server-side persistent storage. They may remain temporarily in your browser session until cleared, replaced, or the session is reset. Data transmitted to AICREDITS and underlying model infrastructure is subject to those providers' applicable processing and retention practices.
                 </p>
             </section>
 
@@ -88,8 +101,8 @@
                     We retain personal data only for as long as necessary to fulfill specific processing purposes:
                 </p>
                 <div class="space-y-3 pl-4 border-l-2 border-violet-500/40">
-                    <p><strong class="text-white">a) Account & Profile Data:</strong> Maintained for the duration of your active platform lifecycle until an explicit account deletion process is triggered in dashboard settings.</p>
-                    <p><strong class="text-white">b) Consent Withdrawal Rights:</strong> You may withdraw consent at any time through the application's consent controls or by contacting us.</p>
+                    <p><strong class="text-white">a) Account & Profile Data:</strong> Maintained for the duration of your active platform lifecycle until an explicit account deletion process is triggered. You can initiate permanent account deletion directly within the application Settings modal ('Delete Account Permanently') or by emailing support.mywingman@gmail.com. In-app deletion calls /api/user/delete-account, which permanently purges your authentication record, user profile, credit transactions ledger, and consent records from our systems.</p>
+                    <p><strong class="text-white">b) Consent Withdrawal & Access Rights:</strong> You may withdraw consent at any time through the application's consent controls or by contacting us. Users may also request access to, correction of, or erasure of their personal data subject to applicable law.</p>
                     <p><strong class="text-white">c) Security & System Logs:</strong> May be retained for a limited period reasonably necessary for security, abuse prevention, troubleshooting, and applicable legal obligations. Actual retention can also depend on infrastructure-provider settings.</p>
                     <p><strong class="text-white">d) Transactional Records:</strong> If paid transactions are enabled, relevant billing records may be retained for the period reasonably necessary for accounting, tax, fraud prevention, dispute resolution, and applicable legal obligations.</p>
                 </div>
@@ -102,12 +115,20 @@
                     Any inquiries, privacy concerns, data rights requests, or grievances regarding the processing of your personal data may be directly addressed to our designated Grievance Officer:
                 </p>
                 <div class="bg-black border border-white/10 p-5 rounded-xl space-y-2 text-xs font-mono">
-                    <p class="text-slate-400 font-bold uppercase tracking-wider">• Designated Grievance Officer: <span class="text-white font-semibold">Naresh Kumar (Operator & Data Fiduciary)</span></p>
+                    <p class="text-slate-400 font-bold uppercase tracking-wider">• Designated Grievance Officer: <span class="text-white font-semibold">Pooja (Operator & Data Fiduciary)</span></p>
                     <p class="text-slate-400">• Entity / Trade Name: <span class="text-white font-semibold">MyWingman</span></p>
-                    <p class="text-slate-400">• Location: <span class="text-white font-semibold">Churu, Rajasthan, India</span></p>
+                    <p class="text-slate-400">• Location: <span class="text-white font-semibold">Haridwar, Uttarakhand, India</span></p>
                     <p class="text-slate-400">• Contact Email: <a href="mailto:support.mywingman@gmail.com" class="text-violet-400 underline underline-offset-2 hover:no-underline">support.mywingman@gmail.com</a></p>
                     <p class="text-slate-400">• Resolution Procedures: <span class="text-white font-semibold">We will respond to privacy inquiries and grievances in a timely manner in accordance with applicable law and the requirements in force at the relevant time.</span></p>
                 </div>
+            </section>
+
+            <!-- SECTION 7 -->
+            <section class="bg-neutral-950/80 border border-white/10 p-6 md:p-8 rounded-2xl space-y-3">
+                <h2 class="text-base font-bold text-white uppercase tracking-wide font-mono text-violet-300">SECTION 7: INTERNATIONAL USERS &amp; CROSS-BORDER TRANSFERS</h2>
+                <p class="text-slate-300 leading-relaxed font-body text-sm">
+                    MyWingman may be accessed by users worldwide. Personal data and submitted text inputs may be processed in India and transmitted to infrastructure or third-party AI processors located in other jurisdictions. Where international data protection laws apply, users retain applicable statutory rights (including rights of access, rectification, and erasure). We implement reasonable technical and organizational safeguards appropriate to the processing, without claiming universal regulatory certification across every foreign jurisdiction.
+                </p>
             </section>
 
         </div>

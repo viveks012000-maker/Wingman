@@ -526,12 +526,22 @@ assert.strictEqual(
 
 // 17.2 Parse all script tags in index.html to prove zero syntax errors
 const vm = require('vm');
-const scriptRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
+const scriptRegex = /<script\b([^>]*)>([\s\S]*?)<\/script[^>]*>/gi;
 let match;
 let scriptIndex = 0;
 while ((match = scriptRegex.exec(indexHtmlCode)) !== null) {
-    const scriptBody = match[1];
+    const scriptAttrs = match[1];
+    const scriptBody = match[2];
     if (scriptBody && scriptBody.trim()) {
+        if (/type=["']application\/ld\+json["']/i.test(scriptAttrs)) {
+            try {
+                JSON.parse(scriptBody);
+                scriptIndex++;
+            } catch (e) {
+                assert.fail(`JSON error detected in index.html JSON-LD script block #${scriptIndex}: ${e.message}`);
+            }
+            continue;
+        }
         try {
             new vm.Script(scriptBody);
             scriptIndex++;
