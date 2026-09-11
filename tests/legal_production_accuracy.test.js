@@ -52,7 +52,7 @@ assert.ok(terms.includes('Credit purchases are one-time payments and do not cons
 assert.ok(refund.includes('Future purchases will consist of one-time credit bundles, not recurring monthly or annual subscriptions'), 'Refund must clarify one-time purchases');
 
 // Additional Terms clauses
-assert.ok(terms.includes('ARTICLE XI: ADDITIONAL TERMS'), 'Terms must include the additional legal terms article');
+assert.ok(terms.includes('ARTICLE XI: OTHER TERMS'), 'Terms must include the additional legal terms article');
 assert.ok(terms.includes('We do not claim ownership of your private messages or conversation content.'), 'Terms must preserve user ownership of private messages');
 assert.ok(terms.includes('We also do not claim ownership of third-party AI output where we have no legal basis to do so'), 'Terms must avoid unsupported ownership claims over third-party AI output');
 assert.ok(terms.includes('To the maximum extent permitted by law, the Service is provided “as is” and “as available,”'), 'Terms must include a general warranty disclaimer');
