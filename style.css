@@ -497,7 +497,13 @@ select,
     }
 
     body.app-page.practice-tab-active #mainContentCanvas {
-        padding-bottom: 16px !important;
+        padding: 4px 6px 0 !important;
+        height: max(0px, calc(var(--wingman-visual-height) - var(--wingman-mobile-header-total-height) - var(--wingman-mobile-bottom-clearance))) !important;
+        max-height: max(0px, calc(var(--wingman-visual-height) - var(--wingman-mobile-header-total-height) - var(--wingman-mobile-bottom-clearance))) !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
     }
 
     body.app-page #mainContentCanvas > section:not(#chatboxSection) {
@@ -637,52 +643,65 @@ select,
     }
 
     body.app-page #chatboxSection {
-        display: flex;
-        flex-direction: column;
-        flex: 0 0 auto !important;
-        height: auto !important;
-        max-height: max(0px, calc(var(--wingman-visual-height) - var(--wingman-mobile-header-total-height) - var(--wingman-mobile-bottom-clearance) - 16px)) !important;
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 1 0% !important;
+        height: 100% !important;
+        max-height: 100% !important;
         min-height: 0 !important;
         padding: 0 0 2px !important;
-        box-sizing: border-box;
-        overflow: visible !important;
+        margin: 0 !important;
+        box-sizing: border-box !important;
+        overflow: hidden !important;
     }
 
     body.app-page #chatbox-simulator-panel {
-        display: flex;
-        flex: 0 1 auto;
-        flex-direction: column;
+        display: flex !important;
+        flex: 1 1 0% !important;
+        flex-direction: column !important;
         min-height: 0 !important;
-        height: auto !important;
+        height: 100% !important;
         max-height: 100% !important;
         width: 100% !important;
         padding: 0 !important;
+        margin: 0 !important;
         box-sizing: border-box !important;
+        overflow: hidden !important;
     }
 
     body.app-page #chatbox-simulator-panel > div:first-child {
-        margin-bottom: 8px !important;
+        display: none !important;
     }
 
     body.app-page #chatbox-simulator-panel > p#practiceModeSubtitle {
-        margin-top: 0;
-        margin-bottom: 6px !important;
-        line-height: 1.3;
-        overflow-wrap: anywhere;
+        display: none !important;
+    }
+
+    body.app-page #practiceScenarioContainer {
+        flex: 0 0 auto !important;
+        margin: 0 0 4px 0 !important;
+        padding: 0 !important;
+    }
+
+    body.app-page #practiceScenarioContainer > div:first-child {
+        display: none !important;
     }
 
     body.app-page .chatbox-wrapper {
         display: flex !important;
-        flex: 0 1 auto !important;
+        flex: 1 1 0% !important;
         flex-direction: column !important;
         width: 100% !important;
         max-width: 100% !important;
-        height: auto !important;
-        min-height: 160px !important;
+        height: 100% !important;
+        min-height: 0 !important;
         max-height: 100% !important;
         margin: 0 !important;
         overflow: hidden !important;
         border-radius: 16px !important;
+        border: 1px solid rgba(168, 85, 247, 0.3) !important;
+        background: rgba(11, 9, 22, 0.98) !important;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6) !important;
         box-sizing: border-box !important;
     }
 
@@ -783,13 +802,14 @@ select,
     body.app-page #chatbox-messages-container {
         display: flex !important;
         flex-direction: column !important;
-        flex: 0 1 auto !important;
+        flex: 1 1 0% !important;
+        height: 100% !important;
         min-height: 72px !important;
         max-height: 100% !important;
         overflow-y: auto !important;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior-y: contain;
-        padding: 8px 12px !important;
+        padding: 10px 12px !important;
         gap: 8px !important;
     }
 
@@ -899,6 +919,12 @@ select,
         --wingman-mobile-bottom-clearance: 16px;
         --wingman-mobile-content-clearance: 16px;
         padding-bottom: 16px !important;
+    }
+
+    body.app-page.chat-keyboard-open.practice-tab-active #mainContentCanvas {
+        padding: 2px 6px 0 !important;
+        height: max(0px, calc(var(--wingman-visual-height) - var(--wingman-mobile-header-total-height) - 4px)) !important;
+        max-height: max(0px, calc(var(--wingman-visual-height) - var(--wingman-mobile-header-total-height) - 4px)) !important;
     }
 
     /* Maximize conversation viewport while typing on mobile by hiding drill scenario chips and subtitle */
@@ -1115,21 +1141,31 @@ select,
     }
 
     body.app-page.practice-tab-active #mainContentCanvas {
-        padding-bottom: var(--wingman-mobile-content-clearance) !important;
+        height: auto !important;
+        max-height: none !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+        padding: 4px 6px var(--wingman-mobile-content-clearance) !important;
     }
 
     body.app-page.practice-tab-active #chatboxSection {
         height: auto !important;
         max-height: none !important;
+        flex: 0 0 auto !important;
+        overflow: visible !important;
     }
 
     body.app-page.practice-tab-active #chatbox-simulator-panel {
+        height: auto !important;
         max-height: none !important;
+        flex: 0 0 auto !important;
+        overflow: visible !important;
     }
 
     body.app-page.practice-tab-active .chatbox-wrapper {
         flex: 0 0 auto !important;
-        min-height: 240px !important;
+        height: auto !important;
+        min-height: 360px !important;
         max-height: none !important;
         overflow: hidden !important;
     }
