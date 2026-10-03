@@ -1945,6 +1945,13 @@
                 <h2 class="font-headline text-2xl font-extrabold text-white tracking-tight">Flexible Credit Pricing</h2>
                 <p class="font-body text-xs text-slate-300 mt-1 max-w-sm leading-relaxed">Premium credit access only. Purchase a credit tier below to unlock instant AI analysis. No subscriptions, pay only for what you use.</p>
                 <p id="purchaseCreditContext" class="hidden mt-2 max-w-sm rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 font-body text-[11px] font-semibold leading-relaxed text-amber-200" role="status" aria-live="polite"></p>
+                <!-- Segmented Currency Selector (USD / INR) -->
+                <div class="flex items-center justify-center mt-3" id="appPricingCurrencySelectorWrapper">
+                    <div class="inline-flex items-center rounded-full bg-slate-900/80 p-0.5 border border-violet-500/30 shadow-[0_0_15px_rgba(124,58,237,0.15)]" role="group" aria-label="Display currency">
+                        <button type="button" class="currency-toggle-btn px-3 py-1 text-xs font-semibold rounded-full transition-all cursor-pointer bg-violet-600 text-white shadow-sm" data-currency="USD" aria-label="USD — US Dollar" aria-pressed="true">USD</button>
+                        <button type="button" class="currency-toggle-btn px-3 py-1 text-xs font-semibold rounded-full transition-all cursor-pointer text-slate-400 hover:text-white" data-currency="INR" aria-label="INR — Indian Rupee" aria-pressed="false">INR</button>
+                    </div>
+                </div>
             </div>
 
             <!-- Scrollable Pricing Cards Container -->
@@ -1960,7 +1967,7 @@
                                 <div>
                                     <span class="font-label text-xs text-slate-400 font-semibold tracking-wide block">Starter Pack</span>
                                     <span class="font-headline text-2xl text-white font-extrabold mt-0.5 tracking-tight block">250 Credits</span>
-                                    <span class="text-xs text-slate-400 font-mono mt-0.5 block">2¢ per credit</span>
+                                    <span class="text-xs text-slate-400 font-mono mt-0.5 block" data-plan="starter" data-price-role="per-credit">2¢ per credit</span>
                                 </div>
                                 <div class="flex flex-col items-end gap-1.5">
                                     <div class="tier-radio-indicator shrink-0">
@@ -1968,7 +1975,7 @@
                                     </div>
                                     <div class="text-right mt-1">
                                         <div class="flex items-baseline gap-1">
-                                            <span class="font-headline text-2xl sm:text-3xl text-white font-extrabold tracking-tight">$4.99</span>
+                                            <span class="font-headline text-2xl sm:text-3xl text-white font-extrabold tracking-tight" data-plan="starter" data-price-role="sale">$4.99</span>
                                         </div>
                                         <span class="text-[11px] text-slate-400 font-label block">one-time</span>
                                     </div>
@@ -2013,19 +2020,19 @@
                                 <div>
                                     <span class="font-label text-xs text-violet-300 font-semibold tracking-wide block">Pro Pack</span>
                                     <span class="font-headline text-2xl text-white font-extrabold mt-0.5 tracking-tight block">600 Credits</span>
-                                    <span class="text-xs text-slate-400 font-mono mt-0.5 block">1.6¢ per credit</span>
+                                    <span class="text-xs text-slate-400 font-mono mt-0.5 block" data-plan="pro" data-price-role="per-credit">1.6¢ per credit</span>
                                 </div>
                                 <div class="flex flex-col items-end gap-1.5">
                                     <div class="tier-radio-indicator shrink-0">
                                         <div class="tier-radio-indicator-dot"></div>
                                     </div>
                                     <div class="text-right">
-                                        <span class="text-xs text-slate-400/90 line-through font-mono font-semibold">$14.99</span>
+                                        <span class="text-xs text-slate-400/90 line-through font-mono font-semibold" data-plan="pro" data-price-role="regular">$14.99</span>
                                         <div class="flex items-baseline gap-1 mt-0.5">
-                                            <span class="font-headline text-2xl sm:text-3xl text-white font-extrabold tracking-tight">$9.99</span>
+                                            <span class="font-headline text-2xl sm:text-3xl text-white font-extrabold tracking-tight" data-plan="pro" data-price-role="sale">$9.99</span>
                                             <span class="text-[11px] text-slate-400 font-label">one-time</span>
                                         </div>
-                                        <span class="text-emerald-400 font-mono font-bold text-[10px] block mt-0.5">Save $5 · 33% off regular price</span>
+                                        <span class="text-emerald-400 font-mono font-bold text-[10px] block mt-0.5" data-plan="pro" data-price-role="saving">Save $5 · 33% off regular price</span>
                                     </div>
                                 </div>
                             </div>
@@ -2068,19 +2075,19 @@
                                 <div>
                                     <span class="font-label text-xs text-violet-300 font-semibold tracking-wide block">Elite Pack</span>
                                     <span class="font-headline text-2xl text-white font-extrabold mt-0.5 tracking-tight block">3000 Credits</span>
-                                    <span class="text-xs text-emerald-400 font-mono font-bold mt-0.5 block">0.6¢ per credit</span>
+                                    <span class="text-xs text-emerald-400 font-mono font-bold mt-0.5 block" data-plan="elite" data-price-role="per-credit">0.6¢ per credit</span>
                                 </div>
                                 <div class="flex flex-col items-end gap-1.5">
                                     <div class="tier-radio-indicator shrink-0">
                                         <div class="tier-radio-indicator-dot"></div>
                                     </div>
                                     <div class="text-right">
-                                        <span class="text-xs text-slate-400/90 line-through font-mono font-semibold">$29.99</span>
+                                        <span class="text-xs text-slate-400/90 line-through font-mono font-semibold" data-plan="elite" data-price-role="regular">$29.99</span>
                                         <div class="flex items-baseline gap-1 mt-0.5">
-                                            <span class="font-headline text-2xl sm:text-3xl text-white font-extrabold tracking-tight">$19.99</span>
+                                            <span class="font-headline text-2xl sm:text-3xl text-white font-extrabold tracking-tight" data-plan="elite" data-price-role="sale">$19.99</span>
                                             <span class="text-[11px] text-slate-400 font-label">one-time</span>
                                         </div>
-                                        <span class="text-emerald-400 font-mono font-bold text-[10px] block mt-0.5">Save $10 · 33% off regular price</span>
+                                        <span class="text-emerald-400 font-mono font-bold text-[10px] block mt-0.5" data-plan="elite" data-price-role="saving">Save $10 · 33% off regular price</span>
                                     </div>
                                 </div>
                             </div>
@@ -2123,19 +2130,19 @@
                                 <div>
                                     <span class="font-label text-xs text-amber-300 font-semibold tracking-wide block">VIP Pack (Limited Offer)</span>
                                     <span class="font-headline text-2xl text-white font-extrabold mt-0.5 tracking-tight block">100,000 Credits</span>
-                                    <span class="text-xs text-amber-400 font-mono font-bold mt-0.5 block">0.049¢ per credit</span>
+                                    <span class="text-xs text-amber-400 font-mono font-bold mt-0.5 block" data-plan="limited" data-price-role="per-credit">0.049¢ per credit</span>
                                 </div>
                                 <div class="flex flex-col items-end gap-1.5">
                                     <div class="tier-radio-indicator shrink-0">
                                         <div class="tier-radio-indicator-dot"></div>
                                     </div>
                                     <div class="text-right">
-                                        <span class="text-xs text-slate-400/90 line-through font-mono font-semibold">$299.00</span>
+                                        <span class="text-xs text-slate-400/90 line-through font-mono font-semibold" data-plan="limited" data-price-role="regular">$299.00</span>
                                         <div class="flex items-baseline gap-1 mt-0.5">
-                                            <span class="font-headline text-2xl sm:text-3xl text-white font-extrabold tracking-tight">$49</span>
+                                            <span class="font-headline text-2xl sm:text-3xl text-white font-extrabold tracking-tight" data-plan="limited" data-price-role="sale">$49</span>
                                             <span class="text-[11px] text-slate-400 font-label">one-time</span>
                                         </div>
-                                        <span class="text-emerald-400 font-mono font-bold text-[10px] block mt-0.5">Save $250 · 84% off regular price</span>
+                                        <span class="text-emerald-400 font-mono font-bold text-[10px] block mt-0.5" data-plan="limited" data-price-role="saving">Save $250 · 84% off regular price</span>
                                     </div>
                                 </div>
                             </div>

@@ -762,3 +762,357 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         window.addEventListener('load', bindLanguageButtons, { once: true });
     }
 })();
+
+/**
+ * WINGMAN CLIENT-SIDE CURRENCY SYSTEM (USD + INR)
+ * -------------------------------------------------------------------------
+ * - Default: 'USD'
+ * - Supported: 'USD', 'INR'
+ * - Persistence: localStorage['wingman_setting_currency'] (safe fail-soft)
+ * - Single source of truth for presentation across index.html & app.html
+ */
+(function () {
+    'use strict';
+
+    var STORAGE_KEY = 'wingman_setting_currency';
+    var DEFAULT_CURRENCY = 'USD';
+    var SUPPORTED_CURRENCIES = ['USD', 'INR'];
+
+    var PRICING_CATALOG = {
+        starter: {
+            id: 'starter',
+            name: 'Starter Pack',
+            modalBundleName: 'Starter Bundle',
+            credits: 250,
+            prices: {
+                USD: {
+                    amountMinor: 499,
+                    regularMinor: null,
+                    formattedSale: '$4.99',
+                    formattedRegular: null,
+                    formattedPerCredit: '2¢ per credit',
+                    formattedSaving: null,
+                    ctaPrice: '$4.99'
+                },
+                INR: {
+                    amountMinor: 44900,
+                    regularMinor: null,
+                    formattedSale: '₹449',
+                    formattedRegular: null,
+                    formattedPerCredit: '₹1.80 per credit',
+                    formattedSaving: null,
+                    ctaPrice: '₹449'
+                }
+            }
+        },
+        pro: {
+            id: 'pro',
+            name: 'Pro Pack',
+            modalBundleName: 'Pro Bundle',
+            credits: 600,
+            prices: {
+                USD: {
+                    amountMinor: 999,
+                    regularMinor: 1499,
+                    formattedSale: '$9.99',
+                    formattedRegular: '$14.99',
+                    formattedPerCredit: '1.6¢ per credit',
+                    formattedSaving: 'Save $5 · 33% off regular price',
+                    ctaPrice: '$9.99'
+                },
+                INR: {
+                    amountMinor: 89900,
+                    regularMinor: 134900,
+                    formattedSale: '₹899',
+                    formattedRegular: '₹1,349',
+                    formattedPerCredit: '₹1.50 per credit',
+                    formattedSaving: 'Save ₹450 · 33% off regular price',
+                    ctaPrice: '₹899'
+                }
+            }
+        },
+        elite: {
+            id: 'elite',
+            name: 'Elite Pack',
+            modalBundleName: 'Elite Bundle',
+            credits: 3000,
+            prices: {
+                USD: {
+                    amountMinor: 1999,
+                    regularMinor: 2999,
+                    formattedSale: '$19.99',
+                    formattedRegular: '$29.99',
+                    formattedPerCredit: '0.6¢ per credit',
+                    formattedSaving: 'Save $10 · 33% off regular price',
+                    ctaPrice: '$19.99'
+                },
+                INR: {
+                    amountMinor: 179900,
+                    regularMinor: 269900,
+                    formattedSale: '₹1,799',
+                    formattedRegular: '₹2,699',
+                    formattedPerCredit: '₹0.60 per credit',
+                    formattedSaving: 'Save ₹900 · 33% off regular price',
+                    ctaPrice: '₹1,799'
+                }
+            }
+        },
+        limited: {
+            id: 'limited',
+            name: 'VIP Founder Pack',
+            modalBundleName: 'VIP Bundle (Limited Offer)',
+            credits: 100000,
+            prices: {
+                USD: {
+                    amountMinor: 4900,
+                    regularMinor: 29900,
+                    formattedSale: '$49',
+                    formattedRegular: '$299.00',
+                    formattedPerCredit: '0.049¢ per credit',
+                    formattedSavingLanding: 'Save $250 · Over 80% off limited deal',
+                    formattedSavingApp: 'Save $250 · 84% off regular price',
+                    ctaPrice: '$49',
+                    buttonText: 'Claim Limited Offer ($49)'
+                },
+                INR: {
+                    amountMinor: 449900,
+                    regularMinor: 2699900,
+                    formattedSale: '₹4,499',
+                    formattedRegular: '₹26,999',
+                    formattedPerCredit: '₹0.045 per credit',
+                    formattedSavingLanding: 'Save ₹22,500 · Over 80% off limited deal',
+                    formattedSavingApp: 'Save ₹22,500 · 83% off regular price',
+                    ctaPrice: '₹4,499',
+                    buttonText: 'Claim Limited Offer (₹4,499)'
+                }
+            }
+        }
+    };
+
+    var currentCurrency = DEFAULT_CURRENCY;
+    var listeners = [];
+
+    function safeGetStorage(key) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                return window.localStorage.getItem(key);
+            }
+        } catch (_) {}
+        return null;
+    }
+
+    function safeSetStorage(key, val) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                window.localStorage.setItem(key, val);
+            }
+        } catch (_) {}
+    }
+
+    function canonicalize(curr) {
+        if (!curr || typeof curr !== 'string') return DEFAULT_CURRENCY;
+        var normalized = curr.trim().toUpperCase();
+        if (normalized === 'INR') return 'INR';
+        return DEFAULT_CURRENCY;
+    }
+
+    function getCurrency() {
+        return currentCurrency;
+    }
+
+    function getPlan(planId) {
+        return PRICING_CATALOG[planId] || null;
+    }
+
+    function getPlanPricing(planId, curr) {
+        var plan = getPlan(planId);
+        if (!plan) return null;
+        var c = canonicalize(curr || currentCurrency);
+        return plan.prices[c] || plan.prices.USD;
+    }
+
+    function formatPlanSale(planId, curr) {
+        var pricing = getPlanPricing(planId, curr);
+        return pricing ? pricing.formattedSale : '';
+    }
+
+    function getPlanPriceNumber(planId, curr) {
+        var pricing = getPlanPricing(planId, curr);
+        if (!pricing) return 0;
+        return pricing.amountMinor / 100;
+    }
+
+    function getCredits(planId) {
+        var plan = getPlan(planId);
+        return plan ? plan.credits : 0;
+    }
+
+    function updateToggleButtonStates() {
+        if (typeof document === 'undefined') return;
+        var buttons = document.querySelectorAll('.currency-toggle-btn');
+        for (var i = 0; i < buttons.length; i++) {
+            var btn = buttons[i];
+            var btnCurr = canonicalize(btn.getAttribute('data-currency'));
+            if (btnCurr === currentCurrency) {
+                btn.classList.add('bg-violet-600', 'text-white', 'shadow-sm');
+                btn.classList.remove('text-slate-400');
+                btn.setAttribute('aria-pressed', 'true');
+            } else {
+                btn.classList.remove('bg-violet-600', 'text-white', 'shadow-sm');
+                btn.classList.add('text-slate-400');
+                btn.setAttribute('aria-pressed', 'false');
+            }
+        }
+    }
+
+    function updatePricingDisplay(root) {
+        if (typeof document === 'undefined') return;
+        var container = root || document;
+
+        var priceElements = container.querySelectorAll('[data-plan][data-price-role]');
+        for (var i = 0; i < priceElements.length; i++) {
+            var el = priceElements[i];
+            var planId = el.getAttribute('data-plan');
+            var role = el.getAttribute('data-price-role');
+            var pricing = getPlanPricing(planId, currentCurrency);
+            if (!pricing) continue;
+
+            if (role === 'sale') {
+                el.textContent = pricing.formattedSale;
+            } else if (role === 'regular') {
+                el.textContent = pricing.formattedRegular || '';
+            } else if (role === 'per-credit') {
+                el.textContent = pricing.formattedPerCredit;
+            } else if (role === 'saving') {
+                if (planId === 'limited') {
+                    // Distinguish landing vs app modal if different copy is used
+                    var isLanding = !!el.closest('#pricing');
+                    el.textContent = isLanding ? pricing.formattedSavingLanding : pricing.formattedSavingApp;
+                } else {
+                    el.textContent = pricing.formattedSaving || '';
+                }
+            } else if (role === 'cta-price' || role === 'button-text') {
+                el.textContent = pricing.buttonText || ('Acquire ' + planId + ' - ' + pricing.formattedSale);
+            } else if (role === 'button-price') {
+                el.textContent = pricing.ctaPrice || pricing.formattedSale;
+            }
+        }
+
+        // Also update any radio inputs with data-price attribute in app.html
+        var radios = container.querySelectorAll("input[name='pricing_tier']");
+        for (var r = 0; r < radios.length; r++) {
+            var radio = radios[r];
+            var rPlan = radio.value;
+            var rPricing = getPlanPricing(rPlan, currentCurrency);
+            if (rPricing) {
+                radio.setAttribute('data-price', (rPricing.amountMinor / 100).toFixed(2));
+                radio.setAttribute('data-price-formatted', rPricing.formattedSale);
+                radio.setAttribute('data-currency', currentCurrency);
+            }
+        }
+
+        // Synchronize modal confirm purchase button text if present
+        var purchaseBtnTextEl = document.getElementById('purchaseBtnText');
+        if (purchaseBtnTextEl) {
+            var activeRadio = document.querySelector("input[name='pricing_tier']:checked");
+            var selectedTierValue = activeRadio ? activeRadio.value : 'elite';
+            var selectedPlan = getPlan(selectedTierValue);
+            var selectedPricing = getPlanPricing(selectedTierValue, currentCurrency);
+            if (selectedPlan && selectedPricing) {
+                var bundleLabel = selectedPlan.modalBundleName || 'Bundle';
+                purchaseBtnTextEl.textContent = 'Acquire ' + bundleLabel + ' - ' + selectedPricing.formattedSale;
+            }
+        }
+    }
+
+    function setCurrency(newCurrency) {
+        var valid = canonicalize(newCurrency);
+        currentCurrency = valid;
+        safeSetStorage(STORAGE_KEY, valid);
+
+        updateToggleButtonStates();
+        updatePricingDisplay();
+
+        for (var i = 0; i < listeners.length; i++) {
+            try {
+                listeners[i](valid);
+            } catch (e) {
+                console.error('[currency listener error]', e);
+            }
+        }
+
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+            try {
+                var evt = new CustomEvent('wingman:currencychange', { detail: { currency: valid } });
+                window.dispatchEvent(evt);
+            } catch (_) {}
+        }
+
+        return valid;
+    }
+
+    function onCurrencyChange(fn) {
+        if (typeof fn === 'function') {
+            listeners.push(fn);
+        }
+    }
+
+    function bindCurrencyButtons() {
+        if (typeof document === 'undefined') return;
+        var buttons = document.querySelectorAll('.currency-toggle-btn');
+        for (var i = 0; i < buttons.length; i++) {
+            (function (btn) {
+                if (btn.__wingmanCurrencyBound) return;
+                btn.__wingmanCurrencyBound = true;
+                btn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var targetCurr = btn.getAttribute('data-currency');
+                    setCurrency(targetCurr);
+                });
+            })(buttons[i]);
+        }
+        updateToggleButtonStates();
+    }
+
+    function init() {
+        var saved = safeGetStorage(STORAGE_KEY);
+        var initial = canonicalize(saved || DEFAULT_CURRENCY);
+        currentCurrency = initial;
+        bindCurrencyButtons();
+        updatePricingDisplay();
+    }
+
+    window.WINGMAN_PRICING_CATALOG = PRICING_CATALOG;
+    window.wingmanCurrency = {
+        getCurrency: getCurrency,
+        setCurrency: setCurrency,
+        canonicalize: canonicalize,
+        getPlan: getPlan,
+        getPlanPricing: getPlanPricing,
+        formatPlanSale: formatPlanSale,
+        getPlanPriceNumber: getPlanPriceNumber,
+        getCredits: getCredits,
+        updatePricingDisplay: updatePricingDisplay,
+        onCurrencyChange: onCurrencyChange,
+        bindButtons: bindCurrencyButtons,
+        catalog: PRICING_CATALOG,
+        supportedCurrencies: SUPPORTED_CURRENCIES,
+        defaultCurrency: DEFAULT_CURRENCY,
+        storageKey: STORAGE_KEY,
+        init: init
+    };
+
+    if (typeof document !== 'undefined') {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init, { once: true });
+        } else {
+            init();
+        }
+        window.addEventListener('load', function () {
+            bindCurrencyButtons();
+            updatePricingDisplay();
+        }, { once: true });
+    }
+})();
+

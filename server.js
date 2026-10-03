@@ -33,6 +33,7 @@ const helmet = require('helmet');
 let db = null; // Global SQLite database instance (disabled in production, optional dev cache)
 
 const { TARGET_MARKET_LOCK, HINGLISH_BIO_TARGET_MARKET_LOCK, HINGLISH_OUTPUT_DIRECTIVE, BIO_MODE_PROMPTS, MAEVE_SYSTEM_PROMPT } = require('./config/promptSystem');
+const { PRICING_CATALOG, SUPPORTED_CURRENCIES, DEFAULT_CURRENCY } = require('./config/pricingCatalog');
 
 const {
     globalLimiter,
@@ -3694,6 +3695,29 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
+// Public Authoritative Pricing Catalog Endpoint (Read-only, zero secrets)
+app.get('/api/pricing', (req, res) => {
+    try {
+        const requestedCurrency = req.query.currency ? String(req.query.currency).trim().toUpperCase() : null;
+        if (requestedCurrency && !SUPPORTED_CURRENCIES.includes(requestedCurrency)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Unsupported currency. Only USD and INR are supported.'
+            });
+        }
+        res.json({
+            success: true,
+            defaultCurrency: DEFAULT_CURRENCY,
+            supportedCurrencies: SUPPORTED_CURRENCIES,
+            currency: requestedCurrency || DEFAULT_CURRENCY,
+            plans: PRICING_CATALOG
+        });
+    } catch (err) {
+        console.error('[Pricing API Error]', err);
+        res.status(500).json({ success: false, error: 'Failed to retrieve pricing catalog.' });
+    }
+});
+
 // Payment verification endpoint (sandbox & production gateway)
 app.post('/api/payments/verify', requireSupabaseAuth, apiLimiter, async (req, res) => {
     try {
@@ -3708,31 +3732,34 @@ app.post('/api/payments/verify', requireSupabaseAuth, apiLimiter, async (req, re
                 error: 'Production payment gateway integration pending. Real payment gateway required.'
             });
         }
-        const { tier, paymentId, sandbox, credits, amountInr } = req.body;
-        if (!tier && !credits && !amountInr) {
-            return res.status(400).json({ success: false, error: 'Tier or credit amount required.' });
+        const { tier, planId, currency, paymentId, sandbox } = req.body;
+        const targetPlanId = planId || tier;
+        if (!targetPlanId) {
+            return res.status(400).json({ success: false, error: 'Valid plan ID required.' });
+        }
+        const selectedCurrency = (currency || 'USD').toUpperCase();
+        if (!SUPPORTED_CURRENCIES.includes(selectedCurrency)) {
+            return res.status(400).json({ success: false, error: 'Unsupported currency. Only USD and INR are supported.' });
+        }
+
+        const plan = PRICING_CATALOG[targetPlanId];
+        if (!plan) {
+            return res.status(400).json({ success: false, error: 'Unknown pricing plan.' });
         }
         if (sandbox === false) {
             return res.status(503).json({ success: false, error: 'Production payment gateway integration pending.' });
         }
 
-        const tierMap = {
-            starter: { credits: 250, price: 4.99 },
-            pro: { credits: 600, price: 9.99 },
-            elite: { credits: 3000, price: 19.99 },
-            limited: { credits: 100000, price: 49.00 }
-        };
-
-        const tierData = tierMap[tier];
-        const targetCredits = Number(credits) || (tierData ? tierData.credits : 0);
-        const addAmountInr = amountInr ? Number(amountInr) : (targetCredits > 0 ? targetCredits / CREDITS_PER_INR : 0);
+        // Server-authoritative resolution: credits and amounts come strictly from the catalog, NEVER client-dictated parameters
+        const targetCredits = plan.credits;
+        const addAmountInr = targetCredits / CREDITS_PER_INR;
 
         if (isNaN(addAmountInr) || addAmountInr <= 0 || addAmountInr > 20000) {
             return res.status(400).json({ success: false, error: "Invalid credit top-up parameters." });
         }
 
         const cleanPaymentId = paymentId || ('sandbox_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5));
-        const tierName = tier || 'credit_bundle';
+        const tierName = targetPlanId;
 
         // ACTUALLY ADD CREDITS TO THE DATABASE
         const newInr = await addUserCreditsDB(req, addAmountInr, tierName, cleanPaymentId);

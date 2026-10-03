@@ -7,7 +7,8 @@
     const PERSISTED_SETTING_KEYS = new Set([
         "wingman_setting_plexus",
         "wingman_setting_shorthand",
-        "wingman_setting_emoji"
+        "wingman_setting_emoji",
+        "wingman_setting_currency"
     ]);
     const isPersistedSetting = (key) => PERSISTED_SETTING_KEYS.has(String(key));
     const safeStorage = {
@@ -2311,6 +2312,10 @@ STRICT LAWS:
 
         try {
             const urlParams = new URLSearchParams(window.location.search);
+            const currencyParam = urlParams.get("currency");
+            if (currencyParam && window.wingmanCurrency) {
+                window.wingmanCurrency.setCurrency(currencyParam);
+            }
             const tierParam = urlParams.get("tier");
             if (tierParam) {
                 const targetRadio = document.querySelector("input[name='pricing_tier'][value='" + tierParam + "']");
@@ -2345,14 +2350,18 @@ STRICT LAWS:
         if (!radio) return;
         radio.checked = true;
 
-        const price = Number(radio.getAttribute("data-price")) || 19.99;
-        const credits = Number(radio.getAttribute("data-credits")) || 3000;
         const tierValue = radio.value;
+        const credits = Number(radio.getAttribute("data-credits")) || (window.wingmanCurrency ? window.wingmanCurrency.getCredits(tierValue) : 3000);
+        const currentCurrency = window.wingmanCurrency ? window.wingmanCurrency.getCurrency() : 'USD';
+        const formattedPrice = window.wingmanCurrency ? window.wingmanCurrency.formatPlanSale(tierValue, currentCurrency) : ('$' + (Number(radio.getAttribute("data-price")) || 19.99).toFixed(2));
+        const priceNumber = window.wingmanCurrency ? window.wingmanCurrency.getPlanPriceNumber(tierValue, currentCurrency) : (Number(radio.getAttribute("data-price")) || 19.99);
 
         state.selectedTier = {
             value: tierValue,
             credits: credits,
-            price: price
+            currency: currentCurrency,
+            price: priceNumber,
+            priceFormatted: formattedPrice
         };
 
         document.querySelectorAll(".pricing-tier-card").forEach(function (card) {
@@ -2362,9 +2371,23 @@ STRICT LAWS:
 
         const btnTextEl = $("purchaseBtnText");
         if (btnTextEl) {
-            const label = tierValue === 'starter' ? 'Starter Bundle' : (tierValue === 'pro' ? 'Pro Bundle' : (tierValue === 'limited' ? 'VIP Bundle (Limited Offer)' : 'Elite Bundle'));
-            btnTextEl.textContent = "Acquire " + label + " - $" + price.toFixed(2);
+            const plan = window.wingmanCurrency ? window.wingmanCurrency.getPlan(tierValue) : null;
+            const label = plan ? (plan.modalBundleName || 'Bundle') : (tierValue === 'starter' ? 'Starter Bundle' : (tierValue === 'pro' ? 'Pro Bundle' : (tierValue === 'limited' ? 'VIP Bundle (Limited Offer)' : 'Elite Bundle')));
+            btnTextEl.textContent = "Acquire " + label + " - " + formattedPrice;
         }
+    };
+
+    if (typeof window !== 'undefined') {
+        const syncSelectedTierCurrency = function () {
+            const activeCard = document.querySelector(".pricing-tier-card.active-tier") || document.querySelector(".pricing-tier-card");
+            if (activeCard && typeof window.selectPricingCard === 'function') {
+                window.selectPricingCard(activeCard);
+            }
+        };
+        if (window.wingmanCurrency && typeof window.wingmanCurrency.onCurrencyChange === 'function') {
+            window.wingmanCurrency.onCurrencyChange(syncSelectedTierCurrency);
+        }
+        window.addEventListener('wingman:currencychange', syncSelectedTierCurrency);
     };
 
     // PURCHASE HANDLER WITH STRICT AUTH & SERVER TRUTH
