@@ -3331,7 +3331,7 @@ STRICT LAWS:
                         return null;
                     }
 
-                    if (response.status === 503) {
+                    if (response.status === 503 || response.status === 502 || response.status === 504 || (response.status === 404 && (errJson.code === 404 || errJson.message === "Application not found" || !errJson.error))) {
                         trackWingmanEvent('generation_failed', { endpoint: endpoint, status: 503 });
                         if (errJson.code === "CONSENT_SERVICE_UNAVAILABLE") {
                             state.isTermsAccepted = false;
@@ -3343,7 +3343,10 @@ STRICT LAWS:
                             return null;
                         }
                         if (typeof window.showToast === 'function') {
-                            window.showToast(errJson.error || "Credit service is temporarily unavailable. Your generation was not started. Please try again later.", "warning");
+                            const offlineMsg = (response.status === 404 || response.status === 502 || response.status === 504 || !errJson.error)
+                                ? "Wingman's AI service is temporarily unavailable. Please try again later."
+                                : (errJson.error || "Credit service is temporarily unavailable. Your generation was not started. Please try again later.");
+                            window.showToast(offlineMsg, "warning");
                         }
                         return null;
                     }
@@ -4280,7 +4283,7 @@ STRICT LAWS:
                     if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
                 }
                 window.renderChatboxBubble("18+ age verification and consent required to continue chatting.", "assistant");
-            } else if (chatResp.status === 503) {
+            } else if (chatResp.status === 503 || chatResp.status === 502 || chatResp.status === 504 || chatResp.status === 404) {
                 const errJson = await chatResp.json().catch(() => ({}));
                 if (errJson.code === "CONSENT_SERVICE_UNAVAILABLE") {
                     state.isTermsAccepted = false;
@@ -4290,7 +4293,10 @@ STRICT LAWS:
                     if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
                     window.renderChatboxBubble("Consent verification service is temporarily unavailable. Features remain locked.", "assistant");
                 } else {
-                    window.renderChatboxBubble(errJson.error || "Credit service is temporarily unavailable. Please try again later.", "assistant");
+                    const offlineChatMsg = (chatResp.status === 404 || chatResp.status === 502 || chatResp.status === 504 || !errJson.error)
+                        ? "Wingman's AI service is temporarily unavailable. Please try again later."
+                        : (errJson.error || "Credit service is temporarily unavailable. Please try again later.");
+                    window.renderChatboxBubble(offlineChatMsg, "assistant");
                 }
             } else if (chatResp.status === 402) {
                 const errJson = await chatResp.json().catch(() => ({}));
@@ -4315,7 +4321,7 @@ STRICT LAWS:
             if (requestGeneration !== simulatorGeneration) return;
             window.showChatboxTypingIndicator(false);
             console.error("Chatbox API Error:", chatErr);
-            window.renderChatboxBubble("Connection issue. Please check your network and try again.", "assistant");
+            window.renderChatboxBubble("Wingman's AI service is temporarily unavailable. Please try again later.", "assistant");
         } finally {
             simulatorRequestInFlight = false;
             if (typeof window.updateButtonStates === 'function') {
@@ -4405,7 +4411,7 @@ STRICT LAWS:
                 headers: { ...authHeaders }
             });
 
-            if (res.status === 503) {
+            if (res.status === 503 || res.status === 502 || res.status === 504 || res.status === 404) {
                 state.isTermsAccepted = false;
                 state.consentStatus = 'service_unavailable';
                 safeStorage.remove('wingman_terms_accepted');
@@ -4447,6 +4453,7 @@ STRICT LAWS:
             state.isTermsAccepted = false;
             state.consentStatus = 'service_unavailable';
             safeStorage.remove('wingman_terms_accepted');
+            if (typeof window.closeInterstitialModal === 'function') window.closeInterstitialModal();
             if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
             if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
             return false;
@@ -4504,8 +4511,11 @@ STRICT LAWS:
                 body: JSON.stringify({ age18Plus: true, aiProcessingConsent: true })
             });
 
-            const data = await res.json();
+            const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success || !data.consentRecorded) {
+                if (res.status === 503 || res.status === 502 || res.status === 504 || res.status === 404) {
+                    throw new Error("Wingman's AI service is temporarily unavailable. Please try again later.");
+                }
                 throw new Error(data.error || "Failed to record persistent legal consent.");
             }
 
