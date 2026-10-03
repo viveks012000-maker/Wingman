@@ -490,3 +490,275 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         scheduleSessionBootstrap(0);
     }, { once: true });
 })();
+
+/**
+ * WINGMAN BILINGUAL CLIENT-SIDE i18n SYSTEM (English + Roman-script Hinglish)
+ * -------------------------------------------------------------------------
+ * - Default: 'en' (English)
+ * - Supported: 'en', 'hinglish'
+ * - Persistence: localStorage['wingman_language'] (fail-safe)
+ * - Roman-script Hinglish only: zero Devanagari Unicode characters
+ */
+(function () {
+    'use strict';
+
+    var STORAGE_KEY = 'wingman_language';
+    var DEFAULT_LANG = 'en';
+
+    var DICTIONARY = {
+        en: {
+            language_label: "Language",
+            language_desc: "AI suggestions & app language",
+            nav_how_it_works: "How It Works",
+            nav_ai_coach: "24/7 AI Coach",
+            nav_results: "Real-World Results",
+            nav_pricing: "Pricing",
+            nav_faq: "FAQ",
+            nav_sign_in: "Sign In",
+            nav_launch_app: "Launch App",
+            hero_badge: "Next-Gen Dating Intelligence",
+            hero_title_1: "Never Get",
+            hero_title_2: "Left On Read",
+            hero_title_3: "Again.",
+            hero_subtitle: "AI Wingman engineered to turn dry conversations, stalled matches, and awkward pauses into effortless, magnetic dates.",
+            hero_cta: "Fix My Dating Life",
+            tab_screenshot: "Screenshot Analyzer",
+            tab_icebreakers: "Icebreakers",
+            tab_bio_optimizer: "Bio Optimizer",
+            tab_practice: "Practice Partner",
+            tab_saved: "Saved Items",
+            screenshot_desc: "Upload a chat screenshot to get 10 strategic reply options.",
+            icebreakers_desc: "Drop her bio or profile details to generate 10 charismatic openers.",
+            bio_desc: "Transform your raw profile details into 10 high-status, charismatic bios.",
+            coach_desc: "Real-time communication drills and unfiltered dating advice with Maeve.",
+            btn_generate_replies: "Generate Replies",
+            btn_generate_openers: "Generate Openers",
+            btn_optimize_bio: "Optimize My Bio",
+            btn_send: "Send",
+            btn_save: "Save",
+            btn_copy: "Copy",
+            btn_copied: "Copied!",
+            settings_title: "System Settings",
+            setting_linguistic_shorthand: "Linguistic Shorthand",
+            setting_linguistic_desc: "Enforce lowercase and casual spacing",
+            setting_emoji_format: "Emoji Formatting",
+            setting_plexus: "Background Plexus Canvas",
+            setting_plexus_desc: "Turn off interactive lines to extend battery life"
+        },
+        hinglish: {
+            language_label: "Language",
+            language_desc: "AI suggestions aur app ki language",
+            nav_how_it_works: "Kaise Kaam Karta Hai",
+            nav_ai_coach: "24/7 AI Coach",
+            nav_results: "Real Results",
+            nav_pricing: "Pricing",
+            nav_faq: "FAQ",
+            nav_sign_in: "Sign In",
+            nav_launch_app: "Launch App",
+            hero_badge: "Next-Gen Dating Intelligence",
+            hero_title_1: "Kabhi Bhi",
+            hero_title_2: "Left On Read",
+            hero_title_3: "Mat Raho.",
+            hero_subtitle: "AI Wingman jo dry chats, stuck matches aur awkward pauses ko effortless, magnetic dates me badal de.",
+            hero_cta: "Fix My Dating Life",
+            tab_screenshot: "Screenshot Analyzer",
+            tab_icebreakers: "Icebreakers",
+            tab_bio_optimizer: "Bio Optimizer",
+            tab_practice: "Practice Partner",
+            tab_saved: "Saved Items",
+            screenshot_desc: "Chat screenshot upload karo aur 10 strategic reply options pao.",
+            icebreakers_desc: "Uski bio ya profile details daalo aur 10 witty openers generate karo.",
+            bio_desc: "Apni basic profile details ko 10 high-status, charismatic bios me badlo.",
+            coach_desc: "Maeve ke saath real-time chat drills aur dating strategy advice.",
+            btn_generate_replies: "Replies Generate Karo",
+            btn_generate_openers: "Openers Generate Karo",
+            btn_optimize_bio: "Bio Optimize Karo",
+            btn_send: "Bhejo",
+            btn_save: "Save Karo",
+            btn_copy: "Copy",
+            btn_copied: "Copied!",
+            settings_title: "System Settings",
+            setting_linguistic_shorthand: "Linguistic Shorthand",
+            setting_linguistic_desc: "Lowercase aur casual spacing use karo",
+            setting_emoji_format: "Emoji Formatting",
+            setting_plexus: "Background Animation",
+            setting_plexus_desc: "Battery save karne ke liye interactive lines band karo"
+        }
+    };
+
+    var currentLang = DEFAULT_LANG;
+    var listeners = [];
+
+    function safeGetStorage(key) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                return window.localStorage.getItem(key);
+            }
+        } catch (_) {}
+        return null;
+    }
+
+    function safeSetStorage(key, val) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                window.localStorage.setItem(key, val);
+            }
+        } catch (_) {}
+    }
+
+    function canonicalize(lang) {
+        if (!lang || typeof lang !== 'string') return DEFAULT_LANG;
+        var normalized = lang.trim().toLowerCase();
+        if (normalized === 'hinglish' || normalized === 'hi-latn' || normalized === 'hi_latn') {
+            return 'hinglish';
+        }
+        return 'en';
+    }
+
+    function getLanguage() {
+        return currentLang;
+    }
+
+    function t(key, defaultVal) {
+        var dict = DICTIONARY[currentLang] || DICTIONARY.en;
+        if (dict && typeof dict[key] === 'string') {
+            return dict[key];
+        }
+        if (DICTIONARY.en && typeof DICTIONARY.en[key] === 'string') {
+            return DICTIONARY.en[key];
+        }
+        return defaultVal !== undefined ? defaultVal : key;
+    }
+
+    function updateToggleButtonStates() {
+        if (typeof document === 'undefined') return;
+        var buttons = document.querySelectorAll('.lang-toggle-btn');
+        for (var i = 0; i < buttons.length; i++) {
+            var btn = buttons[i];
+            var btnLang = canonicalize(btn.getAttribute('data-lang'));
+            if (btnLang === currentLang) {
+                btn.classList.add('bg-violet-600', 'text-white');
+                btn.classList.remove('text-slate-400');
+                btn.setAttribute('aria-pressed', 'true');
+            } else {
+                btn.classList.remove('bg-violet-600', 'text-white');
+                btn.classList.add('text-slate-400');
+                btn.setAttribute('aria-pressed', 'false');
+            }
+        }
+    }
+
+    function applyTranslations(root) {
+        if (typeof document === 'undefined') return;
+        var container = root || document;
+
+        var textElements = container.querySelectorAll('[data-i18n]');
+        for (var i = 0; i < textElements.length; i++) {
+            var el = textElements[i];
+            var key = el.getAttribute('data-i18n');
+            if (key) {
+                var translated = t(key);
+                if (translated && translated !== key) {
+                    el.textContent = translated;
+                }
+            }
+        }
+
+        var placeholderElements = container.querySelectorAll('[data-i18n-placeholder]');
+        for (var j = 0; j < placeholderElements.length; j++) {
+            var pel = placeholderElements[j];
+            var pkey = pel.getAttribute('data-i18n-placeholder');
+            if (pkey) {
+                var ptrans = t(pkey);
+                if (ptrans && ptrans !== pkey) {
+                    pel.setAttribute('placeholder', ptrans);
+                }
+            }
+        }
+    }
+
+    function setLanguage(newLang) {
+        var validLang = canonicalize(newLang);
+        currentLang = validLang;
+        safeSetStorage(STORAGE_KEY, validLang);
+
+        if (typeof document !== 'undefined' && document.documentElement) {
+            document.documentElement.lang = validLang === 'hinglish' ? 'hi-Latn' : 'en';
+        }
+
+        updateToggleButtonStates();
+        applyTranslations();
+
+        for (var i = 0; i < listeners.length; i++) {
+            try {
+                listeners[i](validLang);
+            } catch (e) {
+                console.error('[i18n listener error]', e);
+            }
+        }
+
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+            try {
+                var evt = new CustomEvent('wingman:languagechange', { detail: { language: validLang } });
+                window.dispatchEvent(evt);
+            } catch (_) {}
+        }
+
+        return validLang;
+    }
+
+    function onLanguageChange(fn) {
+        if (typeof fn === 'function') {
+            listeners.push(fn);
+        }
+    }
+
+    function bindLanguageButtons() {
+        if (typeof document === 'undefined') return;
+        var buttons = document.querySelectorAll('.lang-toggle-btn');
+        for (var i = 0; i < buttons.length; i++) {
+            (function (btn) {
+                if (btn.__wingmanLangBound) return;
+                btn.__wingmanLangBound = true;
+                btn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var targetLang = btn.getAttribute('data-lang');
+                    setLanguage(targetLang);
+                });
+            })(buttons[i]);
+        }
+        updateToggleButtonStates();
+    }
+
+    function init() {
+        var saved = safeGetStorage(STORAGE_KEY);
+        var initial = canonicalize(saved || DEFAULT_LANG);
+        currentLang = initial;
+        if (typeof document !== 'undefined' && document.documentElement) {
+            document.documentElement.lang = initial === 'hinglish' ? 'hi-Latn' : 'en';
+        }
+        bindLanguageButtons();
+        applyTranslations();
+    }
+
+    window.wingmanI18n = {
+        getLanguage: getLanguage,
+        setLanguage: setLanguage,
+        t: t,
+        applyTranslations: applyTranslations,
+        onLanguageChange: onLanguageChange,
+        bindButtons: bindLanguageButtons,
+        canonicalize: canonicalize,
+        init: init
+    };
+
+    if (typeof document !== 'undefined') {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init, { once: true });
+        } else {
+            init();
+        }
+        window.addEventListener('load', bindLanguageButtons, { once: true });
+    }
+})();

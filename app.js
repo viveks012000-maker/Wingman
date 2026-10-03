@@ -3220,7 +3220,12 @@ STRICT LAWS:
         }
 
         const idempotencyKey = (payload && payload.idempotencyKey) || ('cli_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8));
-        if (payload) payload.idempotencyKey = idempotencyKey;
+        if (payload) {
+            payload.idempotencyKey = idempotencyKey;
+            if (!payload.language && window.wingmanI18n && typeof window.wingmanI18n.getLanguage === 'function') {
+                payload.language = window.wingmanI18n.getLanguage();
+            }
+        }
 
         trackWingmanEvent('generation_started', { endpoint: endpoint });
         const maxRetries = 2;
@@ -4232,6 +4237,7 @@ STRICT LAWS:
                     mode: activeMode,
                     isHotline: isHotlineMode,
                     attractionScore: window.currentAttractionScore,
+                    language: window.wingmanI18n ? window.wingmanI18n.getLanguage() : 'en',
                     idempotencyKey
                 })
             });

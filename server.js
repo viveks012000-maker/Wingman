@@ -32,7 +32,7 @@ const CREDITS_PER_INR = 10;
 const helmet = require('helmet');
 let db = null; // Global SQLite database instance (disabled in production, optional dev cache)
 
-const { TARGET_MARKET_LOCK, BIO_MODE_PROMPTS, MAEVE_SYSTEM_PROMPT } = require('./config/promptSystem');
+const { TARGET_MARKET_LOCK, HINGLISH_BIO_TARGET_MARKET_LOCK, HINGLISH_OUTPUT_DIRECTIVE, BIO_MODE_PROMPTS, MAEVE_SYSTEM_PROMPT } = require('./config/promptSystem');
 
 const {
     globalLimiter,
@@ -1396,6 +1396,82 @@ function enforceWordLimit(text, maxWords = 500) {
     return text;
 }
 
+const SUPPORTED_LANGUAGES = ['en', 'hinglish'];
+
+function canonicalizeLanguage(lang) {
+    if (!lang || typeof lang !== 'string') return 'en';
+    const normalized = lang.trim().toLowerCase();
+    if (normalized === 'hinglish' || normalized === 'hi-latn' || normalized === 'hi_latn') return 'hinglish';
+    return 'en';
+}
+
+const DEVANAGARI_REGEX = /[\u0900-\u097F\uA8E0-\uA8FF\u1CD0-\u1CFF]/;
+
+function containsDevanagari(val) {
+    if (!val) return false;
+    if (typeof val === 'string') return DEVANAGARI_REGEX.test(val);
+    if (Array.isArray(val)) return val.some(item => containsDevanagari(item));
+    if (typeof val === 'object') return Object.values(val).some(item => containsDevanagari(item));
+    return false;
+}
+
+async function repairHinglishDevanagari(target, feature = 'generic') {
+    if (!target) return target;
+    if (!containsDevanagari(target)) return target;
+
+    const isArray = Array.isArray(target);
+    const isString = typeof target === 'string';
+    const serialized = isArray ? JSON.stringify({ options: target }) : (isString ? target : JSON.stringify(target));
+
+    const repairSystemPrompt = `You are a strict automated transliteration engine.
+The input provided contains Hindi/Devanagari script characters that violate a strict Latin-script-only requirement.
+Convert ALL Hindi/Devanagari text into natural conversational Roman-script Hinglish (English alphabet ONLY: a-z, A-Z).
+CRITICAL RULES:
+1. ABSOLUTE ZERO DEVANAGARI: You MUST NOT output any Devanagari characters under any circumstances.
+2. PRESERVE STRUCTURE: Preserve the exact formatting, JSON syntax (if input is JSON), line breaks, tone, word count limits, and meaning.
+3. OUTPUT ONLY THE REPAIRED CONTENT: Return the transliterated content directly with no explanation or meta-commentary.`;
+
+    const repairMessages = [
+        { role: 'system', content: withPromptBoundary(repairSystemPrompt) },
+        { role: 'user', content: `Transliterate all Devanagari characters into Roman-script Hinglish:\n\n${serialized}` }
+    ];
+
+    try {
+        const repairedText = await queryOpenRouter("qwen3-235b-a22b-2507", repairMessages, 0.2, 1000, 15000);
+        if (!repairedText || containsDevanagari(repairedText)) {
+            throw new Error("Transliteration repair failed: Devanagari characters still present.");
+        }
+
+        if (isArray) {
+            try {
+                const jsonMatch = repairedText.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    if (parsed && Array.isArray(parsed.options) && parsed.options.length > 0) {
+                        return parsed.options;
+                    }
+                }
+            } catch (_) {}
+            const split = repairedText.split(/(?:^|\n)\d+[\.\)\:]\s*/).map(s => s.trim()).filter(Boolean);
+            if (split.length > 0) return split;
+            throw new Error("Transliteration repair failed to format array options.");
+        }
+
+        if (isString) {
+            return repairedText.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+        }
+
+        try {
+            const jsonMatch = repairedText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) return JSON.parse(jsonMatch[0]);
+        } catch (_) {}
+        return target;
+    } catch (err) {
+        console.error(`[Devanagari Repair Error] ${feature}:`, err.message);
+        throw new Error(`Bilingual output policy violation: Output contained Devanagari script and repair could not resolve it.`);
+    }
+}
+
 // ==================== THE 4 CORE FEATURE API // 1. CHAT SCREENSHOT ANALYZER (/api/analyze & /api/analyze-chat-screenshot)
 app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
@@ -1415,7 +1491,8 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
     let deduction = null;
 
     try {
-        let { text, messages, tone, image, images, imageBase64, shorthandOption, emojiOption } = req.body || {};
+        let { text, messages, tone, image, images, imageBase64, shorthandOption, emojiOption, language: rawLanguage } = req.body || {};
+        const language = canonicalizeLanguage(rawLanguage);
         const textCheck = text || (messages && messages[0] ? messages[0].content : "");
         if (typeof textCheck === 'string' && textCheck.length > 5000) {
             return res.status(400).json({
@@ -1748,7 +1825,7 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
             };
         }
 
-        const screenshotTextSystemPrompt = `You are an elite AI Wingman and Social Attraction Strategist.
+        let screenshotTextSystemPrompt = `You are an elite AI Wingman and Social Attraction Strategist.
 Generate 10 strategic text reply options based on the provided conversation JSON state.
 
 CHRONOLOGICAL RECENCY HIERARCHY:
@@ -1821,7 +1898,7 @@ ${modeConfig.bucketDefinitions}
 ${formattingRule}`;
 
         const generationMessages = [
-            { role: "system", content: withPromptBoundary(screenshotTextSystemPrompt) },
+            { role: "system", content: withPromptBoundary(language === 'hinglish' ? (screenshotTextSystemPrompt + `\n\n${HINGLISH_OUTPUT_DIRECTIVE}`) : screenshotTextSystemPrompt) },
             { role: "user", content: `Here is the parsed conversation JSON state from Stage 1, wrapped as untrusted data:\n${wrapUntrustedUserData('stage1_transcript', extractedTextContext)}\n\nActive Response Mode: ${modeConfig.name}. Return the JSON object with 10 state-aware options matching this mode now.` }
         ];
 
@@ -1870,6 +1947,12 @@ ${formattingRule}`;
         });
 
         optionsList = enforceUniqueQuestionAnchors(enforceStructuralBatchDiversity(optionsList, "analyze"));
+        if (language === 'hinglish' && containsDevanagari(optionsList)) {
+            optionsList = await repairHinglishDevanagari(optionsList, "analyze");
+            if (containsDevanagari(optionsList)) {
+                throw new Error("Screenshot analysis generated Devanagari text in Hinglish mode.");
+            }
+        }
         const formattedText = optionsList.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
 
         try {
@@ -2016,6 +2099,7 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
         }
 
         const bodyData = req.body || {};
+        const language = canonicalizeLanguage(bodyData.language);
         // The browser sends the Icebreaker Opening Vibe as `vibe` (app.js promptPayload).
         // Legacy API callers may send `tone`, or embed "vibe: X." in the system message.
         // All sources are canonicalized onto the server-owned vibe set before prompt use.
@@ -2054,7 +2138,7 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
             formattingRule += " Max 1 emoji per option at the very end.";
         }
 
-        const icebreakerSystemPrompt = `You are an Elite Social Attraction Strategist and High-Status Dating Coach.
+        let icebreakerSystemPrompt = `You are an Elite Social Attraction Strategist and High-Status Dating Coach.
 Analyze the provided match details (bio, interests, or profile info) and generate EXACTLY 10 distinct opening lines matching the requested tone (Witty, Flirty, Casual, Direct / Bold, Closer).
 
 --------------------------------------------------------------------------------
@@ -2102,7 +2186,7 @@ GENERAL ICEBREAKER LAWS:
    - Casual: Low-pressure, easy conversation starter.
    - Direct / Bold: High-status confidence, direct callout, or playful challenge.
    - Closer: Smooth line designed to transition into planning a quick coffee/drink date.
-4. ${formattingRule}`;
+4. ${formattingRule}` + (language === 'hinglish' ? `\n\n${HINGLISH_OUTPUT_DIRECTIVE}` : '');
 
         const responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(icebreakerSystemPrompt) },
@@ -2143,6 +2227,12 @@ GENERAL ICEBREAKER LAWS:
         });
 
         cleanedOptions = enforceUniqueQuestionAnchors(enforceStructuralBatchDiversity(cleanedOptions, "icebreaker"));
+        if (language === 'hinglish' && containsDevanagari(cleanedOptions)) {
+            cleanedOptions = await repairHinglishDevanagari(cleanedOptions, "icebreaker");
+            if (containsDevanagari(cleanedOptions)) {
+                throw new Error("Icebreaker generation generated Devanagari text in Hinglish mode.");
+            }
+        }
         if (!IS_PROD && process.env.DEBUG_PAYLOADS === 'true') {
             console.log("[ICEBREAKER CLEAN OUTPUT]:", cleanedOptions);
         }
@@ -2218,9 +2308,9 @@ GENERAL ICEBREAKER LAWS:
     }
 });
 
-function sanitizeBioInput(rawInput) {
+function sanitizeBioInput(rawInput, language = 'en') {
     if (!rawInput || typeof rawInput !== "string") {
-        return "Loves late-night drives, gym sessions, finding 24-hour diners, and good coffee.";
+        return language === 'hinglish' ? "Loves late-night drives, gym sessions, chai tapri runs, aur achhi coffee." : "Loves late-night drives, gym sessions, finding 24-hour diners, and good coffee.";
     }
 
     let cleaned = rawInput.trim();
@@ -2240,12 +2330,14 @@ function sanitizeBioInput(rawInput) {
     cleaned = cleaned.replace(/\bi\s+loves\b/gi, 'loves');
 
     // 3. Demographic & Cultural Isolation Law (US / Western Lock)
+    if (language !== 'hinglish') {
     cleaned = cleaned.replace(/\bdhaba(s)?\b/gi, '24-hour diner');
     cleaned = cleaned.replace(/\b(pani puri|vada pav|samosa(s)?|dosa(s)?|paratha(s)?)\b/gi, 'taco truck snacks');
     cleaned = cleaned.replace(/\bchai tapri\b/gi, 'local coffee spot');
     cleaned = cleaned.replace(/\bauto(s)?\b/gi, 'rideshare');
     cleaned = cleaned.replace(/\broorkee\b/gi, 'hometown');
     cleaned = cleaned.replace(/\bmonsoon(s)?\b/gi, 'rainy days');
+    }
 
     // 4. Spelling & Typo Corrections
     cleaned = cleaned.replace(/threaters|threatre|theaters/gi, 'theater');
@@ -2254,7 +2346,7 @@ function sanitizeBioInput(rawInput) {
     cleaned = cleaned.replace(/favaortae/gi, 'favorite');
 
     if (cleaned.length < 2) {
-        return "Loves late-night drives, gym sessions, finding 24-hour diners, and good coffee.";
+        return language === 'hinglish' ? "Loves late-night drives, gym sessions, chai tapri runs, aur achhi coffee." : "Loves late-night drives, gym sessions, finding 24-hour diners, and good coffee.";
     }
     return cleaned;
 }
@@ -2381,6 +2473,7 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
         let style = req.body.style;
         let shorthandOption = req.body.shorthandOption;
         let emojiOption = req.body.emojiOption;
+        const language = canonicalizeLanguage(req.body && req.body.language);
         const requestedStyle = tone || style || "Punchy";
         const useShorthand = shorthandOption !== false;
         const emojiLevel = typeof emojiOption === 'number' ? emojiOption : 1;
@@ -2396,7 +2489,7 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
             }
         }
 
-        const sanitizedText = sanitizeBioInput(text || rawText);
+        const sanitizedText = sanitizeBioInput(text || rawText, language);
         const textPayload = sanitizedText;
 
         let casingInstruction = useShorthand ? "natural, lowercase-heavy casing" : "standard sentence capitalization";
@@ -2412,9 +2505,9 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
         const MODE_PROMPTS = BIO_MODE_PROMPTS;
         const selectedModeRules = MODE_PROMPTS[modeKey] || MODE_PROMPTS['Green Flag'];
 
-        const bioOptimizerSystemPrompt = `You are an elite US/Western dating profile strategist for Tinder, Hinge, and Bumble.
+        let bioOptimizerSystemPrompt = `You are an elite ${language === 'hinglish' ? '' : 'US/Western '}dating profile strategist for Tinder, Hinge, and Bumble.
 
-${TARGET_MARKET_LOCK}
+${language === 'hinglish' ? HINGLISH_BIO_TARGET_MARKET_LOCK : TARGET_MARKET_LOCK}
 
 --------------------------------------------------------------------------------
 2. OUTPUT FORMAT & SLOT MATRIX
@@ -2460,7 +2553,7 @@ GLOBAL TONE & SYNTAX RULES:
 10. SILENT TYPO & GREETING STRIPPING: Strip out all generic greetings ("hi my name is", "hello i am") and fix user typos silently.
 11. EMOJI CONSTRAINT: Include at most ONE single emoji per option string. NEVER stack emojis. ${emojiInstruction}
 
-FORMATTING: Use ${casingInstruction}.`;
+FORMATTING: Use ${casingInstruction}.` + (language === 'hinglish' ? `\n\n${HINGLISH_OUTPUT_DIRECTIVE}` : '');
 
         let responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(bioOptimizerSystemPrompt) },
@@ -2499,6 +2592,7 @@ FORMATTING: Use ${casingInstruction}.`;
             cleaned = cleaned.replace(/don't swipe if[^\.\,\n]*/gi, '');
 
             // Demographic & Cultural Isolation Law Safety Net (US / Western Lock)
+            if (language !== 'hinglish') {
             cleaned = cleaned.replace(/\bdhaba(s)?\b/gi, '24-hour diner');
             cleaned = cleaned.replace(/\b(pani puri|vada pav|samosa(s)?|dosa(s)?|paratha(s)?)\s*(roll|run)?\b/gi, 'taco truck run');
             cleaned = cleaned.replace(/\bchai tapri\b/gi, 'coffee spot');
@@ -2506,6 +2600,7 @@ FORMATTING: Use ${casingInstruction}.`;
             cleaned = cleaned.replace(/\bauto(s)?\b/gi, 'rideshare');
             cleaned = cleaned.replace(/\broorkee\b/gi, 'hometown');
             cleaned = cleaned.replace(/\bmonsoon(s)?\b/gi, 'rainy days');
+            }
 
             // ABSOLUTE UNCONDITIONAL PURGE OF "settle this" FOREVER
             if (/settle this/i.test(cleaned)) {
@@ -2561,6 +2656,12 @@ FORMATTING: Use ${casingInstruction}.`;
         optionsList = enforceUniqueQuestionAnchors(enforceStructuralBatchDiversity(optionsList, "bio"));
         optionsList = optionsList.map(opt => fixGrammarAndTypoLeaks(opt));
         optionsList = formatBioLineBreaks(optionsList);
+        if (language === 'hinglish' && containsDevanagari(optionsList)) {
+            optionsList = await repairHinglishDevanagari(optionsList, "optimize");
+            if (containsDevanagari(optionsList)) {
+                throw new Error("Bio optimization generated Devanagari text in Hinglish mode.");
+            }
+        }
         const formattedText = optionsList.map((opt, i) => `${i + 1}. ${opt}`).join("\n\n");
 
         try {
@@ -2738,6 +2839,7 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
         }
 
         const { mode, scenario, shorthandOption, emojiOption } = req.body || {};
+        const language = canonicalizeLanguage(req.body && req.body.language);
         // Client scenario values are never trusted: they are mapped onto server-canonical
         // scenario constants so raw client text can never enter system-level content.
         const currentScenario = canonicalizePracticeScenario(scenario);
@@ -2752,7 +2854,7 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
         const userText = (userTextRaw || "").toLowerCase().trim();
 
         if (isHotline) {
-            const hotlineSystemPrompt = `You are Maeve—an elite, direct, and supportive Dating & Communication Coach.
+            let hotlineSystemPrompt = `You are Maeve—an elite, direct, and supportive Dating & Communication Coach.
 The user is in Coach Hotline (Ask Anything) mode to freely discuss texting, dating strategy, message drafts, or relationship advice.
 
 CONVERSATIONAL FREEDOM & LAWS:
@@ -2770,7 +2872,7 @@ CONVERSATIONAL FREEDOM & LAWS:
    - Use natural sentence-case capitalization.
    - When listing options, advice points, or topics, ALWAYS use clear line breaks (\n\n) and numbered/bulleted lists (\n1. ..., \n2. ...). Never lump multiple points into a single dense wall of text.
    - NEVER output markdown divider lines ("---" or "===").
-8. COMPLETE ALL SENTENCES & THOUGHTS: Never cut off mid-sentence or leave questions/points incomplete. Always finish every single sentence cleanly.`;
+8. COMPLETE ALL SENTENCES & THOUGHTS: Never cut off mid-sentence or leave questions/points incomplete. Always finish every single sentence cleanly.` + (language === 'hinglish' ? `\n\n${HINGLISH_OUTPUT_DIRECTIVE}` : '');
 
             // Historical messages are untrusted transcript data. Roles are normalized to
             // user/assistant only (no client-created system/developer/tool/function
@@ -2793,6 +2895,12 @@ CONVERSATIONAL FREEDOM & LAWS:
                 throw new Error("AI Coach endpoint returned empty response.");
             }
             hotlineAdvice = sanitizeResponseText(hotlineAdvice.trim());
+            if (language === 'hinglish' && containsDevanagari(hotlineAdvice)) {
+                hotlineAdvice = await repairHinglishDevanagari(hotlineAdvice, "chat_hotline");
+                if (containsDevanagari(hotlineAdvice)) {
+                    throw new Error("Coach hotline generated Devanagari text in Hinglish mode.");
+                }
+            }
 
             const settleResult = await settleCreditsDB(req, reqId);
             if (!settleResult || !settleResult.success) {
@@ -2905,7 +3013,7 @@ STRICT FLIRTING & TEASING LAWS:
         const hasHistory = nonSystemHistory && nonSystemHistory.length > 0;
 
         const scenarioDirective = getScenarioDirective(currentScenario);
-        const datingCoachSystemPrompt = `${MAEVE_SYSTEM_PROMPT}
+        let datingCoachSystemPrompt = `${MAEVE_SYSTEM_PROMPT}
 
 Active Scenario: ${currentScenario}
 
@@ -2920,7 +3028,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
 6. NATURAL MODERN TEXTING: Snappy, concise Gen Z text (1 to 2 short lines max, lowercase-heavy, natural emojis).
 7. STRICT CONVERSATIONAL CONTINUITY: Read conversation history and build on the active topic.
 8. STRICT TEXT-ONLY MEDIA BOUNDARY: You CANNOT receive or process images/videos.
-9. NEVER refer to yourself as an AI or coach in roleplay mode.`;
+9. NEVER refer to yourself as an AI or coach in roleplay mode.` + (language === 'hinglish' ? `\n\n${HINGLISH_OUTPUT_DIRECTIVE}` : '');
 
         const openRouterMessages = [
             { role: 'system', content: withPromptBoundary(datingCoachSystemPrompt) },
@@ -2957,6 +3065,12 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
 
         replyText = sanitizeResponseText(replyText);
         replyText = applyFormattingRules(replyText, useShorthand, emojiLevel);
+        if (language === 'hinglish' && containsDevanagari(replyText)) {
+            replyText = await repairHinglishDevanagari(replyText, "chat_roleplay");
+            if (containsDevanagari(replyText)) {
+                throw new Error("Roleplay chat generated Devanagari text in Hinglish mode.");
+            }
+        }
 
         let score = 80;
         let status = "PASSED";
@@ -2991,6 +3105,26 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
             status = "PASSED";
             critique = "High-status date proposal! Proposing a specific venue + time removes decision friction and projects confidence.";
             alternative = "let me take you to the best rooftop spot in town this Thursday at 8 PM.";
+        }
+
+        if (language === 'hinglish') {
+            critique = "Ekdum natural pacing! Playful tension maintain rakha aur conversation smooth chal raha hai.";
+            if (isNonsense) {
+                critique = "Nonsense ya trolling se match ka interest turant khatam ho jata hai. Real matches effort drop hone pe leave kar dete hain.";
+                alternative = "thursday ko rooftop lounge pe drinks ka scene banayein 8 baje?";
+            } else if (isDryResponse) {
+                critique = "Dry 1-word answers saara burden match pe daal dete hain. Hamesha koi detail ya open question add karo!";
+                alternative = "mujhe city ka itna pata nahi abhi—tera favorite rooftop spot kaunsa hai?";
+            } else if (isDemandWithoutDetail) {
+                critique = "Vague date demands ('i want to meet') me venue aur time missing hota hai. Concrete plan propose karo!";
+                alternative = "thursday ko espresso bar pe 8 baje coffee pe milein?";
+            } else if (isApology) {
+                critique = "Faltu apologies ('my bad', 'sorry') avoid karo. Over-apologizing se insecurity dikhti hai. Confident bano!";
+                alternative = "lagta hai conversation spicy rakh raha hoon 😏 aaj raat kya plan hai?";
+            } else if (hasDateOffer) {
+                critique = "High-status date proposal! Specific venue aur time dene se friction kam hoti hai aur confidence dikhta hai.";
+                alternative = "is thursday 8 baje city ke best rooftop spot pe chalte hain.";
+            }
         }
 
         const isDryOrNonsense = isNonsense || isDryResponse;
@@ -3073,7 +3207,8 @@ app.post('/api/simulator/review', requireSupabaseAuth, requireActiveConsent, api
     let deduction = null;
 
     try {
-        const { sessionHistory } = req.body || {};
+        const { sessionHistory, language: rawLanguage } = req.body || {};
+        const language = canonicalizeLanguage(rawLanguage);
         let historyArray = Array.isArray(sessionHistory) ? sessionHistory.filter(h => h && h.role !== 'system') : [];
 
         if (historyArray.length > 50) {
@@ -3127,7 +3262,7 @@ app.post('/api/simulator/review', requireSupabaseAuth, requireActiveConsent, api
             .map(m => `${(m.role || 'user').toUpperCase()}: "${m.text || m.content || ''}"`)
             .join('\n');
 
-        const systemPrompt = `You are an elite communication analyst and dating coach. Analyze the provided chat transcript and evaluate the user's performance.
+        let systemPrompt = `You are an elite communication analyst and dating coach. Analyze the provided chat transcript and evaluate the user's performance.
 
 CRITICAL EVALUATION & SCORING LAWS:
 1. SPELLING & TYPOS DO NOT PENALIZE SCORES: Never list typos, spelling mistakes, or fast-typing slips (e.g. "membes", "againt", "tomorow") as a "biggest_mistake" or negative factor. Do NOT lower any score for typos or casual abbreviations.
@@ -3148,7 +3283,7 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
   "biggest_strength": "<specific line or action the user did well and why>",
   "biggest_mistake": "<specific mistake the user made and why it hurt momentum>",
   "priority_focus": "<actionable 1-sentence tactical rule for their next attempt>"
-}`;
+}` + (language === 'hinglish' ? `\n\n${HINGLISH_OUTPUT_DIRECTIVE}\nEnsure performance_summary, biggest_strength, biggest_mistake, and priority_focus are written in natural Roman-script Hinglish (strictly NO Devanagari characters).` : '');
 
         const payload = [
             { role: "system", content: withPromptBoundary(systemPrompt) },
@@ -3172,6 +3307,13 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
 
         if (!reviewJson || typeof reviewJson !== 'object') {
             throw new Error("Simulation review output is not a valid JSON object.");
+        }
+
+        if (language === 'hinglish' && containsDevanagari(reviewJson)) {
+            reviewJson = await repairHinglishDevanagari(reviewJson, "simulator_review");
+            if (containsDevanagari(reviewJson)) {
+                throw new Error("Simulation review generated Devanagari text in Hinglish mode.");
+            }
         }
 
         function validatePercentage(val) {
