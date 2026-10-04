@@ -318,7 +318,7 @@
                     'X-Idempotency-Key': requestId
                 }, headers),
                 credentials: 'include',
-                body: JSON.stringify({ sessionHistory: history, idempotencyKey: requestId })
+                body: JSON.stringify({ sessionHistory: history, languageMode: 'auto', idempotencyKey: requestId })
             });
             var data = await response.json().catch(function () { return {}; });
 
