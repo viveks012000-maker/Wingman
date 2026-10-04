@@ -510,18 +510,18 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             language_label: "Language",
             language_desc: "AI suggestions & app language",
             nav_how_it_works: "How It Works",
-            nav_ai_coach: "24/7 AI Coach",
-            nav_results: "Real-World Results",
+            nav_ai_coach: "AI Coach",
+            nav_results: "Examples",
             nav_pricing: "Pricing",
             nav_faq: "FAQ",
             nav_sign_in: "Sign In",
             nav_launch_app: "Launch App",
-            hero_badge: "Next-Gen Dating Intelligence",
-            hero_title_1: "Never Get",
-            hero_title_2: "Left On Read",
-            hero_title_3: "Again.",
-            hero_subtitle: "AI Wingman engineered to turn dry conversations, stalled matches, and awkward pauses into effortless, magnetic dates.",
-            hero_cta: "Fix My Dating Life",
+            hero_badge: "AI Dating Conversation & Profile Coaching",
+            hero_title_1: "Dating Chat &",
+            hero_title_2: "Profile AI.",
+            hero_title_3: "Messaging Suggestions.",
+            hero_subtitle: "Analyze chats, draft replies, improve a profile bio, and practice conversations. Coaching only; no user matching or date booking.",
+            hero_cta: "Explore the Tools",
             tab_screenshot: "Screenshot Analyzer",
             tab_icebreakers: "Icebreakers",
             tab_bio_optimizer: "Bio Optimizer",
@@ -529,7 +529,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             tab_saved: "Saved Items",
             screenshot_desc: "Upload a chat screenshot to get 10 strategic reply options.",
             icebreakers_desc: "Drop her bio or profile details to generate 10 charismatic openers.",
-            bio_desc: "Transform your raw profile details into 10 high-status, charismatic bios.",
+            bio_desc: "Generate 10 AI-written profile bio drafts to review and edit.",
             coach_desc: "Real-time communication drills and unfiltered dating advice with Maeve.",
             btn_generate_replies: "Generate Replies",
             btn_generate_openers: "Generate Openers",
@@ -549,18 +549,18 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             language_label: "Language",
             language_desc: "AI suggestions aur app ki language",
             nav_how_it_works: "Kaise Kaam Karta Hai",
-            nav_ai_coach: "24/7 AI Coach",
-            nav_results: "Real Results",
+            nav_ai_coach: "AI Coach",
+            nav_results: "Examples",
             nav_pricing: "Pricing",
             nav_faq: "FAQ",
             nav_sign_in: "Sign In",
             nav_launch_app: "Launch App",
-            hero_badge: "Next-Gen Dating Intelligence",
-            hero_title_1: "Kabhi Bhi",
-            hero_title_2: "Left On Read",
-            hero_title_3: "Mat Raho.",
-            hero_subtitle: "AI Wingman jo dry chats, stuck matches aur awkward pauses ko effortless, magnetic dates me badal de.",
-            hero_cta: "Fix My Dating Life",
+            hero_badge: "AI Dating Chat aur Profile Coaching",
+            hero_title_1: "Dating Chat aur",
+            hero_title_2: "Profile AI.",
+            hero_title_3: "Messaging Suggestions.",
+            hero_subtitle: "Chats analyze karo, replies draft karo, profile bio improve karo aur practice conversations karo. Coaching only; matching ya date booking nahi.",
+            hero_cta: "Tools Dekho",
             tab_screenshot: "Screenshot Analyzer",
             tab_icebreakers: "Icebreakers",
             tab_bio_optimizer: "Bio Optimizer",
@@ -568,7 +568,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             tab_saved: "Saved Items",
             screenshot_desc: "Chat screenshot upload karo aur 10 strategic reply options pao.",
             icebreakers_desc: "Uski bio ya profile details daalo aur 10 witty openers generate karo.",
-            bio_desc: "Apni basic profile details ko 10 high-status, charismatic bios me badlo.",
+            bio_desc: "Apni profile ke liye 10 AI-written bio drafts banao, phir unhe review aur edit karo.",
             coach_desc: "Maeve ke saath real-time chat drills aur dating strategy advice.",
             btn_generate_replies: "Replies Generate Karo",
             btn_generate_openers: "Openers Generate Karo",
@@ -764,10 +764,10 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 })();
 
 /**
- * WINGMAN CLIENT-SIDE CURRENCY SYSTEM (USD + INR)
+ * WINGMAN CLIENT-SIDE DOMESTIC PRICING (INR)
  * -------------------------------------------------------------------------
- * - Default: 'USD'
- * - Supported: 'USD', 'INR'
+ * - Default: 'INR'
+ * - Supported checkout currency: 'INR'; historical USD values are inactive
  * - Persistence: localStorage['wingman_setting_currency'] (safe fail-soft)
  * - Single source of truth for presentation across index.html & app.html
  */
@@ -775,8 +775,8 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
     'use strict';
 
     var STORAGE_KEY = 'wingman_setting_currency';
-    var DEFAULT_CURRENCY = 'USD';
-    var SUPPORTED_CURRENCIES = ['USD', 'INR'];
+    var DEFAULT_CURRENCY = 'INR';
+    var SUPPORTED_CURRENCIES = ['INR'];
 
     var PRICING_CATALOG = {
         starter: {
@@ -813,20 +813,20 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             prices: {
                 USD: {
                     amountMinor: 999,
-                    regularMinor: 1499,
+                    regularMinor: null,
                     formattedSale: '$9.99',
-                    formattedRegular: '$14.99',
+                    formattedRegular: null,
                     formattedPerCredit: '1.6¢ per credit',
-                    formattedSaving: 'Save $5 · 33% off regular price',
+                    formattedSaving: null,
                     ctaPrice: '$9.99'
                 },
                 INR: {
                     amountMinor: 89900,
-                    regularMinor: 134900,
+                    regularMinor: null,
                     formattedSale: '₹899',
-                    formattedRegular: '₹1,349',
+                    formattedRegular: null,
                     formattedPerCredit: '₹1.50 per credit',
-                    formattedSaving: 'Save ₹450 · 33% off regular price',
+                    formattedSaving: null,
                     ctaPrice: '₹899'
                 }
             }
@@ -839,51 +839,51 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             prices: {
                 USD: {
                     amountMinor: 1999,
-                    regularMinor: 2999,
+                    regularMinor: null,
                     formattedSale: '$19.99',
-                    formattedRegular: '$29.99',
+                    formattedRegular: null,
                     formattedPerCredit: '0.6¢ per credit',
-                    formattedSaving: 'Save $10 · 33% off regular price',
+                    formattedSaving: null,
                     ctaPrice: '$19.99'
                 },
                 INR: {
                     amountMinor: 179900,
-                    regularMinor: 269900,
+                    regularMinor: null,
                     formattedSale: '₹1,799',
-                    formattedRegular: '₹2,699',
+                    formattedRegular: null,
                     formattedPerCredit: '₹0.60 per credit',
-                    formattedSaving: 'Save ₹900 · 33% off regular price',
+                    formattedSaving: null,
                     ctaPrice: '₹1,799'
                 }
             }
         },
         limited: {
             id: 'limited',
-            name: 'VIP Founder Pack',
-            modalBundleName: 'VIP Bundle (Limited Offer)',
+            name: 'VIP Pack',
+            modalBundleName: 'VIP Bundle',
             credits: 100000,
             prices: {
                 USD: {
                     amountMinor: 4900,
-                    regularMinor: 29900,
+                    regularMinor: null,
                     formattedSale: '$49',
-                    formattedRegular: '$299.00',
+                    formattedRegular: null,
                     formattedPerCredit: '0.049¢ per credit',
-                    formattedSavingLanding: 'Save $250 · Over 80% off limited deal',
-                    formattedSavingApp: 'Save $250 · 84% off regular price',
+                    formattedSavingLanding: null,
+                    formattedSavingApp: null,
                     ctaPrice: '$49',
-                    buttonText: 'Claim Limited Offer ($49)'
+                    buttonText: 'View VIP Bundle'
                 },
                 INR: {
                     amountMinor: 449900,
-                    regularMinor: 2699900,
+                    regularMinor: null,
                     formattedSale: '₹4,499',
-                    formattedRegular: '₹26,999',
+                    formattedRegular: null,
                     formattedPerCredit: '₹0.045 per credit',
-                    formattedSavingLanding: 'Save ₹22,500 · Over 80% off limited deal',
-                    formattedSavingApp: 'Save ₹22,500 · 83% off regular price',
+                    formattedSavingLanding: null,
+                    formattedSavingApp: null,
                     ctaPrice: '₹4,499',
-                    buttonText: 'Claim Limited Offer (₹4,499)'
+                    buttonText: 'View VIP Bundle'
                 }
             }
         }
@@ -928,7 +928,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         var plan = getPlan(planId);
         if (!plan) return null;
         var c = canonicalize(curr || currentCurrency);
-        return plan.prices[c] || plan.prices.USD;
+        return plan.prices[c] || plan.prices.INR;
     }
 
     function formatPlanSale(planId, curr) {
@@ -981,16 +981,22 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
                 el.textContent = pricing.formattedSale;
             } else if (role === 'regular') {
                 el.textContent = pricing.formattedRegular || '';
+                el.hidden = !pricing.formattedRegular;
+                el.style.display = el.hidden ? 'none' : '';
             } else if (role === 'per-credit') {
                 el.textContent = pricing.formattedPerCredit;
             } else if (role === 'saving') {
+                var savingText;
                 if (planId === 'limited') {
                     // Distinguish landing vs app modal if different copy is used
                     var isLanding = !!el.closest('#pricing');
-                    el.textContent = isLanding ? pricing.formattedSavingLanding : pricing.formattedSavingApp;
+                    savingText = isLanding ? pricing.formattedSavingLanding : pricing.formattedSavingApp;
                 } else {
-                    el.textContent = pricing.formattedSaving || '';
+                    savingText = pricing.formattedSaving;
                 }
+                el.textContent = savingText || '';
+                el.hidden = !savingText;
+                el.style.display = el.hidden ? 'none' : '';
             } else if (role === 'cta-price' || role === 'button-text') {
                 el.textContent = pricing.buttonText || ('Acquire ' + planId + ' - ' + pricing.formattedSale);
             } else if (role === 'button-price') {
@@ -1020,7 +1026,8 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             var selectedPricing = getPlanPricing(selectedTierValue, currentCurrency);
             if (selectedPlan && selectedPricing) {
                 var bundleLabel = selectedPlan.modalBundleName || 'Bundle';
-                purchaseBtnTextEl.textContent = 'Acquire ' + bundleLabel + ' - ' + selectedPricing.formattedSale;
+                purchaseBtnTextEl.textContent = 'Paid checkout unavailable';
+                if (window.wingmanPayments) window.wingmanPayments.sync();
             }
         }
     }

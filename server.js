@@ -34,6 +34,9 @@ let db = null; // Global SQLite database instance (disabled in production, optio
 
 const { TARGET_MARKET_LOCK, HINGLISH_BIO_TARGET_MARKET_LOCK, HINGLISH_OUTPUT_DIRECTIVE, BIO_MODE_PROMPTS, MAEVE_SYSTEM_PROMPT } = require('./config/promptSystem');
 const { PRICING_CATALOG, SUPPORTED_CURRENCIES, DEFAULT_CURRENCY } = require('./config/pricingCatalog');
+const { createPaymentService, supabasePaymentStore, requirePaymentAuth, PaymentError } = require('./middleware/razorpayPayments');
+const razorpayPayments = createPaymentService({ store: supabasePaymentStore(supabaseAdmin) });
+const authenticatePayment = requirePaymentAuth(supabaseAdmin);
 
 const {
     globalLimiter,
@@ -78,20 +81,23 @@ const PORT = process.env.PORT || 3000;
 const IS_PROD = isProduction;
 const developmentCspDefaultSources = IS_PROD ? [] : ['http://localhost:*', 'ws://localhost:*'];
 const developmentCspConnectSources = IS_PROD ? [] : ['http://*:*', 'ws://*:*', 'https://*:*', 'wss://*:*'];
+const checkoutCspSources = req => !IS_PROD && ['/app', '/app.html'].includes(req.path)
+    ? ['https://checkout.razorpay.com', 'https://api.razorpay.com'] : [];
 
 // 1. Security Headers Middleware (Helmet + Explicit Production Headers)
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'", "https://*.supabase.co", ...developmentCspDefaultSources],
-            scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.supabase.co"],
-            scriptSrcElem: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.supabase.co"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.supabase.co", (req) => checkoutCspSources(req).join(' ')],
+            scriptSrcElem: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.supabase.co", (req) => checkoutCspSources(req).join(' ')],
             scriptSrcAttr: ["'unsafe-inline'"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com"],
             imgSrc: ["'self'", "data:", "blob:", "https:"],
             connectSrc: ["'self'", "https://*.supabase.co", "wss://*.supabase.co", "https://aicredits.in", ...developmentCspConnectSources],
             workerSrc: ["'self'", "blob:"],
+            frameSrc: ["'self'", (req) => checkoutCspSources(req).join(' ')],
             frameAncestors: ["'none'"],
             objectSrc: ["'none'"]
         }
@@ -165,6 +171,16 @@ app.use(cors({
 
 // 3. Global Rate Limiter (API Scoped) & Scoped Express Payload Limits
 app.use('/api/', globalLimiter);
+// A signed provider callback has no browser session. Verify exact bytes before JSON,
+// body sanitization and browser CSRF middleware; no other route bypasses these controls.
+app.post('/api/payments/webhook', express.raw({ type: 'application/json', limit: '256kb' }), async (req, res) => {
+    try {
+        const result = await razorpayPayments.webhook(req.body, req.headers['x-razorpay-signature'], req.headers['x-razorpay-event-id']);
+        return res.json(result);
+    } catch (error) {
+        return res.status(error instanceof PaymentError ? error.status : 503).json({ success: false, error: error instanceof PaymentError ? error.message : 'Payment processing is unavailable.' });
+    }
+});
 app.use('/api/analyze', express.json({ limit: '38mb' }));
 app.use('/api/analyze-chat-screenshot', express.json({ limit: '38mb' }));
 app.use(express.json({
@@ -300,7 +316,7 @@ async function ensureUserProfile(uid, email) {
 
         await db.run(
             'INSERT OR IGNORE INTO user_profiles (user_id, display_name, credits_balance, tier) VALUES (?, ?, ?, ?)',
-            [uid, (email && email.includes('@')) ? email.split('@')[0] : 'MyWingman User', 5.00, 'free']
+            [uid, (email && email.includes('@')) ? email.split('@')[0] : 'MyWingman User', 2.00, 'free']
         );
         return uid;
     } catch (err) {
@@ -310,7 +326,7 @@ async function ensureUserProfile(uid, email) {
 }
 
 // Canonical Initial Free Credits for all newly provisioned accounts
-const INITIAL_FREE_CREDITS = 50;
+const INITIAL_FREE_CREDITS = 20;
 
 // In-flight read query coalescing per authenticated user ID (Deduplicates concurrent credit reads)
 const inFlightUserCreditQueries = new Map();
@@ -3702,7 +3718,7 @@ app.get('/api/pricing', (req, res) => {
         if (requestedCurrency && !SUPPORTED_CURRENCIES.includes(requestedCurrency)) {
             return res.status(400).json({
                 success: false,
-                error: 'Unsupported currency. Only USD and INR are supported.'
+                error: 'Unsupported currency. Only INR is available for checkout.'
             });
         }
         res.json({
@@ -3718,66 +3734,22 @@ app.get('/api/pricing', (req, res) => {
     }
 });
 
-// Payment verification endpoint (sandbox & production gateway)
-app.post('/api/payments/verify', requireSupabaseAuth, apiLimiter, async (req, res) => {
-    try {
-        const uid = getUserIdFromReq(req);
-        if (!uid || uid === 'guest_user') {
-            return res.status(401).json({ success: false, error: "Please sign in to verify payments." });
-        }
-        // Strict Security: In production, payment verification is unavailable until Razorpay is integrated
-        if (IS_PROD || process.env.ENABLE_MOCK_PAYMENTS !== 'true') {
-            return res.status(503).json({
-                success: false,
-                error: 'Production payment gateway integration pending. Real payment gateway required.'
-            });
-        }
-        const { tier, planId, currency, paymentId, sandbox } = req.body;
-        const targetPlanId = planId || tier;
-        if (!targetPlanId) {
-            return res.status(400).json({ success: false, error: 'Valid plan ID required.' });
-        }
-        const selectedCurrency = (currency || 'USD').toUpperCase();
-        if (!SUPPORTED_CURRENCIES.includes(selectedCurrency)) {
-            return res.status(400).json({ success: false, error: 'Unsupported currency. Only USD and INR are supported.' });
-        }
-
-        const plan = PRICING_CATALOG[targetPlanId];
-        if (!plan) {
-            return res.status(400).json({ success: false, error: 'Unknown pricing plan.' });
-        }
-        if (sandbox === false) {
-            return res.status(503).json({ success: false, error: 'Production payment gateway integration pending.' });
-        }
-
-        // Server-authoritative resolution: credits and amounts come strictly from the catalog, NEVER client-dictated parameters
-        const targetCredits = plan.credits;
-        const addAmountInr = targetCredits / CREDITS_PER_INR;
-
-        if (isNaN(addAmountInr) || addAmountInr <= 0 || addAmountInr > 20000) {
-            return res.status(400).json({ success: false, error: "Invalid credit top-up parameters." });
-        }
-
-        const cleanPaymentId = paymentId || ('sandbox_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5));
-        const tierName = targetPlanId;
-
-        // ACTUALLY ADD CREDITS TO THE DATABASE
-        const newInr = await addUserCreditsDB(req, addAmountInr, tierName, cleanPaymentId);
-        const newCredits = Math.round(newInr * CREDITS_PER_INR);
-
-        res.json({
-            success: true,
-            credits: newCredits,
-            creditsAdded: Math.round(addAmountInr * CREDITS_PER_INR),
-            data: {
-                credits_inr: newInr
-            }
-        });
-    } catch (err) {
-        console.error('[Payment Verify Error]', err);
-        res.status(500).json({ success: false, error: 'Payment verification failed.' });
-    }
+// Test Mode payment integration; live keys fail closed.
+app.get('/api/payments/config', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, enabled: razorpayPayments.enabled(), mode: 'test', currency: 'INR' });
 });
+function paymentRoute(action) {
+    return async (req, res) => {
+        res.setHeader('Cache-Control', 'no-store');
+        try { return res.json(await razorpayPayments[action](getUserIdFromReq(req), req.body || {})); }
+        catch (error) {
+            return res.status(error instanceof PaymentError ? error.status : 503).json({ success: false, error: error instanceof PaymentError ? error.message : 'Payment processing is unavailable.' });
+        }
+    };
+}
+app.post('/api/payments/orders', apiLimiter, authenticatePayment, paymentRoute('createOrder'));
+app.post('/api/payments/verify', apiLimiter, authenticatePayment, paymentRoute('verify'));
 
 // VULN-06 FIX: Credit purchase is disabled until Razorpay production integration is verified
 app.post('/api/credits/purchase', requireSupabaseAuth, apiLimiter, (req, res) => {
@@ -3807,7 +3779,7 @@ app.post('/api/user/delete-account', requireSupabaseAuth, apiLimiter, async (req
 
         // 1. Purge optional user-created content before deleting the Auth identity. These tables
         // are not part of the core FK cascade and may not exist in every deployment.
-        for (const table of ['saved_bios', 'saved_chat_analyses', 'saved_chat_histories']) {
+        for (const table of ['saved_bios', 'saved_icebreakers', 'saved_chat_analyses', 'saved_chat_histories']) {
             try {
                 const { error: tblErr } = await supabaseAdmin.from(table).delete().eq('user_id', uid);
                 if (tblErr && !isMissingOptionalTableError(tblErr)) {

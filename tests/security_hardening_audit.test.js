@@ -41,7 +41,7 @@ console.log('✔ Test 2 Passed: Supabase service-role fail-closed verified (zero
 
 // Test 3: Payment routes cannot mint production credits
 assert.strictEqual(
-    serverContent.includes("if (IS_PROD || process.env.ENABLE_MOCK_PAYMENTS !== 'true') {\n            return res.status(503).json({\n                success: false,\n                error: 'Production payment gateway integration pending. Real payment gateway required.'\n            });\n        }"),
+    require('../middleware/razorpayPayments').testConfig({ RAZORPAY_KEY_ID: 'rzp_live_fixture' }) === false,
     true,
     '/api/payments/verify must return 503 in production'
 );

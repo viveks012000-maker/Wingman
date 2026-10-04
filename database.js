@@ -58,7 +58,7 @@ async function initializeDatabase() {
             user_id TEXT PRIMARY KEY,
             display_name TEXT,
             avatar_url TEXT,
-            credits_balance REAL DEFAULT 5.00,
+            credits_balance REAL DEFAULT 2.00,
             tier TEXT DEFAULT 'free',
             FOREIGN KEY (user_id) REFERENCES users_auth(id) ON DELETE CASCADE
         )
@@ -84,6 +84,19 @@ async function initializeDatabase() {
             user_id TEXT NOT NULL,
             image_url TEXT,
             tone TEXT,
+            generated_options TEXT, -- JSON Array
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users_auth(id) ON DELETE CASCADE
+        )
+    `);
+
+    // 4a. Create saved_icebreakers table (Isolated by user)
+    await db.exec(`
+        CREATE TABLE IF NOT EXISTS saved_icebreakers (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            bio_text TEXT,
+            vibe TEXT,
             generated_options TEXT, -- JSON Array
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users_auth(id) ON DELETE CASCADE
@@ -134,6 +147,7 @@ async function initializeDatabase() {
         CREATE INDEX IF NOT EXISTS idx_profiles_user ON user_profiles(user_id);
         CREATE INDEX IF NOT EXISTS idx_saved_bios_user ON saved_bios(user_id);
         CREATE INDEX IF NOT EXISTS idx_saved_analyses_user ON saved_chat_analyses(user_id);
+        CREATE INDEX IF NOT EXISTS idx_saved_icebreakers_user ON saved_icebreakers(user_id);
         CREATE INDEX IF NOT EXISTS idx_saved_chat_histories_user ON saved_chat_histories(user_id);
         CREATE INDEX IF NOT EXISTS idx_credit_purchases_user ON credit_purchases(user_id);
         CREATE INDEX IF NOT EXISTS idx_credit_deductions_user ON credit_deductions(user_id);

@@ -450,7 +450,8 @@ select,
         width: 100%;
     }
 
-    body.legal-page > footer a {
+    body.legal-page > footer a,
+    body.legal-page main a {
         min-height: 40px;
         display: inline-flex;
         align-items: center;

@@ -134,7 +134,7 @@
         isLoading: false,
         isTermsAccepted: false,
         lifecycle: "EMPTY",
-        selectedTier: { value: "elite", credits: 3000, price: 19.99 },
+        selectedTier: { value: "elite", credits: 3000, price: 1799, currency: 'INR' },
         activeTranscriptCache: null,
         activeSimulatorVibe: "analysis",
         showPlexus: safeStorage.get("wingman_setting_plexus", "true") !== "false",
@@ -153,41 +153,29 @@
     };
 
     const TICKER_MESSAGES = [
-        "OCR_THREAD_ACTIVE // DECODING_CONTEXT // STRATEGY_LOCK",
-        "MAPPING_CONVERSATION_DYNAMICS",
-        "EXTRACTING_KEY_ATTRACTION_SIGNALS",
-        "SYNTHESIZING_INTENT_STRATEGY",
-        "COMPUTING_MATCH_VELOCITY"
+        "READING_VISIBLE_SCREENSHOT_TEXT",
+        "SUMMARIZING_CONVERSATION_CONTEXT",
+        "APPLYING_SELECTED_RESPONSE_TONE",
+        "PREPARING_OPTIONAL_REPLY_SUGGESTIONS"
     ];
 
     const ANALYZE_MESSAGES = [
-        "ESTABLISHING CONTEXT ENVELOPE...",
-        "SEGMENTING DIALOGUE BALLOONS...",
-        "RUNNING RECURSIVE TRANSLATION CORE...",
-        "CALIBRATING TONE COEFFICIENTS...",
-        "DECODING INTERPERSONAL ATTRACTION VELOCITY...",
-        "EXTRACTING ATTENTIONAL PEAK VALUES...",
-        "COMPUTING HIGH-STATUS ESCAPE PATHS...",
-        "SYNTHESIZING CONTEXTUAL BANTER..."
+        "READING CONVERSATION CONTEXT...",
+        "ORGANIZING VISIBLE MESSAGE TEXT...",
+        "APPLYING THE SELECTED TONE...",
+        "PREPARING POSSIBLE REPLY OPTIONS..."
     ];
 
     const ICEBREAK_MESSAGES = [
-        "COMPILING MATCH PROFILE SCHEMA...",
-        "FILTERING CLICHES & TRITE PHRASES...",
-        "DETECTING SHARED VALUE HOOKS...",
-        "PARSING PERSONAL INTEREST MATRIX...",
-        "CALIBRATING ATTRACTION SIGNAL DENSITY...",
-        "DETERMINING OPTIMAL VIBE RESPONSE VECTOR...",
-        "SYNTHESIZING VERBAL OPENERS..."
+        "READING THE PROVIDED PROFILE DETAILS...",
+        "APPLYING THE SELECTED TONE...",
+        "PREPARING POSSIBLE CONVERSATION OPENERS..."
     ];
 
     const OPTIMIZE_MESSAGES = [
-        "INITIALIZING AUDIT ENGINE...",
-        "DETECTING CONVERSATIONAL LEVERAGE POINTS...",
-        "WEIGHING PASSIVE & ACTIVE CONVERSION RATES...",
-        "CALIBRATING CHARISMA COEFFICIENTS...",
-        "IDENTIFYING HIGH-STATUS PIVOT VECTORS...",
-        "SYNTHESIZING PREMIUM BIO VARIATIONS..."
+        "READING THE PROVIDED PROFILE TEXT...",
+        "REVIEWING WORDING AND CLARITY...",
+        "PREPARING POSSIBLE BIO DRAFTS..."
     ];
 
     const practicePartnerSystemContext = `You are Maeve—an intelligent 22-year-old dating conversation practice partner. You roleplay realistic match responses so the user can practice texting, flirting, date setups, and conversation recovery.
@@ -867,7 +855,7 @@ STRICT LAWS:
             renderThumbnailGrid();
             window.setLifecycleState("SELECTED");
             window.updateButtonStates();
-            window.showToast(validFiles.length + " screenshot(s) loaded! Click 'Generate Perfect Replies' or tap an image to edit.", "success");
+            window.showToast(validFiles.length + " screenshot(s) loaded. Review the text, then generate reply suggestions.", "success");
         } catch (err) {
             console.error("Error processing screenshots:", err);
             window.showToast("Error processing image. Please try again.", "error");
@@ -1715,7 +1703,7 @@ STRICT LAWS:
                 const btn1Span = btn1.querySelector("span:not(.material-symbols-outlined)");
                 if (btn1Span && !state.isLoading) {
                     if (!state.isTermsAccepted) {
-                        btn1Span.textContent = "Generate Perfect Replies — 10 Credits";
+                        btn1Span.textContent = "Generate Reply Suggestions — 10 Credits";
                     } else if (!isAuth) {
                         btn1Span.textContent = "Sign in to generate";
                     } else if (state.creditsStatus === "loading" || state.credits === null) {
@@ -1729,7 +1717,7 @@ STRICT LAWS:
                     } else if (!hasScreenshot) {
                         btn1Span.textContent = "Upload screenshot to generate";
                     } else {
-                        btn1Span.textContent = "Generate Perfect Replies — 10 Credits";
+                        btn1Span.textContent = "Generate Reply Suggestions — 10 Credits";
                     }
                 }
             }
@@ -2352,9 +2340,9 @@ STRICT LAWS:
 
         const tierValue = radio.value;
         const credits = Number(radio.getAttribute("data-credits")) || (window.wingmanCurrency ? window.wingmanCurrency.getCredits(tierValue) : 3000);
-        const currentCurrency = window.wingmanCurrency ? window.wingmanCurrency.getCurrency() : 'USD';
-        const formattedPrice = window.wingmanCurrency ? window.wingmanCurrency.formatPlanSale(tierValue, currentCurrency) : ('$' + (Number(radio.getAttribute("data-price")) || 19.99).toFixed(2));
-        const priceNumber = window.wingmanCurrency ? window.wingmanCurrency.getPlanPriceNumber(tierValue, currentCurrency) : (Number(radio.getAttribute("data-price")) || 19.99);
+        const currentCurrency = window.wingmanCurrency ? window.wingmanCurrency.getCurrency() : 'INR';
+        const formattedPrice = window.wingmanCurrency ? window.wingmanCurrency.formatPlanSale(tierValue, currentCurrency) : ('₹' + (Number(radio.getAttribute("data-price")) || 1799).toLocaleString('en-IN'));
+        const priceNumber = window.wingmanCurrency ? window.wingmanCurrency.getPlanPriceNumber(tierValue, currentCurrency) : (Number(radio.getAttribute("data-price")) || 1799);
 
         state.selectedTier = {
             value: tierValue,
@@ -2371,9 +2359,8 @@ STRICT LAWS:
 
         const btnTextEl = $("purchaseBtnText");
         if (btnTextEl) {
-            const plan = window.wingmanCurrency ? window.wingmanCurrency.getPlan(tierValue) : null;
-            const label = plan ? (plan.modalBundleName || 'Bundle') : (tierValue === 'starter' ? 'Starter Bundle' : (tierValue === 'pro' ? 'Pro Bundle' : (tierValue === 'limited' ? 'VIP Bundle (Limited Offer)' : 'Elite Bundle')));
-            btnTextEl.textContent = "Acquire " + label + " - " + formattedPrice;
+            btnTextEl.textContent = "Paid checkout unavailable";
+            if (window.wingmanPayments) window.wingmanPayments.sync();
         }
     };
 
@@ -2399,9 +2386,8 @@ STRICT LAWS:
 
     window.confirmPurchase = async function (e) {
         if (e && typeof e.preventDefault === 'function') e.preventDefault();
-        if (typeof window.showToast === 'function') {
-            window.showToast("Credit purchasing is currently unavailable while payment gateway upgrades are underway. Please enjoy your free starting credits!", "warning");
-        }
+        if (window.wingmanPayments) return window.wingmanPayments.purchase();
+        window.showToast('Credit purchasing is currently unavailable while payment gateway upgrades are underway.', 'warning');
     };
 
     // ============================================================
@@ -3185,8 +3171,6 @@ STRICT LAWS:
             if (!tier) return;
 
             const creditMap = { starter: 250, pro: 600, elite: 3000, limited: 100000 };
-            const nameMap = { starter: "Starter Pack", pro: "Pro Pack", elite: "Elite Pack", limited: "VIP Pack (Limited Time Offer)" };
-
             if (creditMap[tier]) {
                 if (typeof window.openPurchaseModal === 'function') {
                     window.openPurchaseModal();
@@ -3621,7 +3605,7 @@ STRICT LAWS:
         }
 
         state.isLoading = true;
-        setButtonLoadingState("runAnalysisBtn", true, "Analyzing Context...", "Generate Perfect Replies");
+        setButtonLoadingState("runAnalysisBtn", true, "Analyzing Context...", "Generate Reply Suggestions");
         window.setLifecycleState("ANALYZING");
         startTelemetryTracker("analyze", "analyze-telemetry-status", "analyze-telemetry-pct", "analyze-telemetry-bar", ANALYZE_MESSAGES);
 
@@ -3656,7 +3640,7 @@ STRICT LAWS:
             const aiText = await window.generateWingmanResponse('/api/analyze', promptPayload);
 
             if (aiText && (Array.isArray(aiText) ? aiText.length > 0 : String(aiText).trim().length > 0)) {
-                let momentumVal = "Stable Momentum";
+                let momentumVal = "Conversation context summarized";
                 if (typeof aiText === 'string') {
                     const momentumMatch = aiText.match(/\[MOMENTUM_STATUS\]\s*([\s\S]*?)(?=\[|$)/i);
                     if (momentumMatch && momentumMatch[1]) momentumVal = momentumMatch[1].trim();
@@ -3665,16 +3649,13 @@ STRICT LAWS:
                 const momentumStatusValEl = $("momentum-status-val");
                 if (momentumStatusValEl) momentumStatusValEl.textContent = momentumVal;
 
-                const meterFillEl = $("meter-fill");
-                if (meterFillEl) meterFillEl.style.setProperty('width', '85%', 'important');
-
                 state.activeTranscriptCache = useCache ? state.activeTranscriptCache : "Screenshot Context Decoded successfully.";
 
                 const cleanAiText = typeof aiText === 'string' ? aiText.replace(/\[MOMENTUM_STATUS\][\s\S]*?(?=\[|$)/i, "") : aiText;
                 window.renderFiveCards("analyzeResultsCards", cleanAiText);
                 window.setLifecycleState("REVEALED");
                 window.updateHUDScoreBadge();
-                window.showToast("Master Strategy Generated! (10 Credits Processed)", "success");
+                window.showToast("AI reply suggestions generated. (10 credits processed)", "success");
             } else {
                 window.setLifecycleState(state.uploadedFiles.length > 0 ? "SELECTED" : "EMPTY");
             }
@@ -3687,7 +3668,7 @@ STRICT LAWS:
         } finally {
             stopTelemetryTracker("analyze", "analyze-telemetry-status", "analyze-telemetry-pct", "analyze-telemetry-bar", "ANALYSIS COMPLETE");
             state.isLoading = false;
-            setButtonLoadingState("runAnalysisBtn", false, "Analyzing Context...", "Generate Perfect Replies");
+            setButtonLoadingState("runAnalysisBtn", false, "Analyzing Context...", "Generate Reply Suggestions");
             window.updateTermsLockState();
             window.updateButtonStates();
         }
@@ -4111,7 +4092,7 @@ STRICT LAWS:
             const alternative = document.createElement("div");
             alternative.style.cssText = "color: #a855f7; font-size: 11.5px; background: rgba(168, 85, 247, 0.1); padding: 6px 10px; border-radius: 8px; border: 1px dashed rgba(168, 85, 247, 0.3); margin-top: 4px;";
             const alternativeLabel = document.createElement("strong");
-            alternativeLabel.textContent = "Suggested High-Status Line: ";
+            alternativeLabel.textContent = "Alternative wording: ";
             alternative.appendChild(alternativeLabel);
             alternative.appendChild(document.createTextNode('"' + (typeof evalData.alternative === "string" ? evalData.alternative : "") + '"'));
             card.appendChild(alternative);
@@ -4137,7 +4118,7 @@ STRICT LAWS:
 
         const inputField = $("simulator-chat-input");
         if (inputField) inputField.focus();
-        window.showToast("Turn reset! Try sending a higher-status line.", "info");
+        window.showToast("Turn reset. Try another wording option.", "info");
     };
 
     window.updateAttractionMeter = function(score, delta) {
@@ -4168,7 +4149,7 @@ STRICT LAWS:
 
         const inputField = $("simulator-chat-input");
         if (inputField) inputField.focus();
-        window.showToast("Rewound to Message #" + targetTurnIndex + ". Try a new high-status angle!", "info");
+        window.showToast("Rewound to Message #" + targetTurnIndex + ". Try another wording option.", "info");
     };
 
     window.openHolisticReviewModal = function() {

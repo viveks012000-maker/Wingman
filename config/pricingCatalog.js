@@ -7,20 +7,17 @@
  * Single source of truth for credit tiers, pricing, integer minor amounts, and formatting.
  *
  * NOTE ON CURRENCY COMPLIANCE:
- * - Only USD and INR are supported.
+ * - Active checkout currency is INR. Historical USD values are retained but inactive.
  * - Integer minor units are mandatory on the backend:
  *     USD: cents (1 USD = 100 cents)
  *     INR: paise (1 INR = 100 paise)
  * - Credits are server-authoritative and NEVER derived from client-submitted money.
- * - INR PRICING STATUS:
- *     Provisional baseline configuration (₹449 / ₹899 / ₹1,799 / ₹4,499).
- *     These values establish complete currency-switching infrastructure and math consistency.
- *     Final business authorization is required prior to activating real payment gateway.
+ * - INR prices are final owner-approved customer totals; no extra fees added.
  * =========================================================================================
  */
 
-const SUPPORTED_CURRENCIES = ['USD', 'INR'];
-const DEFAULT_CURRENCY = 'USD';
+const SUPPORTED_CURRENCIES = ['INR'];
+const DEFAULT_CURRENCY = 'INR';
 const STORAGE_KEY = 'wingman_setting_currency';
 
 const PRICING_CATALOG = {
@@ -58,20 +55,20 @@ const PRICING_CATALOG = {
         prices: {
             USD: {
                 amountMinor: 999,
-                regularMinor: 1499,
+                regularMinor: null,
                 formattedSale: '$9.99',
-                formattedRegular: '$14.99',
+                formattedRegular: null,
                 formattedPerCredit: '1.6¢ per credit',
-                formattedSaving: 'Save $5 · 33% off regular price',
+                formattedSaving: null,
                 ctaPrice: '$9.99'
             },
             INR: {
                 amountMinor: 89900,
-                regularMinor: 134900,
+                regularMinor: null,
                 formattedSale: '₹899',
-                formattedRegular: '₹1,349',
+                formattedRegular: null,
                 formattedPerCredit: '₹1.50 per credit',
-                formattedSaving: 'Save ₹450 · 33% off regular price',
+                formattedSaving: null,
                 ctaPrice: '₹899'
             }
         }
@@ -84,51 +81,51 @@ const PRICING_CATALOG = {
         prices: {
             USD: {
                 amountMinor: 1999,
-                regularMinor: 2999,
+                regularMinor: null,
                 formattedSale: '$19.99',
-                formattedRegular: '$29.99',
+                formattedRegular: null,
                 formattedPerCredit: '0.6¢ per credit',
-                formattedSaving: 'Save $10 · 33% off regular price',
+                formattedSaving: null,
                 ctaPrice: '$19.99'
             },
             INR: {
                 amountMinor: 179900,
-                regularMinor: 269900,
+                regularMinor: null,
                 formattedSale: '₹1,799',
-                formattedRegular: '₹2,699',
+                formattedRegular: null,
                 formattedPerCredit: '₹0.60 per credit',
-                formattedSaving: 'Save ₹900 · 33% off regular price',
+                formattedSaving: null,
                 ctaPrice: '₹1,799'
             }
         }
     },
     limited: {
         id: 'limited',
-        name: 'VIP Founder Pack',
-        modalBundleName: 'VIP Bundle (Limited Offer)',
+        name: 'VIP Pack',
+        modalBundleName: 'VIP Bundle',
         credits: 100000,
         prices: {
             USD: {
                 amountMinor: 4900,
-                regularMinor: 29900,
+                regularMinor: null,
                 formattedSale: '$49',
-                formattedRegular: '$299.00',
+                formattedRegular: null,
                 formattedPerCredit: '0.049¢ per credit',
-                formattedSavingLanding: 'Save $250 · Over 80% off limited deal',
-                formattedSavingApp: 'Save $250 · 84% off regular price',
+                formattedSavingLanding: null,
+                formattedSavingApp: null,
                 ctaPrice: '$49',
-                buttonText: 'Claim Limited Offer ($49)'
+                buttonText: 'View VIP Bundle'
             },
             INR: {
                 amountMinor: 449900,
-                regularMinor: 2699900,
+                regularMinor: null,
                 formattedSale: '₹4,499',
-                formattedRegular: '₹26,999',
+                formattedRegular: null,
                 formattedPerCredit: '₹0.045 per credit',
-                formattedSavingLanding: 'Save ₹22,500 · Over 80% off limited deal',
-                formattedSavingApp: 'Save ₹22,500 · 83% off regular price',
+                formattedSavingLanding: null,
+                formattedSavingApp: null,
                 ctaPrice: '₹4,499',
-                buttonText: 'Claim Limited Offer (₹4,499)'
+                buttonText: 'View VIP Bundle'
             }
         }
     }
@@ -190,7 +187,7 @@ function getPlanPricing(planId, currency) {
     const plan = PRICING_CATALOG[planId];
     if (!plan) return null;
     const cur = canonicalizeCurrency(currency);
-    return plan.prices[cur] || plan.prices.USD;
+    return plan.prices[cur] || plan.prices.INR;
 }
 
 // Universal module export

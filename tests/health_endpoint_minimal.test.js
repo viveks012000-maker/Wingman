@@ -4,7 +4,7 @@ const path = require('path');
 
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const start = server.indexOf("app.get('/api/health'");
-const end = server.indexOf("// Payment verification endpoint", start);
+const end = server.indexOf("// Test Mode payment integration", start);
 assert.ok(start >= 0 && end > start, 'health endpoint must exist');
 const health = server.slice(start, end);
 

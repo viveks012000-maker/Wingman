@@ -135,10 +135,11 @@ console.log("✔ Test 4 Passed: Credit-aware CTA dynamic states and credit invar
 console.log("▶ [TEST 5] Deferred Payments Status & Fail-Closed Purchase Handling");
 
 // Payment routes in server.js must fail closed (HTTP 503)
-assert.strictEqual(serverCode.includes("Production payment gateway integration pending"), true, "Payment routes in server.js must be explicitly fail-closed");
+assert.strictEqual(serverCode.includes('razorpayPayments') && require('../middleware/razorpayPayments').testConfig({}) === false, true, "Payment routes in server.js must be explicitly fail-closed");
 
 // Frontend purchase modal copy
-assert.strictEqual(appHtmlCode.includes("Purchases currently paused during system upgrade") || appHtmlCode.includes("Purchases Temporarily Unavailable"), true, "app.html purchase modal must disclose paused purchases");
+assert.strictEqual(appHtmlCode.includes("Paid checkout is unavailable in production."), true, "app.html purchase modal must disclose paused checkout");
+assert.strictEqual(/id="confirmPurchaseBtn"[^>]*disabled/.test(appHtmlCode), true, "app.html purchase action must be disabled while checkout is unavailable");
 assert.strictEqual(appJsCode.includes("Credit purchasing is currently unavailable while payment gateway upgrades are underway."), true, "app.js must display purchase unavailable notice");
 console.log("✔ Test 5 Passed: Deferred payments and purchase modal fail-closed handling verified.");
 
@@ -499,7 +500,7 @@ assert.strictEqual(
 
 // 16.2 privacy.html Section 3 disclosure
 assert.strictEqual(
-    privacyHtmlCode.includes("Uploaded screenshots are not stored in our application database or server-side persistent storage. They may remain temporarily in your browser session until cleared, replaced, or the session is reset."),
+    privacyHtmlCode.includes("Uploaded screenshots are not stored in our application database as image files by the analyzed route;") && privacyHtmlCode.includes("saved analysis record may instead contain the selected tone, generated options, and an input-type marker."),
     true,
     "privacy.html must contain truthful screenshot retention disclosure"
 );

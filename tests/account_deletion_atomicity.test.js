@@ -19,6 +19,8 @@ assert.ok(route.includes("Failed to purge saved account content."), 'Actual opti
 assert.ok(route.includes("Failed to purge local account data."), 'Local auxiliary cleanup must fail closed before Auth deletion');
 assert.ok(route.indexOf('rls.purgeAll()') < route.indexOf(authDelete), 'Local cleanup must occur before irreversible Auth deletion');
 assert.ok(route.indexOf("saved_bios") < route.indexOf(authDelete), 'Optional saved-content cleanup must occur before Auth deletion');
+assert.ok(route.includes("'saved_icebreakers'"), 'Icebreaker history must be included in account deletion');
+assert.ok(fs.readFileSync(path.join(__dirname, '..', 'database.js'), 'utf8').includes('CREATE TABLE IF NOT EXISTS saved_icebreakers'), 'SQLite must define the saved icebreaker table included by the RLS purge');
 assert.ok(route.includes("if (authDelErr)"), 'Auth deletion failure must be checked');
 
 assert.ok(migration001.includes('id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE'), 'profiles must cascade from auth.users');

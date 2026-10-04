@@ -51,6 +51,7 @@ deferScripts('app.html', [
   { src: 'config.js' },
   { src: 'vendor/supabase.min.js' },
   { src: 'supabaseClient.js' },
+  { src: 'payments-client.js' },
   { src: 'app.js' },
   { src: 'accessibility.js' }
 ]);
