@@ -2695,7 +2695,7 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
             cleaned = cleaned.replace(/don't swipe if[^\.\,\n]*/gi, '');
 
             // Demographic & Cultural Isolation Law Safety Net (US / Western Lock)
-            if (language === 'en' || (language === 'auto' && inferLocalLanguage(cleaned, [{role: 'user', content: originalBioText}]) === 'en')) {
+            if (language === 'en' || (language === 'auto' && inferLocalLanguage(originalBioText, []) === 'en')) {
             cleaned = cleaned.replace(/\bdhaba(s)?\b/gi, '24-hour diner');
             cleaned = cleaned.replace(/\b(pani puri|vada pav|samosa(s)?|dosa(s)?|paratha(s)?)\s*(roll|run)?\b/gi, 'taco truck run');
             cleaned = cleaned.replace(/\bchai tapri\b/gi, 'coffee spot');
