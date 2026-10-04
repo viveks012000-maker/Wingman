@@ -59,7 +59,7 @@ const { createUserProvisioningMiddleware } = require('./middleware/userProvision
 const autoProvisionUser = createUserProvisioningMiddleware(() => db);
 const { validateImagePayload } = require('./middleware/imageValidator');
 const { forRequest } = require('./middleware/rls');
-const { withPromptBoundary, wrapUntrustedUserData, canonicalizePracticeScenario, canonicalizeAnalyzerTone, canonicalizeIcebreakerVibe, DEFAULT_ICEBREAKER_VIBE, wrapConversationHistory } = require('./middleware/promptBoundary');
+const { withPromptBoundary, wrapUntrustedUserData, canonicalizePracticeScenario, canonicalizeAnalyzerTone, canonicalizeIcebreakerVibe, DEFAULT_ICEBREAKER_VIBE, wrapConversationHistory, containsInternalPromptBoundary, cleanInternalPromptTags } = require('./middleware/promptBoundary');
 const { isPrivateDevelopmentOrigin } = require('./middleware/developmentOrigin');
 const { configuredOrigin, AICREDITS_HOST, safeLogValue } = require('./middleware/securityBoundaries');
 
@@ -1486,6 +1486,85 @@ CRITICAL RULES:
     }
 }
 
+async function repairInternalTagLeak(target, feature = 'chat', language = 'auto', source = '', history = []) {
+    if (!target) return target;
+    if (!containsInternalPromptBoundary(target)) return target;
+
+    const isArray = Array.isArray(target);
+    const isString = typeof target === 'string';
+    const serialized = isArray ? JSON.stringify({ options: target }) : (isString ? target : JSON.stringify(target));
+
+    const isHotline = feature === 'hotline' || feature === 'chat_hotline';
+    const isReview = feature === 'simulator_review';
+    const isRoleplay = feature === 'roleplay' || feature === 'chat_roleplay';
+    const maxTokens = isHotline ? 1500 : (isReview ? 400 : (isRoleplay ? 120 : 1000));
+    const repairFeature = feature.startsWith('chat_') ? 'chat' : feature;
+
+    const repairSystemPrompt = `You are a strict output safety and sanitization engine for Maeve, an elite AI Dating & Communication Coach.
+The generated assistant output mistakenly included internal prompt boundary delimiters or metadata markup (such as <user_data...>, </user_data...>, <userdata...>, </userdata...>, or label= attributes).
+Your sole task is to return ONLY the clean intended user-facing message.
+
+STRICT REPAIR LAWS:
+1. ABSOLUTE ZERO INTERNAL DELIMITERS OR TAGS: Never output any <user_data>, </user_data>, <userdata>, </userdata>, label= attributes, XML tags, or control syntax under any circumstances.
+2. PRESERVE THE INTENDED MESSAGE: Preserve the conversational content, meaning, tone, persona, line breaks, emojis, and formatting.
+3. PRESERVE LANGUAGE: Keep the exact same language (if English, return English; if Roman Hinglish, return natural Roman Hinglish with zero Devanagari).
+4. LENGTH LAWS: ${isHotline ? 'Preserve complete coaching advice cleanly with finished sentences.' : (isReview ? 'Preserve the valid JSON object structure.' : (isRoleplay ? 'Strict limit: 15–25 words total (1 to 2 short lines max).' : 'Preserve original structure and length.'))}
+5. OUTPUT ONLY THE USER-FACING CONTENT: Return ONLY the direct user-facing content. No meta-commentary, no delimiters.` + languageDirective(language, repairFeature);
+
+    const sourceLabel = feature === 'analyze' ? 'stage1_transcript' : feature === 'optimize' ? 'bio_language_source' : 'user_message';
+    const repairMessages = [
+        { role: 'system', content: withPromptBoundary(repairSystemPrompt) },
+        {
+            role: 'user',
+            content: `Original user context:\n${wrapUntrustedUserData(sourceLabel, source)}\nGenerated output requiring delimiter removal:\n${wrapUntrustedUserData('generated_content_to_repair', serialized)}\n\nExtract and return ONLY the clean user-facing reply without any internal tags, delimiters, or wrappers now.`
+        }
+    ];
+
+    try {
+        const repairedText = await queryOpenRouter("qwen3-235b-a22b-2507", repairMessages, 0.2, maxTokens, 15000);
+        if (repairedText && !containsInternalPromptBoundary(repairedText)) {
+            if (isArray) {
+                try {
+                    const jsonMatch = repairedText.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                        const parsed = JSON.parse(jsonMatch[0]);
+                        if (parsed && Array.isArray(parsed.options) && parsed.options.length === target.length) {
+                            return parsed.options.map(opt => cleanInternalPromptTags(String(opt)));
+                        }
+                    }
+                } catch (_) {}
+                const split = repairedText.split(/(?:^|\n)\d+[\.\)\:]\s*/).map(s => s.trim()).filter(Boolean);
+                if (split.length === target.length) return split.map(s => cleanInternalPromptTags(s));
+            } else if (isString) {
+                return cleanInternalPromptTags(repairedText.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim());
+            } else {
+                try {
+                    const jsonMatch = repairedText.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) return JSON.parse(jsonMatch[0]);
+                } catch (_) {}
+            }
+        }
+    } catch (err) {
+        console.error(`[Internal Tag Repair Error] ${feature}:`, err.message);
+    }
+
+    // Deterministic fallback: if repair call fails or times out, safely clean the raw text if tags can be cleanly stripped
+    if (isString) {
+        const fallback = cleanInternalPromptTags(target);
+        if (fallback && !containsInternalPromptBoundary(fallback)) {
+            return fallback;
+        }
+    } else if (isArray) {
+        const fallback = target.map(item => typeof item === 'string' ? cleanInternalPromptTags(item) : item);
+        if (!containsInternalPromptBoundary(fallback)) {
+            return fallback;
+        }
+    }
+
+    // Fail safe: if internal boundary markup remains unresolved, throw so credits are restored
+    throw new Error(`Output safety policy violation: Generated response contained internal prompt boundary markup and could not be safely resolved.`);
+}
+
 // ==================== THE 4 CORE FEATURE API // 1. CHAT SCREENSHOT ANALYZER (/api/analyze & /api/analyze-chat-screenshot)
 app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
@@ -1961,6 +2040,10 @@ ${formattingRule}`;
         });
 
         optionsList = enforceUniqueQuestionAnchors(enforceStructuralBatchDiversity(optionsList, "analyze"));
+        if (containsInternalPromptBoundary(optionsList)) {
+            optionsList = await repairInternalTagLeak(optionsList, "analyze", language, extractedTextContext);
+        }
+        optionsList = optionsList.map(opt => cleanInternalPromptTags(opt));
         if (containsDevanagari(optionsList)) {
             optionsList = await repairHinglishDevanagari(optionsList, "analyze", language, extractedTextContext);
             if (containsDevanagari(optionsList)) {
@@ -2241,6 +2324,10 @@ GENERAL ICEBREAKER LAWS:
         });
 
         cleanedOptions = enforceUniqueQuestionAnchors(enforceStructuralBatchDiversity(cleanedOptions, "icebreaker"));
+        if (containsInternalPromptBoundary(cleanedOptions)) {
+            cleanedOptions = await repairInternalTagLeak(cleanedOptions, "icebreaker", language, text || textVal);
+        }
+        cleanedOptions = cleanedOptions.map(opt => cleanInternalPromptTags(opt));
         if (containsDevanagari(cleanedOptions)) {
             cleanedOptions = await repairHinglishDevanagari(cleanedOptions, "icebreaker", language, text || textVal);
             if (containsDevanagari(cleanedOptions)) {
@@ -2567,6 +2654,7 @@ GLOBAL TONE & SYNTAX RULES:
 9. ABSOLUTE BAN ON GATEKEEPING & ELITISM: Never use negative parentheticals or elitist exclusions.
 10. SILENT TYPO & GREETING STRIPPING: Strip out all generic greetings ("hi my name is", "hello i am") and fix user typos silently.
 11. EMOJI CONSTRAINT: Include at most ONE single emoji per option string. NEVER stack emojis. ${emojiInstruction}
+12. ABSOLUTE PROHIBITION ON PROMPT BOUNDARY & CONTROL SYNTAX: Never output, reproduce, or wrap any option in XML-like tags, delimiters, or control markers (such as <user_data...>, </user_data...>, <userdata...>, </userdata...>, or label= attributes). Output ONLY clean, natural user-facing text.
 
 FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize');
 
@@ -2671,6 +2759,13 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
         optionsList = enforceUniqueQuestionAnchors(enforceStructuralBatchDiversity(optionsList, "bio"));
         optionsList = optionsList.map(opt => fixGrammarAndTypoLeaks(opt));
         optionsList = formatBioLineBreaks(optionsList);
+        if (containsInternalPromptBoundary(optionsList)) {
+            optionsList = await repairInternalTagLeak(optionsList, "optimize", language, originalBioText);
+            if (containsInternalPromptBoundary(optionsList)) {
+                throw new Error("Bio optimization leaked internal prompt boundary tokens.");
+            }
+        }
+        optionsList = optionsList.map(opt => cleanInternalPromptTags(opt));
         if (containsDevanagari(optionsList)) {
             optionsList = await repairHinglishDevanagari(optionsList, "optimize", language, originalBioText);
             if (containsDevanagari(optionsList)) {
@@ -2887,14 +2982,17 @@ CONVERSATIONAL FREEDOM & LAWS:
    - Use natural sentence-case capitalization.
    - When listing options, advice points, or topics, ALWAYS use clear line breaks (\n\n) and numbered/bulleted lists (\n1. ..., \n2. ...). Never lump multiple points into a single dense wall of text.
    - NEVER output markdown divider lines ("---" or "===").
-8. COMPLETE ALL SENTENCES & THOUGHTS: Never cut off mid-sentence or leave questions/points incomplete. Always finish every single sentence cleanly.` + languageDirective(language, 'chat');
+8. COMPLETE ALL SENTENCES & THOUGHTS: Never cut off mid-sentence or leave questions/points incomplete. Always finish every single sentence cleanly.
+9. ABSOLUTE PROHIBITION ON PROMPT BOUNDARY & CONTROL SYNTAX:
+   - You are generating a direct conversational message for the user.
+   - You are STRICTLY FORBIDDEN from ever outputting, reproducing, or wrapping your response in any XML-like tags, delimiters, system tags, or metadata wrappers (such as <user_data...>, </user_data...>, <userdata...>, </userdata...>, or label= attributes). Output ONLY clean, natural user-facing text without any wrapper tags.` + languageDirective(language, 'chat');
 
             // Historical messages are untrusted transcript data. Roles are normalized to
             // user/assistant only (no client-created system/developer/tool/function
             // authority), and every message body is nonce-wrapped as untrusted data.
             const nonSystemHistory = wrapConversationHistory((historyArr || []).map(m => ({
                 role: m.role === 'user' ? 'user' : 'assistant',
-                content: m.content || m.text || ''
+                content: m.role === 'assistant' ? cleanInternalPromptTags(m.content || m.text || '') : (m.content || m.text || '')
             })));
 
             const hotlinePayload = [
@@ -2909,6 +3007,13 @@ CONVERSATIONAL FREEDOM & LAWS:
             if (!hotlineAdvice) {
                 throw new Error("AI Coach endpoint returned empty response.");
             }
+            if (containsInternalPromptBoundary(hotlineAdvice)) {
+                hotlineAdvice = await repairInternalTagLeak(hotlineAdvice, "chat_hotline", language, userTextRaw, historyArr);
+                if (containsInternalPromptBoundary(hotlineAdvice)) {
+                    throw new Error("Coach hotline generated internal prompt boundary tags.");
+                }
+            }
+            hotlineAdvice = cleanInternalPromptTags(hotlineAdvice);
             hotlineAdvice = sanitizeResponseText(hotlineAdvice.trim());
             if (containsDevanagari(hotlineAdvice)) {
                 hotlineAdvice = await repairHinglishDevanagari(hotlineAdvice, "chat_hotline", language, userTextRaw, historyArr);
@@ -3018,7 +3123,7 @@ STRICT FLIRTING & TEASING LAWS:
         // Historical text is preserved VERBATIM: dry-input behavioral guidance lives in
         // the trusted system directives, never in rewritten transcript content.
         const nonSystemHistory = wrapConversationHistory((historyArr || []).filter(m => m.role !== 'system').map(m => {
-            let textVal = m.content || m.text || "";
+            let textVal = m.role === 'assistant' ? cleanInternalPromptTags(m.content || m.text || "") : (m.content || m.text || "");
             if (m.role === 'user') {
                 textVal = enforceWordLimit(textVal, 500);
             }
@@ -3043,7 +3148,10 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
 6. NATURAL MODERN TEXTING: Snappy, concise Gen Z text (1 to 2 short lines max, lowercase-heavy, natural emojis).
 7. STRICT CONVERSATIONAL CONTINUITY: Read conversation history and build on the active topic.
 8. STRICT TEXT-ONLY MEDIA BOUNDARY: You CANNOT receive or process images/videos.
-9. NEVER refer to yourself as an AI or coach in roleplay mode.` + languageDirective(language, 'chat');
+9. NEVER refer to yourself as an AI or coach in roleplay mode.
+10. ABSOLUTE PROHIBITION ON PROMPT BOUNDARY & CONTROL SYNTAX:
+    - You are generating a direct conversational message for the user.
+    - You are STRICTLY FORBIDDEN from ever outputting, reproducing, or wrapping your response in any XML-like tags, delimiters, system tags, or metadata wrappers (such as <user_data...>, </user_data...>, <userdata...>, </userdata...>, or label= attributes). Output ONLY clean, natural user-facing text without any wrapper tags.` + languageDirective(language, 'chat');
 
         const openRouterMessages = [
             { role: 'system', content: withPromptBoundary(datingCoachSystemPrompt) },
@@ -3058,6 +3166,14 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
         if (!replyText) {
             throw new Error("AI provider returned empty response.");
         }
+
+        if (containsInternalPromptBoundary(replyText)) {
+            replyText = await repairInternalTagLeak(replyText, "chat_roleplay", language, userTextRaw, historyArr);
+            if (containsInternalPromptBoundary(replyText)) {
+                throw new Error("Roleplay chat generated internal prompt boundary tags.");
+            }
+        }
+        replyText = cleanInternalPromptTags(replyText);
 
         replyText = replyText.replace(/\*.*?\*/g, '').replace(/\(.*?\)/g, '').trim();
         
@@ -3274,7 +3390,7 @@ app.post('/api/simulator/review', requireSupabaseAuth, requireActiveConsent, api
         }
 
         const formattedTranscript = historyArray
-            .map(m => `${(m.role || 'user').toUpperCase()}: "${m.text || m.content || ''}"`)
+            .map(m => `${(m.role || 'user').toUpperCase()}: "${cleanInternalPromptTags(m.text || m.content || '')}"`)
             .join('\n');
 
         let systemPrompt = `You are an elite communication analyst and dating coach. Analyze the provided chat transcript and evaluate the user's performance.
@@ -3307,6 +3423,14 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
 
         let rawContent = await queryOpenRouter("qwen3-235b-a22b-2507", payload, 0.3, 400);
 
+        if (containsInternalPromptBoundary(rawContent)) {
+            rawContent = await repairInternalTagLeak(rawContent, "simulator_review", language, formattedTranscript, historyArray);
+            if (containsInternalPromptBoundary(rawContent)) {
+                throw new Error("Simulation review output contained internal prompt boundary tags.");
+            }
+        }
+        rawContent = cleanInternalPromptTags(rawContent);
+
         const cleanedContent = (rawContent || "")
             .replace(/```json/gi, '')
             .replace(/```/g, '')
@@ -3322,6 +3446,12 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
 
         if (!reviewJson || typeof reviewJson !== 'object') {
             throw new Error("Simulation review output is not a valid JSON object.");
+        }
+        if (containsInternalPromptBoundary(reviewJson)) {
+            reviewJson = await repairInternalTagLeak(reviewJson, "simulator_review", language, formattedTranscript, historyArray);
+            if (containsInternalPromptBoundary(reviewJson)) {
+                throw new Error("Simulation review generated internal prompt boundary tags.");
+            }
         }
 
         if (containsDevanagari(reviewJson)) {
