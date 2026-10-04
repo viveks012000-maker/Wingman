@@ -60,14 +60,18 @@ assert.ok(!config.includes("document.documentElement.lang = validLang === 'hingl
 const dictMatch = config.match(/var DICTIONARY = (\{[\s\S]*?\n    \};)/);
 const dictionary = JSON.parse(dictMatch[1].replace(/;\s*$/, '').replace(/^(\s*)([A-Za-z_]\w*):/gm, '$1"$2":'));
 for (const value of Object.values(dictionary.hinglish)) assert.ok(!devanagari.test(value));
-const vm = require('vm');
 const documentStub = {readyState:'loading', documentElement:{lang:'hi-Latn'}, querySelectorAll:()=>[], addEventListener:()=>{}};
 const windowStub = {location:{hostname:'localhost',protocol:'http:',origin:'http://localhost'}, localStorage:{getItem:()=> 'hinglish',setItem:()=>{}}, addEventListener:()=>{}};
-vm.runInNewContext(config, {window:windowStub,document:documentStub,console,URL});
+// Load the fixed module path rather than evaluating text read from a file.
+global.window = windowStub;
+global.document = documentStub;
+require('../config.js');
 windowStub.wingmanI18n.init();
 assert.strictEqual(windowStub.wingmanI18n.getLanguage(), 'en', 'stored Hinglish cannot switch UI');
 assert.strictEqual(windowStub.wingmanI18n.getLanguageMode(), 'auto');
 windowStub.wingmanI18n.setLanguage('hinglish');
 assert.strictEqual(documentStub.documentElement.lang, 'en');
 for (const [key, value] of Object.entries(dictionary.en)) assert.strictEqual(windowStub.wingmanI18n.t(key), value);
+delete global.window;
+delete global.document;
 console.log('AUTO LANGUAGE: helper, continuity, legacy, script safeguards and UI contracts passed');
