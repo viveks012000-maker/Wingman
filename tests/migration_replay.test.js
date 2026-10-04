@@ -14,7 +14,7 @@ const migrations = fs.readdirSync(migrationDir)
     .filter(name => name.endsWith('.sql'))
     .sort();
 assert.deepEqual(migrations.map(name => name.slice(0, 3)), [
-    '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013', '014', '015'
+    '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013', '014', '015', '016'
 ], 'tracked migration order must remain explicit and stable');
 
 const container = `wingman-migration-replay-${process.pid}`;
@@ -206,6 +206,33 @@ END $$;
 ROLLBACK;
 `;
     psql(smoke);
+    psql(`
+BEGIN;
+INSERT INTO auth.users(id,email_confirmed_at) VALUES ('${userId}',pg_catalog.now()), ('${otherId}',pg_catalog.now());
+INSERT INTO public.razorpay_orders(order_id,user_id,plan_id,credits,amount_minor,currency,mode)
+VALUES ('order_replay','${userId}','starter',250,44900,'INR','test'),
+       ('order_other','${otherId}','starter',250,44900,'INR','test');
+DO $$ DECLARE result json; BEGIN
+ result := public.fulfill_razorpay_order('order_replay','pay_replay',44900,'INR');
+ IF result->>'success' <> 'true' OR (result->>'credits')::int <> 270 THEN RAISE EXCEPTION 'payment fulfillment failed: %',result; END IF;
+ result := public.fulfill_razorpay_order('order_replay','pay_replay',44900,'INR');
+ IF result->>'duplicate' <> 'true' OR (result->>'credits')::int <> 270 THEN RAISE EXCEPTION 'duplicate payment grant: %',result; END IF;
+ BEGIN
+   PERFORM public.fulfill_razorpay_order('order_other','pay_replay',44900,'INR');
+   RAISE EXCEPTION 'payment reuse unexpectedly succeeded';
+ EXCEPTION WHEN unique_violation THEN NULL;
+ END;
+ IF (SELECT credits FROM public.profiles WHERE id='${otherId}') <> 20 THEN RAISE EXCEPTION 'other wallet changed'; END IF;
+ IF (SELECT count(*) FROM public.credit_transactions WHERE user_id='${userId}' AND request_id='pay_replay') <> 1 THEN RAISE EXCEPTION 'purchase ledger is not exactly once'; END IF;
+ IF pg_catalog.has_function_privilege('authenticated','public.fulfill_razorpay_order(text,text,integer,text)','EXECUTE') THEN RAISE EXCEPTION 'browser can grant credits'; END IF;
+ IF pg_catalog.has_table_privilege('anon','public.razorpay_orders','SELECT') THEN RAISE EXCEPTION 'anonymous payment record access'; END IF;
+END $$;
+DELETE FROM auth.users WHERE id='${userId}';
+DO $$ BEGIN
+ IF (SELECT user_id FROM public.razorpay_orders WHERE order_id='order_replay') IS NOT NULL THEN RAISE EXCEPTION 'financial record did not detach'; END IF;
+END $$;
+ROLLBACK;
+`);
     assert.equal(scalar("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='updated_at';"), '1');
     assert.equal(scalar("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='credit_transactions' AND column_name='type';"), '1');
     console.log(`✔ Migration replay and recovery smoke passed (${migrations.length} tracked migrations, disposable Postgres only).`);

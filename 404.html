@@ -1,26 +1,132 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="robots" content="noindex, nofollow">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'none';">
   <title>Page Not Found | MyWingman</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦅</text></svg>"/>
   <link rel="stylesheet" href="/output.css">
   <link rel="stylesheet" href="/style.css">
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: #070a12;
+      color: #f8fafc;
+    }
+    .number-gradient {
+      background: linear-gradient(135deg, #ffffff 10%, #c4b5fd 50%, #7c3aed 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .glow-bg {
+      background: radial-gradient(circle at 50% 30%, rgba(139, 92, 246, 0.15) 0%, rgba(124, 58, 237, 0.04) 50%, transparent 75%);
+    }
+  </style>
 </head>
-<body class="min-h-screen bg-[#070a12] text-white flex items-center justify-center px-6">
-  <main class="w-full max-w-xl text-center" aria-labelledby="not-found-title">
-    <a href="/" aria-label="MyWingman home" class="inline-flex items-center justify-center mb-8">
-      <img src="/logo.png" alt="MyWingman" class="h-12 w-auto">
-    </a>
-    <p class="text-violet-300 font-semibold tracking-wide uppercase text-sm mb-3">404</p>
-    <h1 id="not-found-title" class="text-3xl sm:text-4xl font-bold mb-4">Page not found</h1>
-    <p class="text-slate-300 leading-relaxed mb-8">The page you requested does not exist. No private application or server files are available at this address.</p>
-    <div class="flex flex-col sm:flex-row gap-3 justify-center">
-      <a href="/" class="inline-flex min-h-11 items-center justify-center rounded-xl bg-violet-600 px-6 py-3 font-semibold hover:bg-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-300">Go to homepage</a>
-      <a href="/app.html" class="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-600 px-6 py-3 font-semibold hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-300">Open MyWingman</a>
+<body class="min-h-screen bg-[#070a12] text-white flex flex-col justify-between overflow-x-hidden selection:bg-violet-600 selection:text-white">
+
+  <!-- Header Navigation Bar -->
+  <header class="w-full bg-black/80 border-b border-white/10 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <a href="/" aria-label="MyWingman Home" class="flex items-center gap-3">
+        <img src="/logo.png" alt="MyWingman" class="h-10 w-auto object-contain">
+        <span class="font-extrabold text-lg sm:text-xl tracking-tight text-white">MyWingman</span>
+      </a>
+      <a href="/" class="text-xs font-mono text-slate-400 hover:text-white transition-colors border border-white/10 px-3.5 py-2 rounded-lg bg-white/5 min-h-11 inline-flex items-center">
+        Back to Home
+      </a>
+    </div>
+  </header>
+
+  <!-- Main 404 Hero Container -->
+  <main class="flex-1 flex items-center justify-center px-4 sm:px-6 py-12 glow-bg w-full" aria-labelledby="not-found-title">
+    <div class="w-full max-w-xl text-center">
+      
+      <!-- Radar Telemetry Illustration -->
+      <div class="relative w-32 h-32 sm:w-40 sm:h-40 mx-auto mb-4 flex items-center justify-center" aria-hidden="true">
+        <div class="absolute inset-0 rounded-full bg-violet-600/20 blur-xl"></div>
+        <svg class="w-full h-full text-violet-400/80 drop-shadow-[0_0_15px_rgba(139,92,246,0.35)]" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="100" cy="100" r="90" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 4" stroke-opacity="0.3"/>
+          <circle cx="100" cy="100" r="68" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.5"/>
+          <circle cx="100" cy="100" r="46" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.7"/>
+          <circle cx="100" cy="100" r="24" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.9"/>
+          <line x1="100" y1="10" x2="100" y2="190" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.25"/>
+          <line x1="10" y1="100" x2="190" y2="100" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.25"/>
+          <path d="M100 100 L163.6 36.4 A90 90 0 0 0 100 10 Z" fill="url(#radarSweep)" fill-opacity="0.25"/>
+          <circle cx="100" cy="100" r="5" fill="#a78bfa"/>
+          <circle cx="100" cy="100" r="10" stroke="#c4b5fd" stroke-width="1.5" stroke-opacity="0.6"/>
+          <circle cx="140" cy="65" r="4" fill="#f43f5e"/>
+          <circle cx="140" cy="65" r="9" stroke="#fb7185" stroke-width="1" stroke-opacity="0.5"/>
+          <defs>
+            <linearGradient id="radarSweep" x1="100" y1="100" x2="150" y2="20" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#8b5cf6" stop-opacity="0.8"/>
+              <stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+
+      <!-- 404 Status Eyebrow -->
+      <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-violet-500/30 bg-violet-500/10 text-violet-300 text-xs font-semibold tracking-wider uppercase mb-3">
+        <span class="inline-block w-2 h-2 rounded-full bg-violet-400"></span>
+        <span>Error 404 &bull; Flight Path Lost</span>
+      </div>
+
+      <!-- Big Number & Title -->
+      <div class="relative leading-none mb-2">
+        <span class="text-6xl sm:text-7xl md:text-8xl font-black tracking-tight number-gradient select-none">404</span>
+      </div>
+      <h1 id="not-found-title" class="text-2xl sm:text-3xl md:text-4xl font-bold mb-3 tracking-tight text-white">Page not found</h1>
+      <p class="text-slate-300 text-sm sm:text-base leading-relaxed max-w-md mx-auto mb-8">The page or resource you requested does not exist or has been relocated. Let's get your flight plan back on track.</p>
+
+      <!-- Primary Action Buttons -->
+      <div class="flex flex-col sm:flex-row gap-3.5 justify-center items-center w-full max-w-sm sm:max-w-md mx-auto">
+        <a href="/" class="w-full sm:w-auto inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 py-3 font-semibold text-white shadow-lg shadow-violet-600/30 hover:bg-violet-500 transition-all focus:outline-none focus:ring-2 focus:ring-violet-300">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+          </svg>
+          <span>Go to homepage</span>
+        </a>
+        <a href="/app.html" class="w-full sm:w-auto inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900/80 hover:bg-slate-800 hover:border-slate-500 px-6 py-3 font-semibold text-slate-200 hover:text-white transition-all focus:outline-none focus:ring-2 focus:ring-violet-300">
+          <svg class="w-4 h-4 text-violet-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+          <span>Open MyWingman</span>
+        </a>
+      </div>
+
+      <!-- Quick Helpful Links -->
+      <div class="mt-10 pt-6 border-t border-white/10 w-full max-w-md mx-auto">
+        <p class="text-[11px] font-mono uppercase tracking-widest text-slate-400 mb-3 text-center">Popular Destinations</p>
+        <div class="grid grid-cols-3 gap-2 text-xs">
+          <a href="/" class="p-2.5 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.07] hover:border-white/15 text-slate-300 hover:text-white transition-all text-center min-h-11 flex items-center justify-center font-medium">
+            Home
+          </a>
+          <a href="/app.html" class="p-2.5 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.07] hover:border-white/15 text-slate-300 hover:text-white transition-all text-center min-h-11 flex items-center justify-center font-medium">
+            Dashboard
+          </a>
+          <a href="mailto:support.mywingman@gmail.com" class="p-2.5 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.07] hover:border-white/15 text-slate-300 hover:text-white transition-all text-center min-h-11 flex items-center justify-center font-medium">
+            Support
+          </a>
+        </div>
+      </div>
+
     </div>
   </main>
+
+  <!-- Footer -->
+  <footer class="py-6 px-4 border-t border-white/10 bg-black/60 text-center text-xs font-mono text-slate-400 mt-auto">
+    <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <p>&copy; 2026 MyWingman. All rights reserved.</p>
+      <div class="flex items-center gap-6">
+        <a href="/terms.html" class="text-slate-400 hover:text-white transition-colors">Terms of Service</a>
+        <a href="/privacy.html" class="text-slate-400 hover:text-white transition-colors">Privacy Policy</a>
+        <a href="/refund.html" class="text-slate-400 hover:text-white transition-colors">Refund Policy</a>
+      </div>
+    </div>
+  </footer>
+
 </body>
 </html>

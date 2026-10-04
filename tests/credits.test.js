@@ -33,11 +33,11 @@ async function runTests() {
         if (!profile || profile.user_id !== 'test_uuid_12345') {
             throw new Error("User profile was not created in user_profiles table");
         }
-        if (profile.credits_balance !== 5.00) {
-            throw new Error(`Expected initial balance 5.00 (50 credits), got ${profile.credits_balance}`);
+        if (profile.credits_balance !== 2.00) {
+            throw new Error(`Expected initial balance 2.00 (20 credits), got ${profile.credits_balance}`);
         }
 
-        console.log("✅ TEST 1 PASSED: User Auto-Provisioning Middleware creates profile row with 50 initial credits (5.00 INR).");
+        console.log("✅ TEST 1 PASSED: User Auto-Provisioning Middleware creates profile row with 20 initial credits (2.00 INR).");
         passed++;
     } catch (err) {
         console.error("❌ TEST 1 FAILED:", err.message);

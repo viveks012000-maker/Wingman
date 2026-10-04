@@ -14,6 +14,9 @@ const TARGETS = Object.freeze([
   { file: 'terms.html', direct: 1, fallback: 0 },
   { file: 'privacy.html', direct: 1, fallback: 0 },
   { file: 'refund.html', direct: 1, fallback: 0 },
+  { file: 'about.html', direct: 1, fallback: 0 },
+  { file: 'contact.html', direct: 1, fallback: 0 },
+  { file: 'service-delivery.html', direct: 1, fallback: 0 },
   { file: '404.html', direct: 1, fallback: 0 }
 ]);
 

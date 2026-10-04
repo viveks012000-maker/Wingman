@@ -16,8 +16,12 @@ const PUBLIC_FILES = [
   'terms.html',
   'privacy.html',
   'refund.html',
+  'about.html',
+  'contact.html',
+  'service-delivery.html',
   '404.html',
   'app.js',
+  'payments-client.js',
   'config.js',
   'accessibility.js',
   'supabaseClient.js',
@@ -125,7 +129,10 @@ function writeSecurityFiles() {
   }
 
   const strictCsp = cspFor(false);
-  const appCsp = cspFor(false); // No unsafe-eval needed for new HEIC runtime
+  const appCsp = cspFor(false).replace("https://static.cloudflareinsights.com", "https://static.cloudflareinsights.com https://checkout.razorpay.com")
+    .replace("script-src-elem 'self'", "script-src-elem https://checkout.razorpay.com 'self'")
+    .replace("connect-src 'self'", "connect-src https://api.razorpay.com https://checkout.razorpay.com 'self'")
+    + ' frame-src https://api.razorpay.com https://checkout.razorpay.com;'; // No unsafe-eval
   const security = [
     '/*',
     '  Strict-Transport-Security: max-age=31536000',
@@ -164,6 +171,15 @@ function writeSecurityFiles() {
     `  Content-Security-Policy: ${strictCsp}`,
     '  Cache-Control: no-cache, no-store, must-revalidate',
     '/refund.html',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/about.html',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/contact.html',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/service-delivery.html',
     `  Content-Security-Policy: ${strictCsp}`,
     '  Cache-Control: no-cache, no-store, must-revalidate',
     '/404.html',

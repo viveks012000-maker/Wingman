@@ -8,48 +8,53 @@ const privacy = fs.readFileSync(path.join(__dirname, '..', 'privacy.html'), 'utf
 const terms = fs.readFileSync(path.join(__dirname, '..', 'terms.html'), 'utf8');
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
-const allHtml = [index, refund, privacy, terms];
+const addedPages = ['about.html','contact.html','service-delivery.html'].map(f => fs.readFileSync(path.join(__dirname,'..',f),'utf8'));
+const allHtml = [index, refund, privacy, terms, ...addedPages];
 
 // Payment verification and fail-closed state
-assert.ok(server.includes("if (IS_PROD || process.env.ENABLE_MOCK_PAYMENTS !== 'true')"), 'production payment verification must remain disabled');
-assert.ok(server.includes("Production payment gateway integration pending. Real payment gateway required."), 'payment endpoint must remain fail-closed');
-assert.ok(refund.includes('Paid credit checkout is currently paused/deferred and is not available in production.'), 'refund policy must disclose current payment availability');
-assert.ok(refund.includes('anticipated pricing schedule only'), 'listed future prices must not be presented as a live purchase offer');
-assert.ok(!refund.includes('Users acquire credit bundles through authorized payment gateways'), 'refund page must not claim active paid checkout');
-assert.ok(!refund.includes('secure, immutable logs'), 'refund page must not make an unsupported immutable-log claim');
-assert.ok(refund.includes('If paid checkout is enabled in the future'), 'refund/payment terms must be conditional while checkout is disabled');
+assert.ok(server.includes('razorpayPayments') && !server.includes('ENABLE_MOCK_PAYMENTS'), 'payment routes must use verified provider service, never mock minting');
+assert.ok(refund.includes('Paid credit checkout is currently paused and unavailable in production.'), 'policy must disclose live checkout state');
+assert.ok(refund.includes('final customer prices'), 'policy must show final approved pricing');
+assert.ok(refund.includes('5–7 days or earlier') && !refund.includes('business days'), 'owner calendar-day timeline must be preserved');
+assert.ok(refund.includes('original payment method used for purchase'), 'refund destination must be clear');
+assert.ok(refund.includes('none of the purchased credits') && refund.includes('generally non-refundable'), 'unused and used eligibility must be clear');
+assert.ok(!refund.includes('secure, immutable logs'), 'no unsupported log claims');
 
 // Retention and privacy disclosures
 assert.ok(!privacy.includes('up to ninety (90) days'), 'privacy policy must not promise an unverified exact security-log period');
 assert.ok(!privacy.includes('up to seven (7) years'), 'privacy policy must not promise an unverified exact transaction-retention period');
 assert.ok(privacy.includes('Actual retention can also depend on infrastructure-provider settings.'), 'privacy policy must acknowledge infrastructure retention settings');
 assert.ok(privacy.includes('requirements in force at the relevant time'), 'grievance copy must avoid overclaiming a specific statutory procedure');
-assert.ok(privacy.includes('Paid checkout is currently disabled.'), 'billing privacy language must reflect production payment state');
+assert.ok(privacy.includes('Paid checkout is currently unavailable in production.'), 'billing privacy language must reflect production payment state');
+for (const policy of [privacy, terms]) {
+    assert.ok(policy.includes('Razorpay') && policy.includes('Standard Checkout'), 'policies must explain the prepared provider flow');
+    assert.ok(policy.includes('does not store raw card numbers'), 'policies must disclose raw card-data handling');
+}
+assert.ok(privacy.includes('account-scoped feature history') && privacy.includes('saved feature history'), 'privacy policy must disclose server-side saved feature history');
+assert.ok(privacy.includes('saved bio, icebreaker, screenshot-analysis, and chat-history records'), 'privacy policy must disclose saved feature deletion coverage');
 assert.ok(!/https:\/\/fonts\.googleapis\.com\/css2\?family=/.test(terms), 'terms page must not import an external Google font that production CSP blocks');
 assert.ok(!/https:\/\/fonts\.googleapis\.com\/css2\?family=/.test(privacy), 'privacy page must not import an external Google font that production CSP blocks');
 
-// Operator identity & location locking
+// Verified owner-provided merchant facts, consistently rendered without JavaScript.
 for (const html of allHtml) {
-  assert.ok(!/Naresh/i.test(html), 'Old operator Naresh must not appear in any public HTML');
-  assert.ok(!/Churu/i.test(html), 'Old location Churu must not appear in any public HTML');
-  assert.ok(!/Rajasthan/i.test(html), 'Old state Rajasthan must not appear in any public HTML');
-  assert.ok(!/never expire/i.test(html), 'Absolute "never expire" claims must not appear in any public HTML');
+ assert.ok(!/Pooja|Haridwar|Uttarakhand/.test(html), 'stale identity must be absent');
+ assert.ok(html.includes('Naresh Kumar') && html.includes('Business type: Individual'), 'merchant and business type required');
+ assert.ok(html.includes('Ward No. 6, Sadulpur, Churu, Rajasthan, India – 331023'), 'exact verified address required');
+ assert.ok(html.includes('+91 9079666632') && html.includes('tel:+919079666632'), 'consistent callable support number required');
+ assert.ok(html.includes('support.mywingman@gmail.com'), 'verified support email required');
+ for (const file of ['about','contact','terms','privacy','refund','service-delivery']) assert.ok(html.includes('href="'+file+'.html"'), 'all policy links must exist');
+ assert.ok(!/never expire/i.test(html), 'no absolute expiration claims');
 }
-
-// Pooja as sole operator and Haridwar, Uttarakhand as location
-assert.ok(terms.includes('owned and operated by Pooja'), 'Terms must identify Pooja as operator');
-assert.ok(terms.includes('Haridwar, Uttarakhand, India'), 'Terms must state Haridwar, Uttarakhand, India');
-assert.ok(privacy.includes('Pooja (Operator & Data Fiduciary)'), 'Privacy must identify Pooja as Data Fiduciary');
-assert.ok(privacy.includes('Haridwar, Uttarakhand, India'), 'Privacy must state Haridwar, Uttarakhand, India');
-assert.ok(refund.includes('owned and operated by Pooja, located in Haridwar, Uttarakhand, India'), 'Refund must identify Pooja and Haridwar');
-assert.ok(index.includes('owned and operated by Pooja (Trading as MyWingman). Haridwar, Uttarakhand, India'), 'Index footer must identify Pooja and Haridwar');
 
 // Safe credit expiration language
 assert.ok(terms.includes('Purchased credits do not currently have a scheduled expiration date'), 'Terms must use safe credit expiration wording');
 
 // One-time purchases vs subscriptions
-assert.ok(terms.includes('Credit purchases are one-time payments and do not constitute recurring monthly or annual subscriptions'), 'Terms must clarify one-time purchases');
-assert.ok(refund.includes('Future purchases will consist of one-time credit bundles, not recurring monthly or annual subscriptions'), 'Refund must clarify one-time purchases');
+assert.ok(terms.includes('If paid credit purchases are enabled, they will be one-time payments'), 'Terms must clarify one-time purchases');
+assert.ok(refund.includes('Planned purchases are one-time credit bundles, not recurring monthly or annual subscriptions'), 'Refund must clarify one-time purchases');
+assert.ok(terms.includes('does not connect users with one another') && terms.includes('does not guarantee dating outcomes'), 'Terms must accurately classify Wingman as coaching software rather than a matching service');
+assert.ok(!index.includes('real-world dates') && !index.includes('Match Probability'), 'Landing page must not promise dating outcomes or present fictitious probability scores');
+assert.ok(index.includes('not customer testimonials') && index.includes('Paid checkout is currently unavailable in production'), 'Landing page must label demonstrations and paid checkout status accurately');
 
 // Additional Terms clauses
 assert.ok(terms.includes('ARTICLE XI: OTHER TERMS'), 'Terms must include the additional legal terms article');
@@ -83,6 +88,6 @@ assert.ok(refund.includes('<link rel="canonical" href="https://mywingmanapp.com/
 assert.ok(index.includes('application/ld+json'), 'Index must have JSON-LD structured data');
 assert.ok(index.includes('"@type": "WebSite"'), 'JSON-LD must include WebSite');
 assert.ok(index.includes('"@type": "WebApplication"'), 'JSON-LD must include WebApplication');
-assert.ok(index.includes('"name": "Pooja"'), 'JSON-LD publisher/creator must be Pooja');
+assert.ok(index.includes('"name": "Naresh Kumar"'), 'JSON-LD publisher must reflect verified operator');
 
 console.log('✔ Production legal/privacy/SEO accuracy guard passed.');

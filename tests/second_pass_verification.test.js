@@ -37,16 +37,16 @@ assert.strictEqual(
 
 console.log('✔ Test 2 Passed: Mock auth bypass strictly blocked in production');
 
-// 3. TEST CANONICAL 50 FREE SIGNUP CREDITS & FAIL-CLOSED SEMANTICS IN server.js
+// 3. TEST CANONICAL 20 FREE SIGNUP CREDITS & FAIL-CLOSED SEMANTICS IN server.js
 const serverFile = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8').replace(/\r\n/g, '\n');
 
-assert.strictEqual(serverFile.includes('const INITIAL_FREE_CREDITS = 50;'), true, 'server.js must define INITIAL_FREE_CREDITS = 50');
+assert.strictEqual(serverFile.includes('const INITIAL_FREE_CREDITS = 20;'), true, 'server.js must define INITIAL_FREE_CREDITS = 20');
 assert.strictEqual(serverFile.includes('insert({ id: uid, credits: INITIAL_FREE_CREDITS });'), false, 'getUserCreditsDB must NOT recreate missing profile with 50 credits (Rule 16)');
 
 // Verify Fail-Closed semantics: No direct unsafe fallback on RPC failure in production
 assert.strictEqual(serverFile.includes('Production FAIL-CLOSED: Refuse un-locked non-atomic execution'), true, 'verifyAndDeductCreditsDB must fail-closed on RPC error');
 
-console.log('✔ Test 3 Passed: Canonical 50 signup credits and fail-closed RPC enforcement verified');
+console.log('✔ Test 3 Passed: Canonical 20 signup credits and fail-closed RPC enforcement verified');
 
 // 4. TEST SQL MIGRATION 002 FOR RPCs, LOCKING, CONSTRAINTS & IDEMPOTENCY
 const migrationSql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '002_atomic_credits_and_transactions.sql'), 'utf8').replace(/\r\n/g, '\n');

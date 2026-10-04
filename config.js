@@ -490,3 +490,636 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         scheduleSessionBootstrap(0);
     }, { once: true });
 })();
+
+/**
+ * WINGMAN BILINGUAL CLIENT-SIDE i18n SYSTEM (English + Roman-script Hinglish)
+ * -------------------------------------------------------------------------
+ * - Default: 'en' (English)
+ * - Supported: 'en', 'hinglish'
+ * - Persistence: localStorage['wingman_language'] (fail-safe)
+ * - Roman-script Hinglish only: zero Devanagari Unicode characters
+ */
+(function () {
+    'use strict';
+
+    var STORAGE_KEY = 'wingman_language';
+    var DEFAULT_LANG = 'en';
+
+    var DICTIONARY = {
+        en: {
+            language_label: "Language",
+            language_desc: "AI suggestions & app language",
+            nav_how_it_works: "How It Works",
+            nav_ai_coach: "AI Coach",
+            nav_results: "Examples",
+            nav_pricing: "Pricing",
+            nav_faq: "FAQ",
+            nav_sign_in: "Sign In",
+            nav_launch_app: "Launch App",
+            hero_badge: "AI Dating Conversation & Profile Coaching",
+            hero_title_1: "Dating Chat &",
+            hero_title_2: "Profile AI.",
+            hero_title_3: "Messaging Suggestions.",
+            hero_subtitle: "Analyze chats, draft replies, improve a profile bio, and practice conversations. Coaching only; no user matching or date booking.",
+            hero_cta: "Explore the Tools",
+            tab_screenshot: "Screenshot Analyzer",
+            tab_icebreakers: "Icebreakers",
+            tab_bio_optimizer: "Bio Optimizer",
+            tab_practice: "Practice Partner",
+            tab_saved: "Saved Items",
+            screenshot_desc: "Upload a chat screenshot to get 10 strategic reply options.",
+            icebreakers_desc: "Drop her bio or profile details to generate 10 charismatic openers.",
+            bio_desc: "Generate 10 AI-written profile bio drafts to review and edit.",
+            coach_desc: "Real-time communication drills and unfiltered dating advice with Maeve.",
+            btn_generate_replies: "Generate Replies",
+            btn_generate_openers: "Generate Openers",
+            btn_optimize_bio: "Optimize My Bio",
+            btn_send: "Send",
+            btn_save: "Save",
+            btn_copy: "Copy",
+            btn_copied: "Copied!",
+            settings_title: "System Settings",
+            setting_linguistic_shorthand: "Linguistic Shorthand",
+            setting_linguistic_desc: "Enforce lowercase and casual spacing",
+            setting_emoji_format: "Emoji Formatting",
+            setting_plexus: "Background Plexus Canvas",
+            setting_plexus_desc: "Turn off interactive lines to extend battery life"
+        },
+        hinglish: {
+            language_label: "Language",
+            language_desc: "AI suggestions aur app ki language",
+            nav_how_it_works: "Kaise Kaam Karta Hai",
+            nav_ai_coach: "AI Coach",
+            nav_results: "Examples",
+            nav_pricing: "Pricing",
+            nav_faq: "FAQ",
+            nav_sign_in: "Sign In",
+            nav_launch_app: "Launch App",
+            hero_badge: "AI Dating Chat aur Profile Coaching",
+            hero_title_1: "Dating Chat aur",
+            hero_title_2: "Profile AI.",
+            hero_title_3: "Messaging Suggestions.",
+            hero_subtitle: "Chats analyze karo, replies draft karo, profile bio improve karo aur practice conversations karo. Coaching only; matching ya date booking nahi.",
+            hero_cta: "Tools Dekho",
+            tab_screenshot: "Screenshot Analyzer",
+            tab_icebreakers: "Icebreakers",
+            tab_bio_optimizer: "Bio Optimizer",
+            tab_practice: "Practice Partner",
+            tab_saved: "Saved Items",
+            screenshot_desc: "Chat screenshot upload karo aur 10 strategic reply options pao.",
+            icebreakers_desc: "Uski bio ya profile details daalo aur 10 witty openers generate karo.",
+            bio_desc: "Apni profile ke liye 10 AI-written bio drafts banao, phir unhe review aur edit karo.",
+            coach_desc: "Maeve ke saath real-time chat drills aur dating strategy advice.",
+            btn_generate_replies: "Replies Generate Karo",
+            btn_generate_openers: "Openers Generate Karo",
+            btn_optimize_bio: "Bio Optimize Karo",
+            btn_send: "Bhejo",
+            btn_save: "Save Karo",
+            btn_copy: "Copy",
+            btn_copied: "Copied!",
+            settings_title: "System Settings",
+            setting_linguistic_shorthand: "Linguistic Shorthand",
+            setting_linguistic_desc: "Lowercase aur casual spacing use karo",
+            setting_emoji_format: "Emoji Formatting",
+            setting_plexus: "Background Animation",
+            setting_plexus_desc: "Battery save karne ke liye interactive lines band karo"
+        }
+    };
+
+    var currentLang = DEFAULT_LANG;
+    var listeners = [];
+
+    function safeGetStorage(key) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                return window.localStorage.getItem(key);
+            }
+        } catch (_) {}
+        return null;
+    }
+
+    function safeSetStorage(key, val) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                window.localStorage.setItem(key, val);
+            }
+        } catch (_) {}
+    }
+
+    function canonicalize(lang) {
+        if (!lang || typeof lang !== 'string') return DEFAULT_LANG;
+        var normalized = lang.trim().toLowerCase();
+        if (normalized === 'hinglish' || normalized === 'hi-latn' || normalized === 'hi_latn') {
+            return 'hinglish';
+        }
+        return 'en';
+    }
+
+    function getLanguage() {
+        return currentLang;
+    }
+
+    function t(key, defaultVal) {
+        var dict = DICTIONARY[currentLang] || DICTIONARY.en;
+        if (dict && typeof dict[key] === 'string') {
+            return dict[key];
+        }
+        if (DICTIONARY.en && typeof DICTIONARY.en[key] === 'string') {
+            return DICTIONARY.en[key];
+        }
+        return defaultVal !== undefined ? defaultVal : key;
+    }
+
+    function updateToggleButtonStates() {
+        if (typeof document === 'undefined') return;
+        var buttons = document.querySelectorAll('.lang-toggle-btn');
+        for (var i = 0; i < buttons.length; i++) {
+            var btn = buttons[i];
+            var btnLang = canonicalize(btn.getAttribute('data-lang'));
+            if (btnLang === currentLang) {
+                btn.classList.add('bg-violet-600', 'text-white');
+                btn.classList.remove('text-slate-400');
+                btn.setAttribute('aria-pressed', 'true');
+            } else {
+                btn.classList.remove('bg-violet-600', 'text-white');
+                btn.classList.add('text-slate-400');
+                btn.setAttribute('aria-pressed', 'false');
+            }
+        }
+    }
+
+    function applyTranslations(root) {
+        if (typeof document === 'undefined') return;
+        var container = root || document;
+
+        var textElements = container.querySelectorAll('[data-i18n]');
+        for (var i = 0; i < textElements.length; i++) {
+            var el = textElements[i];
+            var key = el.getAttribute('data-i18n');
+            if (key) {
+                var translated = t(key);
+                if (translated && translated !== key) {
+                    el.textContent = translated;
+                }
+            }
+        }
+
+        var placeholderElements = container.querySelectorAll('[data-i18n-placeholder]');
+        for (var j = 0; j < placeholderElements.length; j++) {
+            var pel = placeholderElements[j];
+            var pkey = pel.getAttribute('data-i18n-placeholder');
+            if (pkey) {
+                var ptrans = t(pkey);
+                if (ptrans && ptrans !== pkey) {
+                    pel.setAttribute('placeholder', ptrans);
+                }
+            }
+        }
+    }
+
+    function setLanguage(newLang) {
+        var validLang = canonicalize(newLang);
+        currentLang = validLang;
+        safeSetStorage(STORAGE_KEY, validLang);
+
+        if (typeof document !== 'undefined' && document.documentElement) {
+            document.documentElement.lang = validLang === 'hinglish' ? 'hi-Latn' : 'en';
+        }
+
+        updateToggleButtonStates();
+        applyTranslations();
+
+        for (var i = 0; i < listeners.length; i++) {
+            try {
+                listeners[i](validLang);
+            } catch (e) {
+                console.error('[i18n listener error]', e);
+            }
+        }
+
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+            try {
+                var evt = new CustomEvent('wingman:languagechange', { detail: { language: validLang } });
+                window.dispatchEvent(evt);
+            } catch (_) {}
+        }
+
+        return validLang;
+    }
+
+    function onLanguageChange(fn) {
+        if (typeof fn === 'function') {
+            listeners.push(fn);
+        }
+    }
+
+    function bindLanguageButtons() {
+        if (typeof document === 'undefined') return;
+        var buttons = document.querySelectorAll('.lang-toggle-btn');
+        for (var i = 0; i < buttons.length; i++) {
+            (function (btn) {
+                if (btn.__wingmanLangBound) return;
+                btn.__wingmanLangBound = true;
+                btn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var targetLang = btn.getAttribute('data-lang');
+                    setLanguage(targetLang);
+                });
+            })(buttons[i]);
+        }
+        updateToggleButtonStates();
+    }
+
+    function init() {
+        var saved = safeGetStorage(STORAGE_KEY);
+        var initial = canonicalize(saved || DEFAULT_LANG);
+        currentLang = initial;
+        if (typeof document !== 'undefined' && document.documentElement) {
+            document.documentElement.lang = initial === 'hinglish' ? 'hi-Latn' : 'en';
+        }
+        bindLanguageButtons();
+        applyTranslations();
+    }
+
+    window.wingmanI18n = {
+        getLanguage: getLanguage,
+        setLanguage: setLanguage,
+        t: t,
+        applyTranslations: applyTranslations,
+        onLanguageChange: onLanguageChange,
+        bindButtons: bindLanguageButtons,
+        canonicalize: canonicalize,
+        init: init
+    };
+
+    if (typeof document !== 'undefined') {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init, { once: true });
+        } else {
+            init();
+        }
+        window.addEventListener('load', bindLanguageButtons, { once: true });
+    }
+})();
+
+/**
+ * WINGMAN CLIENT-SIDE DOMESTIC PRICING (INR)
+ * -------------------------------------------------------------------------
+ * - Default: 'INR'
+ * - Display currencies: USD and INR; Razorpay collection remains INR-only
+ * - Persistence: localStorage['wingman_setting_currency'] (safe fail-soft)
+ * - Single source of truth for presentation across index.html & app.html
+ */
+(function () {
+    'use strict';
+
+    var STORAGE_KEY = 'wingman_setting_currency';
+    var DEFAULT_CURRENCY = 'INR';
+    var SUPPORTED_CURRENCIES = ['USD', 'INR'];
+
+    var PRICING_CATALOG = {
+        starter: {
+            id: 'starter',
+            name: 'Starter Pack',
+            modalBundleName: 'Starter Bundle',
+            credits: 250,
+            prices: {
+                USD: {
+                    amountMinor: 499,
+                    regularMinor: null,
+                    formattedSale: '$4.99',
+                    formattedRegular: null,
+                    formattedPerCredit: '2¢ per credit',
+                    formattedSaving: null,
+                    ctaPrice: '$4.99'
+                },
+                INR: {
+                    amountMinor: 44900,
+                    regularMinor: null,
+                    formattedSale: '₹449',
+                    formattedRegular: null,
+                    formattedPerCredit: '₹1.80 per credit',
+                    formattedSaving: null,
+                    ctaPrice: '₹449'
+                }
+            }
+        },
+        pro: {
+            id: 'pro',
+            name: 'Pro Pack',
+            modalBundleName: 'Pro Bundle',
+            credits: 600,
+            prices: {
+                USD: {
+                    amountMinor: 999,
+                    regularMinor: null,
+                    formattedSale: '$9.99',
+                    formattedRegular: null,
+                    formattedPerCredit: '1.6¢ per credit',
+                    formattedSaving: null,
+                    ctaPrice: '$9.99'
+                },
+                INR: {
+                    amountMinor: 89900,
+                    regularMinor: null,
+                    formattedSale: '₹899',
+                    formattedRegular: null,
+                    formattedPerCredit: '₹1.50 per credit',
+                    formattedSaving: null,
+                    ctaPrice: '₹899'
+                }
+            }
+        },
+        elite: {
+            id: 'elite',
+            name: 'Elite Pack',
+            modalBundleName: 'Elite Bundle',
+            credits: 3000,
+            prices: {
+                USD: {
+                    amountMinor: 1999,
+                    regularMinor: null,
+                    formattedSale: '$19.99',
+                    formattedRegular: null,
+                    formattedPerCredit: '0.6¢ per credit',
+                    formattedSaving: null,
+                    ctaPrice: '$19.99'
+                },
+                INR: {
+                    amountMinor: 179900,
+                    regularMinor: null,
+                    formattedSale: '₹1,799',
+                    formattedRegular: null,
+                    formattedPerCredit: '₹0.60 per credit',
+                    formattedSaving: null,
+                    ctaPrice: '₹1,799'
+                }
+            }
+        },
+        limited: {
+            id: 'limited',
+            name: 'VIP Pack',
+            modalBundleName: 'VIP Bundle',
+            credits: 100000,
+            prices: {
+                USD: {
+                    amountMinor: 4900,
+                    regularMinor: null,
+                    formattedSale: '$49',
+                    formattedRegular: null,
+                    formattedPerCredit: '0.049¢ per credit',
+                    formattedSavingLanding: null,
+                    formattedSavingApp: null,
+                    ctaPrice: '$49',
+                    buttonText: 'View VIP Bundle'
+                },
+                INR: {
+                    amountMinor: 449900,
+                    regularMinor: null,
+                    formattedSale: '₹4,499',
+                    formattedRegular: null,
+                    formattedPerCredit: '₹0.045 per credit',
+                    formattedSavingLanding: null,
+                    formattedSavingApp: null,
+                    ctaPrice: '₹4,499',
+                    buttonText: 'View VIP Bundle'
+                }
+            }
+        }
+    };
+
+    var currentCurrency = DEFAULT_CURRENCY;
+    var listeners = [];
+
+    function safeGetStorage(key) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                return window.localStorage.getItem(key);
+            }
+        } catch (_) {}
+        return null;
+    }
+
+    function safeSetStorage(key, val) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                window.localStorage.setItem(key, val);
+            }
+        } catch (_) {}
+    }
+
+    function canonicalize(curr) {
+        if (!curr || typeof curr !== 'string') return DEFAULT_CURRENCY;
+        var normalized = curr.trim().toUpperCase();
+        if (SUPPORTED_CURRENCIES.indexOf(normalized) !== -1) return normalized;
+        return DEFAULT_CURRENCY;
+    }
+
+    function getCurrency() {
+        return currentCurrency;
+    }
+
+    function getPlan(planId) {
+        return PRICING_CATALOG[planId] || null;
+    }
+
+    function getPlanPricing(planId, curr) {
+        var plan = getPlan(planId);
+        if (!plan) return null;
+        var c = canonicalize(curr || currentCurrency);
+        return plan.prices[c] || plan.prices.INR;
+    }
+
+    function formatPlanSale(planId, curr) {
+        var pricing = getPlanPricing(planId, curr);
+        return pricing ? pricing.formattedSale : '';
+    }
+
+    function getPlanPriceNumber(planId, curr) {
+        var pricing = getPlanPricing(planId, curr);
+        if (!pricing) return 0;
+        return pricing.amountMinor / 100;
+    }
+
+    function getCredits(planId) {
+        var plan = getPlan(planId);
+        return plan ? plan.credits : 0;
+    }
+
+    function updateToggleButtonStates() {
+        if (typeof document === 'undefined') return;
+        var buttons = document.querySelectorAll('.currency-toggle-btn');
+        for (var i = 0; i < buttons.length; i++) {
+            var btn = buttons[i];
+            var btnCurr = canonicalize(btn.getAttribute('data-currency'));
+            if (btnCurr === currentCurrency) {
+                btn.classList.add('bg-violet-600', 'text-white', 'shadow-sm');
+                btn.classList.remove('text-slate-400');
+                btn.setAttribute('aria-pressed', 'true');
+            } else {
+                btn.classList.remove('bg-violet-600', 'text-white', 'shadow-sm');
+                btn.classList.add('text-slate-400');
+                btn.setAttribute('aria-pressed', 'false');
+            }
+        }
+    }
+
+    function updatePricingDisplay(root) {
+        if (typeof document === 'undefined') return;
+        var container = root || document;
+
+        var priceElements = container.querySelectorAll('[data-plan][data-price-role]');
+        for (var i = 0; i < priceElements.length; i++) {
+            var el = priceElements[i];
+            var planId = el.getAttribute('data-plan');
+            var role = el.getAttribute('data-price-role');
+            var pricing = getPlanPricing(planId, currentCurrency);
+            if (!pricing) continue;
+
+            if (role === 'sale') {
+                el.textContent = pricing.formattedSale;
+            } else if (role === 'regular') {
+                el.textContent = pricing.formattedRegular || '';
+                el.hidden = !pricing.formattedRegular;
+                el.style.display = el.hidden ? 'none' : '';
+            } else if (role === 'per-credit') {
+                el.textContent = pricing.formattedPerCredit;
+            } else if (role === 'saving') {
+                var savingText;
+                if (planId === 'limited') {
+                    // Distinguish landing vs app modal if different copy is used
+                    var isLanding = !!el.closest('#pricing');
+                    savingText = isLanding ? pricing.formattedSavingLanding : pricing.formattedSavingApp;
+                } else {
+                    savingText = pricing.formattedSaving;
+                }
+                el.textContent = savingText || '';
+                el.hidden = !savingText;
+                el.style.display = el.hidden ? 'none' : '';
+            } else if (role === 'cta-price' || role === 'button-text') {
+                el.textContent = pricing.buttonText || ('Acquire ' + planId + ' - ' + pricing.formattedSale);
+            } else if (role === 'button-price') {
+                el.textContent = pricing.ctaPrice || pricing.formattedSale;
+            }
+        }
+
+        // Also update any radio inputs with data-price attribute in app.html
+        var radios = container.querySelectorAll("input[name='pricing_tier']");
+        for (var r = 0; r < radios.length; r++) {
+            var radio = radios[r];
+            var rPlan = radio.value;
+            var rPricing = getPlanPricing(rPlan, currentCurrency);
+            if (rPricing) {
+                radio.setAttribute('data-price', (rPricing.amountMinor / 100).toFixed(2));
+                radio.setAttribute('data-price-formatted', rPricing.formattedSale);
+                radio.setAttribute('data-currency', currentCurrency);
+            }
+        }
+
+        // Synchronize modal confirm purchase button text if present
+        var purchaseBtnTextEl = document.getElementById('purchaseBtnText');
+        if (purchaseBtnTextEl) {
+            var activeRadio = document.querySelector("input[name='pricing_tier']:checked");
+            var selectedTierValue = activeRadio ? activeRadio.value : 'elite';
+            var selectedPlan = getPlan(selectedTierValue);
+            var selectedPricing = getPlanPricing(selectedTierValue, currentCurrency);
+            if (selectedPlan && selectedPricing) {
+                var bundleLabel = selectedPlan.modalBundleName || 'Bundle';
+                purchaseBtnTextEl.textContent = 'Paid checkout unavailable';
+                if (window.wingmanPayments) window.wingmanPayments.sync();
+            }
+        }
+    }
+
+    function setCurrency(newCurrency) {
+        var valid = canonicalize(newCurrency);
+        currentCurrency = valid;
+        safeSetStorage(STORAGE_KEY, valid);
+
+        updateToggleButtonStates();
+        updatePricingDisplay();
+
+        for (var i = 0; i < listeners.length; i++) {
+            try {
+                listeners[i](valid);
+            } catch (e) {
+                console.error('[currency listener error]', e);
+            }
+        }
+
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+            try {
+                var evt = new CustomEvent('wingman:currencychange', { detail: { currency: valid } });
+                window.dispatchEvent(evt);
+            } catch (_) {}
+        }
+
+        return valid;
+    }
+
+    function onCurrencyChange(fn) {
+        if (typeof fn === 'function') {
+            listeners.push(fn);
+        }
+    }
+
+    function bindCurrencyButtons() {
+        if (typeof document === 'undefined') return;
+        var buttons = document.querySelectorAll('.currency-toggle-btn');
+        for (var i = 0; i < buttons.length; i++) {
+            (function (btn) {
+                if (btn.__wingmanCurrencyBound) return;
+                btn.__wingmanCurrencyBound = true;
+                btn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var targetCurr = btn.getAttribute('data-currency');
+                    setCurrency(targetCurr);
+                });
+            })(buttons[i]);
+        }
+        updateToggleButtonStates();
+    }
+
+    function init() {
+        var saved = safeGetStorage(STORAGE_KEY);
+        var initial = canonicalize(saved || DEFAULT_CURRENCY);
+        currentCurrency = initial;
+        bindCurrencyButtons();
+        updatePricingDisplay();
+    }
+
+    window.WINGMAN_PRICING_CATALOG = PRICING_CATALOG;
+    window.wingmanCurrency = {
+        getCurrency: getCurrency,
+        setCurrency: setCurrency,
+        canonicalize: canonicalize,
+        getPlan: getPlan,
+        getPlanPricing: getPlanPricing,
+        formatPlanSale: formatPlanSale,
+        getPlanPriceNumber: getPlanPriceNumber,
+        getCredits: getCredits,
+        updatePricingDisplay: updatePricingDisplay,
+        onCurrencyChange: onCurrencyChange,
+        bindButtons: bindCurrencyButtons,
+        catalog: PRICING_CATALOG,
+        supportedCurrencies: SUPPORTED_CURRENCIES,
+        defaultCurrency: DEFAULT_CURRENCY,
+        storageKey: STORAGE_KEY,
+        init: init
+    };
+
+    if (typeof document !== 'undefined') {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init, { once: true });
+        } else {
+            init();
+        }
+        window.addEventListener('load', function () {
+            bindCurrencyButtons();
+            updatePricingDisplay();
+        }, { once: true });
+    }
+})();
+
