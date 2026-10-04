@@ -42,10 +42,12 @@ assert.ok(bioMarketLock('auto').includes(prompts.TARGET_MARKET_LOCK));
 assert.ok(bioMarketLock('auto').includes(prompts.HINGLISH_BIO_TARGET_MARKET_LOCK));
 const server = read('server.js');
 for (const [variable, feature] of [['optionsList','analyze'], ['cleanedOptions','icebreaker'], ['optionsList','optimize'], ['hotlineAdvice','chat_hotline'], ['replyText','chat_roleplay'], ['reviewJson','simulator_review']]) {
-    assert.ok(server.includes(`repairHinglishDevanagari(${variable}, "${feature}")`));
+    assert.ok(server.includes(`repairHinglishDevanagari(${variable}, "${feature}", language,`));
     assert.ok(server.includes(`if (containsDevanagari(${variable}))`), `${feature}: script safeguard must include AUTO`);
 }
 assert.ok(server.includes('releaseCreditsDB(req, reqId'));
+assert.ok(server.includes('inferLocalLanguage(userTextRaw, historyArr)'), 'feedback follows user language');
+assert.ok(server.includes("languageDirective(language, repairFeature)"), 'script repair respects original AUTO/legacy mode');
 assert.ok(server.includes("if (language === 'en') {"));
 assert.ok(server.includes("wrapUntrustedUserData('bio_language_source', originalBioText)"));
 for (const file of ['app.html','index.html']) assert.ok(!/lang-toggle-btn|data-lang=|aria-label="Language Selector"/.test(read(file)), file);

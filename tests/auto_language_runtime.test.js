@@ -150,6 +150,19 @@ async function run() {
    assert.ok(!/[\u0900-\u097F]/.test(repaired.body.reply));
   }
  }
+ calls.length=0;queuedOutputs=['क्या करूँ','What should I say next?'];
+ const englishRepair=await request(app).post('/api/chat').set({...AUTH,'x-test-user-id':'11111111-1111-1111-1111-111111111111'}).send({language:'en',message:en,idempotencyKey:'english_script_repair'});
+ assert.strictEqual(englishRepair.status,200);
+ assert.strictEqual(calls.length,2);
+ assert.ok(calls[1].messages[0].content.includes('Write all generated response fields in English'));
+ assert.ok(calls[1].messages[1].content.includes(en),'repair receives original source');
+ assert.ok(calls[1].messages[1].content.includes('user_data_'),'repair source remains untrusted');
+ assert.strictEqual(englishRepair.body.reply,'what should i say next?');
+ calls.length=0;stubAdmin.__state.rpcCalls.length=0;
+ queuedOutputs=[JSON.stringify({options:Array.from({length:10},()=> 'क्या करूँ')}),JSON.stringify({options:['tum batao kya karna hai']})];
+ const wrongCount=await request(app).post('/api/analyze').set({...AUTH,'x-test-user-id':'22222222-2222-2222-2222-222222222222'}).send({languageMode:'auto',messages:[{role:'user',content:hi}],idempotencyKey:'wrong_repair_count'});
+ assert.ok(wrongCount.status>=400,'repair cannot silently change output count');
+ assert.strictEqual(stubAdmin.__state.rpcCalls.filter(call=>call.name==='release_credits').length,1);
  console.log('AUTO runtime: 36 source cases, legacy, OCR and repair/refund checks passed (mock provider, no real credits)');
  process.exit(0);
 }
