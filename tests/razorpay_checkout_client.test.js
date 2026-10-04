@@ -3,6 +3,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const root = path.join(__dirname,'..');
+const landing = fs.readFileSync(path.join(root,'index.html'),'utf8');
+assert(!landing.includes('shortly after uploading'));
+assert(!landing.includes('Encrypted Local Buffers'));
+assert(landing.includes('provider retention are explained in our Privacy Policy'));
 async function main() {
     // Load fixed repository modules normally; never evaluate file text as code.
     global.window = { addEventListener() {} };
