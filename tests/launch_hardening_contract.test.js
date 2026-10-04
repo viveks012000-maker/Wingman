@@ -10,6 +10,13 @@ const buildWorkflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'b
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const launchDoc = fs.readFileSync(path.join(root, 'docs', 'LAUNCH_HARDENING.md'), 'utf8');
 const recoveryDoc = fs.readFileSync(path.join(root, 'docs', 'DISASTER_RECOVERY.md'), 'utf8');
+const artifactBuilder = fs.readFileSync(path.join(root, 'scripts', 'build-netlify-dist.js'), 'utf8').replace(/\r\n/g, '\n');
+
+for (const route of ['/about', '/contact', '/service-delivery']) {
+  for (const suffix of ['', '.html']) {
+    assert.ok(artifactBuilder.includes(`'${route}${suffix}',\n    \`  Content-Security-Policy: \${strictCsp}\`,\n    '  Cache-Control: no-cache, no-store, must-revalidate'`), `${route}${suffix} must receive the same strict CSP and revalidation headers`);
+  }
+}
 
 assert.equal(packageJson.scripts['build:production'], 'npm run build:netlify');
 assert.equal(packageJson.scripts['verify:migrations'], 'node tests/migration_replay.test.js');
