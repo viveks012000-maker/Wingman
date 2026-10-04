@@ -3968,6 +3968,10 @@ STRICT LAWS:
             cleanText = stripDelimitedSegments(cleanText, "<think>", "</think>");
             cleanText = stripDelimitedSegments(cleanText, "```json", "```");
             cleanText = stripDelimitedSegments(cleanText, "```", "```");
+            if (sender !== "user") {
+                cleanText = cleanText.replace(/<\/?user_?data[0-9a-zA-Z_-]*(\s+[^>]*)?>/gi, "");
+                cleanText = cleanText.replace(/\blabel=["'][^"']*["']/gi, "");
+            }
             cleanText = cleanText.replace(/[\{\}\[\]]/g, "");
             cleanText = cleanText.replace(/[\#\*\_\|\`\>]/g, "");
             cleanText = cleanText.replace(/^\s*[\-\*]\s+/gm, "• ");
@@ -4257,7 +4261,9 @@ STRICT LAWS:
             if (chatResp.ok) {
                 const chatData = await chatResp.json();
                 if (chatData && chatData.reply) {
-                    const aiReply = chatData.reply;
+                    const aiReply = typeof chatData.reply === 'string'
+                        ? chatData.reply.replace(/<\/?user_?data[0-9a-zA-Z_-]*(\s+[^>]*)?>/gi, '').replace(/\blabel=["'][^"']*["']/gi, '').trim()
+                        : chatData.reply;
                     const updatedBal = typeof chatData.credits === 'number' ? chatData.credits : (typeof chatData.creditsRemaining === 'number' ? chatData.creditsRemaining : null);
                     if (updatedBal !== null) {
                         window.updateUICredits(updatedBal);
