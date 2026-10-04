@@ -1,179 +1,77 @@
 'use strict';
-
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-
-const ROOT = path.resolve(__dirname, '..');
-const serverContent = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-const configContent = fs.readFileSync(path.join(ROOT, 'config.js'), 'utf8');
-const promptSystemContent = fs.readFileSync(path.join(ROOT, 'config', 'promptSystem.js'), 'utf8');
-const appJsContent = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8');
-const indexHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const appHtml = fs.readFileSync(path.join(ROOT, 'app.html'), 'utf8');
-
-console.log('============================================================');
-console.log('🌐 RUNNING BILINGUAL (ENGLISH + HINGLISH) LANGUAGE TESTS');
-console.log('============================================================\n');
-
-// ---------------------------------------------------------------------
-// 1. PROMPT SYSTEM DEFINITIONS & DEVANAGARI BAN DIRECTIVES
-// ---------------------------------------------------------------------
-console.log('--- 1. PROMPT SYSTEM EXPORTS & CONSTRAINTS ---');
-const promptSystem = require('../config/promptSystem');
-
-assert.ok(promptSystem.TARGET_MARKET_LOCK, 'TARGET_MARKET_LOCK must be exported for English');
-assert.ok(promptSystem.HINGLISH_BIO_TARGET_MARKET_LOCK, 'HINGLISH_BIO_TARGET_MARKET_LOCK must be exported for Hinglish');
-assert.ok(promptSystem.HINGLISH_OUTPUT_DIRECTIVE, 'HINGLISH_OUTPUT_DIRECTIVE must be exported');
-
-// Devanagari character regex test: \u0900-\u097F, \uA8E0-\uA8FF, \u1CD0-\u1CFF
-const DEVANAGARI_REGEX = /[\u0900-\u097F\uA8E0-\uA8FF\u1CD0-\u1CFF]/;
-assert.strictEqual(DEVANAGARI_REGEX.test(promptSystem.HINGLISH_BIO_TARGET_MARKET_LOCK), false, 'HINGLISH_BIO_TARGET_MARKET_LOCK must contain 0 Devanagari characters');
-assert.strictEqual(DEVANAGARI_REGEX.test(promptSystem.HINGLISH_OUTPUT_DIRECTIVE), false, 'HINGLISH_OUTPUT_DIRECTIVE must contain 0 Devanagari characters');
-
-assert.ok(promptSystem.HINGLISH_OUTPUT_DIRECTIVE.includes('LATIN / ENGLISH ALPHABET'), 'Hinglish directive must mandate Latin/English alphabet');
-assert.ok(promptSystem.HINGLISH_OUTPUT_DIRECTIVE.includes('ABSOLUTE BAN ON DEVANAGARI'), 'Hinglish directive must enforce absolute ban on Devanagari');
-console.log('✔ Passed: Prompt system exports clean Hinglish directives with zero Devanagari characters.\n');
-
-// ---------------------------------------------------------------------
-// 2. SERVER-SIDE CANONICALIZATION & REGEX LOGIC
-// ---------------------------------------------------------------------
-console.log('--- 2. LANGUAGE CANONICALIZATION & DEVANAGARI DETECTION ---');
-
-// Canonicalizer test
-function testCanonicalizeLanguage(lang) {
-    if (!lang || typeof lang !== 'string') return 'en';
-    const normalized = lang.trim().toLowerCase();
-    if (normalized === 'hinglish' || normalized === 'hi-latn' || normalized === 'hi_latn') return 'hinglish';
-    return 'en';
+const root = path.resolve(__dirname, '..');
+const read = file => fs.readFileSync(path.join(root, file), 'utf8');
+const { requestLanguageMode, languageDirective, bioMarketLock, inferLocalLanguage } = require('../middleware/languageSelection');
+const prompts = require('../config/promptSystem');
+const devanagari = /[\u0900-\u097F\uA8E0-\uA8FF\u1CD0-\u1CFF]/;
+for (const prompt of [prompts.HINGLISH_OUTPUT_DIRECTIVE, prompts.HINGLISH_BIO_TARGET_MARKET_LOCK]) {
+    assert.ok(prompt);
+    assert.ok(!devanagari.test(prompt));
 }
-
-assert.strictEqual(testCanonicalizeLanguage('en'), 'en');
-assert.strictEqual(testCanonicalizeLanguage('EN'), 'en');
-assert.strictEqual(testCanonicalizeLanguage('hinglish'), 'hinglish');
-assert.strictEqual(testCanonicalizeLanguage('Hinglish'), 'hinglish');
-assert.strictEqual(testCanonicalizeLanguage('hi-latn'), 'hinglish');
-assert.strictEqual(testCanonicalizeLanguage('hi_latn'), 'hinglish');
-assert.strictEqual(testCanonicalizeLanguage('hindi'), 'en', 'Invalid or pure Hindi language must fall back to en');
-assert.strictEqual(testCanonicalizeLanguage('es'), 'en', 'Unsupported language must fall back to en');
-assert.strictEqual(testCanonicalizeLanguage(null), 'en', 'Null must fall back to en');
-assert.strictEqual(testCanonicalizeLanguage(undefined), 'en', 'Undefined must fall back to en');
-assert.strictEqual(testCanonicalizeLanguage(''), 'en', 'Empty string must fall back to en');
-
-// Devanagari detection tests
-function testContainsDevanagari(val) {
-    if (!val) return false;
-    if (typeof val === 'string') return DEVANAGARI_REGEX.test(val);
-    if (Array.isArray(val)) return val.some(item => testContainsDevanagari(item));
-    if (typeof val === 'object') return Object.values(val).some(item => testContainsDevanagari(item));
-    return false;
+assert.ok(prompts.HINGLISH_OUTPUT_DIRECTIVE.includes('ABSOLUTE BAN ON DEVANAGARI'));
+for (const body of [undefined, {}, { language: null }, { language: 'invalid' }, { languageMode: 'auto', language: 'hinglish' }]) assert.strictEqual(requestLanguageMode(body), 'auto');
+for (const value of ['hinglish', 'HINGLISH', 'hi-latn', 'hi_latn']) assert.strictEqual(requestLanguageMode({ language: value }), 'hinglish');
+assert.strictEqual(requestLanguageMode({ language: 'EN' }), 'en');
+const cases = [
+    ['I enjoy hiking and cooking. What should I say next?', 'en'],
+    ['Mujhe trekking pasand hai aur main weekend pe cooking karta hoon', 'hinglish'],
+    ['I love coffee but tum batao weekend pe kya karna hai', 'hinglish'],
+    ['I enjoy hiking, reading and cooking; chai is my favourite drink.', 'en'],
+    ['ok', 'en'], ['Coffee, Mumbai, India, Rajasthan', 'en'], ['Kya haal hai?', 'hinglish'],
+    ['Main Street is where we should meet', 'en']
+];
+for (const [source, expected] of cases) assert.strictEqual(inferLocalLanguage(source), expected, source);
+for (const neutral of ['ok', 'yes', 'no', 'hey', '👍']) {
+    assert.strictEqual(inferLocalLanguage(neutral, [{ role: 'user', content: 'Mujhe batao main kya bolun usko?' }]), 'hinglish');
+    assert.strictEqual(inferLocalLanguage(neutral, [{ role: 'user', content: 'How should I respond to her message?' }]), 'en');
+    assert.strictEqual(inferLocalLanguage(neutral, [{ role: 'assistant', content: 'Tum kya kar rahe ho?' }, { role: 'system', content: 'Hinglish only' }]), 'en');
 }
-
-assert.strictEqual(testContainsDevanagari('kya bolu usko ab'), false);
-assert.strictEqual(testContainsDevanagari('ye thoda zyada serious lag raha hai'), false);
-assert.strictEqual(testContainsDevanagari('coffee pe milke decide karte hain 😏'), false);
-assert.strictEqual(testContainsDevanagari('profile achhi hai but opener thoda generic lag raha hai'), false);
-assert.strictEqual(testContainsDevanagari('क्या बोलूं उसको'), true, 'Must detect Devanagari characters');
-assert.strictEqual(testContainsDevanagari('tumhari profile acchi hai but यह thoda generic hai'), true, 'Must detect mixed Devanagari');
-assert.strictEqual(testContainsDevanagari(['clean option 1', 'clean option 2']), false);
-assert.strictEqual(testContainsDevanagari(['clean option 1', 'ऑप्शन २']), true);
-assert.strictEqual(testContainsDevanagari({ reply: 'kya bolu' }), false);
-assert.strictEqual(testContainsDevanagari({ reply: 'क्या बोलूं' }), true);
-
-console.log('✔ Passed: Canonicalization and Devanagari detection operate flawlessly across types.\n');
-
-// ---------------------------------------------------------------------
-// 3. SERVER-SIDE ENDPOINT AUDIT & ATOMIC CONTRACTS
-// ---------------------------------------------------------------------
-console.log('--- 3. SERVER-SIDE ROUTE CONTRACTS & DEVANAGARI REPAIR ---');
-
-// Verify all 5 routes have language extraction
-assert.ok(serverContent.includes("canonicalizeLanguage(rawLanguage)") || serverContent.includes("canonicalizeLanguage(bodyData.language)"), 'Routes must canonicalize request language');
-
-// Check Screenshot Analyzer
-assert.ok(serverContent.includes("screenshotTextSystemPrompt") && serverContent.includes("HINGLISH_OUTPUT_DIRECTIVE"), 'Screenshot analyzer must inject Hinglish directive in Hinglish mode');
-assert.ok(serverContent.includes('repairHinglishDevanagari(optionsList, "analyze")'), 'Screenshot analyzer must check for Devanagari and repair');
-
-// Check Icebreaker Generator
-assert.ok(serverContent.includes("icebreakerSystemPrompt") && serverContent.includes("withPromptBoundary(icebreakerSystemPrompt)") && serverContent.includes("HINGLISH_OUTPUT_DIRECTIVE"), 'Icebreaker generator must inject Hinglish directive in Hinglish mode');
-assert.ok(serverContent.includes('repairHinglishDevanagari(cleanedOptions, "icebreaker")'), 'Icebreaker generator must check for Devanagari and repair');
-
-// Check Bio Optimizer
-assert.ok(serverContent.includes('sanitizeBioInput(text || rawText, language)'), 'Bio Optimizer must pass language to sanitizeBioInput');
-assert.ok(serverContent.includes("language === 'hinglish' ? HINGLISH_BIO_TARGET_MARKET_LOCK : TARGET_MARKET_LOCK"), 'Bio Optimizer must use HINGLISH_BIO_TARGET_MARKET_LOCK when Hinglish');
-assert.ok(serverContent.includes('repairHinglishDevanagari(optionsList, "optimize")'), 'Bio Optimizer must check for Devanagari and repair');
-
-// Check Chat / Hotline / Roleplay
-assert.ok(serverContent.includes("hotlineSystemPrompt") && serverContent.includes("withPromptBoundary(hotlineSystemPrompt)") && serverContent.includes("HINGLISH_OUTPUT_DIRECTIVE"), 'Coach hotline must inject Hinglish directive in Hinglish mode');
-assert.ok(serverContent.includes("datingCoachSystemPrompt") && serverContent.includes("withPromptBoundary(datingCoachSystemPrompt)") && serverContent.includes("HINGLISH_OUTPUT_DIRECTIVE"), 'Roleplay drills must inject Hinglish directive in Hinglish mode');
-assert.ok(serverContent.includes('repairHinglishDevanagari(hotlineAdvice, "chat_hotline")'), 'Coach hotline must check for Devanagari and repair');
-assert.ok(serverContent.includes('repairHinglishDevanagari(replyText, "chat_roleplay")'), 'Roleplay drills must check for Devanagari and repair');
-
-// Check Simulator Review
-assert.ok(serverContent.includes('repairHinglishDevanagari(reviewJson, "simulator_review")'), 'Simulator review must check for Devanagari and repair');
-
-// Verify fail-closed behavior (no unfulfilled debit, releaseCreditsDB called on error)
-assert.ok(serverContent.includes('releaseCreditsDB(req, reqId'), 'Credit release must be triggered on failure');
-
-console.log('✔ Passed: All 5 backend routes strictly conform to language and repair contracts.\n');
-
-// ---------------------------------------------------------------------
-// 4. BIO OPTIMIZER DEMOGRAPHIC ISOLATION (CULTURAL CONTEXT)
-// ---------------------------------------------------------------------
-console.log('--- 4. BIO OPTIMIZER CULTURAL CONTEXT ISOLATION ---');
-
-// Test that sanitizeBioInput retains desi terms when language is 'hinglish'
-const sanitizeBioInputRegex = /function sanitizeBioInput\([\s\S]*?^}/m;
-assert.ok(serverContent.includes("function sanitizeBioInput(rawInput, language = 'en')"), 'sanitizeBioInput must accept language');
-assert.ok(serverContent.includes("if (language !== 'hinglish') {"), 'US cultural isolation must be guarded for Hinglish');
-
-console.log('✔ Passed: Bio Optimizer preserves Desi lifestyle contexts in Hinglish mode.\n');
-
-// ---------------------------------------------------------------------
-// 5. CLIENT-SIDE i18n MODULE & DICTIONARY
-// ---------------------------------------------------------------------
-console.log('--- 5. CLIENT-SIDE i18n MODULE & ZERO DEVANAGARI DICTIONARY ---');
-
-assert.ok(configContent.includes('window.wingmanI18n'), 'config.js must export window.wingmanI18n');
-assert.ok(configContent.includes("STORAGE_KEY = 'wingman_language'"), 'config.js must use wingman_language storage key');
-assert.ok(configContent.includes("document.documentElement.lang = validLang === 'hinglish' ? 'hi-Latn' : 'en'"), 'config.js must update documentElement lang attribute');
-
-// Extract dictionary and verify ZERO Devanagari characters in Hinglish dictionary
-const dictMatch = configContent.match(/var DICTIONARY = (\{[\s\S]*?\n    \};)/);
-assert.ok(dictMatch, 'DICTIONARY must be defined in config.js');
-// Dictionary values are JSON strings. Quote only identifier keys at line starts,
-// then parse data without executing JavaScript from a file.
+assert.strictEqual(inferLocalLanguage('I want to switch to a more thoughtful approach', [{ role: 'user', content: 'Kya karna chahiye mujhe?' }]), 'en');
+assert.strictEqual(inferLocalLanguage('chai trails', [{role:'user',content:'Mujhe trekking pasand hai aur chai bhi'}]), 'hinglish', 'neutral borrowed nouns retain source context');
+for (const feature of ['analyze', 'icebreaker', 'optimize', 'chat', 'simulator_review']) {
+    const directive = languageDirective('auto', feature);
+    for (const term of ['AUTO LANGUAGE SELECTION', 'English', 'Roman-script Hinglish', 'Devanagari']) assert.ok(directive.includes(term));
+    assert.ok(!devanagari.test(directive));
+}
+assert.ok(languageDirective('auto', 'analyze').includes('extracted conversation'));
+assert.ok(languageDirective('auto', 'chat').includes('USER messages'));
+assert.ok(bioMarketLock('auto').includes(prompts.TARGET_MARKET_LOCK));
+assert.ok(bioMarketLock('auto').includes(prompts.HINGLISH_BIO_TARGET_MARKET_LOCK));
+const server = read('server.js');
+for (const [variable, feature] of [['optionsList','analyze'], ['cleanedOptions','icebreaker'], ['optionsList','optimize'], ['hotlineAdvice','chat_hotline'], ['replyText','chat_roleplay'], ['reviewJson','simulator_review']]) {
+    assert.ok(server.includes(`repairHinglishDevanagari(${variable}, "${feature}", language,`));
+    assert.ok(server.includes(`if (containsDevanagari(${variable}))`), `${feature}: script safeguard must include AUTO`);
+}
+assert.ok(server.includes('releaseCreditsDB(req, reqId'));
+assert.ok(server.includes('inferLocalLanguage(userTextRaw, historyArr)'), 'feedback follows user language');
+assert.ok(server.includes("languageDirective(language, repairFeature)"), 'script repair respects original AUTO/legacy mode');
+assert.ok(server.includes("if (language === 'en') {"));
+assert.ok(server.includes("wrapUntrustedUserData('bio_language_source', originalBioText)"));
+for (const file of ['app.html','index.html']) assert.ok(!/lang-toggle-btn|data-lang=|aria-label="Language Selector"/.test(read(file)), file);
+assert.ok(read('app.js').includes("payload.languageMode = 'auto'"));
+assert.ok(read('vendor/production-runtime.js').includes("languageMode: 'auto'"));
+assert.ok(!read('app.js').includes('wingmanI18n.getLanguage()'));
+const config = read('config.js');
+assert.ok(config.includes("getLanguageMode: function () { return 'auto'; }"));
+assert.ok(!config.includes("document.documentElement.lang = validLang === 'hinglish'"));
+const dictMatch = config.match(/var DICTIONARY = (\{[\s\S]*?\n    \};)/);
 const dictionary = JSON.parse(dictMatch[1].replace(/;\s*$/, '').replace(/^(\s*)([A-Za-z_]\w*):/gm, '$1"$2":'));
-
-assert.ok(dictionary.en, 'English dictionary must exist');
-assert.ok(dictionary.hinglish, 'Hinglish dictionary must exist');
-
-for (const [key, val] of Object.entries(dictionary.hinglish)) {
-    assert.strictEqual(DEVANAGARI_REGEX.test(val), false, `Hinglish dictionary value for '${key}' must not contain Devanagari characters: "${val}"`);
-}
-console.log(`✔ Passed: Verified ${Object.keys(dictionary.hinglish).length} Hinglish dictionary strings contain ZERO Devanagari characters.\n`);
-
-// ---------------------------------------------------------------------
-// 6. UI TOGGLE CONTROLS & RESPONSIVENESS IN HTML
-// ---------------------------------------------------------------------
-console.log('--- 6. UI TOGGLES IN APP.HTML & INDEX.HTML ---');
-
-// Check app.html
-assert.ok(appHtml.includes('lang-toggle-btn'), 'app.html must contain .lang-toggle-btn elements');
-assert.ok(appHtml.includes('data-lang="en"'), 'app.html must contain data-lang="en" toggle');
-assert.ok(appHtml.includes('data-lang="hinglish"'), 'app.html must contain data-lang="hinglish" toggle');
-assert.ok(appHtml.includes('data-i18n="language_label"'), 'app.html must contain language label i18n attribute');
-
-// Check index.html
-assert.ok(indexHtml.includes('lang-toggle-btn'), 'index.html must contain .lang-toggle-btn elements');
-assert.ok(indexHtml.includes('data-lang="en"'), 'index.html must contain data-lang="en" toggle');
-assert.ok(indexHtml.includes('data-lang="hinglish"'), 'index.html must contain data-lang="hinglish" toggle');
-
-// Verify app.js wires language into outgoing payloads
-assert.ok(appJsContent.includes('window.wingmanI18n.getLanguage()'), 'app.js must pass active language in AI requests');
-
-console.log('✔ Passed: UI toggles and payload binding are properly installed in frontend.\n');
-
-console.log('============================================================');
-console.log('🎉 ALL BILINGUAL (ENGLISH + HINGLISH) TESTS PASSED!');
-console.log('============================================================');
+for (const value of Object.values(dictionary.hinglish)) assert.ok(!devanagari.test(value));
+const documentStub = {readyState:'loading', documentElement:{lang:'hi-Latn'}, querySelectorAll:()=>[], addEventListener:()=>{}};
+const windowStub = {location:{hostname:'localhost',protocol:'http:',origin:'http://localhost'}, localStorage:{getItem:()=> 'hinglish',setItem:()=>{}}, addEventListener:()=>{}};
+// Load the fixed module path rather than evaluating text read from a file.
+global.window = windowStub;
+global.document = documentStub;
+require('../config.js');
+windowStub.wingmanI18n.init();
+assert.strictEqual(windowStub.wingmanI18n.getLanguage(), 'en', 'stored Hinglish cannot switch UI');
+assert.strictEqual(windowStub.wingmanI18n.getLanguageMode(), 'auto');
+windowStub.wingmanI18n.setLanguage('hinglish');
+assert.strictEqual(documentStub.documentElement.lang, 'en');
+for (const [key, value] of Object.entries(dictionary.en)) assert.strictEqual(windowStub.wingmanI18n.t(key), value);
+delete global.window;
+delete global.document;
+console.log('AUTO LANGUAGE: helper, continuity, legacy, script safeguards and UI contracts passed');

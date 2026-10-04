@@ -492,18 +492,14 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 })();
 
 /**
- * WINGMAN BILINGUAL CLIENT-SIDE i18n SYSTEM (English + Roman-script Hinglish)
+ * WINGMAN ENGLISH UI / AUTO AI LANGUAGE COMPATIBILITY
  * -------------------------------------------------------------------------
- * - Default: 'en' (English)
- * - Supported: 'en', 'hinglish'
- * - Persistence: localStorage['wingman_language'] (fail-safe)
- * - Roman-script Hinglish only: zero Devanagari Unicode characters
+ * - Static UI remains English, including for saved legacy Hinglish preferences.
+ * - AI requests use languageMode: 'auto'; the server selects conversational language.
+ * - Legacy dictionaries and method names remain available for compatibility.
  */
 (function () {
     'use strict';
-
-    var STORAGE_KEY = 'wingman_language';
-    var DEFAULT_LANG = 'en';
 
     var DICTIONARY = {
         en: {
@@ -586,68 +582,11 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         }
     };
 
-    var currentLang = DEFAULT_LANG;
-    var listeners = [];
-
-    function safeGetStorage(key) {
-        try {
-            if (typeof window !== 'undefined' && window.localStorage) {
-                return window.localStorage.getItem(key);
-            }
-        } catch (_) {}
-        return null;
-    }
-
-    function safeSetStorage(key, val) {
-        try {
-            if (typeof window !== 'undefined' && window.localStorage) {
-                window.localStorage.setItem(key, val);
-            }
-        } catch (_) {}
-    }
-
-    function canonicalize(lang) {
-        if (!lang || typeof lang !== 'string') return DEFAULT_LANG;
-        var normalized = lang.trim().toLowerCase();
-        if (normalized === 'hinglish' || normalized === 'hi-latn' || normalized === 'hi_latn') {
-            return 'hinglish';
-        }
-        return 'en';
-    }
-
-    function getLanguage() {
-        return currentLang;
-    }
-
+    // UI language is always English; saved manual preferences no longer select AI output.
+    function getLanguage() { return 'en'; }
     function t(key, defaultVal) {
-        var dict = DICTIONARY[currentLang] || DICTIONARY.en;
-        if (dict && typeof dict[key] === 'string') {
-            return dict[key];
-        }
-        if (DICTIONARY.en && typeof DICTIONARY.en[key] === 'string') {
-            return DICTIONARY.en[key];
-        }
-        return defaultVal !== undefined ? defaultVal : key;
+        return typeof DICTIONARY.en[key] === 'string' ? DICTIONARY.en[key] : (defaultVal !== undefined ? defaultVal : key);
     }
-
-    function updateToggleButtonStates() {
-        if (typeof document === 'undefined') return;
-        var buttons = document.querySelectorAll('.lang-toggle-btn');
-        for (var i = 0; i < buttons.length; i++) {
-            var btn = buttons[i];
-            var btnLang = canonicalize(btn.getAttribute('data-lang'));
-            if (btnLang === currentLang) {
-                btn.classList.add('bg-violet-600', 'text-white');
-                btn.classList.remove('text-slate-400');
-                btn.setAttribute('aria-pressed', 'true');
-            } else {
-                btn.classList.remove('bg-violet-600', 'text-white');
-                btn.classList.add('text-slate-400');
-                btn.setAttribute('aria-pressed', 'false');
-            }
-        }
-    }
-
     function applyTranslations(root) {
         if (typeof document === 'undefined') return;
         var container = root || document;
@@ -677,89 +616,25 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         }
     }
 
-    function setLanguage(newLang) {
-        var validLang = canonicalize(newLang);
-        currentLang = validLang;
-        safeSetStorage(STORAGE_KEY, validLang);
-
-        if (typeof document !== 'undefined' && document.documentElement) {
-            document.documentElement.lang = validLang === 'hinglish' ? 'hi-Latn' : 'en';
-        }
-
-        updateToggleButtonStates();
-        applyTranslations();
-
-        for (var i = 0; i < listeners.length; i++) {
-            try {
-                listeners[i](validLang);
-            } catch (e) {
-                console.error('[i18n listener error]', e);
-            }
-        }
-
-        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-            try {
-                var evt = new CustomEvent('wingman:languagechange', { detail: { language: validLang } });
-                window.dispatchEvent(evt);
-            } catch (_) {}
-        }
-
-        return validLang;
-    }
-
-    function onLanguageChange(fn) {
-        if (typeof fn === 'function') {
-            listeners.push(fn);
-        }
-    }
-
-    function bindLanguageButtons() {
-        if (typeof document === 'undefined') return;
-        var buttons = document.querySelectorAll('.lang-toggle-btn');
-        for (var i = 0; i < buttons.length; i++) {
-            (function (btn) {
-                if (btn.__wingmanLangBound) return;
-                btn.__wingmanLangBound = true;
-                btn.addEventListener('click', function (e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    var targetLang = btn.getAttribute('data-lang');
-                    setLanguage(targetLang);
-                });
-            })(buttons[i]);
-        }
-        updateToggleButtonStates();
-    }
 
     function init() {
-        var saved = safeGetStorage(STORAGE_KEY);
-        var initial = canonicalize(saved || DEFAULT_LANG);
-        currentLang = initial;
-        if (typeof document !== 'undefined' && document.documentElement) {
-            document.documentElement.lang = initial === 'hinglish' ? 'hi-Latn' : 'en';
-        }
-        bindLanguageButtons();
+        if (typeof document !== 'undefined' && document.documentElement) document.documentElement.lang = 'en';
         applyTranslations();
     }
-
     window.wingmanI18n = {
         getLanguage: getLanguage,
-        setLanguage: setLanguage,
+        getLanguageMode: function () { return 'auto'; },
+        setLanguage: function () { init(); return 'en'; },
         t: t,
         applyTranslations: applyTranslations,
-        onLanguageChange: onLanguageChange,
-        bindButtons: bindLanguageButtons,
-        canonicalize: canonicalize,
+        onLanguageChange: function () {},
+        bindButtons: function () {},
+        canonicalize: function () { return 'en'; },
         init: init
     };
-
     if (typeof document !== 'undefined') {
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', init, { once: true });
-        } else {
-            init();
-        }
-        window.addEventListener('load', bindLanguageButtons, { once: true });
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
+        else init();
     }
 })();
 
