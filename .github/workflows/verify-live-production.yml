@@ -177,6 +177,9 @@ jobs:
                 '404.html': ['/404', 200],
                 'app.html': ['/app', 200],
                 'index.html': ['/', 200],
+                'about.html': ['/about', 200],
+                'contact.html': ['/contact', 200],
+                'service-delivery.html': ['/service-delivery', 200],
                 'privacy.html': ['/privacy', 200],
                 'refund.html': ['/refund', 200],
                 'terms.html': ['/terms', 200]

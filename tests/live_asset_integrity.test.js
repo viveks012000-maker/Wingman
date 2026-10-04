@@ -1,6 +1,12 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const liveWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/verify-live-production.yml'), 'utf8');
+for (const page of ['about', 'contact', 'service-delivery']) {
+    assert(liveWorkflow.includes(`'${page}.html': ['/${page}', 200]`), `Live verifier must check the canonical Pages route for ${page}`);
+}
 const {
     compareAsset,
     classifyStaleAsset,
