@@ -141,7 +141,9 @@ assert.ok(configContent.includes("document.documentElement.lang = validLang === 
 // Extract dictionary and verify ZERO Devanagari characters in Hinglish dictionary
 const dictMatch = configContent.match(/var DICTIONARY = (\{[\s\S]*?\n    \};)/);
 assert.ok(dictMatch, 'DICTIONARY must be defined in config.js');
-const dictionary = eval('(' + dictMatch[1].replace(/;\s*$/, '') + ')');
+// Dictionary values are JSON strings. Quote only identifier keys at line starts,
+// then parse data without executing JavaScript from a file.
+const dictionary = JSON.parse(dictMatch[1].replace(/;\s*$/, '').replace(/^(\s*)([A-Za-z_]\w*):/gm, '$1"$2":'));
 
 assert.ok(dictionary.en, 'English dictionary must exist');
 assert.ok(dictionary.hinglish, 'Hinglish dictionary must exist');

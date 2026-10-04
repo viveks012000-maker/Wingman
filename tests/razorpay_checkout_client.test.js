@@ -1,14 +1,14 @@
 'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const vm = require('node:vm');
 const path = require('node:path');
 const root = path.join(__dirname,'..');
 async function main() {
-    const currencyContext = { window: {}, console };
-    vm.createContext(currencyContext);
-    const config = fs.readFileSync(path.join(root,'config.js'),'utf8');
-    vm.runInContext(config.slice(config.indexOf('(function () {',config.indexOf('WINGMAN CLIENT-SIDE DOMESTIC PRICING'))),currencyContext);
+    // Load fixed repository modules normally; never evaluate file text as code.
+    global.window = { addEventListener() {} };
+    global.document = { readyState: 'loading', addEventListener() {} };
+    require('../config.js');
+    const currencyContext = { window: global.window };
     const catalog = require('../config/pricingCatalog').PRICING_CATALOG;
     const sql = fs.readFileSync(path.join(root,'migrations/016_razorpay_payment_ledger.sql'),'utf8');
     for (const [id,plan] of Object.entries(catalog)) {
@@ -37,7 +37,8 @@ async function main() {
         if (rejectVerify) return {ok:false,json:async()=>({success:false,error:'Invalid payment signature.'})};
         verified = true; return {ok:true,json:async()=>({success:true,credits:270})};
     };
-    vm.runInNewContext(fs.readFileSync(path.join(root,'payments-client.js'),'utf8'),{window,document,fetch,AbortSignal,console});
+    global.window = window; global.document = document; global.fetch = fetch;
+    require('../payments-client.js');
     await new Promise(resolve=>setImmediate(resolve));
     assert.equal(button.disabled,false); assert(notice.textContent.includes('no real money'));
     await window.wingmanPayments.purchase();

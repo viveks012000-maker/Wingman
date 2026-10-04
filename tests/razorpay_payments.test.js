@@ -103,8 +103,9 @@ async function main() {
     assert.equal((await request(app).get('/api/payments/config')).body.enabled, false);
     const appCsp = (await request(app).get('/app.html')).headers['content-security-policy'];
     const landingCsp = (await request(app).get('/index.html')).headers['content-security-policy'];
-    assert(appCsp.includes('https://checkout.razorpay.com'));
-    assert(!landingCsp.includes('https://checkout.razorpay.com'));
+    const cspScriptSources = csp => csp.split(';').find(part => part.trim().startsWith('script-src ')).trim().split(/\s+/).slice(1);
+    assert(cspScriptSources(appCsp).some(source => source === 'https://checkout.razorpay.com'));
+    assert(!cspScriptSources(landingCsp).some(source => source === 'https://checkout.razorpay.com'));
     assert(!appCsp.includes("'unsafe-eval'"));
     const sql = fs.readFileSync(require('path').join(__dirname,'../migrations/016_razorpay_payment_ledger.sql'),'utf8');
     for (const guard of ['payment_id text UNIQUE','FOR UPDATE',"SET search_path = ''",'ENABLE ROW LEVEL SECURITY','FROM PUBLIC, anon, authenticated','public.add_credits']) assert(sql.includes(guard));

@@ -47,8 +47,15 @@ function createPaymentService({ store, env = process.env, fetchImpl = fetch }) {
         if (!store || !testConfig(env)) throw new PaymentError(503, 'Paid checkout is unavailable.');
     }
     async function api(endpoint, method = 'GET', body) {
-        const response = await fetchImpl(`https://api.razorpay.com/v1/${endpoint}`, {
+        // Only these exact provider resources can receive the server credentials.
+        if (endpoint !== 'orders' && !/^payments\/pay_[A-Za-z0-9]{1,64}$/.test(endpoint)) {
+            throw new PaymentError(400, 'Invalid payment resource.');
+        }
+        const providerUrl = endpoint === 'orders' ? 'https://api.razorpay.com/v1/orders'
+            : `https://api.razorpay.com/v1/payments/${encodeURIComponent(endpoint.slice(9))}`;
+        const response = await fetchImpl(providerUrl, {
             method,
+            redirect: 'error',
             headers: {
                 Authorization: 'Basic ' + Buffer.from(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`).toString('base64'),
                 'Content-Type': 'application/json'
