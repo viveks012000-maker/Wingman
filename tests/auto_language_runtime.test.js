@@ -150,7 +150,7 @@ async function run() {
    assert.ok(!/[\u0900-\u097F]/.test(repaired.body.reply));
   }
  }
- calls.length=0;queuedOutputs=['क्या करूँ','What should I say next?'];
+ calls.length=0;queuedOutputs=['क्या करूँ','what should i say next?'];
  const englishRepair=await request(app).post('/api/chat').set({...AUTH,'x-test-user-id':'11111111-1111-1111-1111-111111111111'}).send({language:'en',message:en,idempotencyKey:'english_script_repair'});
  assert.strictEqual(englishRepair.status,200);
  assert.strictEqual(calls.length,2);
