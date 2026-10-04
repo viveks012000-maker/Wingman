@@ -25,6 +25,7 @@ const ROOT = path.resolve(__dirname, '..');
 const { app } = require('../server');
 const {
     SUPPORTED_CURRENCIES,
+    CHECKOUT_CURRENCIES,
     DEFAULT_CURRENCY,
     STORAGE_KEY,
     PRICING_CATALOG,
@@ -75,7 +76,8 @@ async function runPricingTests() {
     console.log('--- A. DEFAULT BEHAVIOR & CANONICALIZATION ---');
     test('Default currency is INR', () => {
         assert.strictEqual(DEFAULT_CURRENCY, 'INR');
-        assert.deepStrictEqual(SUPPORTED_CURRENCIES, ['INR']);
+        assert.deepStrictEqual(SUPPORTED_CURRENCIES, ['USD', 'INR']);
+        assert.deepStrictEqual(CHECKOUT_CURRENCIES, ['INR']);
     });
 
     test('Canonicalizer resolves missing, invalid, or lowercase to valid currencies', () => {
@@ -86,7 +88,7 @@ async function runPricingTests() {
         assert.strictEqual(canonicalizeCurrency('inr'), 'INR');
         assert.strictEqual(canonicalizeCurrency('INR'), 'INR');
         assert.strictEqual(canonicalizeCurrency('  inr  '), 'INR');
-        assert.strictEqual(canonicalizeCurrency('usd'), 'INR');
+        assert.strictEqual(canonicalizeCurrency('usd'), 'USD');
     });
 
     // -------------------------------------------------------------
@@ -164,15 +166,15 @@ async function runPricingTests() {
         assert.ok(indexHtmlContent.includes('id="pricingCurrencySelectorWrapper"'));
         assert.ok(indexHtmlContent.includes('role="group"'));
         assert.ok(indexHtmlContent.includes('aria-label="Display currency"'));
-        assert.ok(!indexHtmlContent.includes('data-currency="USD"'));
+        assert.ok(indexHtmlContent.includes('data-currency="USD"'));
         assert.ok(indexHtmlContent.includes('data-currency="INR"'));
-        assert.ok(!indexHtmlContent.includes('aria-label="USD — US Dollar"'));
+        assert.ok(indexHtmlContent.includes('aria-label="USD — US Dollar"'));
         assert.ok(indexHtmlContent.includes('aria-label="INR — Indian Rupee"'));
     });
 
     test('app.html contains accessible segmented currency selector in modal header', () => {
         assert.ok(appHtmlContent.includes('id="appPricingCurrencySelectorWrapper"'));
-        assert.ok(!appHtmlContent.includes('data-currency="USD"'));
+        assert.ok(appHtmlContent.includes('data-currency="USD"'));
         assert.ok(appHtmlContent.includes('data-currency="INR"'));
     });
 
@@ -267,7 +269,8 @@ async function runPricingTests() {
         assert.strictEqual(res.status, 200);
         assert.strictEqual(res.body.success, true);
         assert.strictEqual(res.body.defaultCurrency, 'INR');
-        assert.deepStrictEqual(res.body.supportedCurrencies, ['INR']);
+        assert.deepStrictEqual(res.body.supportedCurrencies, ['USD', 'INR']);
+        assert.deepStrictEqual(res.body.checkoutCurrencies, ['INR']);
         assert.strictEqual(res.body.currency, 'INR');
         assert.ok(res.body.plans && res.body.plans.starter);
         assert.strictEqual(res.body.plans.starter.credits, 250);
@@ -287,11 +290,19 @@ async function runPricingTests() {
         assert.strictEqual(res.body.currency, 'INR');
     });
 
+    await asyncTest('USD display catalog is available while collection stays INR-only', async () => {
+        const res = await request(app).get('/api/pricing?currency=USD');
+        assert.strictEqual(res.status, 200);
+        assert.strictEqual(res.body.currency, 'USD');
+        assert.deepStrictEqual(res.body.checkoutCurrencies, ['INR']);
+        assert.deepStrictEqual(Object.values(res.body.plans).map(plan => plan.prices.USD.amountMinor), [499, 999, 1999, 4900]);
+    });
+
     await asyncTest('GET /api/pricing?currency=EUR returns 400 for unsupported currency', async () => {
         const res = await request(app).get('/api/pricing?currency=EUR');
         assert.strictEqual(res.status, 400);
         assert.strictEqual(res.body.success, false);
-        assert.ok(res.body.error.includes('Unsupported currency'));
+        assert.ok(res.body.error.includes('Unsupported display currency'));
     });
 
     // -------------------------------------------------------------

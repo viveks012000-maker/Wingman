@@ -61,6 +61,10 @@ async function main() {
     await assert.rejects(svc.createOrder(null, { planId: 'starter' }), { status: 401 });
     await assert.rejects(svc.createOrder('alice', { planId: '__proto__' }), { status: 400 });
     await assert.rejects(svc.createOrder('alice', { planId: 'starter', currency: 'USD' }), { status: 400 });
+    for (const currency of [null, false, 0, '', 'inr', 'EUR', {}, []]) {
+        await assert.rejects(svc.createOrder('alice', { planId: 'starter', currency }), { status: 400 });
+    }
+    assert.equal(calls, 0, 'Invalid currency must fail before contacting the payment provider');
     const order = await svc.createOrder('alice', { planId: 'starter', amount: 1, credits: 999999, userId: 'victim' });
     assert.equal(order.amount, 44900); assert.equal(order.credits, 250); assert.equal(orders.get(order.orderId).user_id, 'alice');
     assert(!JSON.stringify(order).includes(env.RAZORPAY_KEY_SECRET));

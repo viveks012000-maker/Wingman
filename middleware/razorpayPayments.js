@@ -70,7 +70,7 @@ function createPaymentService({ store, env = process.env, fetchImpl = fetch }) {
         requireReady();
         if (!userId) throw new PaymentError(401, 'Please sign in.');
         const plan = typeof input.planId === 'string' && Object.hasOwn(PRICING_CATALOG, input.planId) ? PRICING_CATALOG[input.planId] : null;
-        if (!plan || (input.currency && input.currency !== 'INR')) throw new PaymentError(400, 'Select a valid INR credit bundle.');
+        if (!plan || (Object.hasOwn(input, 'currency') && input.currency !== 'INR')) throw new PaymentError(400, 'Select a valid INR credit bundle.');
         // Never accept browser amounts, credit quantities or user IDs.
         const amount = plan.prices.INR.amountMinor;
         const receipt = crypto.randomUUID();

@@ -17,7 +17,7 @@ These are owner-verified details. Do not invent additional address components. A
 
 The frontend artifact is `netlify-dist`, produced by `npm run build:production`. It includes About, Contact, Terms, Privacy, Refund/Cancellation and Service Delivery. Deploy the reviewed artifact through the existing approved Cloudflare Pages process after owner authorization. Preserve the canonical domain and existing auth configuration.
 
-Public prices are INR customer totals: Starter ₹449 / 250 credits; Pro ₹899 / 600; Elite ₹1,799 / 3,000; VIP ₹4,499 / 100,000. No extra service/convenience fees or tax markups are added. TAX TREATMENT REQUIRES OWNER/ACCOUNTANT CONFIRMATION. Historical USD catalog numbers are retained but are inactive for checkout. The backend catalog controls amounts and entitlements.
+Public prices are INR customer totals: Starter ₹449 / 250 credits; Pro ₹899 / 600; Elite ₹1,799 / 3,000; VIP ₹4,499 / 100,000. No extra service/convenience fees or tax markups are added. TAX TREATMENT REQUIRES OWNER/ACCOUNTANT CONFIRMATION. USD display switching retains the existing approved prices: $4.99, $9.99, $19.99 and $49.00. USD/international collection is not enabled; selecting USD disables checkout with an explicit notice. No currency conversion is performed. The backend catalog controls amounts and entitlements.
 
 ## Test Mode gate
 

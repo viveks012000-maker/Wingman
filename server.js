@@ -33,7 +33,7 @@ const helmet = require('helmet');
 let db = null; // Global SQLite database instance (disabled in production, optional dev cache)
 
 const { TARGET_MARKET_LOCK, HINGLISH_BIO_TARGET_MARKET_LOCK, HINGLISH_OUTPUT_DIRECTIVE, BIO_MODE_PROMPTS, MAEVE_SYSTEM_PROMPT } = require('./config/promptSystem');
-const { PRICING_CATALOG, SUPPORTED_CURRENCIES, DEFAULT_CURRENCY } = require('./config/pricingCatalog');
+const { PRICING_CATALOG, SUPPORTED_CURRENCIES, CHECKOUT_CURRENCIES, DEFAULT_CURRENCY } = require('./config/pricingCatalog');
 const { createPaymentService, supabasePaymentStore, requirePaymentAuth, PaymentError } = require('./middleware/razorpayPayments');
 const razorpayPayments = createPaymentService({ store: supabasePaymentStore(supabaseAdmin) });
 const authenticatePayment = requirePaymentAuth(supabaseAdmin);
@@ -3718,13 +3718,14 @@ app.get('/api/pricing', (req, res) => {
         if (requestedCurrency && !SUPPORTED_CURRENCIES.includes(requestedCurrency)) {
             return res.status(400).json({
                 success: false,
-                error: 'Unsupported currency. Only INR is available for checkout.'
+                error: 'Unsupported display currency. Only USD and INR are available.'
             });
         }
         res.json({
             success: true,
             defaultCurrency: DEFAULT_CURRENCY,
             supportedCurrencies: SUPPORTED_CURRENCIES,
+            checkoutCurrencies: CHECKOUT_CURRENCIES,
             currency: requestedCurrency || DEFAULT_CURRENCY,
             plans: PRICING_CATALOG
         });

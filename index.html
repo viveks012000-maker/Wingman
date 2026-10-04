@@ -1049,14 +1049,15 @@
                 <h2 class="font-headline text-3xl md:text-5xl text-white font-extrabold tracking-tight">Flexible Credit
                     Pricing</h2>
                 <p class="text-sm md:text-base text-slate-300 max-w-xl">
-                    Planned one-time credit bundles; no recurring subscriptions. Paid checkout is currently unavailable in production. Displayed INR prices are final customer totals. No additional service fee, convenience fee or extra amount will be added at checkout.
+                    Planned one-time credit bundles; no recurring subscriptions. Paid checkout is currently unavailable in production. Displayed INR prices are final customer totals. No additional service fee, convenience fee or extra amount will be added at checkout. USD prices are available for display; USD/international payment collection is not enabled. No currency conversion is applied at checkout.
                 </p>
             </div>
 
-            <!-- Domestic INR pricing -->
+            <!-- Display currencies; collection capability is separate -->
             <div class="flex items-center justify-center -mt-4 mb-2" id="pricingCurrencySelectorWrapper">
                 <div class="inline-flex items-center rounded-full bg-slate-900/80 p-1 border border-violet-500/30 shadow-[0_0_15px_rgba(124,58,237,0.15)]" role="group" aria-label="Display currency">
 
+                    <button type="button" class="currency-toggle-btn px-4 py-1.5 text-xs sm:text-sm font-semibold rounded-full transition-all cursor-pointer text-slate-300 hover:text-white" data-currency="USD" aria-label="USD — US Dollar" aria-pressed="false">USD</button>
                     <button type="button" class="currency-toggle-btn px-4 py-1.5 text-xs sm:text-sm font-semibold rounded-full transition-all cursor-pointer bg-violet-600 text-white shadow-sm" data-currency="INR" aria-label="INR — Indian Rupee" aria-pressed="true">INR</button>
                 </div>
             </div>

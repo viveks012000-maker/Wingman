@@ -7,7 +7,7 @@
  * Single source of truth for credit tiers, pricing, integer minor amounts, and formatting.
  *
  * NOTE ON CURRENCY COMPLIANCE:
- * - Active checkout currency is INR. Historical USD values are retained but inactive.
+ * - Display currencies are USD and INR. Razorpay collection remains INR-only.
  * - Integer minor units are mandatory on the backend:
  *     USD: cents (1 USD = 100 cents)
  *     INR: paise (1 INR = 100 paise)
@@ -16,7 +16,8 @@
  * =========================================================================================
  */
 
-const SUPPORTED_CURRENCIES = ['INR'];
+const SUPPORTED_CURRENCIES = ['USD', 'INR'];
+const CHECKOUT_CURRENCIES = ['INR'];
 const DEFAULT_CURRENCY = 'INR';
 const STORAGE_KEY = 'wingman_setting_currency';
 
@@ -139,7 +140,7 @@ const PRICING_CATALOG = {
 function canonicalizeCurrency(currency) {
     if (!currency || typeof currency !== 'string') return DEFAULT_CURRENCY;
     const normalized = currency.trim().toUpperCase();
-    if (normalized === 'INR') return 'INR';
+    if (SUPPORTED_CURRENCIES.includes(normalized)) return normalized;
     return DEFAULT_CURRENCY;
 }
 
@@ -194,6 +195,7 @@ function getPlanPricing(planId, currency) {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         SUPPORTED_CURRENCIES,
+        CHECKOUT_CURRENCIES,
         DEFAULT_CURRENCY,
         STORAGE_KEY,
         PRICING_CATALOG,

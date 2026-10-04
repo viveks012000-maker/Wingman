@@ -767,7 +767,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
  * WINGMAN CLIENT-SIDE DOMESTIC PRICING (INR)
  * -------------------------------------------------------------------------
  * - Default: 'INR'
- * - Supported checkout currency: 'INR'; historical USD values are inactive
+ * - Display currencies: USD and INR; Razorpay collection remains INR-only
  * - Persistence: localStorage['wingman_setting_currency'] (safe fail-soft)
  * - Single source of truth for presentation across index.html & app.html
  */
@@ -776,7 +776,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 
     var STORAGE_KEY = 'wingman_setting_currency';
     var DEFAULT_CURRENCY = 'INR';
-    var SUPPORTED_CURRENCIES = ['INR'];
+    var SUPPORTED_CURRENCIES = ['USD', 'INR'];
 
     var PRICING_CATALOG = {
         starter: {
@@ -912,7 +912,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
     function canonicalize(curr) {
         if (!curr || typeof curr !== 'string') return DEFAULT_CURRENCY;
         var normalized = curr.trim().toUpperCase();
-        if (normalized === 'INR') return 'INR';
+        if (SUPPORTED_CURRENCIES.indexOf(normalized) !== -1) return normalized;
         return DEFAULT_CURRENCY;
     }
 

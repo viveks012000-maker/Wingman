@@ -29,17 +29,20 @@
     function sync() {
         const button = document.getElementById('confirmPurchaseBtn');
         const text = document.getElementById('purchaseBtnText');
-        if (button) button.disabled = !enabled || busy;
-        if (text) text.textContent = enabled ? (busy ? 'Preparing test checkout…' : 'Continue to Test Mode checkout') : 'Paid checkout unavailable';
+        const currencyAllowed = !window.wingmanCurrency || window.wingmanCurrency.getCurrency() === 'INR';
+        if (button) { button.disabled = !enabled || busy || !currencyAllowed; button.setAttribute && button.setAttribute('aria-disabled', String(button.disabled)); }
+        if (text) text.textContent = !currencyAllowed ? 'USD payments unavailable — choose INR' : (enabled ? (busy ? 'Preparing test checkout…' : 'Continue to Test Mode checkout') : 'Paid checkout unavailable');
     }
     async function purchase() {
+        const currency = window.wingmanCurrency ? window.wingmanCurrency.getCurrency() : 'INR';
+        if (currency !== 'INR') { toast('USD prices are for display only. USD/international payment collection is not enabled. Select INR for supported checkout.', 'warning'); return; }
         if (!enabled || busy) { toast('Credit purchasing is currently unavailable while payment gateway upgrades are underway.', 'warning'); return; }
         busy = true; sync();
         try {
             const selected = document.querySelector("input[name='pricing_tier']:checked");
             if (!selected) throw new Error('Select a credit bundle.');
             await loadCheckout();
-            const order = await paymentRequest('/api/payments/orders', { planId: selected.value });
+            const order = await paymentRequest('/api/payments/orders', { planId: selected.value, currency });
             if (order.mode !== 'test' || order.currency !== 'INR' || !/^rzp_test_/.test(order.keyId)) throw new Error('Checkout configuration is unavailable.');
             // No secret, client-defined entitlement, or card details enter Wingman storage.
             const checkout = new window.Razorpay({
