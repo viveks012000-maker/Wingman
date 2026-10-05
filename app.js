@@ -4038,7 +4038,7 @@ STRICT LAWS:
             cleanText = stripDelimitedSegments(cleanText, "```json", "```");
             cleanText = stripDelimitedSegments(cleanText, "```", "```");
             if (sender !== "user") {
-                cleanText = cleanText.replace(/<\/?user_?data[0-9a-zA-Z_-]*[^>]*>/gi, "");
+                cleanText = cleanText.replace(/<\/?user_?data[^>]*>/gi, "");
                 cleanText = cleanText.replace(/\blabel=["'][^"']*["']/gi, "");
             }
             cleanText = cleanText.replace(/[\{\}\[\]]/g, "");
@@ -4336,7 +4336,7 @@ STRICT LAWS:
                 const chatData = await chatResp.json();
                 if (chatData && chatData.reply) {
                     const aiReply = typeof chatData.reply === 'string'
-                        ? chatData.reply.replace(/<\/?user_?data[0-9a-zA-Z_-]*[^>]*>/gi, '').replace(/\blabel=["'][^"']*["']/gi, '').trim()
+                        ? chatData.reply.replace(/<\/?user_?data[^>]*>/gi, '').replace(/\blabel=["'][^"']*["']/gi, '').trim()
                         : chatData.reply;
                     const updatedBal = typeof chatData.credits === 'number' ? chatData.credits : (typeof chatData.creditsRemaining === 'number' ? chatData.creditsRemaining : null);
                     if (updatedBal !== null) {
