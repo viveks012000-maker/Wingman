@@ -196,17 +196,19 @@ function writeSecurityFiles() {
     '  X-Robots-Tag: noindex, nofollow',
     '  Cache-Control: no-cache, no-store, must-revalidate',
     '/app.js',
-    '  Cache-Control: no-cache, must-revalidate',
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/payments-client.js',
+    '  Cache-Control: no-cache, no-store, must-revalidate',
     '/config.js',
-    '  Cache-Control: no-cache, must-revalidate',
+    '  Cache-Control: no-cache, no-store, must-revalidate',
     '/accessibility.js',
-    '  Cache-Control: no-cache, must-revalidate',
+    '  Cache-Control: no-cache, no-store, must-revalidate',
     '/supabaseClient.js',
-    '  Cache-Control: no-cache, must-revalidate',
+    '  Cache-Control: no-cache, no-store, must-revalidate',
     '/output.css',
-    '  Cache-Control: no-cache, must-revalidate',
+    '  Cache-Control: no-cache, no-store, must-revalidate',
     '/style.css',
-    '  Cache-Control: no-cache, must-revalidate',
+    '  Cache-Control: no-cache, no-store, must-revalidate',
     '/fonts/*',
     '  Cache-Control: public, max-age=31536000, immutable',
     '/vendor/*',
@@ -257,9 +259,10 @@ function verifyCriticalRuntimeContent() {
   const headers = fs.readFileSync(path.join(OUT, '_headers'), 'utf8');
 
   const railway = 'https://wingman-production-c6ce.up.railway.app';
-  if (!appHtml.includes(railway)) fail('app.html CSP does not include Railway backend');
+  const containsRailwayOrigin = (text) => text.includes(' ' + railway + ' ') || text.includes(railway + ';');
+  if (!containsRailwayOrigin(appHtml)) fail('app.html CSP does not include Railway backend');
   if (!config.includes(`API_BASE_URL: "${railway}"`)) fail('config.js does not point to Railway backend');
-  if (!headers.includes(railway)) fail('_headers CSP does not include Railway backend');
+  if (!containsRailwayOrigin(headers)) fail('_headers CSP does not include Railway backend');
   if (!headers.includes('Strict-Transport-Security: max-age=31536000')) fail('_headers does not enforce HSTS');
   const unsafeEvalHeaderCount = (headers.match(/'unsafe-eval'/g) || []).length;
   if (unsafeEvalHeaderCount !== 0) fail(`unsafe-eval must not appear in any CSP block with the new HEIC runtime; found ${unsafeEvalHeaderCount}`);
