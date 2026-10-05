@@ -116,6 +116,7 @@ async function runUniversalSuite() {
 
     // Mixed English + Hinglish (dominant style)
     assert.strictEqual(inferLocalLanguage('I love coffee but tum batao weekend pe kya karna hai'), 'hinglish');
+    assert.strictEqual(inferLocalLanguage('mera naam sanchi hai and i like basketball bhaut zayada'), 'hinglish');
     assert.strictEqual(inferLocalLanguage('Software engineer in Seattle, love dogs, hiking, and travel. Settle this: mountain or beach?'), 'en');
 
     // Ambiguous & neutral standalone inputs default to English
