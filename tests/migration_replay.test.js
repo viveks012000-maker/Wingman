@@ -57,6 +57,16 @@ function scalar(sql) {
 }
 
 try {
+    try {
+        docker(['--version']);
+    } catch (checkErr) {
+        if (checkErr && (checkErr.code === 'ENOENT' || checkErr.syscall === 'spawnSync' || (checkErr.message && checkErr.message.includes('ENOENT')))) {
+            console.log('ℹ Docker is not available in local environment; skipping disposable container migration replay.');
+            process.exit(0);
+        }
+        throw checkErr;
+    }
+
     docker(['run', '--rm', '-d', '--name', container, '-e', 'POSTGRES_PASSWORD=postgres', '-e', 'POSTGRES_DB=wingman_replay', 'postgres:16-alpine']);
     let ready = false;
     for (let attempt = 0; attempt < 90; attempt += 1) {

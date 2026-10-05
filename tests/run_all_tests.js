@@ -6,6 +6,7 @@ const TEST_TIMEOUT_MS = 60_000;
 const testSuites = [
     { name: 'AUTO Language Selection and UI Contract', file: 'bilingual_language_support.test.js' },
     { name: 'AUTO Language Real Route Matrix', file: 'auto_language_runtime.test.js' },
+    { name: 'Universal Auto English + Hinglish Matrix', file: 'universal_auto_language.test.js' },
     { name: 'Razorpay Trust Boundary and Fulfillment', file: 'razorpay_payments.test.js' },
     { name: 'Razorpay Checkout Client and Catalog Consistency', file: 'razorpay_checkout_client.test.js' },
     { name: '0. Focused Release Repair Regression Guard', file: 'focused_release_repair.test.js' },
@@ -93,7 +94,8 @@ const testSuites = [
     { name: '76. Roleplay & Hotline Real Provider Path', file: 'roleplay_provider_path.test.js', timeoutMs: 120_000 },
     { name: '77. UI/API Product-Contract Matrix (16 mode checks)', file: 'ui_api_contract.test.js', timeoutMs: 120_000 },
     { name: '78. Auth Sign-In & Credit Regression Guard', file: 'auth_signin_regression.test.js', timeoutMs: 30_000 },
-    { name: '79. Internal Prompt Tag Leak Prevention & Output Safety', file: 'internal_prompt_tag_leak_regression.test.js', timeoutMs: 60_000 }
+    { name: '79. Internal Prompt Tag Leak Prevention & Output Safety', file: 'internal_prompt_tag_leak_regression.test.js', timeoutMs: 60_000 },
+    { name: '80. Maeve Practice Partner & Coach Modes Matrix', file: 'maeve_modes_matrix.test.js', timeoutMs: 60_000 }
 ];
 
 console.log('========================================================================');

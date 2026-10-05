@@ -3226,7 +3226,7 @@ STRICT LAWS:
             return null;
         }
 
-        const idempotencyKey = (payload && payload.idempotencyKey) || ('cli_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8));
+        const idempotencyKey = 'cli_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
         if (payload) {
             payload.idempotencyKey = idempotencyKey;
             payload.languageMode = 'auto';
@@ -3241,7 +3241,7 @@ STRICT LAWS:
             try {
                 const apiBase = getApiBase();
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 45000);
+                const timeoutId = setTimeout(() => controller.abort(), 60000);
 
                 const userHeaderId = (window.currentSupabaseUser ? (window.currentSupabaseUser.id || window.currentSupabaseUser.email) : (safeStorage.get("wingman_user_email") || "guest_user"));
                 const userHeaderEmail = (window.currentSupabaseUser ? window.currentSupabaseUser.email : (safeStorage.get("wingman_user_email") || ""));
@@ -3353,6 +3353,20 @@ STRICT LAWS:
                                 ? "Wingman's AI service is temporarily unavailable. Please try again later."
                                 : (errJson.error || "Credit service is temporarily unavailable. Your generation was not started. Please try again later.");
                             window.showToast(offlineMsg, "warning");
+                        }
+                        return null;
+                    }
+
+                    if (response.status >= 500) {
+                        if (typeof errJson.credits === "number") {
+                            window.updateUICredits(errJson.credits);
+                        }
+                        if (typeof window.checkCreditBalance === 'function') {
+                            window.checkCreditBalance();
+                        }
+                        trackWingmanEvent('generation_failed', { endpoint: endpoint, status: response.status });
+                        if (typeof window.showToast === 'function') {
+                            window.showToast(errJson.error || "Generation request failed. Your credits were preserved.", "error");
                         }
                         return null;
                     }
@@ -3587,25 +3601,36 @@ STRICT LAWS:
     window.runAnalysis = async function (e) {
         if (e) e.preventDefault();
         if (state.isLoading) return;
+        state.isLoading = true;
+        setButtonLoadingState("runAnalysisBtn", true, "Analyzing Context...", "Generate Reply Suggestions");
+        window.setLifecycleState("ANALYZING");
 
         const useCache = (state.activeTranscriptCache && state.uploadedFiles.length === 0);
         if (!useCache && state.uploadedFiles.length === 0) {
+            state.isLoading = false;
+            setButtonLoadingState("runAnalysisBtn", false, "Analyzing Context...", "Generate Reply Suggestions");
+            window.setLifecycleState("EMPTY");
             window.showToast("Please tap the upload box to select at least 1 chat screenshot!", "warning");
             return;
         }
 
-        if (!(await hasSufficientCredits(10))) return;
+        if (!(await hasSufficientCredits(10))) {
+            state.isLoading = false;
+            setButtonLoadingState("runAnalysisBtn", false, "Analyzing Context...", "Generate Reply Suggestions");
+            window.setLifecycleState(state.uploadedFiles.length > 0 ? "SELECTED" : "EMPTY");
+            return;
+        }
 
         if (!state.isTermsAccepted) {
+            state.isLoading = false;
+            setButtonLoadingState("runAnalysisBtn", false, "Analyzing Context...", "Generate Reply Suggestions");
+            window.setLifecycleState(state.uploadedFiles.length > 0 ? "SELECTED" : "EMPTY");
             window.highlightTermsCheckbox();
             if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
             window.showToast("18+ verification and consent are required before AI processing.", "warning");
             return;
         }
 
-        state.isLoading = true;
-        setButtonLoadingState("runAnalysisBtn", true, "Analyzing Context...", "Generate Reply Suggestions");
-        window.setLifecycleState("ANALYZING");
         startTelemetryTracker("analyze", "analyze-telemetry-status", "analyze-telemetry-pct", "analyze-telemetry-bar", ANALYZE_MESSAGES);
 
         try {
@@ -3676,30 +3701,39 @@ STRICT LAWS:
     window.generateIcebreaker = async function (e) {
         if (e) e.preventDefault();
         if (state.isLoading) return;
+        state.isLoading = true;
+        setButtonLoadingState("generateIcebreakerBtn", true, "Crafting Openers...", "Generate Icebreaker");
 
         const bi = $("bioInput");
         let text = bi ? bi.value.trim() : "";
         if (text.length < 5) {
+            state.isLoading = false;
+            setButtonLoadingState("generateIcebreakerBtn", false, "Crafting Openers...", "Generate Icebreaker");
             window.showNotification("Input Required", "You must enter a valid text input of at least 5 characters first.", "error");
             return;
         }
         if (text.length > 5000) {
+            state.isLoading = false;
+            setButtonLoadingState("generateIcebreakerBtn", false, "Crafting Openers...", "Generate Icebreaker");
             window.showNotification("Length Limit Exceeded", "Your message is too long. Maximum: 5,000 characters.", "error");
             return;
         }
         text = enforceWordLimitClient(text, 500);
 
-        if (!(await hasSufficientCredits(10))) return;
+        if (!(await hasSufficientCredits(10))) {
+            state.isLoading = false;
+            setButtonLoadingState("generateIcebreakerBtn", false, "Crafting Openers...", "Generate Icebreaker");
+            return;
+        }
 
         if (!state.isTermsAccepted) {
+            state.isLoading = false;
+            setButtonLoadingState("generateIcebreakerBtn", false, "Crafting Openers...", "Generate Icebreaker");
             window.highlightTermsCheckbox();
             if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
             window.showToast("18+ verification and consent are required before AI processing.", "warning");
             return;
         }
-
-        state.isLoading = true;
-        setButtonLoadingState("generateIcebreakerBtn", true, "Crafting Openers...", "Generate Icebreaker");
 
         const emp = $("icebreakEmptyState"), skel = $("icebreakSkeletonState"), res = $("icebreakResultsState");
         if (emp) emp.classList.add("hidden");
@@ -3764,31 +3798,40 @@ STRICT LAWS:
     window.runAudit = async function (e) {
         if (e) e.preventDefault();
         if (state.isLoading) return;
+        state.isLoading = true;
+        setButtonLoadingState("runAuditBtn", true, "Optimizing Bio...", "Optimize My Bio");
 
         const ai = $("auditBioInput");
         let raw = ai ? ai.value.trim() : "";
         if (raw.length < 5) {
+            state.isLoading = false;
+            setButtonLoadingState("runAuditBtn", false, "Optimizing Bio...", "Optimize My Bio");
             window.showNotification("Input Required", "You must enter a valid bio of at least 5 characters first.", "error");
             return;
         }
         const bioWords = countWords(raw);
         if (bioWords > 500) {
+            state.isLoading = false;
+            setButtonLoadingState("runAuditBtn", false, "Optimizing Bio...", "Optimize My Bio");
             window.showNotification("Word Limit Exceeded", `Your bio exceeds the 500-word limit (${bioWords} words entered). Maximum allowed: 500 words.`, "error");
             return;
         }
         raw = enforceWordLimitClient(raw, 500);
 
-        if (!(await hasSufficientCredits(10))) return;
+        if (!(await hasSufficientCredits(10))) {
+            state.isLoading = false;
+            setButtonLoadingState("runAuditBtn", false, "Optimizing Bio...", "Optimize My Bio");
+            return;
+        }
 
         if (!state.isTermsAccepted) {
+            state.isLoading = false;
+            setButtonLoadingState("runAuditBtn", false, "Optimizing Bio...", "Optimize My Bio");
             window.highlightTermsCheckbox();
             if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
             window.showToast("18+ verification and consent are required before AI processing.", "warning");
             return;
         }
-
-        state.isLoading = true;
-        setButtonLoadingState("runAuditBtn", true, "Optimizing Bio...", "Optimize My Bio");
 
         const emp = $("optimizeEmptyState"), skel = $("optimizeSkeletonState"), res = $("optimizeResultsState");
         if (emp) emp.classList.add("hidden");
@@ -3895,7 +3938,6 @@ STRICT LAWS:
     window.clearAndResetChatbox = function() {
         simulatorGeneration += 1;
         activeSimulatorThread = [];
-        activeSimulatorThread.push({ role: "system", content: practicePartnerSystemContext });
 
         window.currentAttractionScore = 65;
         window.sessionStats = {
@@ -4169,31 +4211,40 @@ STRICT LAWS:
         let userText = inputField.value.trim();
         if (!userText) return;
 
+        if (simulatorRequestInFlight) return;
+        simulatorRequestInFlight = true;
+        const sendBtn = $("chatbox-send-btn");
+        if (sendBtn) {
+            sendBtn.disabled = true;
+            sendBtn.classList.add("opacity-50", "cursor-not-allowed");
+        }
+
         if (userText.length > 5000) {
+            simulatorRequestInFlight = false;
+            if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
             window.showNotification("Length Limit Exceeded", "Your message is too long. Maximum: 5,000 characters.", "error");
             return;
         }
 
         userText = enforceWordLimitClient(userText, 500);
 
-        if (!(await hasSufficientCredits(2))) return;
+        if (!(await hasSufficientCredits(2))) {
+            simulatorRequestInFlight = false;
+            if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
+            return;
+        }
 
         if (!state.isTermsAccepted) {
+            simulatorRequestInFlight = false;
+            if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
             window.highlightTermsCheckbox();
             if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
             window.showToast("18+ verification and consent are required before AI processing.", "warning");
             return;
         }
 
-        const sendBtn = $("chatbox-send-btn");
-        if (simulatorRequestInFlight) return;
-        simulatorRequestInFlight = true;
         const requestGeneration = simulatorGeneration;
         const idempotencyKey = 'sim_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
-        if (sendBtn) {
-            sendBtn.disabled = true;
-            sendBtn.classList.add("opacity-50", "cursor-not-allowed");
-        }
 
         const isDryMsg = /^(hi|hello|hey|nothing|idk|ok|k|whatever|dunno|nevermind|nm)$/i.test(userText);
         const isApologyMsg = /sorry|apologize|my bad/i.test(userText);
@@ -4217,10 +4268,6 @@ STRICT LAWS:
             }
         } catch(e) {}
         window.scrollToBottom(true);
-
-        if (activeSimulatorThread.length === 0) {
-            activeSimulatorThread.push({ role: "system", content: practicePartnerSystemContext });
-        }
 
         activeSimulatorThread.push({ role: "user", content: userText, text: userText, attractionScore: window.currentAttractionScore });
         window.showChatboxTypingIndicator(true);
@@ -4272,15 +4319,18 @@ STRICT LAWS:
                     activeSimulatorThread.push({ role: "assistant", content: aiReply });
                     window.renderChatboxBubble(aiReply, "assistant");
                 } else if (chatData && chatData.error) {
+                    if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                     if (requestGeneration !== simulatorGeneration) return;
                     window.renderChatboxBubble("Notice: " + chatData.error, "assistant");
                 }
             } else if (chatResp.status === 409) {
+                if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 if (requestGeneration !== simulatorGeneration) return;
                 const errJson = await chatResp.json().catch(() => ({}));
                 if (typeof window.checkCreditBalance === 'function') await window.checkCreditBalance();
                 window.renderChatboxBubble(errJson.error || "This message is already being processed. No additional credits were deducted.", "assistant");
             } else if (chatResp.status === 403) {
+                if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 if (requestGeneration !== simulatorGeneration) return;
                 const errJson = await chatResp.json().catch(() => ({}));
                 if (errJson.code === "CONSENT_REQUIRED" || (errJson.error && errJson.error.toLowerCase().includes("consent"))) {
@@ -4293,6 +4343,7 @@ STRICT LAWS:
                 }
                 window.renderChatboxBubble("18+ age verification and consent required to continue chatting.", "assistant");
             } else if (chatResp.status === 503 || chatResp.status === 502 || chatResp.status === 504 || chatResp.status === 404) {
+                if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 const errJson = await chatResp.json().catch(() => ({}));
                 if (errJson.code === "CONSENT_SERVICE_UNAVAILABLE") {
                     state.isTermsAccepted = false;
@@ -4308,6 +4359,7 @@ STRICT LAWS:
                     window.renderChatboxBubble(offlineChatMsg, "assistant");
                 }
             } else if (chatResp.status === 402) {
+                if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 const errJson = await chatResp.json().catch(() => ({}));
                 const authoritativeChatBalance = await window.checkCreditBalance();
                 if (!authoritativeChatBalance || !authoritativeChatBalance.success || typeof state.credits !== 'number') {
@@ -4319,6 +4371,7 @@ STRICT LAWS:
                     if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal(2);
                 }
             } else {
+                if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 const errJson = await chatResp.json().catch(() => ({}));
                 if (typeof errJson.credits === 'number') {
                     window.updateUICredits(errJson.credits);
@@ -4327,6 +4380,7 @@ STRICT LAWS:
                 window.renderChatboxBubble("Notice: " + errMsg, "assistant");
             }
         } catch (chatErr) {
+            if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
             if (requestGeneration !== simulatorGeneration) return;
             window.showChatboxTypingIndicator(false);
             console.error("Chatbox API Error:", chatErr);

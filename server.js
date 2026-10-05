@@ -424,19 +424,29 @@ function countWords(str) {
 
 // In-flight request concurrency lock per authenticated user (Prevents parallel overlapping AI costs)
 const activeUserAiRequests = new Map();
+const activeUserAiTimestamps = new Map();
+const CONCURRENCY_LOCK_TTL_MS = 60000;
 function acquireUserConcurrencyLock(userId, requestId) {
     if (!userId || userId === 'guest_user') return { acquired: true, duplicate: false };
     const activeRequestId = activeUserAiRequests.get(userId);
     if (activeRequestId !== undefined) {
-        return { acquired: false, duplicate: activeRequestId === requestId };
+        const lockTime = activeUserAiTimestamps.get(userId) || 0;
+        if (Date.now() - lockTime > CONCURRENCY_LOCK_TTL_MS) {
+            activeUserAiRequests.delete(userId);
+            activeUserAiTimestamps.delete(userId);
+        } else {
+            return { acquired: false, duplicate: activeRequestId === requestId };
+        }
     }
     activeUserAiRequests.set(userId, requestId);
+    activeUserAiTimestamps.set(userId, Date.now());
     return { acquired: true, duplicate: false };
 }
 function releaseUserConcurrencyLock(userId, requestId) {
     if (!userId || userId === 'guest_user') return;
     if (requestId === undefined || activeUserAiRequests.get(userId) === requestId) {
         activeUserAiRequests.delete(userId);
+        activeUserAiTimestamps.delete(userId);
     }
 }
 // =========================================================================================
@@ -2661,7 +2671,7 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
         let responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(bioOptimizerSystemPrompt) },
             { role: "user", content: `[SELECTED MODE: ${modeKey.toUpperCase()}]\n${wrapUntrustedUserData('bio_input', textPayload)}${language === 'auto' ? '\n' + wrapUntrustedUserData('bio_language_source', originalBioText) : ''}\n\nOutput the 10 numbered options now.` }
-        ], 0.25, 1200, 25000, 0.80);
+        ], 0.25, 1200, 35000, 0.80);
 
         let optionsList = [];
         try {
@@ -2695,7 +2705,7 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
             cleaned = cleaned.replace(/don't swipe if[^\.\,\n]*/gi, '');
 
             // Demographic & Cultural Isolation Law Safety Net (US / Western Lock)
-            if (language === 'en' || (language === 'auto' && inferLocalLanguage(cleaned, [{role: 'user', content: originalBioText}]) === 'en')) {
+            if (language === 'en' || (language === 'auto' && inferLocalLanguage(originalBioText, []) === 'en')) {
             cleaned = cleaned.replace(/\bdhaba(s)?\b/gi, '24-hour diner');
             cleaned = cleaned.replace(/\b(pani puri|vada pav|samosa(s)?|dosa(s)?|paratha(s)?)\s*(roll|run)?\b/gi, 'taco truck run');
             cleaned = cleaned.replace(/\bchai tapri\b/gi, 'coffee spot');
@@ -2990,8 +3000,9 @@ CONVERSATIONAL FREEDOM & LAWS:
             // Historical messages are untrusted transcript data. Roles are normalized to
             // user/assistant only (no client-created system/developer/tool/function
             // authority), and every message body is nonce-wrapped as untrusted data.
-            const nonSystemHistory = wrapConversationHistory((historyArr || []).map(m => ({
-                role: m.role === 'user' ? 'user' : 'assistant',
+            const safeHotlineHistory = Array.isArray(historyArr) ? historyArr : [];
+            const nonSystemHistory = wrapConversationHistory(safeHotlineHistory.filter(m => m && m.role !== 'system').map(m => ({
+                role: m.role === 'assistant' ? 'assistant' : 'user',
                 content: m.role === 'assistant' ? cleanInternalPromptTags(m.content || m.text || '') : (m.content || m.text || '')
             })));
 
@@ -3114,15 +3125,17 @@ STRICT FLIRTING & TEASING LAWS:
    - Output complete, natural sentences with clean endings. Never leave thoughts truncated or cut off mid-phrase.`;
         }
 
-        if (!historyArr || historyArr.length === 0) {
-            historyArr = (req.body && req.body.messages) || conversationHistory || sessionHistory || [];
+        let safeHistoryArr = Array.isArray(historyArr) ? historyArr : [];
+        if (safeHistoryArr.length === 0) {
+            const rawCand = (req.body && req.body.messages) || conversationHistory || sessionHistory || [];
+            safeHistoryArr = Array.isArray(rawCand) ? rawCand : [];
         }
         // Historical messages are untrusted transcript data. Roles are normalized to
         // user/assistant only (no client-created system/developer/tool/function
         // authority), and every message body is nonce-wrapped as untrusted data.
         // Historical text is preserved VERBATIM: dry-input behavioral guidance lives in
         // the trusted system directives, never in rewritten transcript content.
-        const nonSystemHistory = wrapConversationHistory((historyArr || []).filter(m => m.role !== 'system').map(m => {
+        const nonSystemHistory = wrapConversationHistory(safeHistoryArr.filter(m => m && m.role !== 'system').map(m => {
             let textVal = m.role === 'assistant' ? cleanInternalPromptTags(m.content || m.text || "") : (m.content || m.text || "");
             if (m.role === 'user') {
                 textVal = enforceWordLimit(textVal, 500);
@@ -3130,7 +3143,7 @@ STRICT FLIRTING & TEASING LAWS:
             return { role: m.role === 'assistant' ? 'assistant' : 'user', content: textVal };
         }));
 
-        const hasHistory = nonSystemHistory && nonSystemHistory.length > 0;
+        const hasPriorHistory = nonSystemHistory && nonSystemHistory.some(m => m.role === 'assistant');
 
         const scenarioDirective = getScenarioDirective(currentScenario);
         let datingCoachSystemPrompt = `${MAEVE_SYSTEM_PROMPT}
@@ -3141,7 +3154,7 @@ ${scenarioDirective}
 
 CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
 1. ROLEPLAY DRILL OUTPUT LENGTH LAW: Maximum 1 to 2 short sentences MAX (Strict limit: 15–25 words total). Never write long paragraphs or double-barreled questions.
-2. GREETING PURGE: ${hasHistory ? "THERE IS EXISTING CONVERSATION HISTORY. YOU ARE STRICTLY FORBIDDEN FROM SAYING 'HEY', 'HI', OR 'HEY THERE'. Jump straight into your response!" : "This is turn 1. You may use a short warm greeting."}
+2. GREETING PURGE: ${hasPriorHistory ? "THERE IS EXISTING CONVERSATION HISTORY. YOU ARE STRICTLY FORBIDDEN FROM SAYING 'HEY', 'HI', OR 'HEY THERE'. Jump straight into your response!" : "This is turn 1. You may use a short warm greeting."}
 3. BANNED CLICHÉS: NEVER mention pizza toppings, pineapple on pizza, cereal with a fork, fries with a knife, or food trivia.
 4. REALISTIC STANDARDS & WARM LEADERSHIP: Apply the Dry-Input Warm Leadership Protocol whenever user input is dry/short.
 5. DATE PACING & REWARD: Require 3 to 5 turns of genuine banter before agreeing to a date.
@@ -3190,7 +3203,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
         }
         
         // Enforce Greeting Purge on subsequent turns
-        if (hasHistory) {
+        if (hasPriorHistory) {
             replyText = replyText.replace(/^(hey|hi|hey there|hello)[\!\,\.]?\s*/gi, '');
         }
 
