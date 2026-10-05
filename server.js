@@ -457,6 +457,35 @@ const COMPLETED_RESPONSES_TTL_MS = 10 * 60 * 1000; // 10 minutes cache for idemp
 const MAX_COMPLETED_RESPONSES = 500;
 const SERVER_TOTAL_OPERATION_DEADLINE_MS = 65000;
 
+function canonicalizeAiFeature(routePath) {
+    const p = String(routePath || '').toLowerCase();
+    if (p.includes('/api/analyze')) return 'analyze';
+    if (p.includes('/api/icebreaker')) return 'icebreaker';
+    if (p.includes('/api/optimize') || p.includes('/api/bio-optimizer')) return 'optimize';
+    if (p.includes('/api/simulator/review')) return 'simulator_review';
+    if (p.includes('/api/chat') || p.includes('/api/simulator/chat')) return 'chat';
+    return 'ai_feature';
+}
+
+function makeScopedAiOperationKey(uid, canonicalFeature, reqId) {
+    const safeUid = String(uid || 'anon').trim();
+    const safeFeature = String(canonicalFeature || 'ai_feature').trim();
+    const safeReqId = String(reqId || '').trim();
+    return `${safeUid}:${safeFeature}:${safeReqId}`;
+}
+
+function getOperationRemainingMs(deadlineAt, maxAttemptMs = 25000, reserveHeadroomMs = 1500) {
+    if (!deadlineAt) return maxAttemptMs;
+    const remaining = deadlineAt - Date.now() - reserveHeadroomMs;
+    if (remaining <= 500) {
+        const timeoutErr = new Error("Operation deadline exceeded. Please try again.");
+        timeoutErr.isTimeout = true;
+        timeoutErr.statusCode = 504;
+        throw timeoutErr;
+    }
+    return Math.min(maxAttemptMs, remaining);
+}
+
 function getRemainingBudgetMs(startTime, totalDeadlineMs = SERVER_TOTAL_OPERATION_DEADLINE_MS, defaultPerCall = 25000) {
     const elapsed = Date.now() - startTime;
     const remaining = totalDeadlineMs - elapsed;
@@ -469,23 +498,30 @@ function getRemainingBudgetMs(startTime, totalDeadlineMs = SERVER_TOTAL_OPERATIO
     return Math.min(defaultPerCall, remaining);
 }
 
-function cacheCompletedAiResponse(reqId, statusCode, data) {
-    if (!reqId) return;
-    if (completedAiResponses.size >= MAX_COMPLETED_RESPONSES) {
+// Scoped idempotency query contract: supports getCompletedAiResponse(reqId) / getCompletedAiResponse(opKey)
+// and in-flight operation coalescing: inFlightAiOperations.get(reqId) / inFlightAiOperations.get(opKey)
+function cacheCompletedAiResponse(key, statusCode, data) {
+    if (!key) return;
+    if (completedAiResponses.has(key)) {
+        completedAiResponses.delete(key);
+    } else if (completedAiResponses.size >= MAX_COMPLETED_RESPONSES) {
         const oldestKey = completedAiResponses.keys().next().value;
         if (oldestKey) completedAiResponses.delete(oldestKey);
     }
-    completedAiResponses.set(reqId, { statusCode, data, completedAt: Date.now() });
+    completedAiResponses.set(key, { statusCode, data, completedAt: Date.now() });
 }
 
-function getCompletedAiResponse(reqId) {
-    if (!reqId) return null;
-    const entry = completedAiResponses.get(reqId);
+function getCompletedAiResponse(key) {
+    if (!key) return null;
+    const entry = completedAiResponses.get(key);
     if (!entry) return null;
     if (Date.now() - entry.completedAt > COMPLETED_RESPONSES_TTL_MS) {
-        completedAiResponses.delete(reqId);
+        completedAiResponses.delete(key);
         return null;
     }
+    // True LRU touch: delete and re-set so this entry moves to the end of Map insertion order (most recently used)
+    completedAiResponses.delete(key);
+    completedAiResponses.set(key, entry);
     return entry;
 }
 
@@ -1082,7 +1118,7 @@ function applyFormattingRules(text, shorthandOption, emojiOption) {
     return result;
 }
 
-async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArray, temperature, maxTokens, timeoutMs, topP) {
+async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArray, temperature, maxTokens, timeoutMs, topP, deadlineAt = null) {
     const baseUrl = AICREDITS_BASE_URL;
 
     // Support both prefixed model identifier and raw model identifier (prefer prefixed for AICREDITS)
@@ -1111,8 +1147,11 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
         }
 
         for (let attempt = 1; attempt <= 3; attempt++) {
-            const controller = timeoutMs ? new AbortController() : null;
-            const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+            const attemptTimeoutMs = deadlineAt
+                ? getOperationRemainingMs(deadlineAt, typeof timeoutMs === 'number' ? timeoutMs : 25000)
+                : (typeof timeoutMs === 'number' ? timeoutMs : 25000);
+            const controller = attemptTimeoutMs ? new AbortController() : null;
+            const timer = controller ? setTimeout(() => controller.abort(), attemptTimeoutMs) : null;
 
             try {
                 const response = await fetch(AICREDITS_CHAT_COMPLETIONS_URL, {
@@ -1135,7 +1174,14 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
                         break;
                     }
                     if (retryableStatuses.has(response.status) && attempt < 3) {
-                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        const sleepMs = 300 * attempt;
+                        if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
+                            const deadlineErr = new Error("Operation deadline exceeded. Please try again.");
+                            deadlineErr.isTimeout = true;
+                            deadlineErr.statusCode = 504;
+                            throw deadlineErr;
+                        }
+                        await new Promise(resolve => setTimeout(resolve, sleepMs));
                         continue;
                     }
                     break;
@@ -1148,7 +1194,14 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
                     err.statusCode = numericStatus;
                     lastErr = err;
                     if (retryableStatuses.has(err.statusCode) && attempt < 3) {
-                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        const sleepMs = 300 * attempt;
+                        if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
+                            const deadlineErr = new Error("Operation deadline exceeded. Please try again.");
+                            deadlineErr.isTimeout = true;
+                            deadlineErr.statusCode = 504;
+                            throw deadlineErr;
+                        }
+                        await new Promise(resolve => setTimeout(resolve, sleepMs));
                         continue;
                     }
                     break;
@@ -1160,7 +1213,14 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
                     err.statusCode = 502;
                     lastErr = err;
                     if (attempt < 2) {
-                        await new Promise(resolve => setTimeout(resolve, 250));
+                        const sleepMs = 250;
+                        if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
+                            const deadlineErr = new Error("Operation deadline exceeded. Please try again.");
+                            deadlineErr.isTimeout = true;
+                            deadlineErr.statusCode = 504;
+                            throw deadlineErr;
+                        }
+                        await new Promise(resolve => setTimeout(resolve, sleepMs));
                         continue;
                     }
                     break;
@@ -1174,7 +1234,14 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
                     err.statusCode = 502;
                     lastErr = err;
                     if (attempt < 2) {
-                        await new Promise(resolve => setTimeout(resolve, 250));
+                        const sleepMs = 250;
+                        if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
+                            const deadlineErr = new Error("Operation deadline exceeded. Please try again.");
+                            deadlineErr.isTimeout = true;
+                            deadlineErr.statusCode = 504;
+                            throw deadlineErr;
+                        }
+                        await new Promise(resolve => setTimeout(resolve, sleepMs));
                         continue;
                     }
                     break;
@@ -1188,7 +1255,11 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
                     timeoutErr.statusCode = 504;
                     lastErr = timeoutErr;
                     if (attempt < 3) {
-                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        const sleepMs = 300 * attempt;
+                        if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
+                            throw timeoutErr;
+                        }
+                        await new Promise(resolve => setTimeout(resolve, sleepMs));
                         continue;
                     }
                     break;
@@ -1199,7 +1270,11 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
                     break;
                 }
                 if (attempt < 3 && (!err || !err.statusCode || retryableStatuses.has(Number(err.statusCode)))) {
-                    await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                    const sleepMs = 300 * attempt;
+                    if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
+                        throw lastErr;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, sleepMs));
                     continue;
                 }
                 break;
@@ -1226,7 +1301,7 @@ function getAnalyzerProviderFailureCode(error) {
 }
 
 // Strict Screenshot Analyzer provider call: exact AICREDITS endpoint/model/key, no model or key fallback, with bounded transient retry.
-async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, maxTokens = null, timeoutMs = 25000, topP = null) {
+async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, maxTokens = null, timeoutMs = 25000, topP = null, deadlineAt = null) {
     const isVisionStage = stage === 'vision';
     const isMainStage = stage === 'main';
     if (!isVisionStage && !isMainStage) {
@@ -1252,8 +1327,11 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
     let lastError = null;
 
     for (let attempt = 1; attempt <= 3; attempt++) {
-        const controller = timeoutMs ? new AbortController() : null;
-        const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+        const attemptTimeoutMs = deadlineAt
+            ? getOperationRemainingMs(deadlineAt, typeof timeoutMs === 'number' ? timeoutMs : 25000)
+            : (typeof timeoutMs === 'number' ? timeoutMs : 25000);
+        const controller = attemptTimeoutMs ? new AbortController() : null;
+        const timer = controller ? setTimeout(() => controller.abort(), attemptTimeoutMs) : null;
 
         try {
             const response = await fetch(AICREDITS_CHAT_COMPLETIONS_URL, {
@@ -1274,7 +1352,15 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
                 err.analyzerStage = stage;
                 lastError = err;
                 if (retryableStatuses.has(response.status) && attempt < 3) {
-                    await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                    const sleepMs = 300 * attempt;
+                    if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
+                        const deadlineErr = new Error("Operation deadline exceeded. Please try again.");
+                        deadlineErr.isTimeout = true;
+                        deadlineErr.statusCode = 504;
+                        deadlineErr.analyzerStage = stage;
+                        throw deadlineErr;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, sleepMs));
                     continue;
                 }
                 break;
@@ -1288,7 +1374,15 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
                 err.analyzerStage = stage;
                 lastError = err;
                 if (retryableStatuses.has(err.statusCode) && attempt < 3) {
-                    await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                    const sleepMs = 300 * attempt;
+                    if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
+                        const deadlineErr = new Error("Operation deadline exceeded. Please try again.");
+                        deadlineErr.isTimeout = true;
+                        deadlineErr.statusCode = 504;
+                        deadlineErr.analyzerStage = stage;
+                        throw deadlineErr;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, sleepMs));
                     continue;
                 }
                 break;
@@ -1301,7 +1395,15 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
                 err.analyzerStage = stage;
                 lastError = err;
                 if (attempt < 2) {
-                    await new Promise(resolve => setTimeout(resolve, 250));
+                    const sleepMs = 250;
+                    if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
+                        const deadlineErr = new Error("Operation deadline exceeded. Please try again.");
+                        deadlineErr.isTimeout = true;
+                        deadlineErr.statusCode = 504;
+                        deadlineErr.analyzerStage = stage;
+                        throw deadlineErr;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, sleepMs));
                     continue;
                 }
                 break;
@@ -1316,7 +1418,15 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
                 err.analyzerStage = stage;
                 lastError = err;
                 if (attempt < 2) {
-                    await new Promise(resolve => setTimeout(resolve, 250));
+                    const sleepMs = 250;
+                    if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
+                        const deadlineErr = new Error("Operation deadline exceeded. Please try again.");
+                        deadlineErr.isTimeout = true;
+                        deadlineErr.statusCode = 504;
+                        deadlineErr.analyzerStage = stage;
+                        throw deadlineErr;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, sleepMs));
                     continue;
                 }
                 break;
@@ -1331,7 +1441,11 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
                 timeoutErr.analyzerStage = stage;
                 lastError = timeoutErr;
                 if (attempt < 3) {
-                    await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                    const sleepMs = 300 * attempt;
+                    if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
+                        throw timeoutErr;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, sleepMs));
                     continue;
                 }
                 break;
@@ -1340,7 +1454,11 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
             err.analyzerStage = err.analyzerStage || stage;
             lastError = err;
             if (attempt < 3 && (!err || !err.statusCode || retryableStatuses.has(Number(err.statusCode)))) {
-                await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                const sleepMs = 300 * attempt;
+                if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
+                    throw lastError;
+                }
+                await new Promise(resolve => setTimeout(resolve, sleepMs));
                 continue;
             }
             break;
@@ -1472,7 +1590,7 @@ async function queryMaeveProvider(messagesArray, temperature = 0.7, maxTokens = 
 }
 
 // Helper function to query OpenRouter dynamically with automatic key failover
-async function queryOpenRouter(modelIdentifier, messagesArray, temperature = 0.7, maxTokens = null, timeoutMs = 25000, topP = null) {
+async function queryOpenRouter(modelIdentifier, messagesArray, temperature = 0.7, maxTokens = null, timeoutMs = 25000, topP = null, deadlineAt = null) {
     const isVisionModel = (typeof modelIdentifier === 'string') && (modelIdentifier.includes('vl') || modelIdentifier.includes('vision') || modelIdentifier.includes('flash'));
 
     const rawKeys = isVisionModel ? [
@@ -1496,11 +1614,15 @@ async function queryOpenRouter(modelIdentifier, messagesArray, temperature = 0.7
 
     let lastError = null;
     for (const apiKey of keysToTry) {
+        if (deadlineAt) {
+            getOperationRemainingMs(deadlineAt, 1000);
+        }
         try {
-            const result = await executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArray, temperature, maxTokens, timeoutMs, topP);
+            const result = await executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArray, temperature, maxTokens, timeoutMs, topP, deadlineAt);
             return result;
         } catch (err) {
             lastError = err;
+            if (err && err.isTimeout) throw err;
             console.warn('[Provider failover] API key attempt failed; trying fallback key.', safeLogValue(modelIdentifier));
         }
     }
@@ -1515,11 +1637,15 @@ async function queryOpenRouter(modelIdentifier, messagesArray, temperature = 0.7
         if (fallbackModel && fallbackModel !== modelIdentifier) {
             console.warn(`[AI Failover] Model ${modelIdentifier} failed on all keys. Attempting failover to ${fallbackModel}...`);
             for (const apiKey of keysToTry) {
+                if (deadlineAt) {
+                    getOperationRemainingMs(deadlineAt, 1000);
+                }
                 try {
-                    const result = await executeSingleOpenRouterCall(apiKey, fallbackModel, messagesArray, temperature, maxTokens, timeoutMs, topP);
+                    const result = await executeSingleOpenRouterCall(apiKey, fallbackModel, messagesArray, temperature, maxTokens, timeoutMs, topP, deadlineAt);
                     return result;
                 } catch (err) {
                     lastError = err;
+                    if (err && err.isTimeout) throw err;
                 }
             }
         }
@@ -1576,7 +1702,7 @@ function containsDevanagari(val) {
     return false;
 }
 
-async function repairHinglishDevanagari(target, feature = 'generic', language = 'hinglish', source = '', history = []) {
+async function repairHinglishDevanagari(target, feature = 'generic', language = 'hinglish', source = '', history = [], deadlineAt = null) {
     if (!target) return target;
     if (!containsDevanagari(target)) return target;
 
@@ -1601,7 +1727,10 @@ CRITICAL RULES:
     ];
 
     try {
-        const repairedText = await queryOpenRouter("qwen3-235b-a22b-2507", repairMessages, 0.2, 1000, 15000);
+        if (deadlineAt) {
+            getOperationRemainingMs(deadlineAt, 1000);
+        }
+        const repairedText = await queryOpenRouter("qwen3-235b-a22b-2507", repairMessages, 0.2, 1000, 15000, null, deadlineAt);
         if (!repairedText || containsDevanagari(repairedText)) {
             throw new Error("Transliteration repair failed: Devanagari characters still present.");
         }
@@ -1631,12 +1760,13 @@ CRITICAL RULES:
         } catch (_) {}
         return target;
     } catch (err) {
+        if (err && err.isTimeout) throw err;
         console.error(`[Devanagari Repair Error] ${feature}:`, err.message);
         throw new Error(`Bilingual output policy violation: Output contained Devanagari script and repair could not resolve it.`);
     }
 }
 
-async function repairInternalTagLeak(target, feature = 'chat', language = 'auto', source = '', history = []) {
+async function repairInternalTagLeak(target, feature = 'chat', language = 'auto', source = '', history = [], deadlineAt = null) {
     if (!target) return target;
     if (!containsInternalPromptBoundary(target)) return target;
 
@@ -1671,7 +1801,10 @@ STRICT REPAIR LAWS:
     ];
 
     try {
-        const repairedText = await queryOpenRouter("qwen3-235b-a22b-2507", repairMessages, 0.2, maxTokens, 15000);
+        if (deadlineAt) {
+            getOperationRemainingMs(deadlineAt, 1000);
+        }
+        const repairedText = await queryOpenRouter("qwen3-235b-a22b-2507", repairMessages, 0.2, maxTokens, 15000, null, deadlineAt);
         if (repairedText && !containsInternalPromptBoundary(repairedText)) {
             if (isArray) {
                 try {
@@ -1695,6 +1828,7 @@ STRICT REPAIR LAWS:
             }
         }
     } catch (err) {
+        if (err && err.isTimeout) throw err;
         console.error(`[Internal Tag Repair Error] ${feature}:`, err.message);
     }
 
@@ -1715,7 +1849,7 @@ STRICT REPAIR LAWS:
     throw new Error(`Output safety policy violation: Generated response contained internal prompt boundary markup and could not be safely resolved.`);
 }
 
-async function repairLanguageMismatch(content, feature = 'generic', expectedLanguage = 'hinglish', source = '', history = []) {
+async function repairLanguageMismatch(content, feature = 'generic', expectedLanguage = 'hinglish', source = '', history = [], deadlineAt = null) {
     if (!content) return content;
     const validation = validateGeneratedLanguage(expectedLanguage, content);
     if (validation.valid) return content;
@@ -1747,7 +1881,10 @@ ${getAuthoritativeLanguageDirective(expectedLanguage, repairFeature)}`;
     ];
 
     try {
-        const repairedText = await queryOpenRouter("qwen3-235b-a22b-2507", repairMessages, 0.25, 1200, 25000);
+        if (deadlineAt) {
+            getOperationRemainingMs(deadlineAt, 1000);
+        }
+        const repairedText = await queryOpenRouter("qwen3-235b-a22b-2507", repairMessages, 0.25, 1200, 25000, null, deadlineAt);
         if (!repairedText || containsDevanagari(repairedText)) {
             const err = new Error(`Bilingual output policy violation: Output failed language validation (${validation.reason}) and repair failed to produce valid non-Devanagari text.`);
             err.code = 'LANGUAGE_POLICY_VIOLATION';
@@ -1790,6 +1927,7 @@ ${getAuthoritativeLanguageDirective(expectedLanguage, repairFeature)}`;
         err.code = 'LANGUAGE_POLICY_VIOLATION';
         throw err;
     } catch (err) {
+        if (err && err.isTimeout) throw err;
         if (err.code === 'LANGUAGE_POLICY_VIOLATION') {
             throw err;
         }
@@ -1804,16 +1942,18 @@ ${getAuthoritativeLanguageDirective(expectedLanguage, repairFeature)}`;
 app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('anl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    const canonicalFeature = canonicalizeAiFeature(req.path || req.baseUrl || req.originalUrl);
+    const opKey = makeScopedAiOperationKey(uid, canonicalFeature, reqId);
 
-    const cachedResponse = getCompletedAiResponse(reqId);
+    const cachedResponse = getCompletedAiResponse(opKey);
     if (cachedResponse) {
-        console.log(`[Idempotency Replay] Serving completed response for reqId: ${reqId}`);
+        console.log(`[Idempotency Replay] Serving completed response for opKey: ${opKey}`);
         return res.status(cachedResponse.statusCode).json(cachedResponse.data);
     }
 
-    const ongoingOperation = inFlightAiOperations.get(reqId);
+    const ongoingOperation = inFlightAiOperations.get(opKey);
     if (ongoingOperation) {
-        console.log(`[In-Flight Coalescing] Awaiting ongoing operation for reqId: ${reqId}`);
+        console.log(`[In-Flight Coalescing] Awaiting ongoing operation for opKey: ${opKey}`);
         try {
             const result = await ongoingOperation;
             return res.status(result.statusCode).json(result.data);
@@ -1825,7 +1965,7 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
     const lockState = acquireUserConcurrencyLock(uid, reqId);
     if (!lockState.acquired) {
         if (lockState.duplicate) {
-            const retryFlight = inFlightAiOperations.get(reqId);
+            const retryFlight = inFlightAiOperations.get(opKey);
             if (retryFlight) {
                 try {
                     const result = await retryFlight;
@@ -1850,11 +1990,12 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
         rejectOperation = reject;
     });
     operationPromise.catch(() => {});
-    inFlightAiOperations.set(reqId, operationPromise);
+    inFlightAiOperations.set(opKey, operationPromise);
     let deduction = null;
 
     try {
         const opStart = Date.now();
+        const deadlineAt = opStart + SERVER_TOTAL_OPERATION_DEADLINE_MS;
         let { text, messages, tone, image, images, imageBase64, shorthandOption, emojiOption } = req.body || {};
         const language = requestLanguageMode(req.body);
         const textCheck = text || (messages && messages[0] ? messages[0].content : "");
@@ -1996,11 +2137,11 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
         }
 
         if (deduction.duplicate === true) {
-            const completed = getCompletedAiResponse(reqId);
+            const completed = getCompletedAiResponse(opKey);
             if (completed) {
                 return res.status(completed.statusCode).json(completed.data);
             }
-            const inFlight = inFlightAiOperations.get(reqId);
+            const inFlight = inFlightAiOperations.get(opKey);
             if (inFlight) {
                 try {
                     const result = await inFlight;
@@ -2075,7 +2216,7 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
                         ]
                     }
                 ];
-                const singleTranscript = await queryAnalyzerProvider('vision', visionMessages, 0.2, 800, getRemainingBudgetMs(opStart));
+                const singleTranscript = await queryAnalyzerProvider('vision', visionMessages, 0.2, 800, 25000, null, deadlineAt);
                 if (!singleTranscript || typeof singleTranscript !== 'string' || singleTranscript.trim().length === 0) {
                     throw new Error(`Optical parsing failed for screenshot ${i + 1}.`);
                 }
@@ -2294,7 +2435,7 @@ ${formattingRule}`;
 
             console.log('[Analyzer] Executing Stage 2 response-card generation.', safeLogValue(modeConfig.name));
         let finalCardsOutput = "";
-        finalCardsOutput = await queryAnalyzerProvider('main', generationMessages, 0.20, 800, getRemainingBudgetMs(opStart));
+        finalCardsOutput = await queryAnalyzerProvider('main', generationMessages, 0.20, 800, 25000, null, deadlineAt);
 
         let optionsList = [];
         try {
@@ -2338,16 +2479,16 @@ ${formattingRule}`;
 
         optionsList = enforceUniqueQuestionAnchors(enforceStructuralBatchDiversity(optionsList, "analyze"));
         if (containsInternalPromptBoundary(optionsList)) {
-            optionsList = await repairInternalTagLeak(optionsList, "analyze", language, extractedTextContext);
+            optionsList = await repairInternalTagLeak(optionsList, "analyze", language, extractedTextContext, [], deadlineAt);
         }
         optionsList = optionsList.map(opt => cleanInternalPromptTags(opt));
         if (containsDevanagari(optionsList)) {
-            optionsList = await repairHinglishDevanagari(optionsList, "analyze", language, extractedTextContext);
+            optionsList = await repairHinglishDevanagari(optionsList, "analyze", language, extractedTextContext, [], deadlineAt);
             if (containsDevanagari(optionsList)) {
                 throw new Error("Screenshot analysis generated Devanagari text in Hinglish mode.");
             }
         }
-        optionsList = await repairLanguageMismatch(optionsList, "analyze", languageTarget, extractedTextContext);
+        optionsList = await repairLanguageMismatch(optionsList, "analyze", languageTarget, extractedTextContext, [], deadlineAt);
         const formattedText = optionsList.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
 
         try {
@@ -2383,7 +2524,7 @@ ${formattingRule}`;
             text: formattedText,
             credits: deduction.remainingCredits
         };
-        cacheCompletedAiResponse(reqId, 200, successPayload);
+        cacheCompletedAiResponse(opKey, 200, successPayload);
         if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
         res.json(successPayload);
     } catch (error) {
@@ -2436,7 +2577,7 @@ ${formattingRule}`;
         if (rejectOperation) rejectOperation({ statusCode: 500, data: errorPayload });
         res.status(500).json(errorPayload);
     } finally {
-        inFlightAiOperations.delete(reqId);
+        inFlightAiOperations.delete(opKey);
         releaseUserConcurrencyLock(uid, reqId);
     }
 });
@@ -2444,16 +2585,18 @@ ${formattingRule}`;
 app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('ice_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    const canonicalFeature = canonicalizeAiFeature(req.path || req.baseUrl || req.originalUrl);
+    const opKey = makeScopedAiOperationKey(uid, canonicalFeature, reqId);
 
-    const cachedResponse = getCompletedAiResponse(reqId);
+    const cachedResponse = getCompletedAiResponse(opKey);
     if (cachedResponse) {
-        console.log(`[Idempotency Replay] Serving completed response for reqId: ${reqId}`);
+        console.log(`[Idempotency Replay] Serving completed response for opKey: ${opKey}`);
         return res.status(cachedResponse.statusCode).json(cachedResponse.data);
     }
 
-    const ongoingOperation = inFlightAiOperations.get(reqId);
+    const ongoingOperation = inFlightAiOperations.get(opKey);
     if (ongoingOperation) {
-        console.log(`[In-Flight Coalescing] Awaiting ongoing operation for reqId: ${reqId}`);
+        console.log(`[In-Flight Coalescing] Awaiting ongoing operation for opKey: ${opKey}`);
         try {
             const result = await ongoingOperation;
             return res.status(result.statusCode).json(result.data);
@@ -2465,7 +2608,7 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
     const lockState = acquireUserConcurrencyLock(uid, reqId);
     if (!lockState.acquired) {
         if (lockState.duplicate) {
-            const retryFlight = inFlightAiOperations.get(reqId);
+            const retryFlight = inFlightAiOperations.get(opKey);
             if (retryFlight) {
                 try {
                     const result = await retryFlight;
@@ -2490,11 +2633,12 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
         rejectOperation = reject;
     });
     operationPromise.catch(() => {});
-    inFlightAiOperations.set(reqId, operationPromise);
+    inFlightAiOperations.set(opKey, operationPromise);
     let deduction = null;
 
     try {
         const opStart = Date.now();
+        const deadlineAt = opStart + SERVER_TOTAL_OPERATION_DEADLINE_MS;
         let { text, bioText, messages } = req.body || {};
         const textCheck = String(bioText || text || (messages && messages[0] ? messages[0].content : "") || "");
         if (textCheck.length > 5000) {
@@ -2529,11 +2673,11 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
         }
 
         if (deduction.duplicate === true) {
-            const completed = getCompletedAiResponse(reqId);
+            const completed = getCompletedAiResponse(opKey);
             if (completed) {
                 return res.status(completed.statusCode).json(completed.data);
             }
-            const inFlight = inFlightAiOperations.get(reqId);
+            const inFlight = inFlightAiOperations.get(opKey);
             if (inFlight) {
                 try {
                     const result = await inFlight;
@@ -2646,7 +2790,7 @@ GENERAL ICEBREAKER LAWS:
         const responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(icebreakerSystemPrompt) },
             { role: "user", content: `${wrapUntrustedUserData('match_details', text)}\n\nRequested Tone: ${canonicalizeIcebreakerVibe(requestedVibe)}. Output the 10 numbered options now.` }
-        ], 0.8, 650, getRemainingBudgetMs(opStart));
+        ], 0.8, 650, 25000, null, deadlineAt);
 
         let rawOptions = (responseText || "").split(/(?:^|\n)\d+[\.\)\:]\s*/).filter(s => s.trim().length > 0);
         if (rawOptions.length === 0) {
@@ -2683,16 +2827,16 @@ GENERAL ICEBREAKER LAWS:
 
         cleanedOptions = enforceUniqueQuestionAnchors(enforceStructuralBatchDiversity(cleanedOptions, "icebreaker"));
         if (containsInternalPromptBoundary(cleanedOptions)) {
-            cleanedOptions = await repairInternalTagLeak(cleanedOptions, "icebreaker", language, text || textVal);
+            cleanedOptions = await repairInternalTagLeak(cleanedOptions, "icebreaker", language, text || textVal, [], deadlineAt);
         }
         cleanedOptions = cleanedOptions.map(opt => cleanInternalPromptTags(opt));
         if (containsDevanagari(cleanedOptions)) {
-            cleanedOptions = await repairHinglishDevanagari(cleanedOptions, "icebreaker", language, text || textVal);
+            cleanedOptions = await repairHinglishDevanagari(cleanedOptions, "icebreaker", language, text || textVal, [], deadlineAt);
             if (containsDevanagari(cleanedOptions)) {
                 throw new Error("Icebreaker generation generated Devanagari text in Hinglish mode.");
             }
         }
-        cleanedOptions = await repairLanguageMismatch(cleanedOptions, "icebreaker", languageTarget, text || textVal);
+        cleanedOptions = await repairLanguageMismatch(cleanedOptions, "icebreaker", languageTarget, text || textVal, [], deadlineAt);
         if (!IS_PROD && process.env.DEBUG_PAYLOADS === 'true') {
             console.log("[ICEBREAKER CLEAN OUTPUT]:", cleanedOptions);
         }
@@ -2730,7 +2874,7 @@ GENERAL ICEBREAKER LAWS:
             options: cleanedOptions,
             credits: deduction.remainingCredits
         };
-        cacheCompletedAiResponse(reqId, 200, successPayload);
+        cacheCompletedAiResponse(opKey, 200, successPayload);
         if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
         return res.json(successPayload);
     } catch (error) {
@@ -2768,7 +2912,7 @@ GENERAL ICEBREAKER LAWS:
             credits: currentBal
         });
     } finally {
-        inFlightAiOperations.delete(reqId);
+        inFlightAiOperations.delete(opKey);
         releaseUserConcurrencyLock(uid, reqId);
     }
 });
@@ -2869,16 +3013,18 @@ function formatBioLineBreaks(biosArray) {
 app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('opt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    const canonicalFeature = canonicalizeAiFeature(req.path || req.baseUrl || req.originalUrl);
+    const opKey = makeScopedAiOperationKey(uid, canonicalFeature, reqId);
 
-    const cachedResponse = getCompletedAiResponse(reqId);
+    const cachedResponse = getCompletedAiResponse(opKey);
     if (cachedResponse) {
-        console.log(`[Idempotency Replay] Serving completed response for reqId: ${reqId}`);
+        console.log(`[Idempotency Replay] Serving completed response for opKey: ${opKey}`);
         return res.status(cachedResponse.statusCode).json(cachedResponse.data);
     }
 
-    const ongoingOperation = inFlightAiOperations.get(reqId);
+    const ongoingOperation = inFlightAiOperations.get(opKey);
     if (ongoingOperation) {
-        console.log(`[In-Flight Coalescing] Awaiting ongoing operation for reqId: ${reqId}`);
+        console.log(`[In-Flight Coalescing] Awaiting ongoing operation for opKey: ${opKey}`);
         try {
             const result = await ongoingOperation;
             return res.status(result.statusCode).json(result.data);
@@ -2890,7 +3036,7 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
     const lockState = acquireUserConcurrencyLock(uid, reqId);
     if (!lockState.acquired) {
         if (lockState.duplicate) {
-            const retryFlight = inFlightAiOperations.get(reqId);
+            const retryFlight = inFlightAiOperations.get(opKey);
             if (retryFlight) {
                 try {
                     const result = await retryFlight;
@@ -2915,11 +3061,12 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
         rejectOperation = reject;
     });
     operationPromise.catch(() => {});
-    inFlightAiOperations.set(reqId, operationPromise);
+    inFlightAiOperations.set(opKey, operationPromise);
     let deduction = null;
 
     try {
         const opStart = Date.now();
+        const deadlineAt = opStart + SERVER_TOTAL_OPERATION_DEADLINE_MS;
         let { text, bioText, messages } = req.body || {};
         const rawText = String(text || bioText || (messages && messages[0] ? messages[0].content : "") || "");
         
@@ -2963,11 +3110,11 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
         }
 
         if (deduction.duplicate === true) {
-            const completed = getCompletedAiResponse(reqId);
+            const completed = getCompletedAiResponse(opKey);
             if (completed) {
                 return res.status(completed.statusCode).json(completed.data);
             }
-            const inFlight = inFlightAiOperations.get(reqId);
+            const inFlight = inFlightAiOperations.get(opKey);
             if (inFlight) {
                 try {
                     const result = await inFlight;
@@ -3078,7 +3225,7 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
         let responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(bioOptimizerSystemPrompt) },
             { role: "user", content: `[SELECTED MODE: ${modeKey.toUpperCase()}]\n${wrapUntrustedUserData('bio_input', textPayload)}${language === 'auto' ? '\n' + wrapUntrustedUserData('bio_language_source', originalBioText) : ''}\n\nOutput the 10 numbered options now.` }
-        ], 0.25, 1200, getRemainingBudgetMs(opStart, SERVER_TOTAL_OPERATION_DEADLINE_MS, 35000), 0.80);
+        ], 0.25, 1200, 25000, 0.80, deadlineAt);
 
         let optionsList = [];
         try {
@@ -3177,19 +3324,19 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
         optionsList = optionsList.map(opt => fixGrammarAndTypoLeaks(opt));
         optionsList = formatBioLineBreaks(optionsList);
         if (containsInternalPromptBoundary(optionsList)) {
-            optionsList = await repairInternalTagLeak(optionsList, "optimize", language, originalBioText);
+            optionsList = await repairInternalTagLeak(optionsList, "optimize", language, originalBioText, [], deadlineAt);
             if (containsInternalPromptBoundary(optionsList)) {
                 throw new Error("Bio optimization leaked internal prompt boundary tokens.");
             }
         }
         optionsList = optionsList.map(opt => cleanInternalPromptTags(opt));
         if (containsDevanagari(optionsList)) {
-            optionsList = await repairHinglishDevanagari(optionsList, "optimize", language, originalBioText);
+            optionsList = await repairHinglishDevanagari(optionsList, "optimize", language, originalBioText, [], deadlineAt);
             if (containsDevanagari(optionsList)) {
                 throw new Error("Bio optimization generated Devanagari text in Hinglish mode.");
             }
         }
-        optionsList = await repairLanguageMismatch(optionsList, "optimize", languageTarget, originalBioText);
+        optionsList = await repairLanguageMismatch(optionsList, "optimize", languageTarget, originalBioText, [], deadlineAt);
         const formattedText = optionsList.map((opt, i) => `${i + 1}. ${opt}`).join("\n\n");
 
         try {
@@ -3224,7 +3371,7 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
             text: formattedText,
             credits: deduction.remainingCredits
         };
-        cacheCompletedAiResponse(reqId, 200, successPayload);
+        cacheCompletedAiResponse(opKey, 200, successPayload);
         if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
         return res.json(successPayload);
     } catch (error) {
@@ -3262,7 +3409,7 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
             credits: currentBal
         });
     } finally {
-        inFlightAiOperations.delete(reqId);
+        inFlightAiOperations.delete(opKey);
         releaseUserConcurrencyLock(uid, reqId);
     }
 });
@@ -3271,16 +3418,18 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
 app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('chat_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    const canonicalFeature = canonicalizeAiFeature(req.path || req.baseUrl || req.originalUrl);
+    const opKey = makeScopedAiOperationKey(uid, canonicalFeature, reqId);
 
-    const cachedResponse = getCompletedAiResponse(reqId);
+    const cachedResponse = getCompletedAiResponse(opKey);
     if (cachedResponse) {
-        console.log(`[Idempotency Replay] Serving completed response for reqId: ${reqId}`);
+        console.log(`[Idempotency Replay] Serving completed response for opKey: ${opKey}`);
         return res.status(cachedResponse.statusCode).json(cachedResponse.data);
     }
 
-    const ongoingOperation = inFlightAiOperations.get(reqId);
+    const ongoingOperation = inFlightAiOperations.get(opKey);
     if (ongoingOperation) {
-        console.log(`[In-Flight Coalescing] Awaiting ongoing operation for reqId: ${reqId}`);
+        console.log(`[In-Flight Coalescing] Awaiting ongoing operation for opKey: ${opKey}`);
         try {
             const result = await ongoingOperation;
             return res.status(result.statusCode).json(result.data);
@@ -3292,7 +3441,7 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
     const lockState = acquireUserConcurrencyLock(uid, reqId);
     if (!lockState.acquired) {
         if (lockState.duplicate) {
-            const retryFlight = inFlightAiOperations.get(reqId);
+            const retryFlight = inFlightAiOperations.get(opKey);
             if (retryFlight) {
                 try {
                     const result = await retryFlight;
@@ -3317,7 +3466,7 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
         rejectOperation = reject;
     });
     operationPromise.catch(() => {});
-    inFlightAiOperations.set(reqId, operationPromise);
+    inFlightAiOperations.set(opKey, operationPromise);
     let deduction = null;
 
     try {
@@ -3397,11 +3546,11 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
         }
 
         if (deduction.duplicate === true) {
-            const completed = getCompletedAiResponse(reqId);
+            const completed = getCompletedAiResponse(opKey);
             if (completed) {
                 return res.status(completed.statusCode).json(completed.data);
             }
-            const inFlight = inFlightAiOperations.get(reqId);
+            const inFlight = inFlightAiOperations.get(opKey);
             if (inFlight) {
                 try {
                     const result = await inFlight;
@@ -3514,7 +3663,7 @@ CONVERSATIONAL FREEDOM & LAWS:
                 character_mood: "Coach",
                 credits: deduction.remainingCredits
             };
-            cacheCompletedAiResponse(reqId, 200, successPayload);
+            cacheCompletedAiResponse(opKey, 200, successPayload);
             if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
             return res.json(successPayload);
         }
@@ -3756,7 +3905,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
             roleplay_response: replyText,
             credits: deduction.remainingCredits
         };
-        cacheCompletedAiResponse(reqId, 200, successPayload);
+        cacheCompletedAiResponse(opKey, 200, successPayload);
         if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
         return res.json(successPayload);
     } catch (error) {
@@ -3796,7 +3945,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
             credits: currentBal
         });
     } finally {
-        inFlightAiOperations.delete(reqId);
+        inFlightAiOperations.delete(opKey);
         releaseUserConcurrencyLock(uid, reqId);
     }
 });
@@ -3805,13 +3954,15 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
 app.post('/api/simulator/review', requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('rev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+    const canonicalFeature = canonicalizeAiFeature(req.path || req.baseUrl || req.originalUrl);
+    const opKey = makeScopedAiOperationKey(uid, canonicalFeature, reqId);
 
-    const cachedResponse = getCompletedAiResponse(reqId);
+    const cachedResponse = getCompletedAiResponse(opKey);
     if (cachedResponse) {
         return res.status(cachedResponse.statusCode).json(cachedResponse.data);
     }
 
-    const ongoingOperation = inFlightAiOperations.get(reqId);
+    const ongoingOperation = inFlightAiOperations.get(opKey);
     if (ongoingOperation) {
         try {
             const result = await ongoingOperation;
@@ -3840,7 +3991,7 @@ app.post('/api/simulator/review', requireSupabaseAuth, requireActiveConsent, api
         rejectOperation = reject;
     });
     operationPromise.catch(() => {});
-    inFlightAiOperations.set(reqId, operationPromise);
+    inFlightAiOperations.set(opKey, operationPromise);
     let deduction = null;
 
     try {
@@ -4061,7 +4212,7 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
             priority_tip: priorityFocus,
             credits: deduction.remainingCredits
         };
-        cacheCompletedAiResponse(reqId, 200, successPayload);
+        cacheCompletedAiResponse(opKey, 200, successPayload);
         if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
         return res.json(successPayload);
 
@@ -4100,7 +4251,7 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
             credits: currentBal
         });
     } finally {
-        inFlightAiOperations.delete(reqId);
+        inFlightAiOperations.delete(opKey);
         releaseUserConcurrencyLock(uid, reqId);
     }
 });
@@ -4580,6 +4731,13 @@ module.exports.inFlightUserCreditQueries = inFlightUserCreditQueries;
 module.exports.invalidateInFlightCreditQuery = invalidateInFlightCreditQuery;
 module.exports.queryMaeveProvider = queryMaeveProvider;
 module.exports.getMaeveProviderFailureCode = getMaeveProviderFailureCode;
+module.exports.canonicalizeAiFeature = canonicalizeAiFeature;
+module.exports.makeScopedAiOperationKey = makeScopedAiOperationKey;
+module.exports.getOperationRemainingMs = getOperationRemainingMs;
+module.exports.inFlightAiOperations = inFlightAiOperations;
+module.exports.completedAiResponses = completedAiResponses;
+module.exports.cacheCompletedAiResponse = cacheCompletedAiResponse;
+module.exports.getCompletedAiResponse = getCompletedAiResponse;
 
 if (require.main === module) {
     startWingmanServer().catch(() => process.exit(1));

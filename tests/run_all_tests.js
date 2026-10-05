@@ -98,7 +98,8 @@ const testSuites = [
     { name: '79. Internal Prompt Tag Leak Prevention & Output Safety', file: 'internal_prompt_tag_leak_regression.test.js', timeoutMs: 60_000 },
     { name: '80. Maeve Practice Partner & Coach Modes Matrix', file: 'maeve_modes_matrix.test.js', timeoutMs: 60_000 },
     { name: '81. Non-Chat Lifecycle & Hinglish Repair Guard', file: 'non_chat_lifecycle_and_hinglish_repair.test.js', timeoutMs: 30_000 },
-    { name: '82. Non-Chat Reliability & Architectural Integration', file: 'local_e2e_nonchat_integration.test.js', timeoutMs: 30_000 }
+    { name: '82. Non-Chat Reliability & Architectural Integration', file: 'local_e2e_nonchat_integration.test.js', timeoutMs: 30_000 },
+    { name: '83. True Browser E2E Non-Chat Suite (Playwright Chromium)', file: 'true_browser_e2e_nonchat.test.js', timeoutMs: 60_000 }
 ];
 
 console.log('========================================================================');
