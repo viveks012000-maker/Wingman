@@ -99,11 +99,24 @@ function resolveLanguageTarget(text, history = [], explicitMode = 'auto') {
 
 function getAuthoritativeLanguageDirective(target, feature) {
     if (target === 'hinglish') {
+        const featureExamples = feature === 'icebreaker'
+            ? `\n- AUTHENTIC ROMAN HINGLISH OPENER STYLE:
+  • "basketball kaafi pasand hai ya bas weekend hobby hai? 🏀"
+  • "profile kaafi cool hai, weekend scene kya hota hai usually?"
+  • "court pe challenge accept karogi ya sirf baatein? 😉"
+  • "coffee tapri pe honest debate: pickup game ya proper league?"`
+            : (feature === 'optimize'
+                ? `\n- AUTHENTIC ROMAN HINGLISH BIO STYLE:
+  • "basketball kaafi pasand hai, weekends usually court pe milunga 🏀\n\nreal question: pickup game ya proper league?"
+  • "late-night drives aur playlist debates meri specialty hai 🎧\n\npick a side: slow acoustic ya full volume drive?"
+  • "gym discipline intact hai, par Sunday brunch pe zero self-control 🥞\n\nhonest debate: workout first ya directly food?"`
+                : '');
+
         return `\n\n[AUTHORITATIVE TARGET DETERMINATION: ROMAN-SCRIPT HINGLISH]
 The conversation/input context is in Hinglish or mixed Roman Hindi + English.
 You MUST write all generated response options in natural, modern Roman-script Hinglish (the authentic, casual blend of English and Hindi texted by urban young adults in Delhi/Mumbai/Bangalore).
-- Do NOT output pure English. Mixed inputs (e.g. "mera naam sumit hai and i like basketball") MUST receive natural Roman-script Hinglish responses matching the mixed conversational style.
-- Adding just one isolated Indian noun like "chai" to an otherwise pure-English sentence does NOT qualify as Hinglish. Naturally integrate conversational Roman Hindi phrasing throughout (e.g., "pasand hai", "milte hain", "scene sort karte hain", "kaafi sahi", "kya lagta hai").
+- Do NOT output pure English. Mixed inputs (e.g. "mera naam sumit hai and i like basketball", "mera naam sanchi hai and i like basketball bhaut zayada") MUST receive natural Roman-script Hinglish responses matching the mixed conversational style.
+- Adding just one isolated Indian noun like "chai" to an otherwise pure-English sentence does NOT qualify as Hinglish. Naturally integrate conversational Roman Hindi phrasing throughout every option (e.g., "kaafi pasand hai", "weekends usually court pe milunga", "scene sort karte hain", "kaafi sahi", "kya lagta hai", "milte hain").${featureExamples}
 - SCRIPT REQUIREMENT: Use 100% LATIN / ENGLISH ALPHABET ONLY. ABSOLUTE BAN ON DEVANAGARI CHARACTERS. Zero Devanagari script.
 - Preserve all existing formatting rules, slot counts, and tone constraints.`;
     }
@@ -120,10 +133,48 @@ function validateGeneratedLanguage(target, output) {
         return { valid: false, reason: 'contains_devanagari' };
     }
 
-    const textToAnalyze = Array.isArray(output)
-        ? output.join(' ')
-        : (typeof output === 'string' ? output : JSON.stringify(output));
+    if (Array.isArray(output) && output.length > 0) {
+        if (target === 'hinglish') {
+            let hinglishOptionsCount = 0;
+            let totalHindiWords = 0;
+            for (const opt of output) {
+                const optStr = typeof opt === 'string' ? opt : (opt && opt.line ? opt.line : JSON.stringify(opt));
+                const optWords = String(optStr || '').toLowerCase().match(/[a-z]+/g) || [];
+                let optHindi = 0;
+                for (const w of optWords) {
+                    if (HINDI.has(w)) optHindi++;
+                }
+                totalHindiWords += optHindi;
+                if (optHindi >= 1 || ANCHOR_REGEX.test(optStr)) {
+                    hinglishOptionsCount++;
+                }
+            }
+            const requiredMinOptions = Math.min(output.length, Math.max(1, Math.ceil(output.length * 0.6)));
+            if (hinglishOptionsCount < requiredMinOptions || totalHindiWords < Math.min(output.length, 4)) {
+                return { valid: false, reason: 'insufficient_hinglish_batch', hinglishOptionsCount, totalHindiWords, totalOptions: output.length };
+            }
+            return { valid: true };
+        }
 
+        if (target === 'english') {
+            let hinglishOptionsCount = 0;
+            for (const opt of output) {
+                const optStr = typeof opt === 'string' ? opt : JSON.stringify(opt);
+                const optWords = String(optStr || '').toLowerCase().match(/[a-z]+/g) || [];
+                let optHindi = 0;
+                for (const w of optWords) {
+                    if (HINDI.has(w)) optHindi++;
+                }
+                if (optHindi >= 2 && ANCHOR_REGEX.test(optStr)) hinglishOptionsCount++;
+            }
+            if (hinglishOptionsCount > Math.floor(output.length * 0.3)) {
+                return { valid: false, reason: 'unexpected_hinglish_batch', hinglishOptionsCount };
+            }
+            return { valid: true };
+        }
+    }
+
+    const textToAnalyze = typeof output === 'string' ? output : JSON.stringify(output);
     const words = String(textToAnalyze || '').toLowerCase().match(/[a-z]+/g) || [];
     let hindiCount = 0;
     let englishCount = 0;
@@ -133,17 +184,14 @@ function validateGeneratedLanguage(target, output) {
     }
 
     if (target === 'hinglish') {
-        // If the expected output is Hinglish, it MUST contain Roman Hindi words.
-        // A batch of 10 options or a substantive response cannot have 0 Hindi words.
-        if (hindiCount < 2 && !ANCHOR_REGEX.test(textToAnalyze)) {
+        if (hindiCount < 2 || !ANCHOR_REGEX.test(textToAnalyze)) {
             return { valid: false, reason: 'insufficient_hinglish', hindiCount, englishCount };
         }
         return { valid: true };
     }
 
     if (target === 'english') {
-        // If English was expected, it should not be overwhelmingly Roman Hindi
-        if (hindiCount >= 5 && hindiCount > englishCount) {
+        if (hindiCount >= 4 && hindiCount > englishCount) {
             return { valid: false, reason: 'unexpected_hinglish', hindiCount, englishCount };
         }
         return { valid: true };

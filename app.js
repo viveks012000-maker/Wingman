@@ -3234,7 +3234,7 @@ STRICT LAWS:
                 return `${cleanFeature}_${uuid}`;
             }
         }
-        return `${cleanFeature}_${Date.now().toString(36)}`;
+        return `${cleanFeature}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 9)}`;
     }
     window.createAiOperationId = createAiOperationId;
 
@@ -3258,177 +3258,166 @@ STRICT LAWS:
         }
 
         trackWingmanEvent('generation_started', { endpoint: endpoint });
-        const maxRetries = 2;
-        let attempt = 0;
+        try {
+            const apiBase = getApiBase();
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 70000);
 
-        while (attempt <= maxRetries) {
-            try {
-                const apiBase = getApiBase();
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 70000);
+            const userHeaderId = (window.currentSupabaseUser ? (window.currentSupabaseUser.id || window.currentSupabaseUser.email) : (safeStorage.get("wingman_user_email") || "guest_user"));
+            const userHeaderEmail = (window.currentSupabaseUser ? window.currentSupabaseUser.email : (safeStorage.get("wingman_user_email") || ""));
 
-                const userHeaderId = (window.currentSupabaseUser ? (window.currentSupabaseUser.id || window.currentSupabaseUser.email) : (safeStorage.get("wingman_user_email") || "guest_user"));
-                const userHeaderEmail = (window.currentSupabaseUser ? window.currentSupabaseUser.email : (safeStorage.get("wingman_user_email") || ""));
+            const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
+            const reqHeaders = {
+                'Content-Type': 'application/json',
+                'X-User-Id': userHeaderId,
+                'X-User-Email': userHeaderEmail,
+                'X-Idempotency-Key': idempotencyKey,
+                ...authHeaders
+            };
 
-                const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
-                const reqHeaders = {
-                    'Content-Type': 'application/json',
-                    'X-User-Id': userHeaderId,
-                    'X-User-Email': userHeaderEmail,
-                    'X-Idempotency-Key': idempotencyKey,
-                    ...authHeaders
-                };
+            const response = await fetch(apiBase + endpoint, {
+                method: 'POST',
+                headers: reqHeaders,
+                credentials: 'include',
+                signal: controller.signal,
+                body: JSON.stringify(payload)
+            });
+            clearTimeout(timeoutId);
 
-                const response = await fetch(apiBase + endpoint, {
-                    method: 'POST',
-                    headers: reqHeaders,
-                    credentials: 'include',
-                    signal: controller.signal,
-                    body: JSON.stringify(payload)
-                });
-                clearTimeout(timeoutId);
+            if (!response.ok) {
+                const errJson = await response.json().catch(function() { return {}; });
 
-                if (!response.ok) {
-                    const errJson = await response.json().catch(function() { return {}; });
+                if (response.status === 401) {
+                    state.credits = null;
+                    state.creditsStatus = "idle";
+                    if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
+                    if (typeof window.showToast === 'function') window.showToast("Authentication required. Please sign in.", "warning");
+                    if (typeof window.openAuthRequiredModal === 'function') window.openAuthRequiredModal();
+                    return null;
+                }
 
-                    if (response.status === 401) {
-                        // Authentication failure does NOT mean the user's real wallet balance is zero.
-                        state.credits = null;
-                        state.creditsStatus = "idle";
-                        if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
-                        if (typeof window.showToast === 'function') window.showToast("Authentication required. Please sign in.", "warning");
-                        if (typeof window.openAuthRequiredModal === 'function') window.openAuthRequiredModal();
-                        return null;
-                    }
-
-                    if (response.status === 402) {
-                        trackWingmanEvent('credits_exhausted', { endpoint: endpoint, currentCredits: state.credits || 0 });
-                        const requiredCreditCost = (endpoint === '/api/chat' || endpoint === '/api/simulator/chat' || endpoint === '/api/simulator/review') ? 2 : 10;
-                        const authoritativeBalanceCheck = await window.checkCreditBalance();
-                        if (!authoritativeBalanceCheck || !authoritativeBalanceCheck.success || typeof state.credits !== 'number') {
-                            if (typeof window.showToast === 'function') {
-                                window.showToast("The server rejected this request for credits, but your current wallet balance could not be verified. Please refresh or sign in again.", "warning");
-                            }
-                            return null;
-                        }
-                        if (state.credits >= requiredCreditCost) {
-                            if (typeof window.showToast === 'function') {
-                                window.showToast("Your wallet has enough credits, but this request was rejected by the credit service. Please refresh or sign in again; no purchase is required.", "warning");
-                            }
-                            return null;
-                        }
+                if (response.status === 402) {
+                    trackWingmanEvent('credits_exhausted', { endpoint: endpoint, currentCredits: state.credits || 0 });
+                    const requiredCreditCost = (endpoint === '/api/chat' || endpoint === '/api/simulator/chat' || endpoint === '/api/simulator/review') ? 2 : 10;
+                    const authoritativeBalanceCheck = await window.checkCreditBalance();
+                    if (!authoritativeBalanceCheck || !authoritativeBalanceCheck.success || typeof state.credits !== 'number') {
                         if (typeof window.showToast === 'function') {
-                            window.showToast(errJson.error || ("Insufficient credits. Current balance: " + state.credits + " credits. Please top up."), "warning");
+                            window.showToast("The server rejected this request for credits, but your current wallet balance could not be verified. Please refresh or sign in again.", "warning");
                         }
-                        if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal(requiredCreditCost);
                         return null;
                     }
-
-                    if (response.status === 403) {
-                        if (errJson.code === "CONSENT_REQUIRED" || (errJson.error && errJson.error.toLowerCase().includes("consent"))) {
-                            state.isTermsAccepted = false;
-                            state.consentStatus = 'consent_required';
-                            safeStorage.remove('wingman_terms_accepted');
-                            safeStorage.remove('wingman_consent_version');
-                            if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
-                            if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
-                            if (typeof window.showToast === 'function') {
-                                window.showToast("18+ verification and Terms of Service consent are required to process requests.", "warning");
-                            }
-                            return null;
-                        }
+                    if (state.credits >= requiredCreditCost) {
                         if (typeof window.showToast === 'function') {
-                            window.showToast(errJson.error || "Access forbidden. Please sign in or check your account permissions.", "warning");
+                            window.showToast("Your wallet has enough credits, but this request was rejected by the credit service. Please refresh or sign in again; no purchase is required.", "warning");
                         }
                         return null;
                     }
+                    if (typeof window.showToast === 'function') {
+                        window.showToast(errJson.error || ("Insufficient credits. Current balance: " + state.credits + " credits. Please top up."), "warning");
+                    }
+                    if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal(requiredCreditCost);
+                    return null;
+                }
 
-                    if (response.status === 409) {
-                        trackWingmanEvent('generation_duplicate', { endpoint: endpoint });
-                        if (typeof window.checkCreditBalance === 'function') {
-                            await window.checkCreditBalance();
-                        }
+                if (response.status === 403) {
+                    if (errJson.code === "CONSENT_REQUIRED" || (errJson.error && errJson.error.toLowerCase().includes("consent"))) {
+                        state.isTermsAccepted = false;
+                        state.consentStatus = 'consent_required';
+                        safeStorage.remove('wingman_terms_accepted');
+                        safeStorage.remove('wingman_consent_version');
+                        if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+                        if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal();
                         if (typeof window.showToast === 'function') {
-                            window.showToast(errJson.error || "This request ID has already been processed or is already in progress. No additional credits were deducted.", "info");
+                            window.showToast("18+ verification and Terms of Service consent are required to process requests.", "warning");
                         }
                         return null;
                     }
+                    if (typeof window.showToast === 'function') {
+                        window.showToast(errJson.error || "Access forbidden. Please sign in or check your account permissions.", "warning");
+                    }
+                    return null;
+                }
 
-                    if (response.status === 429) {
+                if (response.status === 409) {
+                    trackWingmanEvent('generation_duplicate', { endpoint: endpoint });
+                    if (typeof window.checkCreditBalance === 'function') {
+                        await window.checkCreditBalance();
+                    }
+                    if (typeof window.showToast === 'function') {
+                        window.showToast(errJson.error || "This request ID has already been processed or is already in progress. No additional credits were deducted.", "info");
+                    }
+                    return null;
+                }
+
+                if (response.status === 429) {
+                    if (typeof window.showToast === 'function') {
+                        window.showToast("Too many requests. Please slow down and wait a moment.", "warning");
+                    }
+                    return null;
+                }
+
+                if (response.status === 503 || response.status === 502 || response.status === 504 || (response.status === 404 && (errJson.code === 404 || errJson.message === "Application not found" || !errJson.error))) {
+                    trackWingmanEvent('generation_failed', { endpoint: endpoint, status: 503 });
+                    if (errJson.code === "CONSENT_SERVICE_UNAVAILABLE") {
+                        state.isTermsAccepted = false;
+                        state.consentStatus = 'service_unavailable';
+                        if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
                         if (typeof window.showToast === 'function') {
-                            window.showToast("Too many requests. Please slow down and wait a moment.", "warning");
+                            window.showToast(errJson.error || "Consent verification service is temporarily unavailable. Features remain locked.", "error");
                         }
                         return null;
                     }
-
-                    if (response.status === 503 || response.status === 502 || response.status === 504 || (response.status === 404 && (errJson.code === 404 || errJson.message === "Application not found" || !errJson.error))) {
-                        trackWingmanEvent('generation_failed', { endpoint: endpoint, status: 503 });
-                        if (errJson.code === "CONSENT_SERVICE_UNAVAILABLE") {
-                            state.isTermsAccepted = false;
-                            state.consentStatus = 'service_unavailable';
-                            if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
-                            if (typeof window.showToast === 'function') {
-                                window.showToast(errJson.error || "Consent verification service is temporarily unavailable. Features remain locked.", "error");
-                            }
-                            return null;
-                        }
-                        if (typeof window.showToast === 'function') {
-                            const offlineMsg = (response.status === 404 || response.status === 502 || response.status === 504 || !errJson.error)
-                                ? "Wingman's AI service is temporarily unavailable. Please try again later."
-                                : (errJson.error || "Credit service is temporarily unavailable. Your generation was not started. Please try again later.");
-                            window.showToast(offlineMsg, "warning");
-                        }
-                        return null;
+                    if (typeof window.showToast === 'function') {
+                        const offlineMsg = (response.status === 404 || response.status === 502 || response.status === 504 || !errJson.error)
+                            ? "Wingman's AI service is temporarily unavailable. Please try again later."
+                            : (errJson.error || "Credit service is temporarily unavailable. Your generation was not started. Please try again later.");
+                        window.showToast(offlineMsg, "warning");
                     }
+                    return null;
+                }
 
-                    if (response.status >= 500) {
-                        if (typeof errJson.credits === "number") {
-                            window.updateUICredits(errJson.credits);
-                        }
-                        if (typeof window.checkCreditBalance === 'function') {
-                            window.checkCreditBalance();
-                        }
-                        trackWingmanEvent('generation_failed', { endpoint: endpoint, status: response.status });
-                        if (typeof window.showToast === 'function') {
-                            window.showToast(errJson.error || "Generation request failed. Your credits were preserved.", "error");
-                        }
-                        return null;
-                    }
-
+                if (response.status >= 500) {
                     if (typeof errJson.credits === "number") {
                         window.updateUICredits(errJson.credits);
-                    }
-                    trackWingmanEvent('generation_failed', { endpoint: endpoint, status: response.status });
-                    const err = new Error(errJson.error || "Generation request failed. If you were charged credits, please contact support.mywingman@gmail.com.");
-                    err.status = response.status;
-                    err.credits = errJson.credits;
-                    throw err;
-                }
-
-                const data = await response.json();
-                if (typeof data.credits === "number") {
-                    state.credits = data.credits;
-                    syncCredits();
-                }
-                trackWingmanEvent('generation_succeeded', { endpoint: endpoint, remainingCredits: data.credits });
-                return data.options || data.text || data.reply || (data.choices && data.choices[0] && (data.choices[0].message ? data.choices[0].message.content : data.choices[0].message)) || "";
-            } catch (err) {
-                attempt++;
-                console.warn(`API attempt ${attempt} failed:`, err.message);
-                if (attempt > maxRetries) {
-                    trackWingmanEvent('generation_failed', { endpoint: endpoint, status: err.status || 500 });
-                    if (typeof window.showToast === 'function') {
-                        window.showToast("Generation status could not be confirmed. Refreshing your credit balance…", "warning");
                     }
                     if (typeof window.checkCreditBalance === 'function') {
                         window.checkCreditBalance();
                     }
+                    trackWingmanEvent('generation_failed', { endpoint: endpoint, status: response.status });
+                    if (typeof window.showToast === 'function') {
+                        window.showToast(errJson.error || "Generation request failed. Your credits were preserved.", "error");
+                    }
                     return null;
                 }
-                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                if (typeof errJson.credits === "number") {
+                    window.updateUICredits(errJson.credits);
+                }
+                trackWingmanEvent('generation_failed', { endpoint: endpoint, status: response.status });
+                if (typeof window.showToast === 'function') {
+                    window.showToast(errJson.error || "Generation request failed. If you were charged credits, please contact support.mywingman@gmail.com.", "error");
+                }
+                return null;
             }
+
+            const data = await response.json();
+            if (typeof data.credits === "number") {
+                state.credits = data.credits;
+                syncCredits();
+            }
+            trackWingmanEvent('generation_succeeded', { endpoint: endpoint, remainingCredits: data.credits });
+            return data.options || data.text || data.reply || (data.choices && data.choices[0] && (data.choices[0].message ? data.choices[0].message.content : data.choices[0].message)) || "";
+        } catch (err) {
+            console.warn("API request failed:", err.message);
+            trackWingmanEvent('generation_failed', { endpoint: endpoint, status: err.status || 500 });
+            if (typeof window.showToast === 'function') {
+                window.showToast("Generation status could not be confirmed. Refreshing your credit balance…", "warning");
+            }
+            if (typeof window.checkCreditBalance === 'function') {
+                window.checkCreditBalance();
+            }
+            return null;
         }
-        return null;
     };
 
     // ============================================================

@@ -1637,7 +1637,7 @@ ${getAuthoritativeLanguageDirective(expectedLanguage, repairFeature)}`;
     ];
 
     try {
-        const repairedText = await queryOpenRouter("qwen3-235b-a22b-2507", repairMessages, 0.25, 1200, 15000);
+        const repairedText = await queryOpenRouter("qwen3-235b-a22b-2507", repairMessages, 0.25, 1200, 25000);
         if (!repairedText || containsDevanagari(repairedText)) {
             return content;
         }
@@ -1866,6 +1866,19 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
         }
 
         if (deduction.duplicate === true) {
+            const completed = getCompletedAiResponse(reqId);
+            if (completed) {
+                return res.status(completed.statusCode).json(completed.data);
+            }
+            const inFlight = inFlightAiOperations.get(reqId);
+            if (inFlight) {
+                try {
+                    const result = await inFlight;
+                    return res.status(result.statusCode).json(result.data);
+                } catch (err) {
+                    return res.status(err.statusCode || 500).json(err.data || { success: false, error: err.message });
+                }
+            }
             return res.status(409).json({
                 success: false,
                 error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
@@ -2385,6 +2398,19 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
         }
 
         if (deduction.duplicate === true) {
+            const completed = getCompletedAiResponse(reqId);
+            if (completed) {
+                return res.status(completed.statusCode).json(completed.data);
+            }
+            const inFlight = inFlightAiOperations.get(reqId);
+            if (inFlight) {
+                try {
+                    const result = await inFlight;
+                    return res.status(result.statusCode).json(result.data);
+                } catch (err) {
+                    return res.status(err.statusCode || 500).json(err.data || { success: false, error: err.message });
+                }
+            }
             return res.status(409).json({
                 success: false,
                 error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
@@ -2624,6 +2650,8 @@ function sanitizeBioInput(rawInput, language = 'en') {
     let cleaned = rawInput.trim();
 
     // 1. Strip names, greetings, and intro fluff
+    cleaned = cleaned.replace(/^(namaste|hello|hi|hey)?\s*(mera|meri)\s+naam\s+[a-z0-9_-]+\s+hai\s*(aur|and|,|\.)?\s*/gi, '');
+    cleaned = cleaned.replace(/^(mera|meri)\s+naam\s+[a-z0-9_-]+\s+hai\s*(aur|and|,|\.)?\s*/gi, '');
     cleaned = cleaned.replace(/^(hello|hi|hey|greetings)?\s*(my\s+name\s+is|i\s+am|i'm)\s+[a-z0-9_-]+\s*(,|and|\.)?\s*/gi, '');
     cleaned = cleaned.replace(/^(hello|hi|hey)\s+(my\s+name\s+is)\s*/gi, '');
     cleaned = cleaned.replace(/^(just\s+)?downloaded\s+(hinge|tinder|bumble)\s*(and)?\s*/gi, '');
@@ -2803,6 +2831,19 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
         }
 
         if (deduction.duplicate === true) {
+            const completed = getCompletedAiResponse(reqId);
+            if (completed) {
+                return res.status(completed.statusCode).json(completed.data);
+            }
+            const inFlight = inFlightAiOperations.get(reqId);
+            if (inFlight) {
+                try {
+                    const result = await inFlight;
+                    return res.status(result.statusCode).json(result.data);
+                } catch (err) {
+                    return res.status(err.statusCode || 500).json(err.data || { success: false, error: err.message });
+                }
+            }
             return res.status(409).json({
                 success: false,
                 error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
@@ -3224,6 +3265,19 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
         }
 
         if (deduction.duplicate === true) {
+            const completed = getCompletedAiResponse(reqId);
+            if (completed) {
+                return res.status(completed.statusCode).json(completed.data);
+            }
+            const inFlight = inFlightAiOperations.get(reqId);
+            if (inFlight) {
+                try {
+                    const result = await inFlight;
+                    return res.status(result.statusCode).json(result.data);
+                } catch (err) {
+                    return res.status(err.statusCode || 500).json(err.data || { success: false, error: err.message });
+                }
+            }
             return res.status(409).json({
                 success: false,
                 error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
