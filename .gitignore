@@ -46,6 +46,7 @@ logs/
 scratch/
 tmp/
 temp/
+netlify-dist/
 
 # Windows & OS Background Files
 .DS_Store

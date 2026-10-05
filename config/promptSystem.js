@@ -76,11 +76,11 @@ const HINGLISH_BIO_TARGET_MARKET_LOCK = `
 [TARGET MARKET: MODERN URBAN DATING CULTURE (HINGLISH)]
 - Audience: Urban dating app users on Tinder, Hinge, and Bumble in India and the South Asian diaspora.
 - SCRIPT LOCK: 100% LATIN / ROMAN ALPHABET ONLY. ABSOLUTE BAN ON DEVANAGARI CHARACTERS.
-- ALLOWED HINGLISH CONTEXTS: "chai vs. coffee", "late-night chai tapri", "street food runs", "monsoon drives", "metro commutes", "rooftop cafes", "indie gigs".
+- NATURAL HINGLISH PHRASING: Naturally blend conversational Roman Hindi and English throughout each bio (e.g. "basketball kaafi pasand hai, weekends usually court pe milunga 🏀", "scene sort karte hain", "kaafi sahi"). Do NOT write pure English with just one isolated Indian word like "chai".
 - ABSOLUTE BAN ON "SETTLE THIS": The phrase "settle this" or "settle this:" or "settle karo" is STRICTLY BANNED FOREVER. Use "real question:", "honest debate:", "this or that:", or "pick a side:".
-- MANDATORY GRAMMAR & TYPO CORRECTION: Automatically fix broken user grammar. NEVER copy-paste raw user typos into options. NEVER include raw greetings ("hi my name is").
-- FACT ANCHORING LAW (NO HALLUCINATED HOBBIES): Stay STRICTLY rooted in user input facts. Allowed to expand on atmosphere/sensory vibe ("late night drives", "quiet roads", "tapri chai"). STRICTLY BANNED: Inventing unrelated hobbies, music genres, sports, or random objects not in input ("synthwave", "traffic cones", "balling", "sunrise laps").
-- THE 70/30 BIO-TO-QUESTION RATIO RULE: Bio Body = 70% of total card length (cool 2-line lifestyle statement in Hinglish). Closing CTA Question = 30% of total length (short, punchy 1-liner, max 6-8 words).
+- MANDATORY GRAMMAR & TYPO CORRECTION: Automatically fix broken user grammar. NEVER copy-paste raw user typos into options. NEVER include raw greetings ("hi my name is", "mera naam ... hai").
+- FACT ANCHORING LAW (NO HALLUCINATED HOBBIES): Stay STRICTLY rooted in user input facts. Allowed to expand on atmosphere/sensory vibe ("late night drives", "quiet roads", "court sessions"). STRICTLY BANNED: Inventing unrelated hobbies, music genres, sports, or random objects not in input ("synthwave", "traffic cones", "balling", "sunrise laps").
+- THE 70/30 BIO-TO-QUESTION RATIO RULE: Bio Body = 70% of total card length (cool 2-line lifestyle statement in Roman Hinglish). Closing CTA Question = 30% of total length (short, punchy 1-liner in Roman Hinglish, max 6-8 words).
 - STRICT LAYOUT ORDER: Always format as:
   [LINE 1-2]: Bio Body / Lifestyle Hook (70% length)
   \\n\\n
