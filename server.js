@@ -454,9 +454,27 @@ function releaseUserConcurrencyLock(userId, requestId) {
 const inFlightAiOperations = new Map();
 const completedAiResponses = new Map();
 const COMPLETED_RESPONSES_TTL_MS = 10 * 60 * 1000; // 10 minutes cache for idempotent retransmits
+const MAX_COMPLETED_RESPONSES = 500;
+const SERVER_TOTAL_OPERATION_DEADLINE_MS = 65000;
+
+function getRemainingBudgetMs(startTime, totalDeadlineMs = SERVER_TOTAL_OPERATION_DEADLINE_MS, defaultPerCall = 25000) {
+    const elapsed = Date.now() - startTime;
+    const remaining = totalDeadlineMs - elapsed;
+    if (remaining <= 2000) {
+        const timeoutErr = new Error("Operation deadline exceeded. Please try again.");
+        timeoutErr.isTimeout = true;
+        timeoutErr.statusCode = 504;
+        throw timeoutErr;
+    }
+    return Math.min(defaultPerCall, remaining);
+}
 
 function cacheCompletedAiResponse(reqId, statusCode, data) {
     if (!reqId) return;
+    if (completedAiResponses.size >= MAX_COMPLETED_RESPONSES) {
+        const oldestKey = completedAiResponses.keys().next().value;
+        if (oldestKey) completedAiResponses.delete(oldestKey);
+    }
     completedAiResponses.set(reqId, { statusCode, data, completedAt: Date.now() });
 }
 
@@ -1076,7 +1094,9 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
     }
     candidateModels = [...new Set(candidateModels)];
 
+    const retryableStatuses = new Set([429, 500, 502, 503, 504]);
     let lastErr = null;
+
     for (const targetModel of candidateModels) {
         const payload = {
             model: targetModel,
@@ -1090,59 +1110,102 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
             payload.top_p = topP;
         }
 
-        const fetchOptions = {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${apiKey}`,
-                "Content-Type": "application/json",
-                "HTTP-Referer": "http://localhost:3000",
-                "X-Title": "My Wingman App"
-            },
-            body: JSON.stringify(payload)
-        };
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            const controller = timeoutMs ? new AbortController() : null;
+            const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
 
-        let timer = null;
-        if (timeoutMs) {
-            const controller = new AbortController();
-            fetchOptions.signal = controller.signal;
-            timer = setTimeout(() => controller.abort(), timeoutMs);
-        }
+            try {
+                const response = await fetch(AICREDITS_CHAT_COMPLETIONS_URL, {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${apiKey}`,
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "http://localhost:3000",
+                        "X-Title": "My Wingman App"
+                    },
+                    body: JSON.stringify(payload),
+                    ...(controller ? { signal: controller.signal } : {})
+                });
 
-        try {
-            const response = await fetch(AICREDITS_CHAT_COMPLETIONS_URL, fetchOptions);
-            if (timer) clearTimeout(timer);
+                if (!response.ok) {
+                    const err = new Error(`AI API Failure [${targetModel}]: HTTP ${response.status}.`);
+                    err.statusCode = response.status;
+                    lastErr = err;
+                    if (response.status === 400 || response.status === 404) {
+                        break;
+                    }
+                    if (retryableStatuses.has(response.status) && attempt < 3) {
+                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        continue;
+                    }
+                    break;
+                }
 
-            if (!response.ok) {
-                const err = new Error(`AI API Failure [${targetModel}]: HTTP ${response.status}.`);
-                err.statusCode = response.status;
+                const data = await response.json();
+                if (data && data.error) {
+                    const err = new Error('AI API returned an error response.');
+                    const numericStatus = Number(data.error.status || data.error.code) || 502;
+                    err.statusCode = numericStatus;
+                    lastErr = err;
+                    if (retryableStatuses.has(err.statusCode) && attempt < 3) {
+                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        continue;
+                    }
+                    break;
+                }
+
+                if (!data || !data.choices || data.choices.length === 0) {
+                    const err = new Error('AI API returned no choices.');
+                    err.code = 'AI_PROVIDER_EMPTY_RESPONSE';
+                    err.statusCode = 502;
+                    lastErr = err;
+                    if (attempt < 2) {
+                        await new Promise(resolve => setTimeout(resolve, 250));
+                        continue;
+                    }
+                    break;
+                }
+
+                const msg = data.choices[0].message;
+                const outputContent = typeof msg === 'string' ? msg : (msg ? (msg.content || msg.reasoning || '') : '');
+                if (!outputContent || !String(outputContent).trim()) {
+                    const err = new Error('AI API returned empty content.');
+                    err.code = 'AI_PROVIDER_EMPTY_RESPONSE';
+                    err.statusCode = 502;
+                    lastErr = err;
+                    if (attempt < 2) {
+                        await new Promise(resolve => setTimeout(resolve, 250));
+                        continue;
+                    }
+                    break;
+                }
+
+                return String(outputContent).trim();
+            } catch (err) {
+                if (err && err.name === 'AbortError') {
+                    const timeoutErr = new Error("Analysis timed out. Please try again.");
+                    timeoutErr.isTimeout = true;
+                    timeoutErr.statusCode = 504;
+                    lastErr = timeoutErr;
+                    if (attempt < 3) {
+                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        continue;
+                    }
+                    break;
+                }
+
                 lastErr = err;
-                if (response.status === 400 || response.status === 404) {
+                if (err.statusCode === 400 || err.statusCode === 404) {
+                    break;
+                }
+                if (attempt < 3 && (!err || !err.statusCode || retryableStatuses.has(Number(err.statusCode)))) {
+                    await new Promise(resolve => setTimeout(resolve, 300 * attempt));
                     continue;
                 }
-                throw err;
+                break;
+            } finally {
+                if (timer) clearTimeout(timer);
             }
-            const data = await response.json();
-            if (data.error) {
-                throw new Error('AI API returned an error response.');
-            }
-            if (!data.choices || data.choices.length === 0) {
-                throw new Error('AI API returned no choices.');
-            }
-            const msg = data.choices[0].message;
-            const outputContent = typeof msg === 'string' ? msg : (msg ? (msg.content || msg.reasoning || '') : '');
-            return outputContent;
-        } catch (err) {
-            if (timer) clearTimeout(timer);
-            if (err.name === 'AbortError') {
-                const timeoutErr = new Error("Analysis timed out. Please try again.");
-                timeoutErr.isTimeout = true;
-                throw timeoutErr;
-            }
-            lastErr = err;
-            if (err.statusCode === 400 || err.statusCode === 404) {
-                continue;
-            }
-            throw err;
         }
     }
     throw lastErr || new Error(`AI API call failed for model ${modelIdentifier}`);
@@ -1162,7 +1225,7 @@ function getAnalyzerProviderFailureCode(error) {
     return 'AI_PROVIDER_FAILURE';
 }
 
-// Strict Screenshot Analyzer provider call: exact AICREDITS endpoint/model/key, no model or key fallback.
+// Strict Screenshot Analyzer provider call: exact AICREDITS endpoint/model/key, no model or key fallback, with bounded transient retry.
 async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, maxTokens = null, timeoutMs = 25000, topP = null) {
     const isVisionStage = stage === 'vision';
     const isMainStage = stage === 'main';
@@ -1185,61 +1248,108 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
     if (maxTokens) payload.max_tokens = maxTokens;
     if (topP !== null && topP !== undefined) payload.top_p = topP;
 
-    const controller = timeoutMs ? new AbortController() : null;
-    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    const retryableStatuses = new Set([429, 500, 502, 503, 504]);
+    let lastError = null;
 
-    try {
-        const response = await fetch(AICREDITS_CHAT_COMPLETIONS_URL, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': 'http://localhost:3000',
-                'X-Title': 'My Wingman App'
-            },
-            body: JSON.stringify(payload),
-            ...(controller ? { signal: controller.signal } : {})
-        });
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        const controller = timeoutMs ? new AbortController() : null;
+        const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
 
-        if (!response.ok) {
-            const err = new Error(`Screenshot Analyzer AI API Failure [${model}]: HTTP ${response.status}.`);
-            err.statusCode = response.status;
-            throw err;
-        }
+        try {
+            const response = await fetch(AICREDITS_CHAT_COMPLETIONS_URL, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json',
+                    'HTTP-Referer': 'http://localhost:3000',
+                    'X-Title': 'My Wingman App'
+                },
+                body: JSON.stringify(payload),
+                ...(controller ? { signal: controller.signal } : {})
+            });
 
-        const data = await response.json();
-        if (data.error) {
-            const err = new Error('Screenshot Analyzer AI API returned an error response.');
-            const numericStatus = Number(data.error.status || data.error.code);
-            if (Number.isFinite(numericStatus) && numericStatus > 0) err.statusCode = numericStatus;
-            throw err;
-        }
-        if (!data.choices || data.choices.length === 0) {
-            const err = new Error(`Screenshot Analyzer AI API returned no choices for ${model}.`);
-            err.code = 'AI_PROVIDER_EMPTY_RESPONSE';
-            throw err;
-        }
+            if (!response.ok) {
+                const err = new Error(`Screenshot Analyzer AI API Failure [${model}]: HTTP ${response.status}.`);
+                err.statusCode = response.status;
+                err.analyzerStage = stage;
+                lastError = err;
+                if (retryableStatuses.has(response.status) && attempt < 3) {
+                    await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                    continue;
+                }
+                break;
+            }
 
-        const msg = data.choices[0].message;
-        const outputContent = typeof msg === 'string' ? msg : (msg ? (msg.content || msg.reasoning || '') : '');
-        if (!outputContent) {
-            const err = new Error(`Screenshot Analyzer AI API returned empty content for ${model}.`);
-            err.code = 'AI_PROVIDER_EMPTY_RESPONSE';
-            throw err;
+            const data = await response.json();
+            if (data && data.error) {
+                const err = new Error('Screenshot Analyzer AI API returned an error response.');
+                const numericStatus = Number(data.error.status || data.error.code) || 502;
+                err.statusCode = numericStatus;
+                err.analyzerStage = stage;
+                lastError = err;
+                if (retryableStatuses.has(err.statusCode) && attempt < 3) {
+                    await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                    continue;
+                }
+                break;
+            }
+
+            if (!data || !data.choices || data.choices.length === 0) {
+                const err = new Error(`Screenshot Analyzer AI API returned no choices for ${model}.`);
+                err.code = 'AI_PROVIDER_EMPTY_RESPONSE';
+                err.statusCode = 502;
+                err.analyzerStage = stage;
+                lastError = err;
+                if (attempt < 2) {
+                    await new Promise(resolve => setTimeout(resolve, 250));
+                    continue;
+                }
+                break;
+            }
+
+            const msg = data.choices[0].message;
+            const outputContent = typeof msg === 'string' ? msg : (msg ? (msg.content || msg.reasoning || '') : '');
+            if (!outputContent || !String(outputContent).trim()) {
+                const err = new Error(`Screenshot Analyzer AI API returned empty content for ${model}.`);
+                err.code = 'AI_PROVIDER_EMPTY_RESPONSE';
+                err.statusCode = 502;
+                err.analyzerStage = stage;
+                lastError = err;
+                if (attempt < 2) {
+                    await new Promise(resolve => setTimeout(resolve, 250));
+                    continue;
+                }
+                break;
+            }
+
+            return String(outputContent).trim();
+        } catch (err) {
+            if (err && err.name === 'AbortError') {
+                const timeoutErr = new Error('Analysis timed out. Please try again.');
+                timeoutErr.isTimeout = true;
+                timeoutErr.statusCode = 504;
+                timeoutErr.analyzerStage = stage;
+                lastError = timeoutErr;
+                if (attempt < 3) {
+                    await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                    continue;
+                }
+                break;
+            }
+
+            err.analyzerStage = err.analyzerStage || stage;
+            lastError = err;
+            if (attempt < 3 && (!err || !err.statusCode || retryableStatuses.has(Number(err.statusCode)))) {
+                await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                continue;
+            }
+            break;
+        } finally {
+            if (timer) clearTimeout(timer);
         }
-        return outputContent;
-    } catch (err) {
-        if (err.name === 'AbortError') {
-            const timeoutErr = new Error('Analysis timed out. Please try again.');
-            timeoutErr.isTimeout = true;
-            timeoutErr.analyzerStage = stage;
-            throw timeoutErr;
-        }
-        err.analyzerStage = err.analyzerStage || stage;
-        throw err;
-    } finally {
-        if (timer) clearTimeout(timer);
     }
+
+    throw lastError || new Error(`Screenshot Analyzer AI API failed for ${model}.`);
 }
 
 // Strict Maeve provider path: exact AICredits endpoint/model with bounded transient retry.
@@ -1639,35 +1749,54 @@ ${getAuthoritativeLanguageDirective(expectedLanguage, repairFeature)}`;
     try {
         const repairedText = await queryOpenRouter("qwen3-235b-a22b-2507", repairMessages, 0.25, 1200, 25000);
         if (!repairedText || containsDevanagari(repairedText)) {
-            return content;
+            const err = new Error(`Bilingual output policy violation: Output failed language validation (${validation.reason}) and repair failed to produce valid non-Devanagari text.`);
+            err.code = 'LANGUAGE_POLICY_VIOLATION';
+            throw err;
         }
 
+        let repairedOutput = null;
         if (isArray) {
             try {
                 const jsonMatch = repairedText.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
                     const parsed = JSON.parse(jsonMatch[0]);
                     if (parsed && Array.isArray(parsed.options) && parsed.options.length === content.length && parsed.options.every(o => typeof o === 'string' && o.trim())) {
-                        return parsed.options;
+                        repairedOutput = parsed.options;
                     }
                 }
             } catch (_) {}
-            const split = repairedText.split(/(?:^|\n)\d+[\.\)\:]\s*/).map(s => s.trim()).filter(Boolean);
-            if (split.length === content.length) return split;
+            if (!repairedOutput) {
+                const split = repairedText.split(/(?:^|\n)\d+[\.\)\:]\s*/).map(s => s.trim()).filter(Boolean);
+                if (split.length === content.length) repairedOutput = split;
+            }
+        } else if (isString) {
+            repairedOutput = repairedText.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+        } else {
+            try {
+                const jsonMatch = repairedText.match(/\{[\s\S]*\}/);
+                if (jsonMatch) repairedOutput = JSON.parse(jsonMatch[0]);
+            } catch (_) {}
         }
 
-        if (isString) {
-            return repairedText.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+        if (repairedOutput) {
+            const postValidation = validateGeneratedLanguage(expectedLanguage, repairedOutput);
+            if (postValidation.valid) {
+                return repairedOutput;
+            }
+            console.warn(`[Language Post-Repair Validation Failed] Reason: ${postValidation.reason}`);
         }
 
-        try {
-            const jsonMatch = repairedText.match(/\{[\s\S]*\}/);
-            if (jsonMatch) return JSON.parse(jsonMatch[0]);
-        } catch (_) {}
-        return content;
+        const err = new Error(`Bilingual output policy violation: Output failed language validation (${validation.reason}) and repair could not produce compliant ${expectedLanguage} output.`);
+        err.code = 'LANGUAGE_POLICY_VIOLATION';
+        throw err;
     } catch (err) {
-        console.warn(`[Language Repair Bounded Fallback] ${feature}:`, err.message);
-        return content;
+        if (err.code === 'LANGUAGE_POLICY_VIOLATION') {
+            throw err;
+        }
+        console.error(`[Language Repair Error] ${feature}:`, err.message);
+        const policyErr = new Error(`Bilingual output policy violation: Language repair failed: ${err.message}`);
+        policyErr.code = 'LANGUAGE_POLICY_VIOLATION';
+        throw policyErr;
     }
 }
 
@@ -1725,6 +1854,7 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
     let deduction = null;
 
     try {
+        const opStart = Date.now();
         let { text, messages, tone, image, images, imageBase64, shorthandOption, emojiOption } = req.body || {};
         const language = requestLanguageMode(req.body);
         const textCheck = text || (messages && messages[0] ? messages[0].content : "");
@@ -1945,7 +2075,7 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
                         ]
                     }
                 ];
-                const singleTranscript = await queryAnalyzerProvider('vision', visionMessages, 0.2, 800, 25000);
+                const singleTranscript = await queryAnalyzerProvider('vision', visionMessages, 0.2, 800, getRemainingBudgetMs(opStart));
                 if (!singleTranscript || typeof singleTranscript !== 'string' || singleTranscript.trim().length === 0) {
                     throw new Error(`Optical parsing failed for screenshot ${i + 1}.`);
                 }
@@ -2164,7 +2294,7 @@ ${formattingRule}`;
 
             console.log('[Analyzer] Executing Stage 2 response-card generation.', safeLogValue(modeConfig.name));
         let finalCardsOutput = "";
-        finalCardsOutput = await queryAnalyzerProvider('main', generationMessages, 0.20, 800, 25000);
+        finalCardsOutput = await queryAnalyzerProvider('main', generationMessages, 0.20, 800, getRemainingBudgetMs(opStart));
 
         let optionsList = [];
         try {
@@ -2364,6 +2494,7 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
     let deduction = null;
 
     try {
+        const opStart = Date.now();
         let { text, bioText, messages } = req.body || {};
         const textCheck = String(bioText || text || (messages && messages[0] ? messages[0].content : "") || "");
         if (textCheck.length > 5000) {
@@ -2515,7 +2646,7 @@ GENERAL ICEBREAKER LAWS:
         const responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(icebreakerSystemPrompt) },
             { role: "user", content: `${wrapUntrustedUserData('match_details', text)}\n\nRequested Tone: ${canonicalizeIcebreakerVibe(requestedVibe)}. Output the 10 numbered options now.` }
-        ], 0.8, 650, 25000);
+        ], 0.8, 650, getRemainingBudgetMs(opStart));
 
         let rawOptions = (responseText || "").split(/(?:^|\n)\d+[\.\)\:]\s*/).filter(s => s.trim().length > 0);
         if (rawOptions.length === 0) {
@@ -2788,6 +2919,7 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
     let deduction = null;
 
     try {
+        const opStart = Date.now();
         let { text, bioText, messages } = req.body || {};
         const rawText = String(text || bioText || (messages && messages[0] ? messages[0].content : "") || "");
         
@@ -2946,7 +3078,7 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
         let responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(bioOptimizerSystemPrompt) },
             { role: "user", content: `[SELECTED MODE: ${modeKey.toUpperCase()}]\n${wrapUntrustedUserData('bio_input', textPayload)}${language === 'auto' ? '\n' + wrapUntrustedUserData('bio_language_source', originalBioText) : ''}\n\nOutput the 10 numbered options now.` }
-        ], 0.25, 1200, 35000, 0.80);
+        ], 0.25, 1200, getRemainingBudgetMs(opStart, SERVER_TOTAL_OPERATION_DEADLINE_MS, 35000), 0.80);
 
         let optionsList = [];
         try {

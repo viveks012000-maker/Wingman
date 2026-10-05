@@ -42,11 +42,11 @@ ENGLISH RESPONSE BRANCH:\n${TARGET_MARKET_LOCK}
 ROMAN HINGLISH RESPONSE BRANCH:\n${HINGLISH_BIO_TARGET_MARKET_LOCK}`;
 }
 
-const HINDI = new Set(('mujhe mujhko mujha mujhay mera meri mere hum hume humein hamara hamari tum tumhe tumko tumhara tumhari tera teri tere tu aap aapko apka apki aapka aapki usko usse uski uska uske isko isse inko unko usne isne unhone inhone unka unki unke inka inki inke apna apni apne kisiko sabko kuch kuchh koi ye yeh wo woh kya kyun kyu kyon kaise kaisa kaisi kaun kahan kahaan kab kitna kitni kitne hai hain ho hoon hun hu tha thi the nahi nahin nhi nahee mat bhi toh tohh aur lekin magar par bas ab abhi phir fir yaar achha accha achi achhi acha acchi thoda thodi bahut bohot bahot bhaut bhot zyada jyada zayada jaada pasand chahiye chaiye chahta chahti chaahte lagta lagti lag raha rahi rahe karna karni karo karu karun karta karti karte karunga karungi bol bolu bolun bolo bolna bolti bata batao bataun batau batana kehna kahu kehta samajh samajhna samajhta milna milke milte milenge jana jao jata jaati jaunga aana aao aata aati aaunga dekho dekhna dekh dekha padhna likhna likhu likhun sach bilkul shayad zaroor pakka sahi galat bura buri maza mazedaar mast haal chal pe mein wali wala wale waali waala waale liye saath diya diye dungi dunga dena liya kiye chhod chhoda chhodna bheju bheja bhejna socha soch sochu samjha samjhi samjhe karein kare hoga hogi honge gaya gayi gaye chalo chalte chalega chalegi lagraha lagrahi lagrahe dikhta dikhti bhai pata baat baatein waise aise jaise kripya dost na naam khud shuru khatam pyar pyaar ishq zindagi duniya dil ghumna ghoomna firna phirna khana peena sunna yaha yahaan waha wahaan kaha kahaan kaafi kafi milunga milungi aaunga aaungi jaunga jaungi karenge karega karegi karte hota hoti hote hona sun suno sunna dikhao dikha bataiye kahiye samajhte samajhti lagte lagti waale waala waali').split(' '));
+const HINDI = new Set(('mujhe mujhko mujha mujhay mera meri mere hum hume humein hamara hamari tum tumhe tumko tumhara tumhari tera teri tere tu aap aapko apka apki aapka aapki usko usse uski uska uske isko isse inko unko usne isne unhone inhone unka unki unke inka inki inke apna apni apne kisiko sabko kuch kuchh koi ye yeh wo woh kya kyun kyu kyon kaise kaisa kaisi kaun kahan kahaan kab kitna kitni kitne hai hain ho hoon hun hu tha thi the nahi nahin nhi nahee mat bhi toh tohh aur lekin magar par bas ab abhi phir fir yaar achha accha achi achhi acha acchi thoda thodi bahut bohot bahot bhaut bhot zyada jyada zayada jaada pasand chahiye chaiye chahta chahti chaahte lagta lagti lag raha rahi rahe karna karni karo karu karun karta karti karte karunga karungi bol bolu bolun bolo bolna bolti bata batao bataun batau batana kehna kahu kehta samajh samajhna samajhta milna milke milte milenge jana jao jata jaati jaunga aana aao aata aati aaunga dekho dekhna dekh dekha padhna likhna likhu likhun sach bilkul shayad zaroor pakka sahi galat bura buri maza mazedaar mast haal chal pe mein wali wala wale waali waala waale liye saath diya diye dungi dunga dena liya kiye chhod chhoda chhodna bheju bheja bhejna socha soch sochu samjha samjhi samjhe karein kare hoga hogi honge gaya gayi gaye chalo chalte chalega chalegi lagraha lagrahi lagrahe dikhta dikhti bhai pata baat baatein waise aise jaise kripya dost na naam khud shuru khatam pyar pyaar ishq zindagi duniya dil ghumna ghoomna firna phirna khana peena sunna yaha yahaan waha wahaan kaha kahaan kaafi kafi milunga milungi aaunga aaungi jaunga jaungi karenge karega karegi karte hota hoti hote hona sun suno sunna dikhao dikha bataiye kahiye samajhte samajhti lagte lagti waale waala waali tapri dhaba adda').split(' '));
 const ENGLISH = new Set(('i you we they he she it my your our their what why how where when which should would could want need like enjoy love prefer think know say tell respond message have has am is are was were do does did will can cannot with and but because if about next really rather more most to of for this that these those the a an in on at from').split(' '));
 const NEUTRAL = new Set(['ok', 'okay', 'yes', 'no', 'hey', 'hi', 'hello', 'hmm', 'hmmm', 'thanks', 'thank', 'you', 'sure', 'cool', 'fine', 'lol', 'haha', 'hahaha', 'nice', 'yep', 'nope', 'k', 'lmao', 'rofl']);
 
-const ANCHOR_REGEX = /\b(?:mera|meri|mere|mujhe|mujhko|hum|hume|humein|tum|tumhe|tumhara|tumhari|tera|teri|tere|tu|aap|aapko|apka|apki|aapka|aapki|hai|hain|hoon|hun|kya|kyun|kyu|kaise|kaisa|kaisi|nahi|nahin|nhi|pasand|bahut|bohot|bhaut|zyada|zayada|kaafi|kafi|naam|yaar|bhai|batao|bolo|chalo|chalega|chalegi|karo|karna|karein|chahiye|chaiye|lagta|lagti|raha|rahi|rahe|pe|mein|milke|milte|milenge|milunga|milungi)\b/i;
+const ANCHOR_REGEX = /\b(?:mera|meri|mere|mujhe|mujhko|hum|hume|humein|tum|tumhe|tumhara|tumhari|tera|teri|tere|tu|aap|aapko|apka|apki|aapka|aapki|hai|hain|hoon|hun|kya|kyun|kyu|kaise|kaisa|kaisi|nahi|nahin|nhi|pasand|bahut|bohot|bhaut|zyada|zayada|kaafi|kafi|naam|yaar|bhai|batao|bolo|chalo|chalega|chalegi|karo|karna|karein|chahiye|chaiye|lagta|lagti|raha|rahi|rahe|pe|mein|milke|milte|milenge|milunga|milungi|aur|saath|lekin)\b/i;
 
 const DEVANAGARI_REGEX = /[\u0900-\u097F\uA8E0-\uA8FF\u1CD0-\u1CFF]/;
 
@@ -127,6 +127,44 @@ Write all generated response fields in natural, high-status English.
 - Preserve all existing formatting rules, slot counts, and tone constraints.`;
 }
 
+function isOptionAuthenticHinglish(optStr) {
+    if (!optStr || typeof optStr !== 'string') return false;
+    if (containsDevanagari(optStr)) return false;
+    const clean = optStr.toLowerCase();
+    const words = clean.match(/[a-z]+/g) || [];
+    if (words.length === 0) return false;
+
+    let hindiCount = 0;
+    for (const w of words) {
+        if (HINDI.has(w) && w !== 'chai' && w !== 'coffee') {
+            hindiCount++;
+        }
+    }
+
+    // Meaningful Roman-Hindi conversational/grammatical signal:
+    // Requires a grammatical anchor from ANCHOR_REGEX (e.g. hai, hain, pasand, pe, kya, milte, chalega, etc.)
+    // AND at least one non-token Hindi word, OR at least 2 non-token conversational Hindi words.
+    // An isolated noun like "chai" or "samosa" in an otherwise English sentence returns false.
+    const hasAnchor = ANCHOR_REGEX.test(clean);
+    if (hasAnchor && hindiCount >= 1) return true;
+    if (hindiCount >= 2) return true;
+    return false;
+}
+
+function isOptionPureEnglish(optStr) {
+    if (!optStr || typeof optStr !== 'string') return true;
+    if (containsDevanagari(optStr)) return false;
+    const clean = optStr.toLowerCase();
+    const words = clean.match(/[a-z]+/g) || [];
+    let hindiCount = 0;
+    for (const w of words) {
+        if (HINDI.has(w) && w !== 'chai' && w !== 'coffee') hindiCount++;
+    }
+    // An English option must not have substantive Roman Hindi phrasing
+    if (hindiCount >= 2 && ANCHOR_REGEX.test(clean)) return false;
+    return true;
+}
+
 function validateGeneratedLanguage(target, output) {
     if (!output) return { valid: true };
     if (containsDevanagari(output)) {
@@ -135,40 +173,42 @@ function validateGeneratedLanguage(target, output) {
 
     if (Array.isArray(output) && output.length > 0) {
         if (target === 'hinglish') {
-            let hinglishOptionsCount = 0;
-            let totalHindiWords = 0;
-            for (const opt of output) {
+            const failedIndices = [];
+            for (let i = 0; i < output.length; i++) {
+                const opt = output[i];
                 const optStr = typeof opt === 'string' ? opt : (opt && opt.line ? opt.line : JSON.stringify(opt));
-                const optWords = String(optStr || '').toLowerCase().match(/[a-z]+/g) || [];
-                let optHindi = 0;
-                for (const w of optWords) {
-                    if (HINDI.has(w)) optHindi++;
-                }
-                totalHindiWords += optHindi;
-                if (optHindi >= 1 || ANCHOR_REGEX.test(optStr)) {
-                    hinglishOptionsCount++;
+                if (!isOptionAuthenticHinglish(optStr)) {
+                    failedIndices.push(i);
                 }
             }
-            const requiredMinOptions = Math.min(output.length, Math.max(1, Math.ceil(output.length * 0.6)));
-            if (hinglishOptionsCount < requiredMinOptions || totalHindiWords < Math.min(output.length, 4)) {
-                return { valid: false, reason: 'insufficient_hinglish_batch', hinglishOptionsCount, totalHindiWords, totalOptions: output.length };
+            if (failedIndices.length > 0) {
+                return {
+                    valid: false,
+                    reason: 'insufficient_hinglish_batch',
+                    failedCount: failedIndices.length,
+                    totalOptions: output.length,
+                    failedIndices
+                };
             }
             return { valid: true };
         }
 
         if (target === 'english') {
-            let hinglishOptionsCount = 0;
-            for (const opt of output) {
+            const failedIndices = [];
+            for (let i = 0; i < output.length; i++) {
+                const opt = output[i];
                 const optStr = typeof opt === 'string' ? opt : JSON.stringify(opt);
-                const optWords = String(optStr || '').toLowerCase().match(/[a-z]+/g) || [];
-                let optHindi = 0;
-                for (const w of optWords) {
-                    if (HINDI.has(w)) optHindi++;
+                if (!isOptionPureEnglish(optStr)) {
+                    failedIndices.push(i);
                 }
-                if (optHindi >= 2 && ANCHOR_REGEX.test(optStr)) hinglishOptionsCount++;
             }
-            if (hinglishOptionsCount > Math.floor(output.length * 0.3)) {
-                return { valid: false, reason: 'unexpected_hinglish_batch', hinglishOptionsCount };
+            if (failedIndices.length > 0) {
+                return {
+                    valid: false,
+                    reason: 'unexpected_hinglish_batch',
+                    failedCount: failedIndices.length,
+                    failedIndices
+                };
             }
             return { valid: true };
         }
@@ -208,5 +248,7 @@ module.exports = {
     resolveLanguageTarget,
     getAuthoritativeLanguageDirective,
     validateGeneratedLanguage,
+    isOptionAuthenticHinglish,
+    isOptionPureEnglish,
     containsDevanagari
 };
