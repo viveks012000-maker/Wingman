@@ -3261,7 +3261,7 @@ STRICT LAWS:
         try {
             const apiBase = getApiBase();
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 70000);
+            const timeoutId = setTimeout(() => controller.abort(), 85000);
 
             const userHeaderId = (window.currentSupabaseUser ? (window.currentSupabaseUser.id || window.currentSupabaseUser.email) : (safeStorage.get("wingman_user_email") || "guest_user"));
             const userHeaderEmail = (window.currentSupabaseUser ? window.currentSupabaseUser.email : (safeStorage.get("wingman_user_email") || ""));
