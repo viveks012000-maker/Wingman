@@ -3216,9 +3216,28 @@ STRICT LAWS:
     };
 
     // ============================================================
+    // CRYPTOGRAPHIC AI OPERATION ID GENERATION (Per User Action)
+    // ============================================================
+    function createAiOperationId(feature) {
+        const cleanFeature = (feature || 'op').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        let uuid;
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+            uuid = crypto.randomUUID();
+        } else {
+            uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+        return `${cleanFeature}_${uuid}`;
+    }
+    window.createAiOperationId = createAiOperationId;
+
+    // ============================================================
     // API HELPER – handles 402 with credit sync
     // ============================================================
-    window.generateWingmanResponse = async function (endpoint, payload) {
+    window.generateWingmanResponse = async function (endpoint, payload, operationId) {
         const isAuth = await isUserAuthenticated();
         if (!isAuth) {
             if (typeof window.showToast === 'function') window.showToast("Authentication required to use AI features. Please sign in.", "warning");
@@ -3226,7 +3245,8 @@ STRICT LAWS:
             return null;
         }
 
-        const idempotencyKey = 'cli_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+        const featureTag = (endpoint || '').replace('/api/', '').replace(/-/g, '_');
+        const idempotencyKey = operationId || (payload && payload.idempotencyKey) || createAiOperationId(featureTag);
         if (payload) {
             payload.idempotencyKey = idempotencyKey;
             payload.languageMode = 'auto';
@@ -3241,7 +3261,7 @@ STRICT LAWS:
             try {
                 const apiBase = getApiBase();
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 60000);
+                const timeoutId = setTimeout(() => controller.abort(), 70000);
 
                 const userHeaderId = (window.currentSupabaseUser ? (window.currentSupabaseUser.id || window.currentSupabaseUser.email) : (safeStorage.get("wingman_user_email") || "guest_user"));
                 const userHeaderEmail = (window.currentSupabaseUser ? window.currentSupabaseUser.email : (safeStorage.get("wingman_user_email") || ""));
@@ -3661,7 +3681,8 @@ STRICT LAWS:
                 ]
             };
 
-            const aiText = await window.generateWingmanResponse('/api/analyze', promptPayload);
+            const operationId = createAiOperationId('analyzer');
+            const aiText = await window.generateWingmanResponse('/api/analyze', promptPayload, operationId);
 
             if (aiText && (Array.isArray(aiText) ? aiText.length > 0 : String(aiText).trim().length > 0)) {
                 let momentumVal = "Conversation context summarized";
@@ -3765,7 +3786,8 @@ STRICT LAWS:
                 ]
             };
 
-            const aiText = await window.generateWingmanResponse('/api/icebreaker', promptPayload);
+            const operationId = createAiOperationId('icebreaker');
+            const aiText = await window.generateWingmanResponse('/api/icebreaker', promptPayload, operationId);
 
             if (aiText) {
                 if (skel) skel.classList.add("hidden");
@@ -3863,7 +3885,8 @@ STRICT LAWS:
                 ]
             };
 
-            const aiText = await window.generateWingmanResponse('/api/optimize', promptPayload);
+            const operationId = createAiOperationId('bio');
+            const aiText = await window.generateWingmanResponse('/api/optimize', promptPayload, operationId);
 
             if (aiText) {
                 if (skel) skel.classList.add("hidden");
@@ -4244,7 +4267,7 @@ STRICT LAWS:
         }
 
         const requestGeneration = simulatorGeneration;
-        const idempotencyKey = 'sim_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+        const idempotencyKey = createAiOperationId('chat');
 
         const isDryMsg = /^(hi|hello|hey|nothing|idk|ok|k|whatever|dunno|nevermind|nm)$/i.test(userText);
         const isApologyMsg = /sorry|apologize|my bad/i.test(userText);
