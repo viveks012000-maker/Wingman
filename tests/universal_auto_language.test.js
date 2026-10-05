@@ -220,13 +220,21 @@ async function runUniversalSuite() {
                 : [];
 
             if (feat.id === 'analyze') {
-                body.messages = [{ role: 'user', content: scen.input }];
+                body.messages = historyArr.length
+                    ? [...historyArr, { role: 'user', content: scen.input }]
+                    : [{ role: 'user', content: scen.input }];
             } else if (feat.id === 'icebreaker') {
                 body.text = scen.input;
+                if (historyArr.length) {
+                    body.messages = [...historyArr, { role: 'user', content: scen.input }];
+                }
             } else if (feat.id === 'optimize') {
                 const bioInput = scen.input.length < 5 ? `${scen.input} 👍👍👍` : scen.input;
                 body.bioText = bioInput;
                 body.text = bioInput;
+                if (historyArr.length) {
+                    body.messages = [...historyArr, { role: 'user', content: bioInput }];
+                }
             } else if (feat.id === 'hotline' || feat.id === 'practice') {
                 body.scenario = feat.scenario;
                 body.mode = feat.id === 'hotline' ? 'hotline' : 'roleplay';

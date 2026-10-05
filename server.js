@@ -449,6 +449,28 @@ function releaseUserConcurrencyLock(userId, requestId) {
         activeUserAiTimestamps.delete(userId);
     }
 }
+
+// In-flight AI operation coalescing and completed response replay cache
+const inFlightAiOperations = new Map();
+const completedAiResponses = new Map();
+const COMPLETED_RESPONSES_TTL_MS = 10 * 60 * 1000; // 10 minutes cache for idempotent retransmits
+
+function cacheCompletedAiResponse(reqId, statusCode, data) {
+    if (!reqId) return;
+    completedAiResponses.set(reqId, { statusCode, data, completedAt: Date.now() });
+}
+
+function getCompletedAiResponse(reqId) {
+    if (!reqId) return null;
+    const entry = completedAiResponses.get(reqId);
+    if (!entry) return null;
+    if (Date.now() - entry.completedAt > COMPLETED_RESPONSES_TTL_MS) {
+        completedAiResponses.delete(reqId);
+        return null;
+    }
+    return entry;
+}
+
 // =========================================================================================
 // SERVER-AUTHORITATIVE CONSENT & 18+ AGE VERIFICATION
 // =========================================================================================
@@ -1423,7 +1445,15 @@ function enforceWordLimit(text, maxWords = 500) {
     return text;
 }
 
-const { requestLanguageMode, languageDirective, bioMarketLock, inferLocalLanguage } = require('./middleware/languageSelection');
+const {
+    requestLanguageMode,
+    languageDirective,
+    bioMarketLock,
+    inferLocalLanguage,
+    resolveLanguageTarget,
+    getAuthoritativeLanguageDirective,
+    validateGeneratedLanguage
+} = require('./middleware/languageSelection');
 
 
 const DEVANAGARI_REGEX = /[\u0900-\u097F\uA8E0-\uA8FF\u1CD0-\u1CFF]/;
@@ -1575,13 +1605,106 @@ STRICT REPAIR LAWS:
     throw new Error(`Output safety policy violation: Generated response contained internal prompt boundary markup and could not be safely resolved.`);
 }
 
+async function repairLanguageMismatch(content, feature = 'generic', expectedLanguage = 'hinglish', source = '', history = []) {
+    if (!content) return content;
+    const validation = validateGeneratedLanguage(expectedLanguage, content);
+    if (validation.valid) return content;
+
+    console.warn(`[Language Validation Mismatch] Feature: ${feature}, Expected: ${expectedLanguage}, Reason: ${validation.reason}. Initiating single bounded repair...`);
+
+    const isArray = Array.isArray(content);
+    const isString = typeof content === 'string';
+    const serialized = isArray ? JSON.stringify({ options: content }) : (isString ? content : JSON.stringify(content));
+
+    const repairFeature = feature.startsWith('chat_') ? 'chat' : feature;
+    const sourceLabel = feature === 'analyze' ? 'stage1_transcript' : feature === 'optimize' ? 'bio_language_source' : 'language_source';
+
+    const repairPrompt = `You are an elite bilingual dating and communication copywriter.
+The generated text was expected to be in authentic ${expectedLanguage === 'hinglish' ? 'Roman-script Hinglish (natural, modern blend of English and Hindi texted by urban young adults)' : 'English'}, but the output failed language validation (${validation.reason}).
+Rewrite the generated content to naturally match ${expectedLanguage === 'hinglish' ? 'Roman-script Hinglish' : 'English'}.
+
+CRITICAL RULES:
+1. TARGET LANGUAGE: Rewrite into authentic ${expectedLanguage === 'hinglish' ? 'Roman-script Hinglish (natural mix of Roman Hindi and English, NOT pure English)' : 'English'}.
+2. SCRIPT CONSTRAINT: Use 100% LATIN / ENGLISH ALPHABET ONLY. ABSOLUTE BAN ON DEVANAGARI SCRIPT. Zero Devanagari.
+3. PRESERVE STRUCTURE: Preserve the exact option count (${isArray ? content.length : 1} options), tone, line breaks, formatting rules, and factual details from the context.
+4. OUTPUT ONLY THE REPAIRED CONTENT: Return the repaired content directly without any meta-commentary.
+${getAuthoritativeLanguageDirective(expectedLanguage, repairFeature)}`;
+
+    const sourceStr = typeof source === 'string' ? source : JSON.stringify(source || '');
+    const repairMessages = [
+        { role: 'system', content: withPromptBoundary(repairPrompt) },
+        { role: 'user', content: `Original user context:\n${wrapUntrustedUserData(sourceLabel, sourceStr)}\nGenerated content requiring language rewrite:\n${wrapUntrustedUserData('generated_content_to_repair', serialized)}\n\nRewrite into natural ${expectedLanguage === 'hinglish' ? 'Roman-script Hinglish' : 'English'} now.` }
+    ];
+
+    try {
+        const repairedText = await queryOpenRouter("qwen3-235b-a22b-2507", repairMessages, 0.25, 1200, 15000);
+        if (!repairedText || containsDevanagari(repairedText)) {
+            return content;
+        }
+
+        if (isArray) {
+            try {
+                const jsonMatch = repairedText.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    if (parsed && Array.isArray(parsed.options) && parsed.options.length === content.length && parsed.options.every(o => typeof o === 'string' && o.trim())) {
+                        return parsed.options;
+                    }
+                }
+            } catch (_) {}
+            const split = repairedText.split(/(?:^|\n)\d+[\.\)\:]\s*/).map(s => s.trim()).filter(Boolean);
+            if (split.length === content.length) return split;
+        }
+
+        if (isString) {
+            return repairedText.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+        }
+
+        try {
+            const jsonMatch = repairedText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) return JSON.parse(jsonMatch[0]);
+        } catch (_) {}
+        return content;
+    } catch (err) {
+        console.warn(`[Language Repair Bounded Fallback] ${feature}:`, err.message);
+        return content;
+    }
+}
+
 // ==================== THE 4 CORE FEATURE API // 1. CHAT SCREENSHOT ANALYZER (/api/analyze & /api/analyze-chat-screenshot)
 app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('anl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+
+    const cachedResponse = getCompletedAiResponse(reqId);
+    if (cachedResponse) {
+        console.log(`[Idempotency Replay] Serving completed response for reqId: ${reqId}`);
+        return res.status(cachedResponse.statusCode).json(cachedResponse.data);
+    }
+
+    const ongoingOperation = inFlightAiOperations.get(reqId);
+    if (ongoingOperation) {
+        console.log(`[In-Flight Coalescing] Awaiting ongoing operation for reqId: ${reqId}`);
+        try {
+            const result = await ongoingOperation;
+            return res.status(result.statusCode).json(result.data);
+        } catch (err) {
+            return res.status(err.statusCode || 500).json(err.data || { success: false, error: err.message });
+        }
+    }
+
     const lockState = acquireUserConcurrencyLock(uid, reqId);
     if (!lockState.acquired) {
         if (lockState.duplicate) {
+            const retryFlight = inFlightAiOperations.get(reqId);
+            if (retryFlight) {
+                try {
+                    const result = await retryFlight;
+                    return res.status(result.statusCode).json(result.data);
+                } catch (err) {
+                    return res.status(err.statusCode || 500).json(err.data || { success: false, error: err.message });
+                }
+            }
             return res.status(409).json({
                 success: false,
                 error: "This request ID is already in progress. No additional credits were deducted.",
@@ -1591,6 +1714,14 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
         }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
     }
+
+    let resolveOperation, rejectOperation;
+    const operationPromise = new Promise((resolve, reject) => {
+        resolveOperation = resolve;
+        rejectOperation = reject;
+    });
+    operationPromise.catch(() => {});
+    inFlightAiOperations.set(reqId, operationPromise);
     let deduction = null;
 
     try {
@@ -1751,10 +1882,12 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
         // =========================================================================
 
         let extractedTextContext = "";
+        let chatHistory = [];
         if (imageList.length === 0) {
             if (messages && messages.length > 0) {
-                const userMsg = messages.find(m => m.role === 'user');
-                extractedTextContext = userMsg ? enforceWordLimit(userMsg.content, 500) : "";
+                chatHistory = messages.filter(m => m && typeof m === 'object');
+                extractedTextContext = chatHistory.map(m => (m.role === 'user' ? 'User: ' : 'Match: ') + (m.content || '')).join('\n');
+                extractedTextContext = enforceWordLimit(extractedTextContext, 500);
             } else {
                 return res.status(400).json({ success: false, error: "Base64 image payload or chat history is missing." });
             }
@@ -2000,8 +2133,19 @@ ${modeConfig.bucketDefinitions}
 
 ${formattingRule}`;
 
+        let latestUserText = "";
+        let historyForLang = [];
+        if (chatHistory && chatHistory.length > 0) {
+            const userMessages = chatHistory.filter(m => m && m.role === 'user');
+            if (userMessages.length > 0) {
+                latestUserText = userMessages[userMessages.length - 1].content || "";
+            }
+            historyForLang = chatHistory.slice(0, -1);
+        }
+        const textForLang = latestUserText || extractedTextContext;
+        const languageTarget = resolveLanguageTarget(textForLang, historyForLang, language);
         const generationMessages = [
-            { role: "system", content: withPromptBoundary(screenshotTextSystemPrompt + languageDirective(language, 'analyze')) },
+            { role: "system", content: withPromptBoundary(screenshotTextSystemPrompt + languageDirective(language, 'analyze') + getAuthoritativeLanguageDirective(languageTarget, 'analyze')) },
             { role: "user", content: `Here is the parsed conversation JSON state from Stage 1, wrapped as untrusted data:\n${wrapUntrustedUserData('stage1_transcript', extractedTextContext)}\n\nActive Response Mode: ${modeConfig.name}. Return the JSON object with 10 state-aware options matching this mode now.` }
         ];
 
@@ -2060,6 +2204,7 @@ ${formattingRule}`;
                 throw new Error("Screenshot analysis generated Devanagari text in Hinglish mode.");
             }
         }
+        optionsList = await repairLanguageMismatch(optionsList, "analyze", languageTarget, extractedTextContext);
         const formattedText = optionsList.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
 
         try {
@@ -2089,12 +2234,15 @@ ${formattingRule}`;
             });
         }
 
-        res.json({
+        const successPayload = {
             success: true,
             options: optionsList,
             text: formattedText,
             credits: deduction.remainingCredits
-        });
+        };
+        cacheCompletedAiResponse(reqId, 200, successPayload);
+        if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
+        res.json(successPayload);
     } catch (error) {
         console.error("Pipeline breakdown:", error.message);
         const analyzerFailureStage = (error && error.analyzerStage) ? error.analyzerStage : 'pipeline';
@@ -2113,43 +2261,76 @@ ${formattingRule}`;
             }
         }
         if (deduction && deduction.success && !deduction.duplicate && !releaseSucceeded) {
-            return res.status(500).json({
+            const failurePayload = {
                 success: false,
                 error: `Analysis failed and credit release could not be confirmed (Ref: ${reqId}). Please refresh your balance or contact support.mywingman@gmail.com.`,
                 reqId: reqId,
                 credits: deduction.currentCredits
-            });
+            };
+            if (rejectOperation) rejectOperation({ statusCode: 500, data: failurePayload });
+            return res.status(500).json(failurePayload);
         }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
-            return res.status(504).json({
+            const timeoutPayload = {
                 success: false,
                 error: "Analysis timed out. Your credits were restored.",
                 code: analyzerFailureCode,
                 stage: analyzerFailureStage,
                 reqId: reqId,
                 credits: currentBal
-            });
+            };
+            if (rejectOperation) rejectOperation({ statusCode: 504, data: timeoutPayload });
+            return res.status(504).json(timeoutPayload);
         }
-        res.status(500).json({
+        const errorPayload = {
             success: false,
             error: "AI analysis failed. Your credits were restored.",
             code: analyzerFailureCode,
             stage: analyzerFailureStage,
             reqId: reqId,
             credits: currentBal
-        });
+        };
+        if (rejectOperation) rejectOperation({ statusCode: 500, data: errorPayload });
+        res.status(500).json(errorPayload);
     } finally {
+        inFlightAiOperations.delete(reqId);
         releaseUserConcurrencyLock(uid, reqId);
     }
 });
 
-// 2. ICEBREAKER GENERATOR (Direct qwen3-235b-a22b-2507)
 app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('ice_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+
+    const cachedResponse = getCompletedAiResponse(reqId);
+    if (cachedResponse) {
+        console.log(`[Idempotency Replay] Serving completed response for reqId: ${reqId}`);
+        return res.status(cachedResponse.statusCode).json(cachedResponse.data);
+    }
+
+    const ongoingOperation = inFlightAiOperations.get(reqId);
+    if (ongoingOperation) {
+        console.log(`[In-Flight Coalescing] Awaiting ongoing operation for reqId: ${reqId}`);
+        try {
+            const result = await ongoingOperation;
+            return res.status(result.statusCode).json(result.data);
+        } catch (err) {
+            return res.status(err.statusCode || 500).json(err.data || { success: false, error: err.message });
+        }
+    }
+
     const lockState = acquireUserConcurrencyLock(uid, reqId);
     if (!lockState.acquired) {
         if (lockState.duplicate) {
+            const retryFlight = inFlightAiOperations.get(reqId);
+            if (retryFlight) {
+                try {
+                    const result = await retryFlight;
+                    return res.status(result.statusCode).json(result.data);
+                } catch (err) {
+                    return res.status(err.statusCode || 500).json(err.data || { success: false, error: err.message });
+                }
+            }
             return res.status(409).json({
                 success: false,
                 error: "This request ID is already in progress. No additional credits were deducted.",
@@ -2159,6 +2340,14 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
         }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
     }
+
+    let resolveOperation, rejectOperation;
+    const operationPromise = new Promise((resolve, reject) => {
+        resolveOperation = resolve;
+        rejectOperation = reject;
+    });
+    operationPromise.catch(() => {});
+    inFlightAiOperations.set(reqId, operationPromise);
     let deduction = null;
 
     try {
@@ -2220,6 +2409,7 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
         const useShorthand = shorthandOption !== false;
         const emojiLevel = typeof emojiOption === 'number' ? emojiOption : 1;
 
+        let chatHistory = Array.isArray(messages) ? messages : [];
         if (!text && messages && messages.length > 0) {
             const userMsg = messages.find(m => m.role === 'user');
             text = userMsg ? userMsg.content : "";
@@ -2245,6 +2435,7 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
             formattingRule += " Max 1 emoji per option at the very end.";
         }
 
+        const languageTarget = resolveLanguageTarget(textVal || text || "", chatHistory, language);
         let icebreakerSystemPrompt = `You are an Elite Social Attraction Strategist and High-Status Dating Coach.
 Analyze the provided match details (bio, interests, or profile info) and generate EXACTLY 10 distinct opening lines matching the requested tone (Witty, Flirty, Casual, Direct / Bold, Closer).
 
@@ -2293,7 +2484,7 @@ GENERAL ICEBREAKER LAWS:
    - Casual: Low-pressure, easy conversation starter.
    - Direct / Bold: High-status confidence, direct callout, or playful challenge.
    - Closer: Smooth line designed to transition into planning a quick coffee/drink date.
-4. ${formattingRule}` + languageDirective(language, 'icebreaker');
+4. ${formattingRule}` + languageDirective(language, 'icebreaker') + getAuthoritativeLanguageDirective(languageTarget, 'icebreaker');
 
         const responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(icebreakerSystemPrompt) },
@@ -2344,6 +2535,7 @@ GENERAL ICEBREAKER LAWS:
                 throw new Error("Icebreaker generation generated Devanagari text in Hinglish mode.");
             }
         }
+        cleanedOptions = await repairLanguageMismatch(cleanedOptions, "icebreaker", languageTarget, text || textVal);
         if (!IS_PROD && process.env.DEBUG_PAYLOADS === 'true') {
             console.log("[ICEBREAKER CLEAN OUTPUT]:", cleanedOptions);
         }
@@ -2375,13 +2567,17 @@ GENERAL ICEBREAKER LAWS:
             });
         }
 
-        res.json({
+        const successPayload = {
             success: true,
             text: formattedText,
             options: cleanedOptions,
             credits: deduction.remainingCredits
-        });
+        };
+        cacheCompletedAiResponse(reqId, 200, successPayload);
+        if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
+        return res.json(successPayload);
     } catch (error) {
+        if (rejectOperation) rejectOperation(error);
         console.error("Icebreaker breakdown:", error.message);
         let currentBal = deduction ? deduction.remainingCredits : 0;
         let releaseSucceeded = false;
@@ -2415,6 +2611,7 @@ GENERAL ICEBREAKER LAWS:
             credits: currentBal
         });
     } finally {
+        inFlightAiOperations.delete(reqId);
         releaseUserConcurrencyLock(uid, reqId);
     }
 });
@@ -2513,9 +2710,36 @@ function formatBioLineBreaks(biosArray) {
 app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('opt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+
+    const cachedResponse = getCompletedAiResponse(reqId);
+    if (cachedResponse) {
+        console.log(`[Idempotency Replay] Serving completed response for reqId: ${reqId}`);
+        return res.status(cachedResponse.statusCode).json(cachedResponse.data);
+    }
+
+    const ongoingOperation = inFlightAiOperations.get(reqId);
+    if (ongoingOperation) {
+        console.log(`[In-Flight Coalescing] Awaiting ongoing operation for reqId: ${reqId}`);
+        try {
+            const result = await ongoingOperation;
+            return res.status(result.statusCode).json(result.data);
+        } catch (err) {
+            return res.status(err.statusCode || 500).json(err.data || { success: false, error: err.message });
+        }
+    }
+
     const lockState = acquireUserConcurrencyLock(uid, reqId);
     if (!lockState.acquired) {
         if (lockState.duplicate) {
+            const retryFlight = inFlightAiOperations.get(reqId);
+            if (retryFlight) {
+                try {
+                    const result = await retryFlight;
+                    return res.status(result.statusCode).json(result.data);
+                } catch (err) {
+                    return res.status(err.statusCode || 500).json(err.data || { success: false, error: err.message });
+                }
+            }
             return res.status(409).json({
                 success: false,
                 error: "This request ID is already in progress. No additional credits were deducted.",
@@ -2525,6 +2749,14 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
         }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
     }
+
+    let resolveOperation, rejectOperation;
+    const operationPromise = new Promise((resolve, reject) => {
+        resolveOperation = resolve;
+        rejectOperation = reject;
+    });
+    operationPromise.catch(() => {});
+    inFlightAiOperations.set(reqId, operationPromise);
     let deduction = null;
 
     try {
@@ -2589,6 +2821,7 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
         const useShorthand = shorthandOption !== false;
         const emojiLevel = typeof emojiOption === 'number' ? emojiOption : 1;
 
+        let chatHistory = Array.isArray(messages) ? messages : [];
         if (!text && messages && messages.length > 0) {
             const userMsg = messages.find(m => m.role === 'user');
             text = userMsg ? userMsg.content : "";
@@ -2601,7 +2834,8 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
         }
 
         const originalBioText = text || rawText;
-        const sanitizedText = sanitizeBioInput(originalBioText, language);
+        const languageTarget = resolveLanguageTarget(originalBioText, chatHistory, language);
+        const sanitizedText = sanitizeBioInput(originalBioText, languageTarget === 'hinglish' ? 'hinglish' : 'en');
         const textPayload = sanitizedText;
 
         let casingInstruction = useShorthand ? "natural, lowercase-heavy casing" : "standard sentence capitalization";
@@ -2617,9 +2851,9 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
         const MODE_PROMPTS = BIO_MODE_PROMPTS;
         const selectedModeRules = MODE_PROMPTS[modeKey] || MODE_PROMPTS['Green Flag'];
 
-        let bioOptimizerSystemPrompt = `You are an elite ${language === 'en' ? 'US/Western ' : ''}dating profile strategist for Tinder, Hinge, and Bumble.
+        let bioOptimizerSystemPrompt = `You are an elite ${languageTarget === 'english' ? 'US/Western ' : ''}dating profile strategist for Tinder, Hinge, and Bumble.
 
-${bioMarketLock(language)}
+${bioMarketLock(languageTarget === 'hinglish' ? 'hinglish' : 'en')}
 
 --------------------------------------------------------------------------------
 2. OUTPUT FORMAT & SLOT MATRIX
@@ -2666,7 +2900,7 @@ GLOBAL TONE & SYNTAX RULES:
 11. EMOJI CONSTRAINT: Include at most ONE single emoji per option string. NEVER stack emojis. ${emojiInstruction}
 12. ABSOLUTE PROHIBITION ON PROMPT BOUNDARY & CONTROL SYNTAX: Never output, reproduce, or wrap any option in XML-like tags, delimiters, or control markers (such as <user_data...>, </user_data...>, <userdata...>, </userdata...>, or label= attributes). Output ONLY clean, natural user-facing text.
 
-FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize');
+FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize') + getAuthoritativeLanguageDirective(languageTarget, 'optimize');
 
         let responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(bioOptimizerSystemPrompt) },
@@ -2705,14 +2939,14 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
             cleaned = cleaned.replace(/don't swipe if[^\.\,\n]*/gi, '');
 
             // Demographic & Cultural Isolation Law Safety Net (US / Western Lock)
-            if (language === 'en' || (language === 'auto' && inferLocalLanguage(originalBioText, []) === 'en')) {
-            cleaned = cleaned.replace(/\bdhaba(s)?\b/gi, '24-hour diner');
-            cleaned = cleaned.replace(/\b(pani puri|vada pav|samosa(s)?|dosa(s)?|paratha(s)?)\s*(roll|run)?\b/gi, 'taco truck run');
-            cleaned = cleaned.replace(/\bchai tapri\b/gi, 'coffee spot');
-            cleaned = cleaned.replace(/\bchai\b/gi, 'coffee');
-            cleaned = cleaned.replace(/\bauto(s)?\b/gi, 'rideshare');
-            cleaned = cleaned.replace(/\broorkee\b/gi, 'hometown');
-            cleaned = cleaned.replace(/\bmonsoon(s)?\b/gi, 'rainy days');
+            if (languageTarget === 'english') {
+                cleaned = cleaned.replace(/\bdhaba(s)?\b/gi, '24-hour diner');
+                cleaned = cleaned.replace(/\b(pani puri|vada pav|samosa(s)?|dosa(s)?|paratha(s)?)\s*(roll|run)?\b/gi, 'taco truck run');
+                cleaned = cleaned.replace(/\bchai tapri\b/gi, 'coffee spot');
+                cleaned = cleaned.replace(/\bchai\b/gi, 'coffee');
+                cleaned = cleaned.replace(/\bauto(s)?\b/gi, 'rideshare');
+                cleaned = cleaned.replace(/\broorkee\b/gi, 'hometown');
+                cleaned = cleaned.replace(/\bmonsoon(s)?\b/gi, 'rainy days');
             }
 
             // ABSOLUTE UNCONDITIONAL PURGE OF "settle this" FOREVER
@@ -2782,6 +3016,7 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
                 throw new Error("Bio optimization generated Devanagari text in Hinglish mode.");
             }
         }
+        optionsList = await repairLanguageMismatch(optionsList, "optimize", languageTarget, originalBioText);
         const formattedText = optionsList.map((opt, i) => `${i + 1}. ${opt}`).join("\n\n");
 
         try {
@@ -2810,13 +3045,17 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
             });
         }
 
-        res.json({
+        const successPayload = {
             success: true,
             options: optionsList,
             text: formattedText,
             credits: deduction.remainingCredits
-        });
+        };
+        cacheCompletedAiResponse(reqId, 200, successPayload);
+        if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
+        return res.json(successPayload);
     } catch (error) {
+        if (rejectOperation) rejectOperation(error);
         console.error("Bio optimizer breakdown:", error.message);
         let currentBal = deduction ? deduction.remainingCredits : 0;
         let releaseSucceeded = false;
@@ -2850,6 +3089,7 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
             credits: currentBal
         });
     } finally {
+        inFlightAiOperations.delete(reqId);
         releaseUserConcurrencyLock(uid, reqId);
     }
 });
@@ -2858,9 +3098,36 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
 app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('chat_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+
+    const cachedResponse = getCompletedAiResponse(reqId);
+    if (cachedResponse) {
+        console.log(`[Idempotency Replay] Serving completed response for reqId: ${reqId}`);
+        return res.status(cachedResponse.statusCode).json(cachedResponse.data);
+    }
+
+    const ongoingOperation = inFlightAiOperations.get(reqId);
+    if (ongoingOperation) {
+        console.log(`[In-Flight Coalescing] Awaiting ongoing operation for reqId: ${reqId}`);
+        try {
+            const result = await ongoingOperation;
+            return res.status(result.statusCode).json(result.data);
+        } catch (err) {
+            return res.status(err.statusCode || 500).json(err.data || { success: false, error: err.message });
+        }
+    }
+
     const lockState = acquireUserConcurrencyLock(uid, reqId);
     if (!lockState.acquired) {
         if (lockState.duplicate) {
+            const retryFlight = inFlightAiOperations.get(reqId);
+            if (retryFlight) {
+                try {
+                    const result = await retryFlight;
+                    return res.status(result.statusCode).json(result.data);
+                } catch (err) {
+                    return res.status(err.statusCode || 500).json(err.data || { success: false, error: err.message });
+                }
+            }
             return res.status(409).json({
                 success: false,
                 error: "This request ID is already in progress. No additional credits were deducted.",
@@ -2870,6 +3137,14 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
         }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
     }
+
+    let resolveOperation, rejectOperation;
+    const operationPromise = new Promise((resolve, reject) => {
+        resolveOperation = resolve;
+        rejectOperation = reject;
+    });
+    operationPromise.catch(() => {});
+    inFlightAiOperations.set(reqId, operationPromise);
     let deduction = null;
 
     try {
@@ -3043,7 +3318,7 @@ CONVERSATIONAL FREEDOM & LAWS:
                 });
             }
 
-            return res.json({
+            const successPayload = {
                 success: true,
                 mode: "hotline",
                 reply: hotlineAdvice,
@@ -3052,7 +3327,10 @@ CONVERSATIONAL FREEDOM & LAWS:
                 attraction_change: 0,
                 character_mood: "Coach",
                 credits: deduction.remainingCredits
-            });
+            };
+            cacheCompletedAiResponse(reqId, 200, successPayload);
+            if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
+            return res.json(successPayload);
         }
 
         // Roleplay Drill Scenarios
@@ -3286,13 +3564,17 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
             });
         }
 
-        res.json({
+        const successPayload = {
             success: true,
             reply: replyText,
             roleplay_response: replyText,
             credits: deduction.remainingCredits
-        });
+        };
+        cacheCompletedAiResponse(reqId, 200, successPayload);
+        if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
+        return res.json(successPayload);
     } catch (error) {
+        if (rejectOperation) rejectOperation(error);
         console.error("Maeve AI Chat Pipeline Error:", error.stack || error.message || error);
         let currentBal = deduction ? deduction.remainingCredits : 0;
         let releaseSucceeded = false;
@@ -3328,6 +3610,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
             credits: currentBal
         });
     } finally {
+        inFlightAiOperations.delete(reqId);
         releaseUserConcurrencyLock(uid, reqId);
     }
 });
@@ -3336,6 +3619,22 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
 app.post('/api/simulator/review', requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('rev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+
+    const cachedResponse = getCompletedAiResponse(reqId);
+    if (cachedResponse) {
+        return res.status(cachedResponse.statusCode).json(cachedResponse.data);
+    }
+
+    const ongoingOperation = inFlightAiOperations.get(reqId);
+    if (ongoingOperation) {
+        try {
+            const result = await ongoingOperation;
+            return res.status(result.statusCode).json(result.data);
+        } catch (err) {
+            return res.status(err.statusCode || 500).json(err.data || { success: false, error: err.message });
+        }
+    }
+
     const lockState = acquireUserConcurrencyLock(uid, reqId);
     if (!lockState.acquired) {
         if (lockState.duplicate) {
@@ -3348,6 +3647,14 @@ app.post('/api/simulator/review', requireSupabaseAuth, requireActiveConsent, api
         }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
     }
+
+    let resolveOperation, rejectOperation;
+    const operationPromise = new Promise((resolve, reject) => {
+        resolveOperation = resolve;
+        rejectOperation = reject;
+    });
+    operationPromise.catch(() => {});
+    inFlightAiOperations.set(reqId, operationPromise);
     let deduction = null;
 
     try {
@@ -3554,7 +3861,7 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
             });
         }
 
-        res.json({
+        const successPayload = {
             success: true,
             overall_score: overallScore,
             status_text: statusText,
@@ -3567,9 +3874,13 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
             priority_focus: priorityFocus,
             priority_tip: priorityFocus,
             credits: deduction.remainingCredits
-        });
+        };
+        cacheCompletedAiResponse(reqId, 200, successPayload);
+        if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
+        return res.json(successPayload);
 
     } catch (error) {
+        if (rejectOperation) rejectOperation(error);
         console.error("Qwen Review API Error:", error.message);
         let currentBal = deduction ? deduction.remainingCredits : 0;
         let releaseSucceeded = false;
@@ -3603,6 +3914,7 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
             credits: currentBal
         });
     } finally {
+        inFlightAiOperations.delete(reqId);
         releaseUserConcurrencyLock(uid, reqId);
     }
 });

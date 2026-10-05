@@ -3216,9 +3216,32 @@ STRICT LAWS:
     };
 
     // ============================================================
+    // CRYPTOGRAPHIC AI OPERATION ID GENERATION (Per User Action)
+    // ============================================================
+    function createAiOperationId(feature) {
+        const cleanFeature = (feature || 'op').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        if (typeof crypto !== 'undefined') {
+            if (typeof crypto.randomUUID === 'function') {
+                return `${cleanFeature}_${crypto.randomUUID()}`;
+            }
+            if (typeof crypto.getRandomValues === 'function') {
+                const bytes = new Uint8Array(16);
+                crypto.getRandomValues(bytes);
+                bytes[6] = (bytes[6] & 0x0f) | 0x40;
+                bytes[8] = (bytes[8] & 0x3f) | 0x80;
+                const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+                const uuid = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+                return `${cleanFeature}_${uuid}`;
+            }
+        }
+        return `${cleanFeature}_${Date.now().toString(36)}`;
+    }
+    window.createAiOperationId = createAiOperationId;
+
+    // ============================================================
     // API HELPER – handles 402 with credit sync
     // ============================================================
-    window.generateWingmanResponse = async function (endpoint, payload) {
+    window.generateWingmanResponse = async function (endpoint, payload, operationId) {
         const isAuth = await isUserAuthenticated();
         if (!isAuth) {
             if (typeof window.showToast === 'function') window.showToast("Authentication required to use AI features. Please sign in.", "warning");
@@ -3226,7 +3249,8 @@ STRICT LAWS:
             return null;
         }
 
-        const idempotencyKey = 'cli_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+        const featureTag = (endpoint || '').replace('/api/', '').replace(/-/g, '_');
+        const idempotencyKey = operationId || (payload && payload.idempotencyKey) || createAiOperationId(featureTag);
         if (payload) {
             payload.idempotencyKey = idempotencyKey;
             payload.languageMode = 'auto';
@@ -3241,7 +3265,7 @@ STRICT LAWS:
             try {
                 const apiBase = getApiBase();
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 60000);
+                const timeoutId = setTimeout(() => controller.abort(), 70000);
 
                 const userHeaderId = (window.currentSupabaseUser ? (window.currentSupabaseUser.id || window.currentSupabaseUser.email) : (safeStorage.get("wingman_user_email") || "guest_user"));
                 const userHeaderEmail = (window.currentSupabaseUser ? window.currentSupabaseUser.email : (safeStorage.get("wingman_user_email") || ""));
@@ -3661,7 +3685,8 @@ STRICT LAWS:
                 ]
             };
 
-            const aiText = await window.generateWingmanResponse('/api/analyze', promptPayload);
+            const operationId = createAiOperationId('analyzer');
+            const aiText = await window.generateWingmanResponse('/api/analyze', promptPayload, operationId);
 
             if (aiText && (Array.isArray(aiText) ? aiText.length > 0 : String(aiText).trim().length > 0)) {
                 let momentumVal = "Conversation context summarized";
@@ -3765,7 +3790,8 @@ STRICT LAWS:
                 ]
             };
 
-            const aiText = await window.generateWingmanResponse('/api/icebreaker', promptPayload);
+            const operationId = createAiOperationId('icebreaker');
+            const aiText = await window.generateWingmanResponse('/api/icebreaker', promptPayload, operationId);
 
             if (aiText) {
                 if (skel) skel.classList.add("hidden");
@@ -3863,7 +3889,8 @@ STRICT LAWS:
                 ]
             };
 
-            const aiText = await window.generateWingmanResponse('/api/optimize', promptPayload);
+            const operationId = createAiOperationId('bio');
+            const aiText = await window.generateWingmanResponse('/api/optimize', promptPayload, operationId);
 
             if (aiText) {
                 if (skel) skel.classList.add("hidden");
@@ -4011,7 +4038,7 @@ STRICT LAWS:
             cleanText = stripDelimitedSegments(cleanText, "```json", "```");
             cleanText = stripDelimitedSegments(cleanText, "```", "```");
             if (sender !== "user") {
-                cleanText = cleanText.replace(/<\/?user_?data[0-9a-zA-Z_-]*(\s+[^>]*)?>/gi, "");
+                cleanText = cleanText.replace(/<\/?user_?data[^<>]*>/gi, "");
                 cleanText = cleanText.replace(/\blabel=["'][^"']*["']/gi, "");
             }
             cleanText = cleanText.replace(/[\{\}\[\]]/g, "");
@@ -4244,7 +4271,7 @@ STRICT LAWS:
         }
 
         const requestGeneration = simulatorGeneration;
-        const idempotencyKey = 'sim_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+        const idempotencyKey = createAiOperationId('chat');
 
         const isDryMsg = /^(hi|hello|hey|nothing|idk|ok|k|whatever|dunno|nevermind|nm)$/i.test(userText);
         const isApologyMsg = /sorry|apologize|my bad/i.test(userText);
@@ -4309,7 +4336,7 @@ STRICT LAWS:
                 const chatData = await chatResp.json();
                 if (chatData && chatData.reply) {
                     const aiReply = typeof chatData.reply === 'string'
-                        ? chatData.reply.replace(/<\/?user_?data[0-9a-zA-Z_-]*(\s+[^>]*)?>/gi, '').replace(/\blabel=["'][^"']*["']/gi, '').trim()
+                        ? chatData.reply.replace(/<\/?user_?data[^<>]*>/gi, '').replace(/\blabel=["'][^"']*["']/gi, '').trim()
                         : chatData.reply;
                     const updatedBal = typeof chatData.credits === 'number' ? chatData.credits : (typeof chatData.creditsRemaining === 'number' ? chatData.creditsRemaining : null);
                     if (updatedBal !== null) {
