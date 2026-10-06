@@ -147,8 +147,8 @@ async function runTests() {
         assert.ok(migrations.some(f => f.startsWith('015')), 'Migration 015 must be present in migrations directory');
         const prefixes = migrations.map(m => m.slice(0, 3));
         assert.deepStrictEqual(prefixes, [
-            '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013', '014', '015', '016'
-        ], 'Migration chain must be strictly ordered through payment ledger migration 016');
+            '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013', '014', '015', '016', '017'
+        ], 'Migration chain must be strictly ordered through payment ledger migration 017');
     });
 
     // 11. No migration can subsequently restore the old 50-credit signup default

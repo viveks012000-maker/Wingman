@@ -85,10 +85,40 @@ const { app } = require('../server.js');
         return { data: { success: true }, error: null };
     };
 
+    authMod.supabaseAdmin.from = (table) => {
+        if (table === 'credit_transactions') {
+            return {
+                select: () => ({
+                    eq: (col1, val1) => ({
+                        eq: (col2, val2) => ({
+                            maybeSingle: async () => {
+                                const status = transactions.get(val2);
+                                if (!status) return { data: null, error: null };
+                                return { data: { status, amount: 10, feature: 'test' }, error: null };
+                            }
+                        })
+                    })
+                })
+            };
+        }
+        if (table === 'profiles') {
+            return {
+                select: () => ({
+                    eq: () => ({
+                        maybeSingle: async () => ({ data: { credits: 50 }, error: null })
+                    })
+                })
+            };
+        }
+        return {
+            select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) })
+        };
+    };
+
     // Need settleCreditsDB and releaseCreditsDB from server
     // Since they are inside server.js, let's test via routes or export them
     const serverModule = require('../server.js');
-    
+
     // We can test if settleCreditsDB and releaseCreditsDB are exported or export them
     assert.ok(serverModule, 'server module loaded');
 
@@ -145,8 +175,77 @@ const { app } = require('../server.js');
     assert.strictEqual(res4.remainingCredits, 50, 'Remaining credits must reflect restored balance');
     console.log('✔ Test 4 Passed: Release replay handled idempotently with zero error.\n');
 
+    // -------------------------------------------------------------
+    // TEST 5: COMMIT-succeeded-response-lost for settleCreditsDB
+    // -------------------------------------------------------------
+    console.log('▶ [TEST 5] settleCreditsDB reconciles when commit succeeded on DB but all transport attempts dropped');
+    const reqId5 = 'req_test_commit_settle_lost_' + Date.now();
+    // Simulate commit having succeeded on Postgres despite network dropping
+    transactions.set(reqId5, 'completed');
+    let failAllSettle = true;
+    const originalSettleRpc = authMod.supabaseAdmin.rpc;
+    authMod.supabaseAdmin.rpc = async (funcName, args) => {
+        if (funcName === 'settle_credits' && failAllSettle) {
+            throw new Error('FetchError: request to https://... failed, reason: network timeout');
+        }
+        return originalSettleRpc(funcName, args);
+    };
+
+    const res5 = await settleCredits(testReq, reqId5);
+    assert.strictEqual(res5.success, true, 'Must reconcile via getCreditTransactionState and report success');
+    assert.strictEqual(res5.reconciled, true, 'Must indicate reconciled: true');
+    console.log('✔ Test 5 Passed: Settle reconciled cleanly after transport response was lost.\n');
+
+    // -------------------------------------------------------------
+    // TEST 6: COMMIT-succeeded-response-lost for releaseCreditsDB
+    // -------------------------------------------------------------
+    console.log('▶ [TEST 6] releaseCreditsDB reconciles when commit succeeded on DB but all transport attempts dropped');
+    const reqId6 = 'req_test_commit_release_lost_' + Date.now();
+    transactions.set(reqId6, 'cancelled');
+    let failAllRelease = true;
+    authMod.supabaseAdmin.rpc = async (funcName, args) => {
+        if (funcName === 'release_credits' && failAllRelease) {
+            throw new Error('FetchError: request to https://... failed, reason: network timeout');
+        }
+        return originalSettleRpc(funcName, args);
+    };
+
+    const res6 = await releaseCredits(testReq, reqId6, 'test_failure');
+    assert.strictEqual(res6.success, true, 'Must reconcile via getCreditTransactionState and report success');
+    assert.strictEqual(res6.reconciled, true, 'Must indicate reconciled: true');
+    console.log('✔ Test 6 Passed: Release reconciled cleanly after transport response was lost.\n');
+
+    // -------------------------------------------------------------
+    // TEST 7: releaseCreditsDB rejected when transaction already completed (settled)
+    // -------------------------------------------------------------
+    console.log('▶ [TEST 7] releaseCreditsDB rejects release when transaction is already completed');
+    const reqId7 = 'req_test_release_on_settled_' + Date.now();
+    transactions.set(reqId7, 'completed');
+    authMod.supabaseAdmin.rpc = async (funcName, args) => {
+        if (funcName === 'release_credits') {
+            return {
+                data: {
+                    success: false,
+                    released: false,
+                    already_settled: true,
+                    error_code: 'ALREADY_SETTLED',
+                    error_message: 'Cannot release settled transaction.',
+                    remainingCredits: 50
+                },
+                error: null
+            };
+        }
+        return originalSettleRpc(funcName, args);
+    };
+
+    const res7 = await releaseCredits(testReq, reqId7, 'test_failure');
+    assert.strictEqual(res7.success, false, 'Release on already-completed reservation must return success: false');
+    assert.strictEqual(res7.alreadySettled, true, 'Must indicate alreadySettled: true');
+    assert.strictEqual(res7.error_code, 'ALREADY_SETTLED', 'Must return error_code ALREADY_SETTLED');
+    console.log('✔ Test 7 Passed: releaseCreditsDB strictly rejects completed transaction with ALREADY_SETTLED.\n');
+
     console.log('============================================================');
-    console.log('🎉 ALL LEDGER RECOVERY TESTS PASSED (4/4)!');
+    console.log('🎉 ALL LEDGER RECOVERY TESTS PASSED (7/7)!');
     console.log('============================================================');
 })().catch(err => {
     console.error('❌ Ledger Recovery Test Failed:', err);

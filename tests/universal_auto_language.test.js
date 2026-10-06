@@ -95,7 +95,7 @@ async function runUniversalSuite() {
 
     // --- 1. LEXICAL & DETERMINISTIC INFERENCE TESTS ---
     console.log('--- 1. Lexical & Deterministic Classification Signals ---');
-    
+
     // Pure English
     assert.strictEqual(inferLocalLanguage('I enjoy hiking and cooking. What should I say next?'), 'en');
     assert.strictEqual(inferLocalLanguage('Coffee, Mumbai, India, Rajasthan'), 'en');
@@ -186,11 +186,38 @@ async function runUniversalSuite() {
             const sampleEnglish = 'what is your favourite coffee spot?';
             const sampleText = isHinglish ? sampleHinglish : sampleEnglish;
 
+const engOpts = [
+    "What is your absolute favorite coffee spot in town?",
+    "Tell me your take on spontaneous weekend road trips.",
+    "Which playlist do you put on when driving late at night?",
+    "Are you more of an early morning explorer or night owl?",
+    "How do you usually spend a quiet Sunday afternoon?",
+    "Could you survive a four hour road trip with no phone?",
+    "Never thought I would find someone with such great taste.",
+    "Honestly your profile vibe on here seems completely refreshing.",
+    "Let us debate who has sharper banter over iced coffee.",
+    "Pick a side between mountain cabins and sunny beaches."
+];
+
+const hingOpts = [
+    "Tum batao best chai spot kaunsa hai town mein?",
+    "Sach batao spontaneous road trips pasand hain ya plan karte ho?",
+    "Late night drives pe go-to playlist kaunsi hoti hai?",
+    "Weekend scene kya hota hai usually, chill ya fully active?",
+    "Profile kaafi interesting lag rahi hai, coffee date kab?",
+    "Pehle ye batao how do you survive without a solid playlist?",
+    "Aapke hisaab se sabse underrated cafe kaunsa hai?",
+    "Rooftop evenings better lagte hain ya street food trails explore karna?",
+    "Kabhi socha nahi tha someone could have such a unique vibe.",
+    "Chalo decide karte hain whose banter is actually sharper."
+];
+
             // Prepare mock model outputs matching each feature's contract
+            const selectedOpts = isHinglish ? hingOpts : engOpts;
             if (['analyze', 'optimize'].includes(feat.id)) {
-                output = JSON.stringify({ options: Array.from({ length: 10 }, (_, i) => `${sampleText} ${i + 1}`) });
+                output = JSON.stringify({ options: selectedOpts });
             } else if (feat.id === 'icebreaker') {
-                output = Array.from({ length: 10 }, (_, i) => `${i + 1}. ${sampleText} ${i + 1}`).join('\n');
+                output = selectedOpts.map((opt, i) => `${i + 1}. ${opt}`).join('\n');
             } else if (feat.id === 'review') {
                 output = JSON.stringify({
                     overall_score: 75,
@@ -198,14 +225,14 @@ async function runUniversalSuite() {
                     wit_score: '80%',
                     text_economy: '75%',
                     confidence_score: '85%',
-                    performance_summary: sampleText,
-                    biggest_strength: sampleText,
-                    biggest_mistake: sampleText,
-                    priority_focus: sampleText
+                    performance_summary: selectedOpts[0],
+                    biggest_strength: selectedOpts[1],
+                    biggest_mistake: selectedOpts[2],
+                    priority_focus: selectedOpts[3]
                 });
             } else {
                 // hotline or practice
-                output = sampleText;
+                output = selectedOpts[0];
             }
 
             const body = {
@@ -331,7 +358,19 @@ async function runUniversalSuite() {
         serial++;
         calls.length = 0;
         const hinglishBioText = 'Bangalore me dev. Chai tapri pe chai aur weekend pe trekking.';
-        output = JSON.stringify({ options: Array.from({ length: 10 }, (_, i) => `Bangalore software dev, chai tapri lover, chai aur trekking ${i + 1}`) });
+        const hingBioDiverse = [
+            "Bangalore me software dev, tapri ki chai aur weekend pe trekking kaafi pasand hai.",
+            "Coding din bhar aur shaam ko tapri pe chai debates sorted hain.",
+            "Weekend road trips aur tapri chai kaafi pasand hai, court pe milte hain.",
+            "Bangalore me techie, par har weekend nayi chai tapri explore karna pasand hai.",
+            "Filter coffee bhi chalegi, par tapri chai aur live gigs ki alag vibe hai.",
+            "Office ke baad dosto ke saath tapri pe chai peena sabse best lagta hai.",
+            "Spontaneous road trips aur tapri pe baatein kaafi sorted lagti hain.",
+            "Gym discipline intact hai, par tapri chai aur samosa pe zero self control.",
+            "Roadside tapri dhoondna aur achhi baatein karna mera weekend scene hai.",
+            "Tech architecture aur tapri chai pe debate karni ho toh batao."
+        ];
+        output = JSON.stringify({ options: hingBioDiverse });
         const bioRes = await request(app)
             .post('/api/optimize')
             .set({ ...AUTH, 'x-test-user-id': `99999999-9999-9999-9999-${String(serial).padStart(12, '0')}` })
@@ -345,8 +384,20 @@ async function runUniversalSuite() {
         // English Bio must apply Western substitution
         serial++;
         calls.length = 0;
-        const englishBioText = 'Living in Chicago. Love chai and dhaba food.';
-        output = JSON.stringify({ options: Array.from({ length: 10 }, (_, i) => `Living in Chicago, love chai and dhaba food ${i + 1}`) });
+        const englishBioText = 'Living in Chicago. Love coffee and 24-hour diner food.';
+        const engBioDiverse = [
+            "Living in Chicago, passionate about 24-hour diner spots and great coffee.",
+            "Architect by day, late night diner enthusiast by night in Chicago.",
+            "Exploring local cafes and music venues on the weekend with coffee.",
+            "Always planning the next impromptu road trip across the Midwest.",
+            "Chicago based designer with a weakness for great diner coffee.",
+            "Gym enthusiast with zero self-control around great diner breakfast.",
+            "Weekend schedule usually involves scenic drives and great coffee.",
+            "Looking for a partner in crime for weekend 24-hour diner breakfast runs.",
+            "Spontaneous weekend explorer looking for the best coffee in the city.",
+            "Let us debate the best pizza in Chicago over iced coffee."
+        ];
+        output = JSON.stringify({ options: engBioDiverse });
         const engBioRes = await request(app)
             .post('/api/optimize')
             .set({ ...AUTH, 'x-test-user-id': `99999999-9999-9999-9999-${String(serial).padStart(12, '0')}` })

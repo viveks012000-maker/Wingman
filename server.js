@@ -249,7 +249,7 @@ app.use(express.static(path.join(__dirname), {
 }));
 
 // Explicit Root Routes for Landing & App Pages
-app.get('/', (req, res) => {
+app.get('/', globalLimiter, (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
@@ -257,7 +257,7 @@ app.get('/favicon.ico', (req, res) => {
     res.status(204).end();
 });
 
-app.get('/app', (req, res) => {
+app.get('/app', globalLimiter, (req, res) => {
     res.sendFile(path.join(__dirname, 'app.html'));
 });
 
@@ -338,16 +338,20 @@ function invalidateInFlightCreditQuery(userId) {
 }
 
 // Read credits from Supabase Postgres 'profiles' table by user ID (Authoritative Source of Truth)
-async function getUserCreditsByUid(uid) {
+async function getUserCreditsByUid(uid, options = {}) {
     if (!uid || uid === 'guest_user') {
         const err = new Error("Authentication required to access credits.");
         err.statusCode = 401;
         throw err;
     }
 
+    if (options && options.forceFresh) {
+        invalidateInFlightCreditQuery(uid);
+    }
+
     // Coalesce concurrent identical in-flight read queries for the same authenticated user
     const existing = inFlightUserCreditQueries.get(uid);
-    if (existing) {
+    if (existing && !(options && options.forceFresh)) {
         return await existing;
     }
 
@@ -367,8 +371,8 @@ async function getUserCreditsByUid(uid) {
             }
 
             if (data && typeof data.credits === 'number') {
-                // Return existing stored credit balance without modifying it
-                return Number(data.credits) / CREDITS_PER_INR;
+                // Return existing stored credit balance without dividing by 10 (raw Wingman credits)
+                return Number(data.credits);
             }
 
             // Profile does NOT exist in Supabase: Explicit PROFILE_MISSING condition (Do NOT auto-grant 50 credits)
@@ -394,12 +398,50 @@ async function getUserCreditsByUid(uid) {
 }
 
 // Read credits from Supabase Postgres 'profiles' table (Accepts Express req or uid string)
-async function getUserCreditsDB(req) {
+async function getUserCreditsDB(req, options = {}) {
     if (typeof req === 'string') {
-        return await getUserCreditsByUid(req);
+        return await getUserCreditsByUid(req, options);
     }
     const uid = getUserIdFromReq(req);
-    return await getUserCreditsByUid(uid);
+    return await getUserCreditsByUid(uid, options);
+}
+
+// Fetch ledger transaction state from Supabase Postgres 'credit_transactions' table
+async function getCreditTransactionState(uid, reqId) {
+    if (!uid || !reqId || !supabaseAdmin) return null;
+    try {
+        const { data, error } = await supabaseAdmin
+            .from('credit_transactions')
+            .select('status, amount, feature, created_at')
+            .eq('user_id', uid)
+            .eq('request_id', reqId)
+            .maybeSingle();
+        if (error) {
+            console.error('[getCreditTransactionState Error]:', error.message);
+            return null;
+        }
+        return data || null;
+    } catch (e) {
+        console.error('[getCreditTransactionState Exception]:', e.message);
+        return null;
+    }
+}
+
+// Performance Telemetry: Privacy-safe metadata-only instrumentation
+function recordPerfTelemetry(metadata) {
+    if (!metadata || typeof metadata !== 'object') return;
+    const safePayload = {
+        feature: String(metadata.feature || 'unknown'),
+        stage: String(metadata.stage || 'unknown'),
+        durationMs: typeof metadata.durationMs === 'number' ? Math.round(metadata.durationMs) : 0,
+        attemptCount: typeof metadata.attemptCount === 'number' ? metadata.attemptCount : 1,
+        repairSlotCount: typeof metadata.repairSlotCount === 'number' ? metadata.repairSlotCount : 0,
+        outputCount: typeof metadata.outputCount === 'number' ? metadata.outputCount : 0,
+        timestamp: new Date().toISOString()
+    };
+    if (process.env.NODE_ENV !== 'production' || process.env.ENABLE_PERF_LOGS === 'true') {
+        console.log('[PERF_TELEMETRY]', JSON.stringify(safePayload));
+    }
 }
 
 async function withTransactionRetry(db, callback, retries = 5) {
@@ -754,7 +796,7 @@ async function settleCreditsDB(req, reqId) {
                         await new Promise(r => setTimeout(r, attempt * 150));
                         continue;
                     }
-                    return { success: false, error: error.message };
+                    break;
                 }
                 const row = Array.isArray(data) ? data[0] : data;
                 if (!row || row.success !== true || row.settled !== true) {
@@ -770,9 +812,18 @@ async function settleCreditsDB(req, reqId) {
                 await new Promise(r => setTimeout(r, attempt * 150));
                 continue;
             }
-            return { success: false, error: e.message };
+            break;
         }
     }
+
+    // Ambiguous transport recovery: check if the commit succeeded on Postgres
+    if (supabaseAdmin) {
+        const tx = await getCreditTransactionState(uid, reqId);
+        if (tx && tx.status === 'completed') {
+            return { success: true, reconciled: true, data: { success: true, settled: true, already_settled: true } };
+        }
+    }
+
     return { success: false, error: lastErr || 'Credit settlement failed.' };
 }
 
@@ -799,15 +850,24 @@ async function releaseCreditsDB(req, reqId, reason = 'ai_failure') {
                         await new Promise(r => setTimeout(r, attempt * 150));
                         continue;
                     }
-                    return { success: false, remainingCredits: 0, error: rpcErr.message };
+                    break;
                 }
                 if (rpcRes) {
                     const row = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
+                    const rem = typeof (row && row.new_balance) === 'number' ? row.new_balance : (typeof (row && row.remainingCredits) === 'number' ? row.remainingCredits : 0);
                     if (!row || row.success !== true) {
-                        return { success: false, remainingCredits: 0, error: (row && row.error_message) || 'Credit release was rejected.' };
+                        if (row && row.success === false && (row.already_settled === true || row.error_code === 'ALREADY_SETTLED')) {
+                            return {
+                                success: false,
+                                alreadySettled: true,
+                                error_code: 'ALREADY_SETTLED',
+                                remainingCredits: rem,
+                                error: row.error_message || 'Cannot release settled transaction.'
+                            };
+                        }
+                        return { success: false, remainingCredits: rem, error: (row && row.error_message) || 'Credit release was rejected.' };
                     }
-                    const rem = typeof row.new_balance === 'number' ? row.new_balance : (typeof row.remainingCredits === 'number' ? row.remainingCredits : 0);
-                    return { success: true, remainingCredits: rem };
+                    return { success: true, remainingCredits: rem, alreadyReleased: Boolean(row.already_released) };
                 }
             }
             return { success: false, remainingCredits: 0, error: 'Credit release service returned no response.' };
@@ -818,9 +878,35 @@ async function releaseCreditsDB(req, reqId, reason = 'ai_failure') {
                 await new Promise(r => setTimeout(r, attempt * 150));
                 continue;
             }
-            return { success: false, remainingCredits: 0, error: e.message };
+            break;
         }
     }
+
+    // Ambiguous transport recovery: check if the release or settlement succeeded on Postgres
+    if (supabaseAdmin) {
+        const tx = await getCreditTransactionState(uid, reqId);
+        if (tx && tx.status === 'cancelled') {
+            let freshBal = 0;
+            try {
+                freshBal = await getUserCreditsByUid(uid, { forceFresh: true });
+            } catch (_) {}
+            return { success: true, reconciled: true, remainingCredits: freshBal, alreadyReleased: true };
+        }
+        if (tx && tx.status === 'completed') {
+            let freshBal = 0;
+            try {
+                freshBal = await getUserCreditsByUid(uid, { forceFresh: true });
+            } catch (_) {}
+            return {
+                success: false,
+                alreadySettled: true,
+                error_code: 'ALREADY_SETTLED',
+                remainingCredits: freshBal,
+                error: 'Cannot release settled transaction.'
+            };
+        }
+    }
+
     return { success: false, remainingCredits: 0, error: lastErr || 'Credit release service returned no response.' };
 }
 
@@ -927,7 +1013,7 @@ async function addUserCreditsDB(req, amountCreditsOrInr, tierName = 'purchase', 
                     malformed.statusCode = 503;
                     throw malformed;
                 }
-                return rem / CREDITS_PER_INR;
+                return rem;
             }
         }
     } catch (rpcEx) {
@@ -995,120 +1081,18 @@ function fixMidSentenceCapitalization(str) {
 
 function enforceStructuralBatchDiversity(optionsList, featureType = "generic") {
     if (!Array.isArray(optionsList) || optionsList.length === 0) return optionsList;
-
-    const seenFirstTwoWords = new Set();
-    const anchorCounts = {};
-
-    const BANNED_ANCHORS = {
-        bio: ["settle this", "ask me about", "usually found", "when i'm not", "grew up in"],
-        icebreaker: ["so uh", "noted", "wait you", "good thing", "i have to ask"],
-        analyze: ["kinda feel like", "not gonna lie", "you into", "what's been the", "honestly"]
-    };
-
-    const targetBans = BANNED_ANCHORS[featureType] || [];
-
-    return optionsList.map((option, idx) => {
+    return optionsList.map(option => {
         if (!option || typeof option !== 'string') return option;
-        let cleaned = fixGrammarAndTypoLeaks(option.trim());
-
-        // 1. Check for repetitive anchor phrases & ABSOLUTE PURGE of "settle this"
-        if (/settle this/i.test(cleaned)) {
-            const dynamicRepls = ["real question: ", "this or that: ", "pick a side: ", "honest debate: ", "quick question: "];
-            const repl = dynamicRepls[idx % dynamicRepls.length];
-            cleaned = cleaned.replace(/settle this[\:\,\s]*/gi, repl);
-        }
-
-        targetBans.forEach(anchor => {
-            if (anchor === "settle this") return; // Handled unconditionally above
-            const regex = new RegExp(`^${anchor}[\\:\\,\\s]*`, 'i');
-            if (regex.test(cleaned)) {
-                anchorCounts[anchor] = (anchorCounts[anchor] || 0) + 1;
-                if (anchorCounts[anchor] > 1) {
-                    const alternatives = {
-                        "ask me about": "curious about ",
-                        "usually found": "mostly ",
-                        "when i'm not": "outside of that, ",
-                        "grew up in": "raised in ",
-                        "so uh": "quick question: ",
-                        "noted": "fair point — ",
-                        "wait you": "hold on, ",
-                        "good thing": "lucky for you, ",
-                        "i have to ask": "random question: ",
-                        "kinda feel like": "seems like ",
-                        "not gonna lie": "real talk: ",
-                        "you into": "are you a fan of ",
-                        "what's been the": "tell me about the ",
-                        "honestly": "truth is, "
-                    };
-                    const repl = alternatives[anchor.toLowerCase()] || "";
-                    cleaned = cleaned.replace(regex, repl);
-                }
-            }
-        });
-
-        // 2. Ensure first two words are not identical across options in the same batch
-        const words = cleaned.split(/\s+/);
-        if (words.length >= 2) {
-            const firstTwo = `${words[0].toLowerCase().replace(/[^a-z]/g, '')} ${words[1].toLowerCase().replace(/[^a-z]/g, '')}`;
-            if (seenFirstTwoWords.has(firstTwo) && idx > 0) {
-                const prefixes = ["so, ", "well, ", "honestly, ", "curious, ", "real talk, "];
-                const altPrefix = prefixes[idx % prefixes.length];
-                if (!prefixes.some(p => cleaned.toLowerCase().startsWith(p.trim()))) {
-                    cleaned = `${altPrefix}${cleaned.charAt(0).toLowerCase()}${cleaned.slice(1)}`;
-                }
-            } else {
-                seenFirstTwoWords.add(firstTwo);
-            }
-        }
-
-        return cleaned;
+        return fixGrammarAndTypoLeaks(option.trim());
     });
 }
 
-// Programmatic deduplication safety net
+// Programmatic deduplication safety net (non-mutating; diversity enforced via selective repair)
 function enforceUniqueQuestionAnchors(biosArray) {
     if (!Array.isArray(biosArray)) return biosArray;
-    
-    // List of dynamic replacement prefixes for closing questions
-    const dynamicPrefixes = [
-        "real question:",
-        "this or that:",
-        "pick a side:",
-        "honest debate:",
-        "quick question:"
-    ];
-    
-    let prefixIndex = 0;
-    const seenAnchors = new Set();
-    
-    return biosArray.map((bio, idx) => {
+    return biosArray.map(bio => {
         if (typeof bio !== 'string') return bio;
-        
-        let cleaned = bio;
-        
-        // UNCONDITIONAL PERMANENT BAN & REPLACEMENT OF "settle this" / "settle this:" ANYWHERE
-        if (/settle this/i.test(cleaned)) {
-            const replacement = dynamicPrefixes[idx % dynamicPrefixes.length] + " ";
-            cleaned = cleaned.replace(/settle this[\:\,\s]*/gi, replacement);
-        }
-
-        // Detect other common anchor phrases
-        const anchorMatch = cleaned.match(/(ask me about|usually found|not gonna lie):?/i);
-        
-        if (anchorMatch) {
-            const anchor = anchorMatch[0].toLowerCase();
-            
-            // If this anchor has ALREADY been used in this batch, replace it dynamically!
-            if (seenAnchors.has(anchor)) {
-                const replacement = dynamicPrefixes[prefixIndex % dynamicPrefixes.length];
-                prefixIndex++;
-                cleaned = cleaned.replace(new RegExp(anchorMatch[0], 'i'), replacement);
-            } else {
-                seenAnchors.add(anchor);
-            }
-        }
-        
-        return cleaned;
+        return bio.trim();
     });
 }
 
@@ -2396,7 +2380,7 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
 
             const transcriptions = await Promise.all(transcriptionPromises);
             extractedTextContext = transcriptions.join("\n\n");
-            
+
             if (!IS_PROD && process.env.DEBUG_PAYLOADS === 'true') {
                 console.log("\n================ [STAGE 1 VISION JSON OUTPUT] ================");
                 console.log('[Analyzer] Stage 1 vision output received; raw OCR content is intentionally not logged.');
@@ -2685,7 +2669,7 @@ ${formattingRule}`;
         try {
             const currentUserId = getUserIdFromReq(req);
             if (currentUserId) {
-                const freshBal = await getUserCreditsByUid(currentUserId);
+                const freshBal = await getUserCreditsByUid(currentUserId, { forceFresh: true });
                 if (typeof freshBal === 'number') {
                     authoritativeBalance = freshBal;
                 }
@@ -2693,6 +2677,13 @@ ${formattingRule}`;
         } catch (balErr) {
             console.warn('[Post-settle Credit Fetch Notice]', balErr.message);
         }
+
+        recordPerfTelemetry({
+            feature: 'analyze',
+            stage: 'completion',
+            durationMs: Date.now() - (req._startTime || Date.now()),
+            outputCount: optionsList.length
+        });
 
         const successPayload = {
             success: true,
@@ -2900,8 +2891,8 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
 
         text = enforceWordLimit(text, 500);
 
-        let formattingRule = useShorthand 
-            ? "FORMAT: Fully lowercase text, natural texting rhythm (max 18 words per option, respecting rhythm diversity)." 
+        let formattingRule = useShorthand
+            ? "FORMAT: Fully lowercase text, natural texting rhythm (max 18 words per option, respecting rhythm diversity)."
             : "FORMAT: Standard sentence capitalization and punctuation, natural texting rhythm (max 18 words per option, respecting rhythm diversity).";
 
         if (emojiLevel === 0) {
@@ -3067,7 +3058,7 @@ GENERAL ICEBREAKER LAWS:
         try {
             const currentUserId = getUserIdFromReq(req);
             if (currentUserId) {
-                const freshBal = await getUserCreditsByUid(currentUserId);
+                const freshBal = await getUserCreditsByUid(currentUserId, { forceFresh: true });
                 if (typeof freshBal === 'number') {
                     authoritativeBalance = freshBal;
                 }
@@ -3075,6 +3066,13 @@ GENERAL ICEBREAKER LAWS:
         } catch (balErr) {
             console.warn('[Post-settle Credit Fetch Notice]', balErr.message);
         }
+
+        recordPerfTelemetry({
+            feature: 'icebreaker',
+            stage: 'completion',
+            durationMs: Date.now() - (req._startTime || Date.now()),
+            outputCount: cleanedOptions.length
+        });
 
         const successPayload = {
             success: true,
@@ -3180,20 +3178,20 @@ function fixGrammarAndTypoLeaks(text) {
 
 function formatBioLineBreaks(biosArray) {
     if (!Array.isArray(biosArray)) return biosArray;
-    
+
     const questionRegex = /(real question:|would you rather|what's your move|this or that|settle this|honest debate|pick a side|tell me:|yes or no:|what's your pick:|where do you stand:)/i;
-    
+
     return biosArray.map((bio) => {
         if (typeof bio !== 'string') return bio;
-        
+
         let formatted = bio.trim();
 
         // Fact Anchoring Safety Net: Purge banned hallucinated topics
         formatted = formatted.replace(/\b(synthwave|traffic cones|balling|sunrise laps)\b/gi, '');
-        
+
         // 1. If an em-dash (—) precedes a question lead-in, convert it to a new line
         formatted = formatted.replace(/\s*—\s*(real question:|would you rather|what's your move|this or that|settle this|honest debate|pick a side|tell me:|yes or no:|what's your pick:|where do you stand:)/gi, '\n\n$1');
-        
+
         // 2. Ensure any question lead-in or closing question starts on a fresh line if not already
         if (!formatted.includes('\n')) {
             formatted = formatted.replace(/\s+(real question:|would you rather|what's your move|this or that|settle this|honest debate|pick a side|tell me:|yes or no:|what's your pick:|where do you stand:)/gi, '\n\n$1');
@@ -3210,7 +3208,7 @@ function formatBioLineBreaks(biosArray) {
                 }
             }
         }
-        
+
         return formatted;
     });
 }
@@ -3275,7 +3273,7 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
         const deadlineAt = opStart + SERVER_TOTAL_OPERATION_DEADLINE_MS;
         let { text, bioText, messages } = req.body || {};
         const rawText = String(text || bioText || (messages && messages[0] ? messages[0].content : "") || "");
-        
+
         if (rawText.trim().length < 5) {
             return res.status(400).json({
                 success: false,
@@ -3458,7 +3456,7 @@ FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(langua
         optionsList = optionsList.map(optionText => {
             let stripped = optionText.trim().replace(/^Option\s*\d+[\:\.\-]?\s*/i, "");
             let cleaned = (stripped && stripped.trim().length > 0) ? stripped : optionText.trim();
-            
+
             // Clean template couplets and negative parentheticals deterministically
             cleaned = cleaned.replace(/([^\,\.\n]+)\s+by habit[,\s]*([^\,\.\n]+)\s+by obsession/gi, '$1 and $2');
             cleaned = cleaned.replace(/([^\,\.\n]+)\s+by day[,\s]*([^\,\.\n]+)\s+by night/gi, '$1 and $2');
@@ -3581,7 +3579,7 @@ FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(langua
         try {
             const currentUserId = getUserIdFromReq(req);
             if (currentUserId) {
-                const freshBal = await getUserCreditsByUid(currentUserId);
+                const freshBal = await getUserCreditsByUid(currentUserId, { forceFresh: true });
                 if (typeof freshBal === 'number') {
                     authoritativeBalance = freshBal;
                 }
@@ -3589,6 +3587,13 @@ FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(langua
         } catch (balErr) {
             console.warn('[Post-settle Credit Fetch Notice]', balErr.message);
         }
+
+        recordPerfTelemetry({
+            feature: 'optimize',
+            stage: 'completion',
+            durationMs: Date.now() - (req._startTime || Date.now()),
+            outputCount: optionsList.length
+        });
 
         const successPayload = {
             success: true,
@@ -3715,7 +3720,7 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
             : (Array.isArray(conversationHistory) && conversationHistory.length > 0
                 ? conversationHistory
                 : (Array.isArray(sessionHistory) ? sessionHistory : []));
-        
+
         // Cap message history to latest 50 messages max
         if (historyArr.length > 50) {
             historyArr = historyArr.slice(-50);
@@ -4027,7 +4032,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
         replyText = cleanInternalPromptTags(replyText);
 
         replyText = replyText.replace(/\*.*?\*/g, '').replace(/\(.*?\)/g, '').trim();
-        
+
         // Backend Truncation & Syntax Sanitizer (Roleplay Drill Modes Only)
         replyText = replyText.replace(/\s+(or|and|to|but|with|for|at|on|the|a|so|if|when|because|which|that)\s*([\:\;\,\-]?)\s*([😏😉😜👀🙈💅🔥☕✨🌙🥛]?)$/i, '$3').trim();
 
@@ -4039,7 +4044,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
                 replyText += ".";
             }
         }
-        
+
         // Enforce Greeting Purge on subsequent turns
         if (hasPriorHistory) {
             replyText = replyText.replace(/^(hey|hi|hey there|hello)[\!\,\.]?\s*/gi, '');
@@ -4656,9 +4661,8 @@ app.get('/api/user/chat-analyses', requireSupabaseAuth, async (req, res) => {
 // Credit Endpoints (Server-Validated Per-User Data Isolation & Real-Time Sync)
 app.get(['/api/credits', '/api/user/credits', '/api/credits/sync'], requireSupabaseAuth, async (req, res) => {
     try {
-        const credInr = await getUserCreditsDB(req);
-        const creditCount = Math.round(credInr * 10);
-        res.json({ success: true, credits: creditCount, data: { credits_inr: credInr } });
+        const rawCredits = await getUserCreditsDB(req);
+        res.json({ success: true, credits: rawCredits, data: { credits_inr: rawCredits / 10 } });
     } catch (err) {
         if (err.statusCode === 401) {
             return res.status(401).json({ success: false, error: err.message || "Authentication required." });
@@ -4675,13 +4679,12 @@ app.get(['/api/credits', '/api/user/credits', '/api/credits/sync'], requireSupab
 
 app.all('/api/credits/verify', requireSupabaseAuth, async (req, res) => {
     try {
-        const credInr = await getUserCreditsDB(req);
-        const creditCount = Math.round(credInr * 10);
+        const rawCredits = await getUserCreditsDB(req);
         res.json({
             success: true,
-            credits: creditCount,
+            credits: rawCredits,
             data: {
-                credits_inr: credInr
+                credits_inr: rawCredits / 10
             }
         });
     } catch (err) {
@@ -4966,6 +4969,8 @@ module.exports.inFlightAiOperations = inFlightAiOperations;
 module.exports.completedAiResponses = completedAiResponses;
 module.exports.cacheCompletedAiResponse = cacheCompletedAiResponse;
 module.exports.getCompletedAiResponse = getCompletedAiResponse;
+module.exports.getCreditTransactionState = getCreditTransactionState;
+module.exports.recordPerfTelemetry = recordPerfTelemetry;
 
 if (require.main === module) {
     startWingmanServer().catch(() => process.exit(1));

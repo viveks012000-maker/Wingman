@@ -71,6 +71,18 @@ if (authMod.supabaseAdmin) {
         return { data: { success: true }, error: null };
     };
 
+    if (authMod.supabaseAdmin.auth) {
+        authMod.supabaseAdmin.auth.getUser = async () => ({
+            data: {
+                user: {
+                    id: '00000000-0000-0000-0000-000000000001',
+                    email: 'test@example.com'
+                }
+            },
+            error: null
+        });
+    }
+
     authMod.supabaseAdmin.from = (table) => {
         if (table === 'user_consents') {
             return {
@@ -98,7 +110,7 @@ if (authMod.supabaseAdmin) {
                 select: () => ({
                     eq: () => ({
                         maybeSingle: async () => ({
-                            data: { credits: userCredits * 10 },
+                            data: { credits: userCredits },
                             error: null
                         })
                     })
@@ -179,25 +191,39 @@ global.fetch = async (url, options = {}) => {
             String(m.content).includes('replacements')
         );
         if (isRepair) {
-            const replText = isEnglishRequested
-                ? "how do you survive a road trip without an elite playlist?"
-                : "pehle ye batao how do you survive without a solid road trip playlist?";
+            const replVariantsEng = [
+                "how do you survive a road trip without an elite playlist?",
+                "what is your absolute favorite hidden gem in town?",
+                "would you rather take an impromptu flight or plan every detail?",
+                "who do you think has sharper banter between the two of us?",
+                "tell me the one song that never leaves your queue.",
+                "what is your definition of the ultimate weekend breakfast?",
+                "are you an early morning explorer or a late night thinker?",
+                "which city has the best street food in your opinion?",
+                "how long could you go without checking your phone on vacation?",
+                "what is the most spontaneous thing you did this year?"
+            ];
+            const replVariantsHinglish = [
+                "pehle ye batao how do you survive without a solid road trip playlist?",
+                "sach batao best chai spot kaunsa hai town mein?",
+                "tumhare hisaab se sabse underrated weekend scene kya hai?",
+                "kya lagta hai whose taste in music is actually better?",
+                "ek spontaneous trip plan karni ho toh where would you go?",
+                "dost ya solo road trips pe travel karna zyada pasand hai?",
+                "rooftop cafes better lagte hain ya street food trails?",
+                "late night drives pe go-to track kaunsa hota hai?",
+                "aaj ka weekend mood kya hai, chill ya fully active?",
+                "faisla karo: early sunrise view ya midnight stargazing?"
+            ];
+            const variants = isEnglishRequested ? replVariantsEng : replVariantsHinglish;
             return new Response(JSON.stringify({
                 choices: [{
                     message: {
                         content: JSON.stringify({
-                            replacements: [
-                                { slot: 1, text: replText },
-                                { slot: 2, text: replText },
-                                { slot: 3, text: replText },
-                                { slot: 4, text: replText },
-                                { slot: 5, text: replText },
-                                { slot: 6, text: replText },
-                                { slot: 7, text: replText },
-                                { slot: 8, text: replText },
-                                { slot: 9, text: replText },
-                                { slot: 10, text: replText }
-                            ]
+                            replacements: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(slot => ({
+                                slot,
+                                text: variants[slot - 1]
+                            }))
                         })
                     }
                 }]
@@ -212,29 +238,29 @@ global.fetch = async (url, options = {}) => {
         const isBio = messages.some(m => String(m.content).includes('dating profile strategist')) || lastMsg.includes('SELECTED MODE');
         if (isBio) {
             const bioOptionsHinglish = [
-                "late-night city drives aur best coffee spots kaafi pasand hain. real question: chai person ho ya cold brew lover?",
+                "late-night city drives aur best coffee spots kaafi pasand hain. quick question: chai person ho ya cold brew lover?",
                 "usually found scouting hidden book cafes aur road trips pe milunga. weekend scene kya hota hai usually?",
                 "gym regular by morning, street food enthusiast by night. sach batao: playlist taste kiska better hai?",
                 "equal parts spontaneous road trips aur chill acoustic evenings. honest debate: beach sunsets ya mountain cabins?",
                 "good conversations aur unexpected chai tapri stops kaafi pasand hain. pick a side: early sunrise ya late midnight?",
-                "always planning the next weekend getaway aur diners explore karna. quick question: spontaneous ho ya plan karte ho?",
-                "living for live gigs, long playlist drives, aur achhi coffee. sach batao: go-to weekend vibe kya hai?",
+                "always planning the next weekend getaway aur diners explore karna. candid check: spontaneous ho ya plan karte ho?",
+                "living for live gigs, long playlist drives, aur achhi coffee. real question: go-to weekend vibe kya hai?",
                 "part-time chef, full-time explorer of local cafes pe milte hain. this or that: spicy street food ya rooftop dinner?",
-                "curiosity, good coffee, aur late-night banter kaafi sorted hai. real question: 4-hour road trip survive kar paoge?",
-                "looking for a partner in crime for weekend breakfast runs aur banter. pick a side: waffles ya pancakes chalenge?"
+                "curiosity, good coffee, aur late-night banter kaafi sorted hai. honestly speaking: 4-hour road trip survive kar paoge?",
+                "looking for a partner in crime for weekend breakfast runs aur banter. final call: waffles ya pancakes chalenge?"
             ];
 
             const bioOptionsEnglish = [
-                "Split between late-night city drives and the best coffee spots in town. Real question: coffee lover or tea person?",
+                "Split between late-night city drives and the best coffee spots in town. Quick question: coffee lover or tea person?",
                 "Usually found scouting hidden book cafes and scenic road trips. What's your move on a rainy Sunday?",
                 "Gym regular by morning, street food enthusiast by night. Tell me: who has better taste in playlists?",
                 "Equal parts spontaneous road trips and chill acoustic evenings. Honest debate: beach sunsets or mountain cabins?",
                 "Believer in good conversations and unexpected coffee stops. Pick a side: early sunrise or late midnight?",
-                "Always planning the next weekend getaway and finding great diners. Quick question: are you spontaneous?",
-                "Living for live gigs, long playlist drives, and great coffee. Tell me: your go-to weekend vibe?",
+                "Always planning the next weekend getaway and finding great diners. Candid check: are you spontaneous?",
+                "Living for live gigs, long playlist drives, and great coffee. Real question: your go-to weekend vibe?",
                 "Part-time chef, full-time explorer of local cafes. This or that: spicy street food or quiet rooftop dinner?",
-                "Fueled by curiosity, good coffee, and late-night banter. Real question: would you survive a 4-hour road trip?",
-                "Looking for a partner in crime for weekend breakfast runs and banter. Pick a side: waffles or pancakes?"
+                "Fueled by curiosity, good coffee, and late-night banter. Honestly speaking: would you survive a 4-hour road trip?",
+                "Looking for a partner in crime for weekend breakfast runs and banter. Final call: waffles or pancakes?"
             ];
 
             const chosenBio = isEnglishRequested ? bioOptionsEnglish : bioOptionsHinglish;
@@ -251,7 +277,7 @@ global.fetch = async (url, options = {}) => {
                 "1. so are you always this spontaneous or is today a special mood?",
                 "2. honest question: are you a coffee addict or a tea enthusiast?",
                 "3. looking at your taste it seems your weekend schedule is completely sorted",
-                "4. what is the absolute best coffee spot in town, let's settle this",
+                "4. what is the absolute best coffee spot in town, tell me your take",
                 "5. do you prefer mountain road trips or a quiet sunset by the beach?",
                 "6. first tell me: how do you survive a road trip without an elite playlist?",
                 "7. honestly your profile vibe seems really refreshing and intriguing",
@@ -273,7 +299,7 @@ global.fetch = async (url, options = {}) => {
             "1. so are you always this spontaneous ya aaj special mood hai?",
             "2. sach batao coffee lover ho ya die-hard chai person?",
             "3. tumhara taste dekhke lagta hai weekend scene kaafi sorted hai",
-            "4. best coffee spot kaunsa hai town mein let's settle this",
+            "4. best coffee spot kaunsa hai town mein batao toh sahi",
             "5. mountain road trips pasand hain ya sunset by the beach?",
             "6. pehle ye batao how do you survive without a solid road trip playlist?",
             "7. honestly tumhari vibe kaafi interesting lag rahi hai",
@@ -379,7 +405,6 @@ const { app } = require('../server.js');
                 'Authorization': 'Bearer header.payload.signature',
                 'x-mock-auth': 'true'
             });
-            window.checkCreditBalance = async () => ({ success: true, credits: 50 });
             window.getApiBase = () => `http://127.0.0.1:${serverPort}`;
             if (window.state) {
                 window.state.isTermsAccepted = true;

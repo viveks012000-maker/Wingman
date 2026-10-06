@@ -42,11 +42,11 @@ ENGLISH RESPONSE BRANCH:\n${TARGET_MARKET_LOCK}
 ROMAN HINGLISH RESPONSE BRANCH:\n${HINGLISH_BIO_TARGET_MARKET_LOCK}`;
 }
 
-const HINDI = new Set(('mujhe mujhko mujha mujhay mera meri mere hum hume humein hamara hamari tum tumhe tumko tumhara tumhari tera teri tere tu aap aapko apka apki aapka aapki usko usse uski uska uske isko isse inko unko usne isne unhone inhone unka unki unke inka inki inke apna apni apne kisiko sab sabko sabhi kuch kuchh koi ye yeh wo woh kya kyun kyu kyon kaise kaisa kaisi kaun kahan kahaan kab kitna kitni kitne hai hain ho hoon hun hu tha thi the nahi nahin nhi nahee mat bhi toh tohh aur lekin magar par bas ab abhi phir fir yaar achha accha achi achhi acha acchi thoda thodi bahut bohot bahot bhaut bhot zyada jyada zayada jaada pasand chahiye chaiye chahta chahti chaahte lagta lagti lag raha rahi rahe karna karni karo karu karun karta karti karte karunga karungi bol bolu bolun bolo bolna bolti bata batao bataun batau batana kehna kahu kehta samajh samajhna samajhta milna milke milte milenge jana jao jata jaati jaunga aana aao aata aati aaunga dekho dekhna dekh dekha padhna likhna likhu likhun sach bilkul shayad zaroor pakka sahi galat bura buri maza mazedaar mast haal chal pe mein wali wala wale waali waala waale liye saath diya diye dungi dunga dena liya kiye chhod chhoda chhodna bheju bheja bhejna socha soch sochu samjha samjhi samjhe karein kare hoga hogi honge gaya gayi gaye chalo chalte chalega chalegi lagraha lagrahi lagrahe dikhta dikhti bhai pata baat baatein waise aise jaise kripya dost na naam khud shuru khatam pyar pyaar ishq zindagi duniya dil ghumna ghoomna firna phirna khana peena sunna yaha yahaan waha wahaan kaha kahaan kaafi kafi milunga milungi aaunga aaungi jaunga jaungi karenge karega karegi karte hota hoti hote hona sun suno sunna dikhao dikha bataiye kahiye samajhte samajhti lagte lagti waale waala waali tapri dhaba adda mai ya').split(' '));
+const HINDI = new Set(('mujhe mujhko mujha mujhay mera meri mere hum hume humein hamara hamari tum tumhe tumko tumhara tumhari tumhare tera teri tere tu aap aapko aapke apka apki aapka aapki usko usse uski uska uske isko isse inko unko usne isne unhone inhone unka unki unke inka inki inke apna apni apne kisiko sab sabko sabhi sabse kuch kuchh koi ye yeh wo woh kya kyun kyu kyon kaise kaisa kaisi kaun kaunsa kaunsi kaunse kahan kahaan kab kitna kitni kitne hai hain ho hoon hun hu tha thi the nahi nahin nhi nahee mat bhi toh tohh aur lekin magar par bas ab abhi phir fir yaar achha accha achi achhi acha acchi thoda thodi bahut bohot bahot bhaut bhot zyada jyada zayada jaada pasand chahiye chaiye chahta chahti chaahte lagta lagti lag raha rahi rahe karna karni karo karu karun karta karti karte karunga karungi bol bolu bolun bolo bolna bolti bata batao bataun batau batana kehna kahu kehta samajh samajhna samajhta milna milke milte milenge jana jao jata jaati jaunga aana aao aata aati aaunga dekho dekhna dekh dekha padhna likhna likhu likhun sach bilkul shayad zaroor pakka sahi galat bura buri maza mazedaar mast haal chal pe mein se paas hisaab badhiya pehle wali wala wale waali waala waale liye saath diya diye dungi dunga dena liya kiye chhod chhoda chhodna bheju bheja bhejna socha soch sochu samjha samjhi samjhe karein kare hoga hogi honge gaya gayi gaye chalo chalte chalega chalegi lagraha lagrahi lagrahe dikhta dikhti bhai pata baat baatein waise aise jaise kripya dost na naam khud shuru khatam pyar pyaar ishq zindagi duniya dil ghumna ghoomna firna phirna khana peena sunna yaha yahaan waha wahaan kaha kahaan kaafi kafi milunga milungi aaunga aaungi jaunga jaungi karenge karega karegi karte hota hoti hote hona sun suno sunna dikhao dikha bataiye kahiye samajhte samajhti lagte lagti waale waala waali tapri dhaba adda mai ya').split(' '));
 const ENGLISH = new Set(('i you we they he she it my your our their what why how where when which should would could want need like enjoy love prefer think know say tell respond message have has am is are was were do does did will can cannot with and but because if about next really rather more most to of for this that these those the a an in on at from').split(' '));
 const NEUTRAL = new Set(['ok', 'okay', 'yes', 'no', 'hey', 'hi', 'hello', 'hmm', 'hmmm', 'thanks', 'thank', 'you', 'sure', 'cool', 'fine', 'lol', 'haha', 'hahaha', 'nice', 'yep', 'nope', 'k', 'lmao', 'rofl']);
 
-const ANCHOR_REGEX = /\b(?:mera|meri|mere|mujhe|mujhko|hum|hume|humein|tum|tumhe|tumhara|tumhari|tera|teri|tere|tu|aap|aapko|apka|apki|aapka|aapki|hai|hain|hoon|hun|kya|kyun|kyu|kaise|kaisa|kaisi|nahi|nahin|nhi|pasand|bahut|bohot|bhaut|zyada|zayada|kaafi|kafi|naam|yaar|bhai|batao|bolo|chalo|chalega|chalegi|karo|karna|karein|chahiye|chaiye|lagta|lagti|raha|rahi|rahe|pe|mein|milke|milte|milenge|milunga|milungi|aur|saath|lekin)\b/i;
+const ANCHOR_REGEX = /\b(?:mera|meri|mere|mujhe|mujhko|hum|hume|humein|tum|tumhe|tumhara|tumhari|tumhare|tera|teri|tere|tu|aap|aapko|aapke|apka|apki|aapka|aapki|hai|hain|hoon|hun|kya|kyun|kyu|kaise|kaisa|kaisi|kaunsa|kaunsi|kaunse|nahi|nahin|nhi|pasand|bahut|bohot|bhaut|zyada|zayada|kaafi|kafi|naam|yaar|bhai|batao|bolo|chalo|chalega|chalegi|karo|karna|karein|chahiye|chaiye|lagta|lagti|raha|rahi|rahe|pe|mein|se|paas|sabse|pehle|milke|milte|milenge|milunga|milungi|aur|saath|lekin)\b/i;
 
 const DEVANAGARI_REGEX = /[\u0900-\u097F\uA8E0-\uA8FF\u1CD0-\u1CFF]/;
 
@@ -86,6 +86,42 @@ function inferLocalLanguage(text, history = []) {
     return 'en';
 }
 
+function scoreLanguageTokens(text) {
+    const containsDev = containsDevanagari(text);
+    const clean = String(text || '').toLowerCase();
+    const words = clean.match(/[a-z]+/g) || [];
+    let hindiKnownCount = 0;
+    let englishKnownCount = 0;
+    let neutralCount = 0;
+    let unknownCount = 0;
+
+    for (const w of words) {
+        if (HINDI.has(w) && w !== 'chai' && w !== 'coffee') {
+            hindiKnownCount++;
+        } else if (ENGLISH.has(w)) {
+            englishKnownCount++;
+        } else if (NEUTRAL.has(w) || w === 'chai' || w === 'coffee') {
+            neutralCount++;
+        } else {
+            unknownCount++;
+        }
+    }
+
+    const hasHindiGrammarAnchor = ANCHOR_REGEX.test(clean);
+    const totalMeaningful = hindiKnownCount + englishKnownCount;
+
+    return {
+        hindiKnownCount,
+        englishKnownCount,
+        neutralCount,
+        unknownCount,
+        hasHindiGrammarAnchor,
+        containsDevanagari: containsDev,
+        totalMeaningful,
+        words
+    };
+}
+
 const LANGUAGE_PROFILES = Object.freeze({
     ENGLISH: 'english',
     ENGLISH_HEAVY_MIXED: 'english_heavy_mixed',
@@ -103,20 +139,21 @@ function resolveLanguageProfile(text, history = [], explicitMode = 'auto') {
 
     const analyzeText = (txt) => {
         if (!txt || typeof txt !== 'string') return null;
-        const words = txt.toLowerCase().match(/[a-z]+/g) || [];
-        if (!words.length || words.every(w => NEUTRAL.has(w))) return null;
+        const scores = scoreLanguageTokens(txt);
+        if (!scores.words.length || (scores.hindiKnownCount === 0 && scores.englishKnownCount === 0 && scores.unknownCount === 0)) {
+            return null;
+        }
+        if (scores.totalMeaningful === 0 && !scores.hasHindiGrammarAnchor) return null;
 
-        let hindiCount = 0;
-        let englishCount = 0;
-        for (const w of words) {
-            if (HINDI.has(w) && w !== 'chai' && w !== 'coffee') hindiCount++;
-            if (ENGLISH.has(w)) englishCount++;
+        const hindiCount = scores.hindiKnownCount;
+        const englishCount = scores.englishKnownCount;
+        const totalScored = scores.totalMeaningful;
+        const hasAnchor = scores.hasHindiGrammarAnchor;
+
+        if (totalScored === 0) {
+            return hasAnchor ? LANGUAGE_PROFILES.ENGLISH_HEAVY_MIXED : null;
         }
 
-        const totalScored = hindiCount + englishCount;
-        if (totalScored === 0) return null;
-
-        const hasAnchor = ANCHOR_REGEX.test(txt);
         const hindiRatio = hindiCount / totalScored;
 
         if (!hasAnchor && (hindiCount < 2 || englishCount >= hindiCount * 2)) {
@@ -376,19 +413,24 @@ function validateFinalOption(opt, feature = 'generic', languageProfile = 'englis
     }
 
     // Profile-aware language validation
-    const cleanLower = trimmed.toLowerCase();
-    const words = cleanLower.match(/[a-z]+/g) || [];
-    let hindiCount = 0;
-    let englishCount = 0;
-    for (const w of words) {
-        if (HINDI.has(w) && w !== 'chai' && w !== 'coffee') {
-            hindiCount++;
+    const scores = scoreLanguageTokens(trimmed);
+    const hindiCount = scores.hindiKnownCount;
+    const englishCount = scores.englishKnownCount;
+    const hasAnchor = scores.hasHindiGrammarAnchor;
+    const words = scores.words;
+
+    // Check for unnatural code-switching: e.g. "I love basketball hai", "You like pizza hai"
+    // An English clause with a solitary trailing Hindi copula/auxiliary and no substantive Hindi phrasing.
+    const TRAILING_HINDI_COPULA = /\b(?:hai|hain|hoon|hun|tha|thi)\s*[\.\,\!\?]?$/i;
+    const ENGLISH_SUBJECT_VERB = /\b(?:i|you|we|they|he|she|this|that|it)\s+(?:like|love|enjoy|prefer|think|know|play|want|need|am|are|is)\b/i;
+    if (TRAILING_HINDI_COPULA.test(trimmed)) {
+        if (hindiCount === 1 && !/\b(?:mer[a-z]*|mujhe|hum[a-z]*|tum[a-z]*|ter[a-z]*|aap[a-z]*|pasand|bahut|bohot|kaafi|achha|accha|karo|karna|lagta|milte|pe|mein|se|saath|batao|bolo|chalo|hisaab|kaun[a-z]*)\b/i.test(trimmed)) {
+            return { valid: false, reason: 'unnatural_code_switching' };
         }
-        if (ENGLISH.has(w) || (!HINDI.has(w) && !NEUTRAL.has(w) && w !== 'chai')) {
-            englishCount++;
+        if (ENGLISH_SUBJECT_VERB.test(trimmed) && hindiCount === 1) {
+            return { valid: false, reason: 'unnatural_code_switching' };
         }
     }
-    const hasAnchor = ANCHOR_REGEX.test(cleanLower);
 
     if (languageProfile === LANGUAGE_PROFILES.ENGLISH || languageProfile === 'english') {
         if (!isOptionPureEnglish(trimmed)) {
@@ -417,7 +459,7 @@ function validateFinalOption(opt, feature = 'generic', languageProfile = 'englis
             return { valid: false, reason: 'insufficient_hinglish' };
         }
         // Reject 100% archaic Hindi with zero English words
-        if (englishCount === 0 && words.length >= 5) {
+        if (englishCount === 0 && scores.unknownCount === 0 && words.length >= 5) {
             return { valid: false, reason: 'missing_english_blend' };
         }
     }
@@ -437,6 +479,7 @@ function validateFinalBatch(options, feature = 'generic', languageProfile = 'eng
     const invalidIndices = [];
     const details = [];
 
+    // 1. Validate each option individually
     for (let i = 0; i < options.length; i++) {
         const opt = options[i];
         const optStr = typeof opt === 'string' ? opt : (opt && opt.line ? opt.line : JSON.stringify(opt));
@@ -444,6 +487,58 @@ function validateFinalBatch(options, feature = 'generic', languageProfile = 'eng
         if (!res.valid) {
             invalidIndices.push(i);
             details.push({ index: i, reason: res.reason, option: optStr });
+        }
+    }
+
+    // 2. Batch diversity checks: detect duplicate openings and duplicate question anchors
+    const seenFirstTwoWords = new Map();
+    const seenQuestionAnchors = new Map();
+
+    const QUESTION_ANCHORS = [
+        "settle this", "real question", "this or that", "pick a side", "honest debate",
+        "quick question", "ask me about", "usually found", "not gonna lie", "curious about"
+    ];
+
+    for (let i = 0; i < options.length; i++) {
+        const opt = options[i];
+        const optStr = typeof opt === 'string' ? opt : (opt && opt.line ? opt.line : JSON.stringify(opt));
+        const clean = optStr.trim().toLowerCase();
+
+        // Banned anchor: "settle this" is strictly banned across all options
+        if (/settle this/i.test(clean)) {
+            if (!invalidIndices.includes(i)) {
+                invalidIndices.push(i);
+                details.push({ index: i, reason: 'banned_anchor', anchor: 'settle this', option: optStr });
+            }
+        }
+
+        // Duplicate opening check (first 2 alphanumeric words)
+        const words = clean.match(/[a-z]+/g) || [];
+        if (words.length >= 2) {
+            const firstTwo = `${words[0]} ${words[1]}`;
+            if (seenFirstTwoWords.has(firstTwo)) {
+                if (!invalidIndices.includes(i)) {
+                    invalidIndices.push(i);
+                    details.push({ index: i, reason: 'duplicate_opening', opening: firstTwo, option: optStr });
+                }
+            } else {
+                seenFirstTwoWords.set(firstTwo, i);
+            }
+        }
+
+        // Duplicate question anchor check
+        for (const anchor of QUESTION_ANCHORS) {
+            if (anchor === "settle this") continue; // already checked as banned
+            if (clean.includes(anchor)) {
+                if (seenQuestionAnchors.has(anchor)) {
+                    if (!invalidIndices.includes(i)) {
+                        invalidIndices.push(i);
+                        details.push({ index: i, reason: 'duplicate_question_anchor', anchor, option: optStr });
+                    }
+                } else {
+                    seenQuestionAnchors.set(anchor, i);
+                }
+            }
         }
     }
 
@@ -466,6 +561,7 @@ module.exports = {
     validateGeneratedLanguage,
     validateFinalOption,
     validateFinalBatch,
+    scoreLanguageTokens,
     isOptionAuthenticHinglish,
     isOptionPureEnglish,
     containsDevanagari,

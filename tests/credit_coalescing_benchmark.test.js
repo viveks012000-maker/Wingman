@@ -92,10 +92,10 @@ async function testBackendCoalescing() {
     // Invariant 1: Exactly 1 underlying Supabase query executed despite 5 concurrent callers
     assert.strictEqual(underlyingQueryCount, 1, `Expected 1 underlying query execution, got ${underlyingQueryCount}`);
 
-    // Invariant 2: All 5 callers receive authoritative credit value (250 credits / 10 = 25 INR)
+    // Invariant 2: All 5 callers receive authoritative credit value (250 raw Wingman credits)
     assert.strictEqual(results.length, 5);
     for (let i = 0; i < results.length; i++) {
-        assert.strictEqual(results[i], 25);
+        assert.strictEqual(results[i], 250);
     }
 
     // Invariant 3: After settling, in-flight map is completely empty

@@ -36,7 +36,7 @@ const {
     console.log('============================================================\n');
 
     const testUid = '00000000-0000-0000-0000-000000000099';
-    let dbCredits = 500; // in DB units (CREDITS_PER_INR = 10, so 50 credits)
+    let dbCredits = 50; // In raw Wingman credit units directly
 
     // Wire domestic mock into supabaseAdmin
     authMod.supabaseAdmin.from = (table) => {
@@ -92,22 +92,22 @@ const {
     // TEST 4: Concurrent Top-Up During Generation Lifecycle
     // -------------------------------------------------------------
     console.log('▶ [TEST 4] Concurrent top-up: initial 50 -> reserve 10 -> concurrent +250 -> post-settle reads 290');
-    // Step a: Reservation of 10 credits (DB units = 400, or 40 credits)
-    dbCredits = 400; // After reservation RPC
+    // Step a: Reservation of 10 credits (DB balance becomes 40 credits)
+    dbCredits = 40; // After reservation RPC
     inFlightUserCreditQueries.delete(testUid);
 
-    // Step b: Concurrent top-up during AI generation (+250 credits = +2500 DB units)
-    dbCredits += 2500; // Now 2900 DB units = 290 credits
+    // Step b: Concurrent top-up during AI generation (+250 credits)
+    dbCredits += 250; // Now 290 credits directly
     inFlightUserCreditQueries.delete(testUid);
 
-    // Step c: Post-settlement lookup via both helpers
-    const postSettleViaUid = await getUserCreditsByUid(testUid);
+    // Step c: Post-settlement lookup via both helpers with forceFresh
+    const postSettleViaUid = await getUserCreditsByUid(testUid, { forceFresh: true });
     assert.strictEqual(postSettleViaUid, 290, `Expected 290 credits post-settlement, received ${postSettleViaUid}`);
 
-    const postSettleViaReq = await getUserCreditsDB(mockReq);
+    const postSettleViaReq = await getUserCreditsDB(mockReq, { forceFresh: true });
     assert.strictEqual(postSettleViaReq, 290, `Expected 290 credits post-settlement via req, received ${postSettleViaReq}`);
 
-    const postSettleViaStr = await getUserCreditsDB(testUid);
+    const postSettleViaStr = await getUserCreditsDB(testUid, { forceFresh: true });
     assert.strictEqual(postSettleViaStr, 290, `Expected 290 credits post-settlement via string, received ${postSettleViaStr}`);
     console.log('✔ Test 4 Passed: Authoritative balance reflects concurrent top-up perfectly (290 credits).\n');
 

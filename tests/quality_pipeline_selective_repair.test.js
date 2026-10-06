@@ -92,12 +92,12 @@ const mixedBatch = [
     "profile kaafi cool hai, weekend scene kya hota hai usually?", // 1: valid
     "court pe milte hain aur", // 2: INVALID (dangling connector)
     "coffee tapri pe honest debate: pickup game ya proper league?", // 3: valid
-    "court pe challenge accept karogi ya sirf baatein? 😉", // 4: valid
+    "aaj court pe challenge accept karogi ya sirf baatein? 😉", // 4: valid
     "late-night drives aur playlist debates meri specialty hai 🎧", // 5: valid
     "pick a side: slow acoustic sunna hai ya full volume drive?", // 6: valid
     "i rides bikes on weekends", // 7: INVALID (broken grammar)
     "gym discipline intact hai, par Sunday brunch pe zero control 🥞", // 8: valid
-    "honest debate: workout pehle ya directly food scene chalega?" // 9: valid
+    "final call: workout pehle ya directly food scene chalega?" // 9: valid
 ];
 
 const batchResult = validateFinalBatch(mixedBatch, 'icebreaker', 'balanced_mixed');
