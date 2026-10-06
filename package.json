@@ -40,6 +40,7 @@
     "@parcel/watcher": "2.6.0",
     "proxy-addr": "^2.0.8",
     "source-map-js": "^1.2.2",
-    "argparse": "^2.0.1"
+    "argparse": "^2.0.1",
+    "shell-quote": "^1.12.0"
   }
 }

@@ -98,7 +98,7 @@ if (authMod.supabaseAdmin) {
                 select: () => ({
                     eq: () => ({
                         maybeSingle: async () => ({
-                            data: { credits: userCredits },
+                            data: { credits: userCredits * 10 },
                             error: null
                         })
                     })
@@ -401,11 +401,18 @@ const { app } = require('../server.js');
         await page.fill('#bioInput', 'mera naam sumit hai and i like basketball, late night road trips, aur achhi coffee');
         await page.evaluate(() => window.updateButtonStates());
 
+        let test1ResponseJson = null;
+        const test1RespPromise = page.waitForResponse(res => res.url().includes('/api/icebreaker') && res.status() === 200)
+            .then(res => res.json())
+            .then(json => { test1ResponseJson = json; return json; });
+
         // Click generate
         await page.click('#generateIcebreakerBtn');
 
         // Wait for rendered DOM cards
         await page.waitForSelector('#icebreakResultsState .copy-card-btn', { timeout: 15000 });
+        await test1RespPromise;
+
         const icebreakerCards = await page.$$eval('#icebreakResultsState .copy-card-btn', els => els.length);
         assert.strictEqual(icebreakerCards, 10, `Expected exactly 10 rendered cards, found ${icebreakerCards}`);
 
@@ -416,7 +423,15 @@ const { app } = require('../server.js');
             `Rendered icebreaker cards must contain Hinglish content. Found: ${icebreakerText.slice(0, 200)}`
         );
         assert.strictEqual(userCredits, 40, `Credits must be 40 after icebreaker generation (50 - 10). Current: ${userCredits}`);
-        console.log('✔ Test 1 Passed: Icebreaker generated rendered DOM cards with authentic Hinglish.\n');
+
+        // Exact equality: rendered card text === server response option text
+        assert.ok(test1ResponseJson && Array.isArray(test1ResponseJson.options), 'Server response must have options array');
+        const renderedCardTexts1 = await page.$$eval('#icebreakResultsState .card-content-text', els => els.map(e => e.textContent.trim()));
+        assert.strictEqual(renderedCardTexts1.length, 10, 'Expected 10 rendered card content texts');
+        for (let i = 0; i < 10; i++) {
+            assert.strictEqual(renderedCardTexts1[i], test1ResponseJson.options[i].trim(), `Card ${i + 1} text must strictly equal server option ${i + 1}`);
+        }
+        console.log('✔ Test 1 Passed: Icebreaker generated rendered DOM cards strictly matching server options.\n');
 
         // -----------------------------------------------------------------
         // TEST 2: TRANSIENT 503 PROVIDER RETRY (Express Recovers Internally)
@@ -469,33 +484,73 @@ const { app } = require('../server.js');
         console.log('✔ Test 3 Passed: Fail-then-next-click smoothly recovered with zero stuck state.\n');
 
         // -----------------------------------------------------------------
-        // TEST 4: DOUBLE-CLICK IDEMPOTENCY COALESCING (Zero Double Charge)
+        // TEST 4: RAPID PHYSICAL DOM DOUBLE-CLICK (Zero Duplicate Request, Single Ledger Lifecycle)
         // -----------------------------------------------------------------
-        console.log('▶ [TEST 4] Double-Click Idempotency: Single Deduction Under Concurrent Calls');
+        console.log('▶ [TEST 4] Rapid Physical DOM Double-Click: Single Request, Reserve, Provider Call & Settlement');
         await page.click('#btn-icebreaker');
         await page.waitForTimeout(200);
 
-        const creditsBeforeDouble = userCredits;
-        // Trigger two concurrent invocations with the same client operation ID
-        const doubleCallResult = await page.evaluate(async () => {
-            const opId = 'test_concurrent_op_' + Date.now();
-            const p1 = window.generateWingmanResponse('/api/icebreaker', {
-                vibe: 'Direct',
-                bioText: 'mera naam sumit hai and i like basketball, late night road trips, aur achhi coffee',
-                temperature: 0.8
-            }, opId);
-            const p2 = window.generateWingmanResponse('/api/icebreaker', {
-                vibe: 'Direct',
-                bioText: 'mera naam sumit hai and i like basketball, late night road trips, aur achhi coffee',
-                temperature: 0.8
-            }, opId);
-            const res = await Promise.all([p1, p2]);
-            return { ok1: Boolean(res[0]), ok2: Boolean(res[1]) };
-        });
+        await page.fill('#bioInput', 'mera naam sumit hai and i like basketball and weekend road trips');
+        await page.evaluate(() => window.updateButtonStates());
 
-        assert.ok(doubleCallResult.ok1 || doubleCallResult.ok2, 'Concurrent calls must resolve successfully');
-        assert.strictEqual(userCredits, creditsBeforeDouble - 10, 'Credits must be deducted exactly ONCE for duplicate operation key');
-        console.log('✔ Test 4 Passed: Duplicate request key coalesced cleanly with zero double charge.\n');
+        const creditsBeforeDouble = userCredits;
+        const reservesBefore = reservationLog.length;
+        const settlementsBefore = settlementLog.length;
+        const providerCallsBefore = providerCallCount;
+
+        let networkRequestCount = 0;
+        let test4ResponseJson = null;
+        const onRequest = req => {
+            if (req.url().includes('/api/icebreaker')) {
+                networkRequestCount++;
+                console.log(`[E2E Test 4 Request #${networkRequestCount}]:`, req.method(), req.url());
+            }
+        };
+        const onResponse = async res => {
+            if (res.url().includes('/api/icebreaker') && res.status() === 200) {
+                try {
+                    test4ResponseJson = await res.json();
+                } catch (_) {}
+            }
+        };
+        page.on('request', onRequest);
+        page.on('response', onResponse);
+
+        // Perform rapid physical DOM double-click on the generation button
+        await page.click('#generateIcebreakerBtn', { clickCount: 2 });
+
+        await page.waitForSelector('#icebreakResultsState .copy-card-btn', { timeout: 15000 });
+        await page.waitForTimeout(300);
+        page.off('request', onRequest);
+        page.off('response', onResponse);
+
+        // Assert exactly 1 network request
+        assert.strictEqual(networkRequestCount, 1, `Expected exactly 1 network request from rapid physical clicks, observed ${networkRequestCount}`);
+
+        // Assert exactly 1 reserve
+        const newReserves = reservationLog.length - reservesBefore;
+        assert.strictEqual(newReserves, 1, `Expected exactly 1 credit reserve, observed ${newReserves}`);
+
+        // Assert exactly 1 provider call
+        const newProviderCalls = providerCallCount - providerCallsBefore;
+        assert.strictEqual(newProviderCalls, 1, `Expected exactly 1 AI provider call, observed ${newProviderCalls}`);
+
+        // Assert exactly 1 settle
+        const newSettlements = settlementLog.length - settlementsBefore;
+        assert.strictEqual(newSettlements, 1, `Expected exactly 1 credit settlement, observed ${newSettlements}`);
+
+        // Assert credits deducted exactly once
+        assert.strictEqual(userCredits, creditsBeforeDouble - 10, `Credits must be deducted exactly ONCE. Expected ${creditsBeforeDouble - 10}, got ${userCredits}`);
+
+        // Assert rendered card text strictly equals server response options
+        const renderedCardTexts4 = await page.$$eval('#icebreakResultsState .card-content-text', els => els.map(e => e.textContent.trim()));
+        assert.strictEqual(renderedCardTexts4.length, 10, 'Must have 10 rendered cards');
+        if (test4ResponseJson && Array.isArray(test4ResponseJson.options)) {
+            for (let i = 0; i < 10; i++) {
+                assert.strictEqual(renderedCardTexts4[i], test4ResponseJson.options[i].trim(), `Card ${i + 1} text must strictly equal server option ${i + 1}`);
+            }
+        }
+        console.log('✔ Test 4 Passed: Rapid physical DOM double-click produced exactly 1 network request, 1 reserve, 1 provider call, and 1 settlement with exact card rendering.\n');
 
         // -----------------------------------------------------------------
         // TEST 5: SCREENSHOT ANALYZER (File Upload -> DOM Analysis Cards)

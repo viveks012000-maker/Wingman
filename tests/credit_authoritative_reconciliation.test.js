@@ -36,7 +36,7 @@ console.log('✔ Test 1 Passed: Exact-10 contract strictly guards credit settlem
 
 // 2. AUTHORITATIVE POST-SETTLEMENT BALANCE FETCH
 console.log('▶ [TEST 2] Verifying Post-Settlement Authoritative Credit Balance Fetch...');
-const postSettleBalances = (serverFile.match(/await\s+getUserCreditsDB\s*\(\s*currentUserId\s*\)/g) || []).length;
+const postSettleBalances = (serverFile.match(/await\s+(?:getUserCreditsByUid\s*\(\s*currentUserId\s*\)|getUserCreditsDB\s*\(\s*req\s*\))/g) || []).length;
 console.log(`  - Post-settle authoritative balance fetches found: ${postSettleBalances}`);
 assert.ok(postSettleBalances >= 3, 'Must fetch fresh balance post-settlement across all 3 non-chat features');
 console.log('✔ Test 2 Passed: Authoritative post-settlement credit balance returned.\n');
