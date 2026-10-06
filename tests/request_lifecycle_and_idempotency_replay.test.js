@@ -78,11 +78,26 @@ globalThis.fetch = async (input, init = {}) => {
         await new Promise(r => setTimeout(r, fetchDelayMs));
     }
 
+const engOpts = [
+    "What is your absolute favorite coffee spot in town?",
+    "Tell me your take on spontaneous weekend road trips.",
+    "Which playlist do you put on when driving late at night?",
+    "Are you more of an early morning explorer or night owl?",
+    "How do you usually spend a quiet Sunday afternoon?",
+    "Could you survive a four hour road trip with no phone?",
+    "Never thought I would find someone with such great taste.",
+    "Honestly your profile vibe on here seems completely refreshing.",
+    "Let us debate who has sharper banter over iced coffee.",
+    "Pick a side between mountain cabins and sunny beaches."
+];
+
     let content = 'Default mock response';
     if (mockOutputGenerator) {
         content = mockOutputGenerator(parsedBody);
+    } else if (parsedBody && Array.isArray(parsedBody.messages) && parsedBody.messages.some(m => String(m.content).includes('ICEBREAKER') || String(m.content).includes('Icebreaker'))) {
+        content = engOpts.map((opt, i) => `${i + 1}. ${opt}`).join('\n');
     } else {
-        content = JSON.stringify({ options: Array.from({ length: 10 }, (_, i) => `Mock option ${i + 1}`) });
+        content = JSON.stringify({ options: engOpts });
     }
 
     return {

@@ -72,6 +72,30 @@ const cases = [
  {name:'Hinglish-ok',text:hi+'\nUSER: ok',latest:'ok',history:hi,language:'hinglish'},
  {name:'English-ok',text:en+'\nUSER: ok',latest:'ok',history:en,language:'en'}
 ];
+const engOpts = [
+ "What is your absolute favorite coffee spot in town?",
+ "Tell me your take on spontaneous weekend road trips.",
+ "Which playlist do you put on when driving late at night?",
+ "Are you more of an early morning explorer or night owl?",
+ "How do you usually spend a quiet Sunday afternoon?",
+ "Could you survive a four hour road trip with no phone?",
+ "Never thought I would find someone with such great taste.",
+ "Honestly your profile vibe on here seems completely refreshing.",
+ "Let us debate who has sharper banter over iced coffee.",
+ "Pick a side between mountain cabins and sunny beaches."
+];
+const hingOpts = [
+ "Tum batao best chai spot kaunsa hai town mein?",
+ "Sach batao spontaneous road trips pasand hain ya plan karte ho?",
+ "Late night drives pe go-to playlist kaunsi hoti hai?",
+ "Weekend scene kya hota hai usually, chill ya fully active?",
+ "Profile kaafi interesting lag rahi hai, coffee date kab?",
+ "Pehle ye batao how do you survive without a solid playlist?",
+ "Aapke hisaab se sabse underrated cafe kaunsa hai?",
+ "Rooftop evenings better lagte hain ya street food trails explore karna?",
+ "Kabhi socha nahi tha someone could have such a unique vibe.",
+ "Chalo decide karte hain whose banter is actually sharper."
+];
 const {inferLocalLanguage} = require('../middleware/languageSelection');
 async function run() {
  let serial = 0;
@@ -79,12 +103,12 @@ async function run() {
   for (const test of cases) {
    const content = feature === 'optimize' && test.name === 'ambiguous' ? 'ok 👍👍' : test.text;
    const history = [{role:'user',content:test.history || test.text},{role:'assistant',content:'Okay, tell me more.'}];
-   const sample = test.language === 'hinglish' ? 'tum batao chai pe kab milna hai?' : 'what is your favourite coffee spot?';
+   const sampleOpts = test.language === 'hinglish' ? hingOpts : engOpts;
    output = ['analyze','icebreaker','optimize'].includes(feature)
-      ? JSON.stringify({options:Array.from({length:10},(_,i)=>sample+' '+i)})
-      : feature === 'review' ? JSON.stringify({overall_score:70,status_text:'SOLID',wit_score:'70%',text_economy:'75%',confidence_score:'80%',performance_summary:sample,biggest_strength:sample,biggest_mistake:sample,priority_focus:sample})
-      : sample;
-   if (feature === 'icebreaker') output = Array.from({length:10},(_,i)=>(i+1)+'. '+sample+' '+i).join('\n');
+      ? JSON.stringify({options: sampleOpts})
+      : feature === 'review' ? JSON.stringify({overall_score:70,status_text:'SOLID',wit_score:'70%',text_economy:'75%',confidence_score:'80%',performance_summary:sampleOpts[0],biggest_strength:sampleOpts[1],biggest_mistake:sampleOpts[2],priority_focus:sampleOpts[3]})
+      : sampleOpts[0];
+   if (feature === 'icebreaker') output = sampleOpts.map((opt, i) => `${i + 1}. ${opt}`).join('\n');
    calls.length = 0;
    stubAdmin.__state.rpcCalls.length = 0;
    const body = {languageMode:'auto',language:'en',text:content,bioText:content,shorthandOption:true,emojiOption:0,idempotencyKey:'auto_'+(++serial)};
@@ -126,7 +150,7 @@ async function run() {
  const pixels=Buffer.alloc(54+800*800*3,240);
  pixels.write('BM',0);pixels.writeUInt32LE(pixels.length,2);pixels.writeUInt32LE(54,10);pixels.writeUInt32LE(40,14);pixels.writeInt32LE(800,18);pixels.writeInt32LE(800,22);pixels.writeUInt16LE(1,26);pixels.writeUInt16LE(24,28);pixels.writeUInt32LE(800*800*3,34);
  const transcript=JSON.stringify({chat_history:[{sender:'match',type:'text',text:hi}],latest_sender:'match',active_status:'active',match_has_replied:true});
- const optionOutput=JSON.stringify({options:Array.from({length:10},(_,i)=>'tum batao chai pe kab milna hai '+i)});
+ const optionOutput=JSON.stringify({options: hingOpts});
  queuedOutputs=[transcript,optionOutput];calls.length=0;
  const imageResult=await request(app).post('/api/analyze').set({...AUTH,'x-test-user-id':'88888888-8888-8888-8888-888888888888'}).send({languageMode:'auto',image:'data:image/bmp;base64,'+pixels.toString('base64'),idempotencyKey:'auto_image'});
  assert.strictEqual(imageResult.status,200,imageResult.text.slice(0,200));

@@ -103,7 +103,11 @@ const testSuites = [
     { name: '84. Quality Pipeline Selective Repair & Profile Gate', file: 'quality_pipeline_selective_repair.test.js', timeoutMs: 30_000 },
     { name: '85. Concurrency Lock TTL & Self-Await Deadlock Guard', file: 'concurrency_and_self_await.test.js', timeoutMs: 30_000 },
     { name: '86. Credit Authoritative Reconciliation & Monotonic Sequence', file: 'credit_authoritative_reconciliation.test.js', timeoutMs: 30_000 },
-    { name: '87. Quality & Mixed Language Repro Suite', file: 'quality_and_mixed_language_repro.test.js', timeoutMs: 30_000 }
+    { name: '87. Quality & Mixed Language Repro Suite', file: 'quality_and_mixed_language_repro.test.js', timeoutMs: 30_000 },
+    { name: '88. Credit Session Safety & Browser Monotonic Guard', file: 'credit_session_safety_override.test.js', timeoutMs: 30_000 },
+    { name: '89. Credit Authoritative Execution Suite', file: 'credit_authoritative_execution.test.js', timeoutMs: 30_000 },
+    { name: '90. Ledger Ambiguous Transport Recovery & Distinction Suite', file: 'ledger_ambiguous_transport_recovery.test.js', timeoutMs: 30_000 },
+    { name: '91. Language Token Scorer & Natural Grammar Suite', file: 'score_language_tokens.test.js', timeoutMs: 30_000 }
 ];
 
 console.log('========================================================================');
