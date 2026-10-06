@@ -164,10 +164,48 @@ global.fetch = async (url, options = {}) => {
 
         // Determine language requirement from system/user messages
         const isEnglishRequested = messages.some(m =>
+            String(m.content).includes('HIGH-STATUS ENGLISH') ||
             String(m.content).includes('AUTHORITATIVE TARGET DETERMINATION: ENGLISH') ||
+            String(m.content).includes('TARGET LANGUAGE PROFILE: english') ||
+            String(m.content).includes('LANGUAGE_DIRECTIVE: english') ||
             String(m.content).includes('compliant english output') ||
             String(m.content).includes('Rewrite into natural English')
         );
+
+        // Handle selective repair requests if triggered
+        const isRepair = messages.some(m =>
+            String(m.content).includes('selective repair') ||
+            String(m.content).includes('Approved options that MUST be kept intact') ||
+            String(m.content).includes('replacements')
+        );
+        if (isRepair) {
+            const replText = isEnglishRequested
+                ? "how do you survive a road trip without an elite playlist?"
+                : "pehle ye batao how do you survive without a solid road trip playlist?";
+            return new Response(JSON.stringify({
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            replacements: [
+                                { slot: 1, text: replText },
+                                { slot: 2, text: replText },
+                                { slot: 3, text: replText },
+                                { slot: 4, text: replText },
+                                { slot: 5, text: replText },
+                                { slot: 6, text: replText },
+                                { slot: 7, text: replText },
+                                { slot: 8, text: replText },
+                                { slot: 9, text: replText },
+                                { slot: 10, text: replText }
+                            ]
+                        })
+                    }
+                }]
+            }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
 
         // Check if request is Bio Optimizer
         const lastMsg = messages[messages.length - 1] ? String(messages[messages.length - 1].content || '') : '';
@@ -369,7 +407,7 @@ const { app } = require('../server.js');
         // Wait for rendered DOM cards
         await page.waitForSelector('#icebreakResultsState .copy-card-btn', { timeout: 15000 });
         const icebreakerCards = await page.$$eval('#icebreakResultsState .copy-card-btn', els => els.length);
-        assert.ok(icebreakerCards >= 5, `Expected at least 5 rendered cards, found ${icebreakerCards}`);
+        assert.strictEqual(icebreakerCards, 10, `Expected exactly 10 rendered cards, found ${icebreakerCards}`);
 
         // Verify rendered card text has authentic Hinglish
         const icebreakerText = await page.$eval('#icebreakResultsState', el => el.textContent);
@@ -397,7 +435,7 @@ const { app } = require('../server.js');
         // Wait for bio results to render
         await page.waitForSelector('#optimizeResultsState .copy-card-btn', { timeout: 15000 });
         const bioCards = await page.$$eval('#optimizeResultsState .copy-card-btn', els => els.length);
-        assert.ok(bioCards >= 5, `Expected at least 5 rendered bio cards, found ${bioCards}`);
+        assert.strictEqual(bioCards, 10, `Expected exactly 10 rendered bio cards, found ${bioCards}`);
         assert.strictEqual(transient503HitCount, 1, 'Provider 503 must have been triggered and recovered');
         assert.strictEqual(userCredits, 30, `Credits must be 30 after bio generation (40 - 10). Current: ${userCredits}`);
         console.log('✔ Test 2 Passed: Transient 503 retry succeeded internally with zero browser disruption.\n');
@@ -425,6 +463,8 @@ const { app } = require('../server.js');
         // Next click immediately succeeds
         await page.click('#runAuditBtn');
         await page.waitForSelector('#optimizeResultsState .copy-card-btn', { timeout: 15000 });
+        const bioCardsAfterRecovery = await page.$$eval('#optimizeResultsState .copy-card-btn', els => els.length);
+        assert.strictEqual(bioCardsAfterRecovery, 10, `Expected exactly 10 rendered bio cards after recovery, found ${bioCardsAfterRecovery}`);
         assert.strictEqual(userCredits, 20, `Credits must be 20 after successful second attempt (30 - 10). Current: ${userCredits}`);
         console.log('✔ Test 3 Passed: Fail-then-next-click smoothly recovered with zero stuck state.\n');
 
@@ -484,7 +524,7 @@ const { app } = require('../server.js');
 
         await page.waitForSelector('#analyzeResultsCards .copy-card-btn', { timeout: 15000 });
         const analyzerCards = await page.$$eval('#analyzeResultsCards .copy-card-btn', els => els.length);
-        assert.ok(analyzerCards >= 5, `Expected at least 5 rendered analyzer cards, found ${analyzerCards}`);
+        assert.strictEqual(analyzerCards, 10, `Expected exactly 10 rendered analyzer cards, found ${analyzerCards}`);
         console.log('✔ Test 5 Passed: Screenshot Analyzer uploaded image and rendered DOM reply cards.\n');
 
         console.log('============================================================');

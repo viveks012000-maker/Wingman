@@ -261,14 +261,39 @@ STRICT LAWS:
     };
 
     function syncCredits() {
+        const desk = $("desktopCreditCount");
+        const mob = $("mobileCreditCount");
+        const hud = $("hudScoreBadge");
+
+        if (state.creditsStatus === "loading") {
+            const loadingLabel = "Syncing…";
+            if (desk) desk.textContent = loadingLabel;
+            if (mob) mob.textContent = loadingLabel;
+            if (hud) hud.textContent = loadingLabel;
+            return;
+        }
+
+        if (state.creditsStatus === "error") {
+            const errLabel = "Balance unavailable";
+            if (desk) desk.textContent = errLabel;
+            if (mob) mob.textContent = errLabel;
+            if (hud) hud.textContent = errLabel;
+            return;
+        }
+
+        if (state.creditsStatus === "missing_profile") {
+            const missingLabel = "No Profile";
+            if (desk) desk.textContent = missingLabel;
+            if (mob) mob.textContent = missingLabel;
+            if (hud) hud.textContent = missingLabel;
+            return;
+        }
+
         if (typeof state.credits === 'number') {
             saveCredits(state.credits);
             const label = state.credits + " Credit" + (state.credits === 1 ? "" : "s");
-            const desk = $("desktopCreditCount");
             if (desk) desk.textContent = label;
-            const mob = $("mobileCreditCount");
             if (mob) mob.textContent = label;
-            const hud = $("hudScoreBadge");
             if (hud) hud.textContent = state.credits + " Credits";
         }
     }
@@ -281,12 +306,14 @@ STRICT LAWS:
         } else if (amount === null) {
             state.credits = null;
             state.creditsStatus = "loading";
+            syncCredits();
         }
     };
 
     // In-flight credit check promises keyed by user ID to coalesce simultaneous
     // identical requests per user while isolating different sessions.
     const inFlightCreditCheckPromises = new Map();
+    let latestCreditSyncSeq = 0;
 
     // Supabase Postgres Direct Profile Credit Sync – Reads 'profiles' table directly
     window.checkCreditBalance = function () {
@@ -304,9 +331,12 @@ STRICT LAWS:
             return inFlightCreditCheckPromises.get(currentUserId);
         }
 
+        const syncSeq = ++latestCreditSyncSeq;
+
         // Otherwise, create a new promise for this user
         const newPromise = (async function () {
             state.creditsStatus = "loading";
+            syncCredits();
             try {
                 // Authoritative session retrieval via Supabase auth.getSession()
                 let session = null;
@@ -350,8 +380,8 @@ STRICT LAWS:
                             // Stale-session guard: read current active user at mutation time
                             const activeUserId = window.currentSupabaseUser?.id || 
                                 (window.currentSupabaseSession?.user?.id || null);
-                            if (activeUserId !== requestUserId) {
-                                // Stale result from a switched session — do not overwrite UI
+                            if (activeUserId !== requestUserId || syncSeq !== latestCreditSyncSeq) {
+                                // Stale result from a switched session or older sync — do not overwrite UI
                                 return { success: false, status: "stale", credits: state.credits };
                             }
                             window.updateUICredits(data.credits);
@@ -361,6 +391,7 @@ STRICT LAWS:
                             // Profile row missing in Supabase
                             state.credits = null;
                             state.creditsStatus = "missing_profile";
+                            syncCredits();
                             return { success: false, status: "missing_profile", code: "PROFILE_MISSING" };
                         }
                     } catch (dbErr) {
@@ -376,8 +407,8 @@ STRICT LAWS:
                             // Stale-session guard: read current active user at mutation time
                             const activeUserId = window.currentSupabaseUser?.id || 
                                 (window.currentSupabaseSession?.user?.id || null);
-                            if (activeUserId !== requestUserId) {
-                                // Stale result from a switched session — do not overwrite UI
+                            if (activeUserId !== requestUserId || syncSeq !== latestCreditSyncSeq) {
+                                // Stale result from a switched session or older sync — do not overwrite UI
                                 return { success: false, status: "stale", credits: state.credits };
                             }
                             window.updateUICredits(creditsRes);
@@ -385,6 +416,7 @@ STRICT LAWS:
                         } else if (creditsRes && creditsRes.profileMissing) {
                             state.credits = null;
                             state.creditsStatus = "missing_profile";
+                            syncCredits();
                             return { success: false, status: "missing_profile", code: "PROFILE_MISSING" };
                         }
                     } catch (fErr) {
@@ -402,6 +434,7 @@ STRICT LAWS:
                         if (errData && (errData.error === 'PROFILE_MISSING' || errData.code === 'PROFILE_MISSING')) {
                             state.credits = null;
                             state.creditsStatus = "missing_profile";
+                            syncCredits();
                             return { success: false, status: "missing_profile", code: "PROFILE_MISSING" };
                         }
                     }
@@ -411,8 +444,8 @@ STRICT LAWS:
                             // Stale-session guard: read current active user at mutation time
                             const activeUserId = window.currentSupabaseUser?.id || 
                                 (window.currentSupabaseSession?.user?.id || null);
-                            if (activeUserId !== requestUserId) {
-                                // Stale result from a switched session — do not overwrite UI
+                            if (activeUserId !== requestUserId || syncSeq !== latestCreditSyncSeq) {
+                                // Stale result from a switched session or older sync — do not overwrite UI
                                 return { success: false, status: "stale", credits: state.credits };
                             }
                             window.updateUICredits(resJson.credits);
@@ -422,8 +455,8 @@ STRICT LAWS:
                             // Stale-session guard: read current active user at mutation time
                             const activeUserId = window.currentSupabaseUser?.id || 
                                 (window.currentSupabaseSession?.user?.id || null);
-                            if (activeUserId !== requestUserId) {
-                                // Stale result from a switched session — do not overwrite UI
+                            if (activeUserId !== requestUserId || syncSeq !== latestCreditSyncSeq) {
+                                // Stale result from a switched session or older sync — do not overwrite UI
                                 return { success: false, status: "stale", credits: state.credits };
                             }
                             window.updateUICredits(count);
@@ -433,11 +466,17 @@ STRICT LAWS:
                 }
 
                 // If balance cannot be verified, record error state without setting credits to 0
-                state.creditsStatus = "error";
+                if (syncSeq === latestCreditSyncSeq) {
+                    state.creditsStatus = "error";
+                    syncCredits();
+                }
                 return { success: false, status: "error", credits: state.credits };
             } catch (e) {
                 console.warn('[CreditSync] Error syncing credits from Supabase profiles:', e);
-                state.creditsStatus = "error";
+                if (syncSeq === latestCreditSyncSeq) {
+                    state.creditsStatus = "error";
+                    syncCredits();
+                }
                 return { success: false, status: "error", credits: state.credits, error: e };
 } finally {
                 // Clear only this user's in-flight entry; other users' entries remain
@@ -3470,14 +3509,7 @@ STRICT LAWS:
         results.forEach((cardText, index) => {
             if (!cardText || cardText.trim() === '') return;
 
-            cardText = cardText.replace(/[\s0-9]+$/, '').trim();
-            cardText = cardText.replace(/\b(i|me)\s+rides\s+bike(s)?\b/gi, "i ride my bike");
-            cardText = cardText.replace(/\b(i|me)\s+rides\b/gi, "i ride");
-            cardText = cardText.replace(/^rides\s+bike(s)?\b/gi, "riding bikes");
-            cardText = cardText.replace(/\brides\s+bike(s)?\b/gi, "riding bikes");
-            cardText = cardText.replace(/\b(i|me)\s+goes\b/gi, "i go");
-            cardText = cardText.replace(/\b(i|me)\s+plays\b/gi, "i play");
-            cardText = cardText.replace(/settle this[\:\,\s]*/gi, "real question: ").trim();
+            cardText = cardText.trim();
 
             if (state.shorthandOption !== false) {
                 cardText = cardText.toLowerCase();
