@@ -249,7 +249,7 @@ app.use(express.static(path.join(__dirname), {
 }));
 
 // Explicit Root Routes for Landing & App Pages
-app.get('/', (req, res) => {
+app.get('/', globalLimiter, (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
@@ -257,7 +257,7 @@ app.get('/favicon.ico', (req, res) => {
     res.status(204).end();
 });
 
-app.get('/app', (req, res) => {
+app.get('/app', globalLimiter, (req, res) => {
     res.sendFile(path.join(__dirname, 'app.html'));
 });
 
