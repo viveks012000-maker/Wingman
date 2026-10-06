@@ -334,7 +334,8 @@ STRICT LAWS:
         const syncSeq = ++latestCreditSyncSeq;
 
         // Otherwise, create a new promise for this user
-        const newPromise = (async function () {
+        let newPromise = null;
+        newPromise = (async function () {
             state.creditsStatus = "loading";
             syncCredits();
             try {
@@ -365,7 +366,48 @@ STRICT LAWS:
                     return { success: false, status: "unauthenticated", credits: state.credits };
                 }
 
-                // 1. Direct Supabase 'profiles' table query
+                // 1. Primary: Authenticated query to /api/credits (Single Canonical Verified Balance Endpoint)
+                const apiBase = typeof window.getApiBase === 'function' ? window.getApiBase() : '';
+                const authHeaders = typeof window.getSupabaseAuthHeaders === 'function' ? await window.getSupabaseAuthHeaders() : {};
+                if (authHeaders && authHeaders.Authorization) {
+                    try {
+                        const resp = await fetch((apiBase || '') + '/api/credits', { headers: authHeaders });
+                        if (resp.status === 404) {
+                            const errData = await resp.json().catch(() => ({}));
+                            if (errData && (errData.error === 'PROFILE_MISSING' || errData.code === 'PROFILE_MISSING')) {
+                                state.credits = null;
+                                state.creditsStatus = "missing_profile";
+                                syncCredits();
+                                return { success: false, status: "missing_profile", code: "PROFILE_MISSING" };
+                            }
+                        }
+                        if (resp.ok) {
+                            const resJson = await resp.json();
+                            if (resJson && typeof resJson.credits === 'number') {
+                                const activeUserId = window.currentSupabaseUser?.id || 
+                                    (window.currentSupabaseSession?.user?.id || null);
+                                if (activeUserId !== requestUserId || syncSeq !== latestCreditSyncSeq) {
+                                    return { success: false, status: "stale", credits: state.credits };
+                                }
+                                window.updateUICredits(resJson.credits);
+                                return { success: true, status: "loaded", credits: resJson.credits };
+                            } else if (resJson && resJson.data && typeof resJson.data.credits_inr === 'number') {
+                                const count = Math.round(resJson.data.credits_inr * 10);
+                                const activeUserId = window.currentSupabaseUser?.id || 
+                                    (window.currentSupabaseSession?.user?.id || null);
+                                if (activeUserId !== requestUserId || syncSeq !== latestCreditSyncSeq) {
+                                    return { success: false, status: "stale", credits: state.credits };
+                                }
+                                window.updateUICredits(count);
+                                return { success: true, status: "loaded", credits: count };
+                            }
+                        }
+                    } catch (apiErr) {
+                        console.warn('[CreditSync] /api/credits notice:', apiErr);
+                    }
+                }
+
+                // 2. Direct Supabase 'profiles' table query fallback
                 let directQueryAttempted = false;
                 if (window.supabaseClient && typeof window.supabaseClient.from === 'function') {
                     directQueryAttempted = true;
@@ -377,18 +419,15 @@ STRICT LAWS:
                             .maybeSingle();
 
                         if (!error && data && typeof data.credits === 'number') {
-                            // Stale-session guard: read current active user at mutation time
                             const activeUserId = window.currentSupabaseUser?.id || 
                                 (window.currentSupabaseSession?.user?.id || null);
                             if (activeUserId !== requestUserId || syncSeq !== latestCreditSyncSeq) {
-                                // Stale result from a switched session or older sync — do not overwrite UI
                                 return { success: false, status: "stale", credits: state.credits };
                             }
                             window.updateUICredits(data.credits);
                             return { success: true, status: "loaded", credits: data.credits };
                         }
                         if (!error && !data) {
-                            // Profile row missing in Supabase
                             state.credits = null;
                             state.creditsStatus = "missing_profile";
                             syncCredits();
@@ -399,16 +438,14 @@ STRICT LAWS:
                     }
                 }
 
-                // 2. Fetch via fetchProfileCredits (only when direct client was unavailable)
+                // 3. Fetch via fetchProfileCredits fallback
                 if (!directQueryAttempted && typeof window.fetchProfileCredits === 'function') {
                     try {
                         const creditsRes = await window.fetchProfileCredits(user.id || userId);
                         if (typeof creditsRes === 'number') {
-                            // Stale-session guard: read current active user at mutation time
                             const activeUserId = window.currentSupabaseUser?.id || 
                                 (window.currentSupabaseSession?.user?.id || null);
                             if (activeUserId !== requestUserId || syncSeq !== latestCreditSyncSeq) {
-                                // Stale result from a switched session or older sync — do not overwrite UI
                                 return { success: false, status: "stale", credits: state.credits };
                             }
                             window.updateUICredits(creditsRes);
@@ -421,47 +458,6 @@ STRICT LAWS:
                         }
                     } catch (fErr) {
                         console.warn('[CreditSync] fetchProfileCredits notice:', fErr);
-                    }
-                }
-
-                // 3. Fallback: Authenticated query to /api/credits
-                const apiBase = typeof window.getApiBase === 'function' ? window.getApiBase() : '';
-                const authHeaders = typeof window.getSupabaseAuthHeaders === 'function' ? await window.getSupabaseAuthHeaders() : {};
-                if (authHeaders && authHeaders.Authorization) {
-                    const resp = await fetch((apiBase || '') + '/api/credits', { headers: authHeaders });
-                    if (resp.status === 404) {
-                        const errData = await resp.json().catch(() => ({}));
-                        if (errData && (errData.error === 'PROFILE_MISSING' || errData.code === 'PROFILE_MISSING')) {
-                            state.credits = null;
-                            state.creditsStatus = "missing_profile";
-                            syncCredits();
-                            return { success: false, status: "missing_profile", code: "PROFILE_MISSING" };
-                        }
-                    }
-                    if (resp.ok) {
-                        const resJson = await resp.json();
-                        if (resJson && typeof resJson.credits === 'number') {
-                            // Stale-session guard: read current active user at mutation time
-                            const activeUserId = window.currentSupabaseUser?.id || 
-                                (window.currentSupabaseSession?.user?.id || null);
-                            if (activeUserId !== requestUserId || syncSeq !== latestCreditSyncSeq) {
-                                // Stale result from a switched session or older sync — do not overwrite UI
-                                return { success: false, status: "stale", credits: state.credits };
-                            }
-                            window.updateUICredits(resJson.credits);
-                            return { success: true, status: "loaded", credits: resJson.credits };
-                        } else if (resJson && resJson.data && typeof resJson.data.credits_inr === 'number') {
-                            const count = Math.round(resJson.data.credits_inr * 10);
-                            // Stale-session guard: read current active user at mutation time
-                            const activeUserId = window.currentSupabaseUser?.id || 
-                                (window.currentSupabaseSession?.user?.id || null);
-                            if (activeUserId !== requestUserId || syncSeq !== latestCreditSyncSeq) {
-                                // Stale result from a switched session or older sync — do not overwrite UI
-                                return { success: false, status: "stale", credits: state.credits };
-                            }
-                            window.updateUICredits(count);
-                            return { success: true, status: "loaded", credits: count };
-                        }
                     }
                 }
 
@@ -3406,6 +3402,9 @@ STRICT LAWS:
                         }
                         return null;
                     }
+                    if (typeof window.checkCreditBalance === 'function') {
+                        await window.checkCreditBalance();
+                    }
                     if (typeof window.showToast === 'function') {
                         const offlineMsg = (response.status === 404 || response.status === 502 || response.status === 504 || !errJson.error)
                             ? "Wingman's AI service is temporarily unavailable. Please try again later."
@@ -3420,7 +3419,7 @@ STRICT LAWS:
                         window.updateUICredits(errJson.credits);
                     }
                     if (typeof window.checkCreditBalance === 'function') {
-                        window.checkCreditBalance();
+                        await window.checkCreditBalance();
                     }
                     trackWingmanEvent('generation_failed', { endpoint: endpoint, status: response.status });
                     if (typeof window.showToast === 'function') {
@@ -3441,8 +3440,7 @@ STRICT LAWS:
 
             const data = await response.json();
             if (typeof data.credits === "number") {
-                state.credits = data.credits;
-                syncCredits();
+                window.updateUICredits(data.credits);
             }
             trackWingmanEvent('generation_succeeded', { endpoint: endpoint, remainingCredits: data.credits });
             return data.options || data.text || data.reply || (data.choices && data.choices[0] && (data.choices[0].message ? data.choices[0].message.content : data.choices[0].message)) || "";
@@ -3453,7 +3451,7 @@ STRICT LAWS:
                 window.showToast("Generation status could not be confirmed. Refreshing your credit balance…", "warning");
             }
             if (typeof window.checkCreditBalance === 'function') {
-                window.checkCreditBalance();
+                await window.checkCreditBalance();
             }
             return null;
         }
@@ -3510,34 +3508,6 @@ STRICT LAWS:
             if (!cardText || cardText.trim() === '') return;
 
             cardText = cardText.trim();
-
-            if (state.shorthandOption !== false) {
-                cardText = cardText.toLowerCase();
-            }
-            if (state.emojiOption === 0) {
-                try {
-                    cardText = cardText.replace(new RegExp('\\p{Extended_Pictographic}', 'gu'), "").trim();
-                } catch(e) {
-                    cardText = cardText.replace(/[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]/g, "").trim();
-                }
-            } else if (state.emojiOption === 2) {
-                const expressivePool = ["😏", "😉", "👀", "🔥", "✨", "💅", "☕", "💯", "🥂", "⚡"];
-                let existingCount = 0;
-                try {
-                    const matches = cardText.match(new RegExp('\\p{Extended_Pictographic}', 'gu'));
-                    existingCount = matches ? matches.length : 0;
-                } catch(e) {
-                    const matches2 = cardText.match(/[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]/g);
-                    existingCount = matches2 ? matches2.length : 0;
-                }
-                if (existingCount < 2) {
-                    const needed = 2 - existingCount;
-                    for (let ei = 0; ei < needed; ei++) {
-                        const randEmoji = expressivePool[Math.floor(Math.random() * expressivePool.length)];
-                        cardText += " " + randEmoji;
-                    }
-                }
-            }
 
             const cardEl = document.createElement('div');
             cardEl.className = 'option-card stagger-card-entry';

@@ -337,9 +337,8 @@ function invalidateInFlightCreditQuery(userId) {
     }
 }
 
-// Read credits from Supabase Postgres 'profiles' table (Authoritative Source of Truth)
-async function getUserCreditsDB(req) {
-    const uid = getUserIdFromReq(req);
+// Read credits from Supabase Postgres 'profiles' table by user ID (Authoritative Source of Truth)
+async function getUserCreditsByUid(uid) {
     if (!uid || uid === 'guest_user') {
         const err = new Error("Authentication required to access credits.");
         err.statusCode = 401;
@@ -392,6 +391,15 @@ async function getUserCreditsDB(req) {
 
     inFlightUserCreditQueries.set(uid, queryPromise);
     return await queryPromise;
+}
+
+// Read credits from Supabase Postgres 'profiles' table (Accepts Express req or uid string)
+async function getUserCreditsDB(req) {
+    if (typeof req === 'string') {
+        return await getUserCreditsByUid(req);
+    }
+    const uid = getUserIdFromReq(req);
+    return await getUserCreditsByUid(uid);
 }
 
 async function withTransactionRetry(db, callback, retries = 5) {
@@ -726,62 +734,94 @@ async function verifyAndDeductCreditsDB(req, costParam, featureName = 'ai_featur
 
 // Settle Credit Reservation in Supabase Postgres on successful AI completion
 async function settleCreditsDB(req, reqId) {
-    const uid = getUserIdFromReq(req);
+    const uid = typeof req === 'string' ? req : getUserIdFromReq(req);
     invalidateInFlightCreditQuery(uid);
     if (!uid || uid === 'guest_user' || !reqId) return { success: true };
-    try {
-        if (supabaseAdmin && supabaseAdmin.rpc) {
-            const { data, error } = await supabaseAdmin.rpc('settle_credits', {
-                p_user_id: uid,
-                p_request_id: reqId
-            });
-            if (error) {
-                console.error('[settleCreditsDB RPC Error]:', error.message);
-                return { success: false, error: error.message };
+
+    const maxAttempts = 3;
+    let lastErr = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            if (supabaseAdmin && supabaseAdmin.rpc) {
+                const { data, error } = await supabaseAdmin.rpc('settle_credits', {
+                    p_user_id: uid,
+                    p_request_id: reqId
+                });
+                if (error) {
+                    lastErr = error.message;
+                    console.error(`[settleCreditsDB RPC Error attempt ${attempt}/${maxAttempts}]:`, error.message);
+                    if (attempt < maxAttempts) {
+                        await new Promise(r => setTimeout(r, attempt * 150));
+                        continue;
+                    }
+                    return { success: false, error: error.message };
+                }
+                const row = Array.isArray(data) ? data[0] : data;
+                if (!row || row.success !== true || row.settled !== true) {
+                    return { success: false, error: (row && row.error_message) || 'Credit settlement did not complete a pending transaction.' };
+                }
+                return { success: true, data: row };
             }
-            const row = Array.isArray(data) ? data[0] : data;
-            if (!row || row.success !== true || row.settled !== true) {
-                return { success: false, error: (row && row.error_message) || 'Credit settlement did not complete a pending transaction.' };
+            return { success: true };
+        } catch (e) {
+            lastErr = e.message;
+            console.warn(`[settleCreditsDB Exception attempt ${attempt}/${maxAttempts}]:`, e.message);
+            if (attempt < maxAttempts) {
+                await new Promise(r => setTimeout(r, attempt * 150));
+                continue;
             }
-            return { success: true, data: row };
+            return { success: false, error: e.message };
         }
-    } catch (e) {
-        console.warn('[settleCreditsDB Exception]:', e.message);
-        return { success: false, error: e.message };
     }
-    return { success: true };
+    return { success: false, error: lastErr || 'Credit settlement failed.' };
 }
 
 // Release / Cancel Credit Reservation on AI failure (Failed generation costs user ZERO credits)
 async function releaseCreditsDB(req, reqId, reason = 'ai_failure') {
-    const uid = getUserIdFromReq(req);
+    const uid = typeof req === 'string' ? req : getUserIdFromReq(req);
     invalidateInFlightCreditQuery(uid);
     if (!uid || uid === 'guest_user' || !reqId) return { success: false, remainingCredits: 0 };
-    try {
-        if (supabaseAdmin && supabaseAdmin.rpc) {
-            const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('release_credits', {
-                p_user_id: uid,
-                p_request_id: reqId,
-                p_reason: reason || 'ai_failure'
-            });
-            if (rpcErr) {
-                console.error('[releaseCreditsDB RPC Error]:', rpcErr.message);
-                return { success: false, remainingCredits: 0, error: rpcErr.message };
-            }
-            if (rpcRes) {
-                const row = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
-                if (!row || row.success !== true) {
-                    return { success: false, remainingCredits: 0, error: (row && row.error_message) || 'Credit release was rejected.' };
+
+    const maxAttempts = 3;
+    let lastErr = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            if (supabaseAdmin && supabaseAdmin.rpc) {
+                const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('release_credits', {
+                    p_user_id: uid,
+                    p_request_id: reqId,
+                    p_reason: reason || 'ai_failure'
+                });
+                if (rpcErr) {
+                    lastErr = rpcErr.message;
+                    console.error(`[releaseCreditsDB RPC Error attempt ${attempt}/${maxAttempts}]:`, rpcErr.message);
+                    if (attempt < maxAttempts) {
+                        await new Promise(r => setTimeout(r, attempt * 150));
+                        continue;
+                    }
+                    return { success: false, remainingCredits: 0, error: rpcErr.message };
                 }
-                const rem = typeof row.new_balance === 'number' ? row.new_balance : (typeof row.remainingCredits === 'number' ? row.remainingCredits : 0);
-                return { success: true, remainingCredits: rem };
+                if (rpcRes) {
+                    const row = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
+                    if (!row || row.success !== true) {
+                        return { success: false, remainingCredits: 0, error: (row && row.error_message) || 'Credit release was rejected.' };
+                    }
+                    const rem = typeof row.new_balance === 'number' ? row.new_balance : (typeof row.remainingCredits === 'number' ? row.remainingCredits : 0);
+                    return { success: true, remainingCredits: rem };
+                }
             }
+            return { success: false, remainingCredits: 0, error: 'Credit release service returned no response.' };
+        } catch (e) {
+            lastErr = e.message;
+            console.error(`[releaseCreditsDB Exception attempt ${attempt}/${maxAttempts}]:`, e.message);
+            if (attempt < maxAttempts) {
+                await new Promise(r => setTimeout(r, attempt * 150));
+                continue;
+            }
+            return { success: false, remainingCredits: 0, error: e.message };
         }
-    } catch (e) {
-        console.error('[releaseCreditsDB Exception]:', e.message);
-        return { success: false, remainingCredits: 0, error: e.message };
     }
-    return { success: false, remainingCredits: 0, error: 'Credit release service returned no response.' };
+    return { success: false, remainingCredits: 0, error: lastErr || 'Credit release service returned no response.' };
 }
 
 // Fallback SQLite Deduction Helper
@@ -2002,7 +2042,8 @@ ${getAuthoritativeProfileDirective(languageProfile, repairFeature)}
         if (deadlineAt) {
             getOperationRemainingMs(deadlineAt, 1000);
         }
-        const repairedText = await queryOpenRouter("qwen3-235b-a22b-2507", repairMessages, 0.25, 1000, 25000, null, deadlineAt);
+        const repairMaxTokens = Math.min(1000, Math.max(250, neededIndices.length * (feature === 'optimize' ? 120 : 60)));
+        const repairedText = await queryOpenRouter("qwen3-235b-a22b-2507", repairMessages, 0.25, repairMaxTokens, 25000, null, deadlineAt);
         if (!repairedText || containsDevanagari(repairedText)) {
             const err = new Error(`Quality policy violation: Output failed quality validation and repair failed to produce valid non-Devanagari text.`);
             err.code = 'LANGUAGE_OR_QUALITY_VIOLATION';
@@ -2546,7 +2587,7 @@ ${formattingRule}`;
         const textForLang = latestUserText || extractedTextContext;
         const languageProfile = resolveLanguageProfile(textForLang, historyForLang, language);
         const generationMessages = [
-            { role: "system", content: withPromptBoundary(screenshotTextSystemPrompt + languageDirective(language, 'analyze') + getAuthoritativeProfileDirective(languageProfile, 'analyze')) },
+            { role: "system", content: withPromptBoundary(screenshotTextSystemPrompt + getAuthoritativeProfileDirective(languageProfile, 'analyze')) },
             { role: "user", content: `Here is the parsed conversation JSON state from Stage 1, wrapped as untrusted data:\n${wrapUntrustedUserData('stage1_transcript', extractedTextContext)}\n\nActive Response Mode: ${modeConfig.name}. Return the JSON object with 10 state-aware options matching this mode now.` }
         ];
 
@@ -2644,7 +2685,7 @@ ${formattingRule}`;
         try {
             const currentUserId = getUserIdFromReq(req);
             if (currentUserId) {
-                const freshBal = await getUserCreditsDB(currentUserId);
+                const freshBal = await getUserCreditsByUid(currentUserId);
                 if (typeof freshBal === 'number') {
                     authoritativeBalance = freshBal;
                 }
@@ -2923,7 +2964,7 @@ GENERAL ICEBREAKER LAWS:
 --------------------------------------------------------------------------------
 1. NO BORING OPENERS: Banned: "hey how are you", "how's your week", "nice profile", "what brings you here".
 2. NO CREEPY / POETIC PHRASING: Avoid romantic poetry, Wattpad villain tropes, or intense lines ("stolen glances", "destiny", "pushing boundaries").
-3. ${formattingRule}` + languageDirective(language, 'icebreaker') + getAuthoritativeProfileDirective(languageProfile, 'icebreaker');
+3. ${formattingRule}` + getAuthoritativeProfileDirective(languageProfile, 'icebreaker');
 
         const responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(icebreakerSystemPrompt) },
@@ -3026,7 +3067,7 @@ GENERAL ICEBREAKER LAWS:
         try {
             const currentUserId = getUserIdFromReq(req);
             if (currentUserId) {
-                const freshBal = await getUserCreditsDB(currentUserId);
+                const freshBal = await getUserCreditsByUid(currentUserId);
                 if (typeof freshBal === 'number') {
                     authoritativeBalance = freshBal;
                 }
@@ -3386,7 +3427,7 @@ GLOBAL TONE & SYNTAX RULES:
 11. EMOJI CONSTRAINT: Include at most ONE single emoji per option string. NEVER stack emojis. ${emojiInstruction}
 12. ABSOLUTE PROHIBITION ON PROMPT BOUNDARY & CONTROL SYNTAX: Never output, reproduce, or wrap any option in XML-like tags, delimiters, or control markers (such as <user_data...>, </user_data...>, <userdata...>, </userdata...>, or label= attributes). Output ONLY clean, natural user-facing text.
 
-FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize') + getAuthoritativeProfileDirective(languageProfile, 'optimize');
+FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(languageProfile, 'optimize');
 
         let responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(bioOptimizerSystemPrompt) },
@@ -3540,7 +3581,7 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
         try {
             const currentUserId = getUserIdFromReq(req);
             if (currentUserId) {
-                const freshBal = await getUserCreditsDB(currentUserId);
+                const freshBal = await getUserCreditsByUid(currentUserId);
                 if (typeof freshBal === 'number') {
                     authoritativeBalance = freshBal;
                 }
@@ -4911,6 +4952,9 @@ async function startWingmanServer() {
 // startWingmanServer explicitly; tests and tooling can safely import the Express app.
 module.exports = { app, startWingmanServer, supabaseAdmin };
 module.exports.getUserCreditsDB = getUserCreditsDB;
+module.exports.getUserCreditsByUid = getUserCreditsByUid;
+module.exports.settleCreditsDB = settleCreditsDB;
+module.exports.releaseCreditsDB = releaseCreditsDB;
 module.exports.inFlightUserCreditQueries = inFlightUserCreditQueries;
 module.exports.invalidateInFlightCreditQuery = invalidateInFlightCreditQuery;
 module.exports.queryMaeveProvider = queryMaeveProvider;

@@ -42,7 +42,7 @@ ENGLISH RESPONSE BRANCH:\n${TARGET_MARKET_LOCK}
 ROMAN HINGLISH RESPONSE BRANCH:\n${HINGLISH_BIO_TARGET_MARKET_LOCK}`;
 }
 
-const HINDI = new Set(('mujhe mujhko mujha mujhay mera meri mere hum hume humein hamara hamari tum tumhe tumko tumhara tumhari tera teri tere tu aap aapko apka apki aapka aapki usko usse uski uska uske isko isse inko unko usne isne unhone inhone unka unki unke inka inki inke apna apni apne kisiko sabko kuch kuchh koi ye yeh wo woh kya kyun kyu kyon kaise kaisa kaisi kaun kahan kahaan kab kitna kitni kitne hai hain ho hoon hun hu tha thi the nahi nahin nhi nahee mat bhi toh tohh aur lekin magar par bas ab abhi phir fir yaar achha accha achi achhi acha acchi thoda thodi bahut bohot bahot bhaut bhot zyada jyada zayada jaada pasand chahiye chaiye chahta chahti chaahte lagta lagti lag raha rahi rahe karna karni karo karu karun karta karti karte karunga karungi bol bolu bolun bolo bolna bolti bata batao bataun batau batana kehna kahu kehta samajh samajhna samajhta milna milke milte milenge jana jao jata jaati jaunga aana aao aata aati aaunga dekho dekhna dekh dekha padhna likhna likhu likhun sach bilkul shayad zaroor pakka sahi galat bura buri maza mazedaar mast haal chal pe mein wali wala wale waali waala waale liye saath diya diye dungi dunga dena liya kiye chhod chhoda chhodna bheju bheja bhejna socha soch sochu samjha samjhi samjhe karein kare hoga hogi honge gaya gayi gaye chalo chalte chalega chalegi lagraha lagrahi lagrahe dikhta dikhti bhai pata baat baatein waise aise jaise kripya dost na naam khud shuru khatam pyar pyaar ishq zindagi duniya dil ghumna ghoomna firna phirna khana peena sunna yaha yahaan waha wahaan kaha kahaan kaafi kafi milunga milungi aaunga aaungi jaunga jaungi karenge karega karegi karte hota hoti hote hona sun suno sunna dikhao dikha bataiye kahiye samajhte samajhti lagte lagti waale waala waali tapri dhaba adda').split(' '));
+const HINDI = new Set(('mujhe mujhko mujha mujhay mera meri mere hum hume humein hamara hamari tum tumhe tumko tumhara tumhari tera teri tere tu aap aapko apka apki aapka aapki usko usse uski uska uske isko isse inko unko usne isne unhone inhone unka unki unke inka inki inke apna apni apne kisiko sab sabko sabhi kuch kuchh koi ye yeh wo woh kya kyun kyu kyon kaise kaisa kaisi kaun kahan kahaan kab kitna kitni kitne hai hain ho hoon hun hu tha thi the nahi nahin nhi nahee mat bhi toh tohh aur lekin magar par bas ab abhi phir fir yaar achha accha achi achhi acha acchi thoda thodi bahut bohot bahot bhaut bhot zyada jyada zayada jaada pasand chahiye chaiye chahta chahti chaahte lagta lagti lag raha rahi rahe karna karni karo karu karun karta karti karte karunga karungi bol bolu bolun bolo bolna bolti bata batao bataun batau batana kehna kahu kehta samajh samajhna samajhta milna milke milte milenge jana jao jata jaati jaunga aana aao aata aati aaunga dekho dekhna dekh dekha padhna likhna likhu likhun sach bilkul shayad zaroor pakka sahi galat bura buri maza mazedaar mast haal chal pe mein wali wala wale waali waala waale liye saath diya diye dungi dunga dena liya kiye chhod chhoda chhodna bheju bheja bhejna socha soch sochu samjha samjhi samjhe karein kare hoga hogi honge gaya gayi gaye chalo chalte chalega chalegi lagraha lagrahi lagrahe dikhta dikhti bhai pata baat baatein waise aise jaise kripya dost na naam khud shuru khatam pyar pyaar ishq zindagi duniya dil ghumna ghoomna firna phirna khana peena sunna yaha yahaan waha wahaan kaha kahaan kaafi kafi milunga milungi aaunga aaungi jaunga jaungi karenge karega karegi karte hota hoti hote hona sun suno sunna dikhao dikha bataiye kahiye samajhte samajhti lagte lagti waale waala waali tapri dhaba adda mai ya').split(' '));
 const ENGLISH = new Set(('i you we they he she it my your our their what why how where when which should would could want need like enjoy love prefer think know say tell respond message have has am is are was were do does did will can cannot with and but because if about next really rather more most to of for this that these those the a an in on at from').split(' '));
 const NEUTRAL = new Set(['ok', 'okay', 'yes', 'no', 'hey', 'hi', 'hello', 'hmm', 'hmmm', 'thanks', 'thank', 'you', 'sure', 'cool', 'fine', 'lol', 'haha', 'hahaha', 'nice', 'yep', 'nope', 'k', 'lmao', 'rofl']);
 
@@ -159,7 +159,8 @@ function resolveLanguageTarget(text, history = [], explicitMode = 'auto') {
 
 function getAuthoritativeProfileDirective(profile, feature) {
     if (profile === LANGUAGE_PROFILES.ENGLISH || profile === 'english') {
-        return `\n\n[AUTHORITATIVE TARGET DETERMINATION: ENGLISH]
+        return `\n\n[AUTO LANGUAGE SELECTION]
+[AUTHORITATIVE TARGET DETERMINATION: ENGLISH]
 [PROFILE: HIGH-STATUS ENGLISH]
 The conversation/input context is in English.
 Write all generated response options in natural, high-status modern English.
@@ -168,7 +169,8 @@ Write all generated response options in natural, high-status modern English.
     }
 
     if (profile === LANGUAGE_PROFILES.ENGLISH_HEAVY_MIXED) {
-        return `\n\n[AUTHORITATIVE TARGET DETERMINATION: ROMAN-SCRIPT HINGLISH]
+        return `\n\n[AUTO LANGUAGE SELECTION]
+[AUTHORITATIVE TARGET DETERMINATION: ROMAN-SCRIPT HINGLISH]
 [PROFILE: ENGLISH-DOMINANT HINGLISH BLEND]
 The user's context mixes English with Roman Hindi, with dominant English framing (e.g. "mera naam sumit hai and i like basketball").
 Generate response options with modern English conversational flow, naturally anchored with authentic Roman Hindi phrasing (e.g., "kaafi", "usually court pe milunga", "scene sort karte hain", "real question: pickup game ya proper league?").
@@ -179,7 +181,8 @@ Generate response options with modern English conversational flow, naturally anc
     }
 
     if (profile === LANGUAGE_PROFILES.ROMAN_HINDI_HEAVY) {
-        return `\n\n[AUTHORITATIVE TARGET DETERMINATION: ROMAN-SCRIPT HINGLISH]
+        return `\n\n[AUTO LANGUAGE SELECTION]
+[AUTHORITATIVE TARGET DETERMINATION: ROMAN-SCRIPT HINGLISH]
 [PROFILE: ROMAN HINDI CONVERSATIONAL FLUENCY]
 The user's context is predominantly Roman Hindi/Hinglish (e.g. "mujhe basketball bahut pasand hai aur weekend pe court jana acha lagta hai").
 Generate response options in authentic, fluent Roman-script Hindi/Hinglish as texted by urban young adults (e.g., "weekend pe court scene pakka?", "kaafi sahi vibe hai, match kab ho raha hai?").
@@ -202,7 +205,8 @@ Generate response options in authentic, fluent Roman-script Hindi/Hinglish as te
   • "gym discipline intact hai, par Sunday brunch pe zero self-control 🥞\n\nhonest debate: workout first ya directly food?"`
             : '');
 
-    return `\n\n[AUTHORITATIVE TARGET DETERMINATION: ROMAN-SCRIPT HINGLISH]
+    return `\n\n[AUTO LANGUAGE SELECTION]
+[AUTHORITATIVE TARGET DETERMINATION: ROMAN-SCRIPT HINGLISH]
 [PROFILE: BALANCED ROMAN-SCRIPT HINGLISH]
 The conversation/input context is in Hinglish or mixed Roman Hindi + English.
 You MUST write all generated response options in natural, modern Roman-script Hinglish (the authentic, casual blend of English and Hindi texted by urban young adults in Delhi/Mumbai/Bangalore).
@@ -371,15 +375,50 @@ function validateFinalOption(opt, feature = 'generic', languageProfile = 'englis
         return { valid: false, reason: 'subject_verb_disagreement' };
     }
 
-    // Language profile check
-    const isProfileEnglish = languageProfile === LANGUAGE_PROFILES.ENGLISH || languageProfile === 'english';
-    if (isProfileEnglish) {
+    // Profile-aware language validation
+    const cleanLower = trimmed.toLowerCase();
+    const words = cleanLower.match(/[a-z]+/g) || [];
+    let hindiCount = 0;
+    let englishCount = 0;
+    for (const w of words) {
+        if (HINDI.has(w) && w !== 'chai' && w !== 'coffee') {
+            hindiCount++;
+        }
+        if (ENGLISH.has(w) || (!HINDI.has(w) && !NEUTRAL.has(w) && w !== 'chai')) {
+            englishCount++;
+        }
+    }
+    const hasAnchor = ANCHOR_REGEX.test(cleanLower);
+
+    if (languageProfile === LANGUAGE_PROFILES.ENGLISH || languageProfile === 'english') {
         if (!isOptionPureEnglish(trimmed)) {
             return { valid: false, reason: 'unexpected_hinglish' };
         }
-    } else {
+    } else if (languageProfile === LANGUAGE_PROFILES.ENGLISH_HEAVY_MIXED) {
+        // Must NOT be flattened to pure English with zero Hindi anchors or words
+        if (hindiCount === 0 && !hasAnchor) {
+            return { valid: false, reason: 'flattened_to_pure_english' };
+        }
+        // Must maintain English-heavy conversational flow; reject if Hindi dominates more than 50% of the sentence
+        if (words.length > 5 && (hindiCount / words.length) > 0.50) {
+            return { valid: false, reason: 'excessive_hindi_for_english_heavy_profile' };
+        }
+    } else if (languageProfile === LANGUAGE_PROFILES.ROMAN_HINDI_HEAVY) {
+        // Predominantly Roman-script Hindi phrasing
         if (!isOptionAuthenticHinglish(trimmed)) {
             return { valid: false, reason: 'insufficient_hinglish' };
+        }
+        if (!hasAnchor || hindiCount < 2) {
+            return { valid: false, reason: 'insufficient_roman_hindi' };
+        }
+    } else {
+        // BALANCED_MIXED or generic Hinglish
+        if (!isOptionAuthenticHinglish(trimmed)) {
+            return { valid: false, reason: 'insufficient_hinglish' };
+        }
+        // Reject 100% archaic Hindi with zero English words
+        if (englishCount === 0 && words.length >= 5) {
+            return { valid: false, reason: 'missing_english_blend' };
         }
     }
 
