@@ -425,7 +425,7 @@ function countWords(str) {
 // In-flight request concurrency lock per authenticated user (Prevents parallel overlapping AI costs)
 const activeUserAiRequests = new Map();
 const activeUserAiTimestamps = new Map();
-const CONCURRENCY_LOCK_TTL_MS = 60000;
+const CONCURRENCY_LOCK_TTL_MS = 120000;
 function acquireUserConcurrencyLock(userId, requestId) {
     if (!userId || userId === 'guest_user') return { acquired: true, duplicate: false };
     const activeRequestId = activeUserAiRequests.get(userId);
@@ -1687,8 +1687,13 @@ const {
     bioMarketLock,
     inferLocalLanguage,
     resolveLanguageTarget,
+    resolveLanguageProfile,
     getAuthoritativeLanguageDirective,
-    validateGeneratedLanguage
+    getAuthoritativeProfileDirective,
+    validateGeneratedLanguage,
+    validateFinalOption,
+    validateFinalBatch,
+    LANGUAGE_PROFILES
 } = require('./middleware/languageSelection');
 
 
@@ -1938,6 +1943,131 @@ ${getAuthoritativeLanguageDirective(expectedLanguage, repairFeature)}`;
     }
 }
 
+async function executeQualityPipeline(options, feature = 'generic', languageProfile = 'english', source = '', history = [], deadlineAt = null) {
+    if (!options) return options;
+    const isArray = Array.isArray(options);
+    if (!isArray) {
+        return await repairLanguageMismatch(options, feature, languageProfile === 'english' ? 'english' : 'hinglish', source, history, deadlineAt);
+    }
+
+    const validation = validateFinalBatch(options, feature, languageProfile);
+    if (validation.valid && options.length === 10) {
+        return options;
+    }
+
+    console.warn(`[Quality Pipeline] Feature: ${feature}, Profile: ${languageProfile}, Invalid: ${validation.invalidIndices.length}, Total: ${options.length}. Details: ${JSON.stringify(validation.details)}. Initiating selective repair...`);
+
+    const repairFeature = feature.startsWith('chat_') ? 'chat' : feature;
+    const sourceLabel = feature === 'analyze' ? 'stage1_transcript' : feature === 'optimize' ? 'bio_language_source' : 'language_source';
+    const sourceStr = typeof source === 'string' ? source : JSON.stringify(source || '');
+
+    const approvedOptions = options
+        .map((opt, idx) => ({ idx, text: typeof opt === 'string' ? opt : JSON.stringify(opt) }))
+        .filter(item => !validation.invalidIndices.includes(item.idx) && item.idx < 10);
+
+    const neededIndices = [];
+    for (let i = 0; i < 10; i++) {
+        if (validation.invalidIndices.includes(i) || i >= options.length) {
+            neededIndices.push(i);
+        }
+    }
+
+    const selectiveRepairPrompt = `You are an elite bilingual dating and communication copywriter.
+We have an array of options being generated for the user.
+Approved options that MUST be kept intact and NOT duplicated:
+${approvedOptions.map(a => `[Option ${a.idx + 1} Approved]: ${a.text}`).join('\n')}
+
+We need EXACT replacements ONLY for the following specific option slot index(es): [${neededIndices.map(i => i + 1).join(', ')}].
+Total replacements required: ${neededIndices.length}.
+
+CRITICAL QUALITY & LANGUAGE RULES:
+1. Provide replacements that perfectly match the requested tone, structure, and language profile:
+${getAuthoritativeProfileDirective(languageProfile, repairFeature)}
+2. High-status, natural texting flow.
+3. ABSOLUTE BAN on broken grammar (NO "i rides", "me likes", "you is", dangling connectors, or repeated adjacent words).
+4. SCRIPT CONSTRAINT: 100% LATIN / ENGLISH ALPHABET ONLY. ABSOLUTE BAN ON DEVANAGARI CHARACTERS. Zero Devanagari.
+5. Return valid JSON strictly matching this schema:
+{
+  "replacements": [
+    ${neededIndices.map(i => `{ "slot": ${i + 1}, "text": "replacement text for option ${i + 1}" }`).join(',\n    ')}
+  ]
+}`;
+
+    const repairMessages = [
+        { role: 'system', content: withPromptBoundary(selectiveRepairPrompt) },
+        { role: 'user', content: `Original user context:\n${wrapUntrustedUserData(sourceLabel, sourceStr)}\n\nGenerate high-quality replacements for slots [${neededIndices.map(i => i + 1).join(', ')}] now.` }
+    ];
+
+    try {
+        if (deadlineAt) {
+            getOperationRemainingMs(deadlineAt, 1000);
+        }
+        const repairedText = await queryOpenRouter("qwen3-235b-a22b-2507", repairMessages, 0.25, 1000, 25000, null, deadlineAt);
+        if (!repairedText || containsDevanagari(repairedText)) {
+            const err = new Error(`Quality policy violation: Output failed quality validation and repair failed to produce valid non-Devanagari text.`);
+            err.code = 'LANGUAGE_OR_QUALITY_VIOLATION';
+            throw err;
+        }
+
+        let replacementMap = new Map();
+        try {
+            const jsonMatch = repairedText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                if (parsed && Array.isArray(parsed.replacements)) {
+                    for (const r of parsed.replacements) {
+                        const slot = Number(r.slot || r.index || r.slotIndex);
+                        const text = String(r.text || r.option || '').trim();
+                        if (!isNaN(slot) && text) {
+                            replacementMap.set(slot - 1, text);
+                        }
+                    }
+                }
+            }
+        } catch (_) {}
+
+        if (replacementMap.size === 0) {
+            const lines = repairedText.split('\n').map(l => l.trim()).filter(Boolean);
+            for (let li = 0; li < lines.length && li < neededIndices.length; li++) {
+                const cleanLine = lines[li].replace(/^(?:Option\s*)?\d+[\:\.\-]?\s*/i, '').trim();
+                if (cleanLine) {
+                    replacementMap.set(neededIndices[li], cleanLine);
+                }
+            }
+        }
+
+        const mergedOptions = [...options.slice(0, 10)];
+        while (mergedOptions.length < 10) {
+            mergedOptions.push('');
+        }
+
+        for (const idx of neededIndices) {
+            if (replacementMap.has(idx)) {
+                mergedOptions[idx] = replacementMap.get(idx);
+            }
+        }
+
+        const postValidation = validateFinalBatch(mergedOptions, feature, languageProfile);
+        if (postValidation.valid && mergedOptions.length === 10 && mergedOptions.every(o => typeof o === 'string' && o.trim().length >= 3)) {
+            return mergedOptions;
+        }
+
+        console.warn(`[Quality Pipeline Post-Repair Validation Failed] Details: ${JSON.stringify(postValidation.details)}`);
+        const err = new Error(`Quality policy violation: Output failed final quality validation after selective repair.`);
+        err.code = 'LANGUAGE_OR_QUALITY_VIOLATION';
+        throw err;
+    } catch (err) {
+        if (err && err.isTimeout) throw err;
+        if (err.code === 'LANGUAGE_OR_QUALITY_VIOLATION' || err.code === 'LANGUAGE_POLICY_VIOLATION') {
+            throw err;
+        }
+        console.error(`[Quality Repair Error] ${feature}:`, err.message);
+        const policyErr = new Error(`Quality policy violation: Selective repair failed: ${err.message}`);
+        policyErr.code = 'LANGUAGE_OR_QUALITY_VIOLATION';
+        throw policyErr;
+    }
+}
+
 // ==================== THE 4 CORE FEATURE API // 1. CHAT SCREENSHOT ANALYZER (/api/analyze & /api/analyze-chat-screenshot)
 app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
     const uid = getUserIdFromReq(req);
@@ -2142,7 +2272,7 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
                 return res.status(completed.statusCode).json(completed.data);
             }
             const inFlight = inFlightAiOperations.get(opKey);
-            if (inFlight) {
+            if (inFlight && inFlight !== operationPromise) {
                 try {
                     const result = await inFlight;
                     return res.status(result.statusCode).json(result.data);
@@ -2238,9 +2368,9 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
         const useShorthand = shorthandOption !== false;
         const emojiLevel = typeof emojiOption === 'number' ? emojiOption : 1;
 
-        let formattingRule = "FORMAT: Fully lowercase text, max 15-22 words per option.";
+        let formattingRule = "FORMAT: Fully lowercase text, natural texting rhythm (respecting slot length limits, max 20 words per option).";
         if (!useShorthand) {
-            formattingRule = "FORMAT: Standard capitalization, max 15-22 words per option.";
+            formattingRule = "FORMAT: Standard capitalization, natural texting rhythm (respecting slot length limits, max 20 words per option).";
         }
         if (emojiLevel === 0) {
             formattingRule += " Zero emojis.";
@@ -2371,24 +2501,11 @@ ANTI-CLICHÉ & META-NARRATION GUARDRAILS:
 2. PASSIVE-AGGRESSIVE BAN: NEVER sound insecure or passive-aggressive (BANNED: "upgrade your attention span", "got ghosted", "ignoring me", "why no reply", "too good to reply", "guess you're busy", "sorry for double texting").
 
 --------------------------------------------------------------------------------
-MODE FIREWALL & TONE RULES:
+ACTIVE MODE RULES: ${modeConfig.name}
 --------------------------------------------------------------------------------
-[MODE: CASUAL]
-- Vibe: Chill, relaxed, low-pressure, friend-vibe continuity.
-- BANNED: Flirting, pickup lines, smirks (😜), or romantic references ('shy smile', 'someone you like', 'date', 'cute').
-- Example for USER_LEFT_ON_READ: "random question but are you a spontaneous trip person or full planner?"
-
-[MODE: WITTY]
-- Vibe: Sharp observations, dry humor, clever callouts, sarcastic banter, self-aware.
-- BANNED: Generic compliments, cheesy pickup lines, or over-explaining.
-
-[MODE: FLIRTY]
-- Vibe: Playful tension, charming banter, subtle romantic teasing.
-- MANDATE: Builds romantic chemistry and warm tension without being crude or overly intense.
-
-[MODE: BOLD / CLOSER]
-- Vibe: High energy, direct, confident, making direct moves/plans.
-- MANDATE: Unapologetic charm and clear plan proposal (drinks, coffee, date, switching to IG/WhatsApp).
+- Tone & Vibe: ${modeConfig.description}
+- Structure & Categories:
+${modeConfig.bucketDefinitions}
 
 --------------------------------------------------------------------------------
 UNIVERSAL BATCH DIVERSITY LAW
@@ -2427,9 +2544,9 @@ ${formattingRule}`;
             historyForLang = chatHistory.slice(0, -1);
         }
         const textForLang = latestUserText || extractedTextContext;
-        const languageTarget = resolveLanguageTarget(textForLang, historyForLang, language);
+        const languageProfile = resolveLanguageProfile(textForLang, historyForLang, language);
         const generationMessages = [
-            { role: "system", content: withPromptBoundary(screenshotTextSystemPrompt + languageDirective(language, 'analyze') + getAuthoritativeLanguageDirective(languageTarget, 'analyze')) },
+            { role: "system", content: withPromptBoundary(screenshotTextSystemPrompt + languageDirective(language, 'analyze') + getAuthoritativeProfileDirective(languageProfile, 'analyze')) },
             { role: "user", content: `Here is the parsed conversation JSON state from Stage 1, wrapped as untrusted data:\n${wrapUntrustedUserData('stage1_transcript', extractedTextContext)}\n\nActive Response Mode: ${modeConfig.name}. Return the JSON object with 10 state-aware options matching this mode now.` }
         ];
 
@@ -2456,7 +2573,8 @@ ${formattingRule}`;
 
         // GENERALIZED SANITIZER (NO HARDCODED TERM PURGES, NO SPECIFIC PHRASE SUBSTITUTIONS)
         optionsList = optionsList.map(optionText => {
-            let cleaned = optionText.trim().replace(/^Option\s*\d+[\:\.\-]?\s*/i, "").replace(/\s+/g, ' ');
+            let stripped = optionText.trim().replace(/^Option\s*\d+[\:\.\-]?\s*/i, "").replace(/\s+/g, ' ');
+            let cleaned = (stripped && stripped.trim().length > 0) ? stripped : optionText.trim();
 
             // Strict Emoji Cap (Max 1 per string or based on level)
             if (emojiLevel === 0) {
@@ -2488,7 +2606,7 @@ ${formattingRule}`;
                 throw new Error("Screenshot analysis generated Devanagari text in Hinglish mode.");
             }
         }
-        optionsList = await repairLanguageMismatch(optionsList, "analyze", languageTarget, extractedTextContext, [], deadlineAt);
+        optionsList = await executeQualityPipeline(optionsList, "analyze", languageProfile, extractedTextContext, [], deadlineAt);
         const formattedText = optionsList.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
 
         try {
@@ -2504,8 +2622,10 @@ ${formattingRule}`;
             console.error("Database insert error (Analysis):", dbErr);
         }
 
-        if (!optionsList || !Array.isArray(optionsList) || optionsList.length === 0) {
-            throw new Error("Analysis failed: AI provider generated empty or malformed output.");
+        if (!optionsList || !Array.isArray(optionsList) || optionsList.length !== 10) {
+            const countErr = new Error(`Quality contract violation: Expected exactly 10 valid options, got ${optionsList ? optionsList.length : 0}.`);
+            countErr.code = 'EXACT_10_CONTRACT_VIOLATION';
+            throw countErr;
         }
 
         const settleResult = await settleCreditsDB(req, reqId);
@@ -2518,11 +2638,26 @@ ${formattingRule}`;
             });
         }
 
+        let authoritativeBalance = (settleResult && typeof settleResult.remainingCredits === 'number')
+            ? settleResult.remainingCredits
+            : deduction.remainingCredits;
+        try {
+            const currentUserId = getUserIdFromReq(req);
+            if (currentUserId) {
+                const freshBal = await getUserCreditsDB(currentUserId);
+                if (typeof freshBal === 'number') {
+                    authoritativeBalance = freshBal;
+                }
+            }
+        } catch (balErr) {
+            console.warn('[Post-settle Credit Fetch Notice]', balErr.message);
+        }
+
         const successPayload = {
             success: true,
             options: optionsList,
             text: formattedText,
-            credits: deduction.remainingCredits
+            credits: authoritativeBalance
         };
         cacheCompletedAiResponse(opKey, 200, successPayload);
         if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
@@ -2678,7 +2813,7 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
                 return res.status(completed.statusCode).json(completed.data);
             }
             const inFlight = inFlightAiOperations.get(opKey);
-            if (inFlight) {
+            if (inFlight && inFlight !== operationPromise) {
                 try {
                     const result = await inFlight;
                     return res.status(result.statusCode).json(result.data);
@@ -2725,8 +2860,8 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
         text = enforceWordLimit(text, 500);
 
         let formattingRule = useShorthand 
-            ? "FORMAT: Fully lowercase text, max 12 words per option, zero formal punctuation." 
-            : "FORMAT: Standard sentence capitalization and punctuation, max 12 words per option.";
+            ? "FORMAT: Fully lowercase text, natural texting rhythm (max 18 words per option, respecting rhythm diversity)." 
+            : "FORMAT: Standard sentence capitalization and punctuation, natural texting rhythm (max 18 words per option, respecting rhythm diversity).";
 
         if (emojiLevel === 0) {
             formattingRule += " Zero emojis.";
@@ -2736,38 +2871,47 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
             formattingRule += " Max 1 emoji per option at the very end.";
         }
 
-        const languageTarget = resolveLanguageTarget(textVal || text || "", chatHistory, language);
-        let icebreakerSystemPrompt = `You are an Elite Social Attraction Strategist and High-Status Dating Coach.
-Analyze the provided match details (bio, interests, or profile info) and generate EXACTLY 10 distinct opening lines matching the requested tone (Witty, Flirty, Casual, Direct / Bold, Closer).
-
---------------------------------------------------------------------------------
-MODE: DIRECT / BOLD — HIGH-STATUS FRAME CONTROL
---------------------------------------------------------------------------------
+        const activeVibe = canonicalizeIcebreakerVibe(requestedVibe);
+        let vibeGuidance = "";
+        if (activeVibe === "DIRECT") {
+            vibeGuidance = `MODE: DIRECT / BOLD — HIGH-STATUS FRAME CONTROL
 - CORE VIBE: High-status confidence, playful challenge, direct frame control, zero validation-seeking.
 - REQUIRED MECHANICS:
-  • Turn hostile or cynical bio statements (e.g. "i hate men", "i hate mens", "no guys allowed", "don't waste my time") into direct personal challenges or fun qualifications.
-  • Maintain an unbothered, high-value tone (as if YOU are evaluating HER, not begging for her approval).
+  • Turn hostile or cynical bio statements into direct personal challenges or fun qualifications.
+  • Maintain an unbothered, high-value tone.
+- ABSOLUTE NEGATIVE CONSTRAINTS:
+  1. NEVER ask for permission, approval, or validation.
+  2. NEVER use cliché "Nice Guy" tropes.
+  3. NEVER apologize or act defensive about being a guy.`;
+        } else if (activeVibe === "WITTY") {
+            vibeGuidance = `MODE: WITTY — SHARP OBSERVATIONAL BANTER
+- CORE VIBE: Playful observational humor, dry teasing, clever takes on their bio or photos.
+- Focus on effortless wit and funny banter that makes responding effortless and fun.`;
+        } else if (activeVibe === "FLIRTY") {
+            vibeGuidance = `MODE: FLIRTY — SMOOTH CHARM & PLAYFUL TENSION
+- CORE VIBE: Smooth, charming banter with an engaging spark and subtle chemistry without being crude.`;
+        } else if (activeVibe === "CASUAL") {
+            vibeGuidance = `MODE: CASUAL — LOW-PRESSURE NATURAL CONVERSATION
+- CORE VIBE: Grounded, relaxed conversation starter with zero pressure, like texting a fun mutual friend.`;
+        } else {
+            vibeGuidance = `MODE: CLOSER — HIGH-STATUS INVITATION TO CONNECT
+- CORE VIBE: Smooth transition into planning a quick drink, coffee, or switching to IG/WhatsApp.`;
+        }
 
-- ABSOLUTE NEGATIVE CONSTRAINTS (HARD BANNED PATTERNS):
-  1. NEVER ask for permission, approval, or validation (FORBIDDEN: "do I stand a chance?", "would you give me a shot?", "can I get a chance?", "am I your type?").
-  2. NEVER use cliché "Nice Guy" tropes (FORBIDDEN: "I'm not like other guys", "good thing I'm different", "I'm one of the good ones", "let me change your mind").
-  3. NEVER apologize or act defensive about being a guy.
-  4. NEVER append trailing index numbers, zero flags, or technical metadata.
+        const languageProfile = resolveLanguageProfile(textVal || text || "", chatHistory, language);
+        let icebreakerSystemPrompt = `You are an Elite Social Attraction Strategist and High-Status Dating Coach.
+Analyze the provided match details (bio, interests, or profile info) and generate EXACTLY 10 distinct opening lines matching the requested tone (${activeVibe}).
 
-- HIGH-STATUS DIRECT EXAMPLES FOR HOSTILE/CYNICAL BIOS:
-  • Bio: "i hate men" / "i hate mens"
-  • ✅ Good Direct Lines:
-    - "interesting take — care to test me?"
-    - "all men or just the ones who say 'i'm not like other guys'?"
-    - "you hate men but what about me specifically?"
-    - "bold claim. let's see if you can hold that standard in person."
+--------------------------------------------------------------------------------
+${vibeGuidance}
+--------------------------------------------------------------------------------
 
 --------------------------------------------------------------------------------
 UNIVERSAL BATCH DIVERSITY LAW
 --------------------------------------------------------------------------------
 When generating an array/batch of output options for a single user request:
 1. EVERY option in the batch MUST use a strictly distinct:
-   - Sentence length & rhythm (e.g., Option 1: 4-6 words, Option 2: 8-12 words, Option 3: 14+ words).
+   - Sentence length & rhythm (e.g., Option 1: 4-6 words, Option 2: 8-12 words, Option 3: 12-18 words).
    - Opening hook & lead-in prefix (NO TWO options may share the same first 2 words).
    - Ending format (e.g., Option 1: Open question, Option 2: Statement/No question, Option 3: This-or-That debate).
 
@@ -2779,29 +2923,35 @@ GENERAL ICEBREAKER LAWS:
 --------------------------------------------------------------------------------
 1. NO BORING OPENERS: Banned: "hey how are you", "how's your week", "nice profile", "what brings you here".
 2. NO CREEPY / POETIC PHRASING: Avoid romantic poetry, Wattpad villain tropes, or intense lines ("stolen glances", "destiny", "pushing boundaries").
-3. TONE EXECUTIONS:
-   - Witty: Playful observational banter or light teasing based on their details.
-   - Flirty: Smooth, witty charm with a subtle spark.
-   - Casual: Low-pressure, easy conversation starter.
-   - Direct / Bold: High-status confidence, direct callout, or playful challenge.
-   - Closer: Smooth line designed to transition into planning a quick coffee/drink date.
-4. ${formattingRule}` + languageDirective(language, 'icebreaker') + getAuthoritativeLanguageDirective(languageTarget, 'icebreaker');
+3. ${formattingRule}` + languageDirective(language, 'icebreaker') + getAuthoritativeProfileDirective(languageProfile, 'icebreaker');
 
         const responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(icebreakerSystemPrompt) },
             { role: "user", content: `${wrapUntrustedUserData('match_details', text)}\n\nRequested Tone: ${canonicalizeIcebreakerVibe(requestedVibe)}. Output the 10 numbered options now.` }
         ], 0.8, 650, 25000, null, deadlineAt);
 
-        let rawOptions = (responseText || "").split(/(?:^|\n)\d+[\.\)\:]\s*/).filter(s => s.trim().length > 0);
+        let rawOptions = [];
+        try {
+            const jsonMatch = (responseText || "").match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                if (parsed && Array.isArray(parsed.options) && parsed.options.length > 0) {
+                    rawOptions = parsed.options;
+                }
+            }
+        } catch (_) {}
+        if (rawOptions.length === 0) {
+            rawOptions = (responseText || "").split(/(?:^|\n)\d+[\.\)\:]\s*/).filter(s => s.trim().length > 0);
+        }
         if (rawOptions.length === 0) {
             rawOptions = (responseText || "").split(/\n+/).filter(s => s.trim().length > 0);
         }
 
         let cleanedOptions = rawOptions.map(opt => {
-            let cleaned = opt.replace(/^\[?ICEBREAKER_OPTION_\d+\]?\s*/i, '')
-                             .replace(/^Option\s*\d+[\:\.\-]?\s*/i, '')
-                             .replace(/[\s0-9]+$/, '') // ROOT PURGE OF TRAILING '0' / NUMBERS
-                             .trim();
+            let stripped = opt.replace(/^\[?ICEBREAKER_OPTION_\d+\]?\s*/i, '')
+                              .replace(/^Option\s*\d+[\:\.\-]?\s*/i, '')
+                              .trim();
+            let cleaned = (stripped && stripped.length > 0) ? stripped : opt.trim();
 
             // Negative constraint checks
             cleaned = cleaned.replace(/\b(?:do i stand a chance|give me a shot|can i get a chance)\b/gi, 'let\'s see if you can handle this');
@@ -2836,7 +2986,7 @@ GENERAL ICEBREAKER LAWS:
                 throw new Error("Icebreaker generation generated Devanagari text in Hinglish mode.");
             }
         }
-        cleanedOptions = await repairLanguageMismatch(cleanedOptions, "icebreaker", languageTarget, text || textVal, [], deadlineAt);
+        cleanedOptions = await executeQualityPipeline(cleanedOptions, "icebreaker", languageProfile, text || textVal, [], deadlineAt);
         if (!IS_PROD && process.env.DEBUG_PAYLOADS === 'true') {
             console.log("[ICEBREAKER CLEAN OUTPUT]:", cleanedOptions);
         }
@@ -2852,8 +3002,10 @@ GENERAL ICEBREAKER LAWS:
             console.error("Database insert error (Icebreaker):", dbErr);
         }
 
-        if (!cleanedOptions || !Array.isArray(cleanedOptions) || cleanedOptions.length === 0) {
-            throw new Error("Icebreaker generation failed: AI provider returned empty options.");
+        if (!cleanedOptions || !Array.isArray(cleanedOptions) || cleanedOptions.length !== 10) {
+            const countErr = new Error(`Quality contract violation: Expected exactly 10 valid options, got ${cleanedOptions ? cleanedOptions.length : 0}.`);
+            countErr.code = 'EXACT_10_CONTRACT_VIOLATION';
+            throw countErr;
         }
 
         const formattedText = cleanedOptions.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
@@ -2868,11 +3020,26 @@ GENERAL ICEBREAKER LAWS:
             });
         }
 
+        let authoritativeBalance = (settleResult && typeof settleResult.remainingCredits === 'number')
+            ? settleResult.remainingCredits
+            : deduction.remainingCredits;
+        try {
+            const currentUserId = getUserIdFromReq(req);
+            if (currentUserId) {
+                const freshBal = await getUserCreditsDB(currentUserId);
+                if (typeof freshBal === 'number') {
+                    authoritativeBalance = freshBal;
+                }
+            }
+        } catch (balErr) {
+            console.warn('[Post-settle Credit Fetch Notice]', balErr.message);
+        }
+
         const successPayload = {
             success: true,
             text: formattedText,
             options: cleanedOptions,
-            credits: deduction.remainingCredits
+            credits: authoritativeBalance
         };
         cacheCompletedAiResponse(opKey, 200, successPayload);
         if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
@@ -2932,28 +3099,26 @@ function sanitizeBioInput(rawInput, language = 'en') {
     cleaned = cleaned.replace(/^(just\s+)?downloaded\s+(hinge|tinder|bumble)\s*(and)?\s*/gi, '');
     cleaned = cleaned.replace(/i am a playboy/gi, 'confident and outgoing');
 
-    // 2. Grammar Cleanup (Fix broken verb forms & user typos)
-    cleaned = cleaned.replace(/\bi\s+rides\b/gi, 'riding');
-    cleaned = cleaned.replace(/\bi\s+goes\b/gi, 'going');
-    cleaned = cleaned.replace(/\bi\s+plays\b/gi, 'playing');
-    cleaned = cleaned.replace(/\bi\s+likes\b/gi, 'likes');
-    cleaned = cleaned.replace(/\bme\s+likes\b/gi, 'likes');
-    cleaned = cleaned.replace(/\bi\s+loves\b/gi, 'loves');
+    // 2. Grammar Cleanup (Fix broken verb forms & user typos without dropping subjects)
+    cleaned = cleaned.replace(/\bi\s+rides\b/gi, 'i ride');
+    cleaned = cleaned.replace(/\bi\s+goes\b/gi, 'i go');
+    cleaned = cleaned.replace(/\bi\s+plays\b/gi, 'i play');
+    cleaned = cleaned.replace(/\bi\s+likes\b/gi, 'i like');
+    cleaned = cleaned.replace(/\bme\s+likes\b/gi, 'i like');
+    cleaned = cleaned.replace(/\bi\s+loves\b/gi, 'i love');
 
     // 3. Demographic & Cultural Isolation Law (US / Western Lock)
     if (language === 'en') {
-    cleaned = cleaned.replace(/\bdhaba(s)?\b/gi, '24-hour diner');
-    cleaned = cleaned.replace(/\b(pani puri|vada pav|samosa(s)?|dosa(s)?|paratha(s)?)\b/gi, 'taco truck snacks');
-    cleaned = cleaned.replace(/\bchai tapri\b/gi, 'local coffee spot');
-    cleaned = cleaned.replace(/\bauto(s)?\b/gi, 'rideshare');
-    cleaned = cleaned.replace(/\broorkee\b/gi, 'hometown');
-    cleaned = cleaned.replace(/\bmonsoon(s)?\b/gi, 'rainy days');
+        cleaned = cleaned.replace(/\bdhaba(s)?\b/gi, '24-hour diner');
+        cleaned = cleaned.replace(/\b(pani puri|vada pav|samosa(s)?|dosa(s)?|paratha(s)?)\b/gi, 'taco truck snacks');
+        cleaned = cleaned.replace(/\bchai tapri\b/gi, 'local coffee spot');
+        cleaned = cleaned.replace(/\bauto(s)?\b/gi, 'rideshare');
+        cleaned = cleaned.replace(/\broorkee\b/gi, 'hometown');
+        cleaned = cleaned.replace(/\bmonsoon(s)?\b/gi, 'rainy days');
     }
 
-    // 4. Spelling & Typo Corrections
+    // 4. Spelling & Typo Corrections (Zero fact-changing substitutions)
     cleaned = cleaned.replace(/threaters|threatre|theaters/gi, 'theater');
-    cleaned = cleaned.replace(/\bbikes\b/gi, 'biking and motorcycle road trips');
-    cleaned = cleaned.replace(/apple is my (favaortae|favorite) fruit/gi, 'fan of late-night snacks and good food');
     cleaned = cleaned.replace(/favaortae/gi, 'favorite');
 
     if (cleaned.length < 2) {
@@ -3115,7 +3280,7 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
                 return res.status(completed.statusCode).json(completed.data);
             }
             const inFlight = inFlightAiOperations.get(opKey);
-            if (inFlight) {
+            if (inFlight && inFlight !== operationPromise) {
                 try {
                     const result = await inFlight;
                     return res.status(result.statusCode).json(result.data);
@@ -3154,7 +3319,8 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
         }
 
         const originalBioText = text || rawText;
-        const languageTarget = resolveLanguageTarget(originalBioText, chatHistory, language);
+        const languageProfile = resolveLanguageProfile(originalBioText, chatHistory, language);
+        const languageTarget = languageProfile === 'english' ? 'english' : 'hinglish';
         const sanitizedText = sanitizeBioInput(originalBioText, languageTarget === 'hinglish' ? 'hinglish' : 'en');
         const textPayload = sanitizedText;
 
@@ -3220,7 +3386,7 @@ GLOBAL TONE & SYNTAX RULES:
 11. EMOJI CONSTRAINT: Include at most ONE single emoji per option string. NEVER stack emojis. ${emojiInstruction}
 12. ABSOLUTE PROHIBITION ON PROMPT BOUNDARY & CONTROL SYNTAX: Never output, reproduce, or wrap any option in XML-like tags, delimiters, or control markers (such as <user_data...>, </user_data...>, <userdata...>, </userdata...>, or label= attributes). Output ONLY clean, natural user-facing text.
 
-FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize') + getAuthoritativeLanguageDirective(languageTarget, 'optimize');
+FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize') + getAuthoritativeProfileDirective(languageProfile, 'optimize');
 
         let responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(bioOptimizerSystemPrompt) },
@@ -3249,7 +3415,8 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
         let askMeAboutCount = 0;
 
         optionsList = optionsList.map(optionText => {
-            let cleaned = optionText.trim().replace(/^Option\s*\d+[\:\.\-]?\s*/i, "");
+            let stripped = optionText.trim().replace(/^Option\s*\d+[\:\.\-]?\s*/i, "");
+            let cleaned = (stripped && stripped.trim().length > 0) ? stripped : optionText.trim();
             
             // Clean template couplets and negative parentheticals deterministically
             cleaned = cleaned.replace(/([^\,\.\n]+)\s+by habit[,\s]*([^\,\.\n]+)\s+by obsession/gi, '$1 and $2');
@@ -3336,7 +3503,7 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
                 throw new Error("Bio optimization generated Devanagari text in Hinglish mode.");
             }
         }
-        optionsList = await repairLanguageMismatch(optionsList, "optimize", languageTarget, originalBioText, [], deadlineAt);
+        optionsList = await executeQualityPipeline(optionsList, "optimize", languageProfile, originalBioText, [], deadlineAt);
         const formattedText = optionsList.map((opt, i) => `${i + 1}. ${opt}`).join("\n\n");
 
         try {
@@ -3351,8 +3518,10 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
             console.error("Database insert error (Bio):", dbErr);
         }
 
-        if (!optionsList || !Array.isArray(optionsList) || optionsList.length === 0) {
-            throw new Error("Bio optimization failed: AI provider returned empty options.");
+        if (!optionsList || !Array.isArray(optionsList) || optionsList.length !== 10) {
+            const countErr = new Error(`Quality contract violation: Expected exactly 10 valid options, got ${optionsList ? optionsList.length : 0}.`);
+            countErr.code = 'EXACT_10_CONTRACT_VIOLATION';
+            throw countErr;
         }
 
         const settleResult = await settleCreditsDB(req, reqId);
@@ -3365,11 +3534,26 @@ FORMATTING: Use ${casingInstruction}.` + languageDirective(language, 'optimize')
             });
         }
 
+        let authoritativeBalance = (settleResult && typeof settleResult.remainingCredits === 'number')
+            ? settleResult.remainingCredits
+            : deduction.remainingCredits;
+        try {
+            const currentUserId = getUserIdFromReq(req);
+            if (currentUserId) {
+                const freshBal = await getUserCreditsDB(currentUserId);
+                if (typeof freshBal === 'number') {
+                    authoritativeBalance = freshBal;
+                }
+            }
+        } catch (balErr) {
+            console.warn('[Post-settle Credit Fetch Notice]', balErr.message);
+        }
+
         const successPayload = {
             success: true,
             options: optionsList,
             text: formattedText,
-            credits: deduction.remainingCredits
+            credits: authoritativeBalance
         };
         cacheCompletedAiResponse(opKey, 200, successPayload);
         if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
@@ -3551,7 +3735,7 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
                 return res.status(completed.statusCode).json(completed.data);
             }
             const inFlight = inFlightAiOperations.get(opKey);
-            if (inFlight) {
+            if (inFlight && inFlight !== operationPromise) {
                 try {
                     const result = await inFlight;
                     return res.status(result.statusCode).json(result.data);

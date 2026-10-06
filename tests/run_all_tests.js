@@ -99,7 +99,11 @@ const testSuites = [
     { name: '80. Maeve Practice Partner & Coach Modes Matrix', file: 'maeve_modes_matrix.test.js', timeoutMs: 60_000 },
     { name: '81. Non-Chat Lifecycle & Hinglish Repair Guard', file: 'non_chat_lifecycle_and_hinglish_repair.test.js', timeoutMs: 30_000 },
     { name: '82. Non-Chat Reliability & Architectural Integration', file: 'local_e2e_nonchat_integration.test.js', timeoutMs: 30_000 },
-    { name: '83. True Browser E2E Non-Chat Suite (Playwright Chromium)', file: 'true_browser_e2e_nonchat.test.js', timeoutMs: 60_000 }
+    { name: '83. True Browser E2E Non-Chat Suite (Playwright Chromium)', file: 'true_browser_e2e_nonchat.test.js', timeoutMs: 60_000 },
+    { name: '84. Quality Pipeline Selective Repair & Profile Gate', file: 'quality_pipeline_selective_repair.test.js', timeoutMs: 30_000 },
+    { name: '85. Concurrency Lock TTL & Self-Await Deadlock Guard', file: 'concurrency_and_self_await.test.js', timeoutMs: 30_000 },
+    { name: '86. Credit Authoritative Reconciliation & Monotonic Sequence', file: 'credit_authoritative_reconciliation.test.js', timeoutMs: 30_000 },
+    { name: '87. Quality & Mixed Language Repro Suite', file: 'quality_and_mixed_language_repro.test.js', timeoutMs: 30_000 }
 ];
 
 console.log('========================================================================');

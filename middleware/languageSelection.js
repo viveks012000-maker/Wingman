@@ -86,45 +86,134 @@ function inferLocalLanguage(text, history = []) {
     return 'en';
 }
 
-function resolveLanguageTarget(text, history = [], explicitMode = 'auto') {
+const LANGUAGE_PROFILES = Object.freeze({
+    ENGLISH: 'english',
+    ENGLISH_HEAVY_MIXED: 'english_heavy_mixed',
+    BALANCED_MIXED: 'balanced_mixed',
+    ROMAN_HINDI_HEAVY: 'roman_hindi_heavy'
+});
+
+function resolveLanguageProfile(text, history = [], explicitMode = 'auto') {
     if (explicitMode === 'hinglish' || explicitMode === 'hi-latn' || explicitMode === 'hi_latn') {
-        return 'hinglish';
+        return LANGUAGE_PROFILES.BALANCED_MIXED;
     }
     if (explicitMode === 'en') {
-        return 'english';
+        return LANGUAGE_PROFILES.ENGLISH;
     }
-    const detected = inferLocalLanguage(text, history);
-    return detected === 'hinglish' ? 'hinglish' : 'english';
+
+    const analyzeText = (txt) => {
+        if (!txt || typeof txt !== 'string') return null;
+        const words = txt.toLowerCase().match(/[a-z]+/g) || [];
+        if (!words.length || words.every(w => NEUTRAL.has(w))) return null;
+
+        let hindiCount = 0;
+        let englishCount = 0;
+        for (const w of words) {
+            if (HINDI.has(w) && w !== 'chai' && w !== 'coffee') hindiCount++;
+            if (ENGLISH.has(w)) englishCount++;
+        }
+
+        const totalScored = hindiCount + englishCount;
+        if (totalScored === 0) return null;
+
+        const hasAnchor = ANCHOR_REGEX.test(txt);
+        const hindiRatio = hindiCount / totalScored;
+
+        if (!hasAnchor && (hindiCount < 2 || englishCount >= hindiCount * 2)) {
+            return LANGUAGE_PROFILES.ENGLISH;
+        }
+
+        if (hindiRatio >= 0.65 || (hindiCount >= 4 && hindiCount > englishCount)) {
+            return LANGUAGE_PROFILES.ROMAN_HINDI_HEAVY;
+        }
+
+        if (hindiRatio >= 0.35 && hindiRatio < 0.65) {
+            return LANGUAGE_PROFILES.BALANCED_MIXED;
+        }
+
+        if (hindiCount >= 1 || hasAnchor) {
+            return LANGUAGE_PROFILES.ENGLISH_HEAVY_MIXED;
+        }
+
+        return LANGUAGE_PROFILES.ENGLISH;
+    };
+
+    const directProfile = analyzeText(text);
+    if (directProfile) return directProfile;
+
+    if (Array.isArray(history)) {
+        for (const message of history.slice(-50).reverse()) {
+            if (!message || message.role !== 'user') continue;
+            const candidateProfile = analyzeText(message.content || message.text);
+            if (candidateProfile) return candidateProfile;
+        }
+    }
+
+    return LANGUAGE_PROFILES.ENGLISH;
 }
 
-function getAuthoritativeLanguageDirective(target, feature) {
-    if (target === 'hinglish') {
-        const featureExamples = feature === 'icebreaker'
-            ? `\n- AUTHENTIC ROMAN HINGLISH OPENER STYLE:
+function resolveLanguageTarget(text, history = [], explicitMode = 'auto') {
+    const profile = resolveLanguageProfile(text, history, explicitMode);
+    return profile === LANGUAGE_PROFILES.ENGLISH ? 'english' : 'hinglish';
+}
+
+function getAuthoritativeProfileDirective(profile, feature) {
+    if (profile === LANGUAGE_PROFILES.ENGLISH || profile === 'english') {
+        return `\n\n[AUTHORITATIVE TARGET DETERMINATION: ENGLISH]
+[PROFILE: HIGH-STATUS ENGLISH]
+The conversation/input context is in English.
+Write all generated response options in natural, high-status modern English.
+- Use 100% LATIN / ENGLISH ALPHABET ONLY. ABSOLUTE BAN ON DEVANAGARI CHARACTERS. Zero Devanagari.
+- Preserve all existing formatting rules, slot counts, and tone constraints.`;
+    }
+
+    if (profile === LANGUAGE_PROFILES.ENGLISH_HEAVY_MIXED) {
+        return `\n\n[AUTHORITATIVE TARGET DETERMINATION: ROMAN-SCRIPT HINGLISH]
+[PROFILE: ENGLISH-DOMINANT HINGLISH BLEND]
+The user's context mixes English with Roman Hindi, with dominant English framing (e.g. "mera naam sumit hai and i like basketball").
+Generate response options with modern English conversational flow, naturally anchored with authentic Roman Hindi phrasing (e.g., "kaafi", "usually court pe milunga", "scene sort karte hain", "real question: pickup game ya proper league?").
+- DO NOT flatten the output to pure English. Respect the user's Roman Hindi elements.
+- DO NOT force archaic or pure Hindi. Maintain the user's sleek English-dominant bilingual style.
+- SCRIPT REQUIREMENT: Use 100% LATIN / ENGLISH ALPHABET ONLY. ABSOLUTE BAN ON DEVANAGARI CHARACTERS. Zero Devanagari script.
+- Preserve all existing formatting rules, slot counts, and tone constraints.`;
+    }
+
+    if (profile === LANGUAGE_PROFILES.ROMAN_HINDI_HEAVY) {
+        return `\n\n[AUTHORITATIVE TARGET DETERMINATION: ROMAN-SCRIPT HINGLISH]
+[PROFILE: ROMAN HINDI CONVERSATIONAL FLUENCY]
+The user's context is predominantly Roman Hindi/Hinglish (e.g. "mujhe basketball bahut pasand hai aur weekend pe court jana acha lagta hai").
+Generate response options in authentic, fluent Roman-script Hindi/Hinglish as texted by urban young adults (e.g., "weekend pe court scene pakka?", "kaafi sahi vibe hai, match kab ho raha hai?").
+- Integrate conversational Roman Hindi throughout every option with natural casual English loanwords.
+- SCRIPT REQUIREMENT: Use 100% LATIN / ENGLISH ALPHABET ONLY. ABSOLUTE BAN ON DEVANAGARI CHARACTERS. Zero Devanagari script.
+- Preserve all existing formatting rules, slot counts, and tone constraints.`;
+    }
+
+    // Default: BALANCED_MIXED or generic hinglish
+    const featureExamples = feature === 'icebreaker'
+        ? `\n- AUTHENTIC ROMAN HINGLISH OPENER STYLE:
   • "basketball kaafi pasand hai ya bas weekend hobby hai? 🏀"
   • "profile kaafi cool hai, weekend scene kya hota hai usually?"
   • "court pe challenge accept karogi ya sirf baatein? 😉"
   • "coffee tapri pe honest debate: pickup game ya proper league?"`
-            : (feature === 'optimize'
-                ? `\n- AUTHENTIC ROMAN HINGLISH BIO STYLE:
+        : (feature === 'optimize'
+            ? `\n- AUTHENTIC ROMAN HINGLISH BIO STYLE:
   • "basketball kaafi pasand hai, weekends usually court pe milunga 🏀\n\nreal question: pickup game ya proper league?"
   • "late-night drives aur playlist debates meri specialty hai 🎧\n\npick a side: slow acoustic ya full volume drive?"
   • "gym discipline intact hai, par Sunday brunch pe zero self-control 🥞\n\nhonest debate: workout first ya directly food?"`
-                : '');
+            : '');
 
-        return `\n\n[AUTHORITATIVE TARGET DETERMINATION: ROMAN-SCRIPT HINGLISH]
+    return `\n\n[AUTHORITATIVE TARGET DETERMINATION: ROMAN-SCRIPT HINGLISH]
+[PROFILE: BALANCED ROMAN-SCRIPT HINGLISH]
 The conversation/input context is in Hinglish or mixed Roman Hindi + English.
 You MUST write all generated response options in natural, modern Roman-script Hinglish (the authentic, casual blend of English and Hindi texted by urban young adults in Delhi/Mumbai/Bangalore).
-- Do NOT output pure English. Mixed inputs (e.g. "mera naam sumit hai and i like basketball", "mera naam sanchi hai and i like basketball bhaut zayada") MUST receive natural Roman-script Hinglish responses matching the mixed conversational style.
-- Adding just one isolated Indian noun like "chai" to an otherwise pure-English sentence does NOT qualify as Hinglish. Naturally integrate conversational Roman Hindi phrasing throughout every option (e.g., "kaafi pasand hai", "weekends usually court pe milunga", "scene sort karte hain", "kaafi sahi", "kya lagta hai", "milte hain").${featureExamples}
+- Do NOT output pure English. Mixed inputs MUST receive natural Roman-script Hinglish responses matching the mixed conversational style.
+- Naturally integrate conversational Roman Hindi phrasing throughout every option (e.g., "kaafi pasand hai", "weekends usually court pe milunga", "scene sort karte hain", "kaafi sahi", "kya lagta hai", "milte hain").${featureExamples}
 - SCRIPT REQUIREMENT: Use 100% LATIN / ENGLISH ALPHABET ONLY. ABSOLUTE BAN ON DEVANAGARI CHARACTERS. Zero Devanagari script.
 - Preserve all existing formatting rules, slot counts, and tone constraints.`;
-    }
-    return `\n\n[AUTHORITATIVE TARGET DETERMINATION: ENGLISH]
-The conversation/input context is in English.
-Write all generated response fields in natural, high-status English.
-- Use 100% LATIN / ENGLISH ALPHABET ONLY. Zero Devanagari script.
-- Preserve all existing formatting rules, slot counts, and tone constraints.`;
+}
+
+function getAuthoritativeLanguageDirective(target, feature) {
+    return getAuthoritativeProfileDirective(target === 'hinglish' ? LANGUAGE_PROFILES.BALANCED_MIXED : LANGUAGE_PROFILES.ENGLISH, feature);
 }
 
 function isOptionAuthenticHinglish(optStr) {
@@ -240,15 +329,107 @@ function validateGeneratedLanguage(target, output) {
     return { valid: true };
 }
 
+const DANGLING_CONNECTOR_REGEX = /\b(?:and|or|aur|par|with|because|to|ki|ke|lekin|agar|but|of|for|in|on|at|ya|se)\s*[\.\,\!\?]?$/i;
+const REPEATED_WORDS_REGEX = /\b([a-z]{2,})\s+\1\b/i;
+const ALLOWED_REPEATED_WORDS = new Set(['ha', 'bye', 'knock', 'tapri', 'dhaba', 'court']);
+const BROKEN_SUBJECT_VERB_REGEX = /\b(?:i|you|we|they)\s+(?:rides|goes|likes|is)\b/i;
+const BROKEN_PRONOUN_SUBJECT_REGEX = /\b(?:me|him|her|them)\s+(?:likes|rides|goes|wants|thinks|is)\b/i;
+const BROKEN_THIRD_PERSON_REGEX = /\b(?:she|he|it)\s+(?:like|ride|go)\b/i;
+
+function validateFinalOption(opt, feature = 'generic', languageProfile = 'english', slotIndex = 0) {
+    if (!opt || typeof opt !== 'string' || opt.trim().length < 3) {
+        return { valid: false, reason: 'empty_or_too_short' };
+    }
+
+    const trimmed = opt.trim();
+
+    if (containsDevanagari(trimmed)) {
+        return { valid: false, reason: 'contains_devanagari' };
+    }
+
+    if (DANGLING_CONNECTOR_REGEX.test(trimmed)) {
+        return { valid: false, reason: 'dangling_connector' };
+    }
+
+    const repeatedMatch = trimmed.match(REPEATED_WORDS_REGEX);
+    if (repeatedMatch) {
+        const word = repeatedMatch[1].toLowerCase();
+        if (!ALLOWED_REPEATED_WORDS.has(word)) {
+            return { valid: false, reason: 'repeated_adjacent_words', word: repeatedMatch[0] };
+        }
+    }
+
+    if (BROKEN_SUBJECT_VERB_REGEX.test(trimmed)) {
+        return { valid: false, reason: 'subject_verb_disagreement' };
+    }
+
+    if (BROKEN_PRONOUN_SUBJECT_REGEX.test(trimmed)) {
+        return { valid: false, reason: 'broken_subject_pronoun' };
+    }
+
+    if (BROKEN_THIRD_PERSON_REGEX.test(trimmed)) {
+        return { valid: false, reason: 'subject_verb_disagreement' };
+    }
+
+    // Language profile check
+    const isProfileEnglish = languageProfile === LANGUAGE_PROFILES.ENGLISH || languageProfile === 'english';
+    if (isProfileEnglish) {
+        if (!isOptionPureEnglish(trimmed)) {
+            return { valid: false, reason: 'unexpected_hinglish' };
+        }
+    } else {
+        if (!isOptionAuthenticHinglish(trimmed)) {
+            return { valid: false, reason: 'insufficient_hinglish' };
+        }
+    }
+
+    return { valid: true };
+}
+
+function validateFinalBatch(options, feature = 'generic', languageProfile = 'english') {
+    if (!Array.isArray(options)) {
+        return {
+            valid: false,
+            invalidIndices: [],
+            details: [{ index: -1, reason: 'not_an_array' }]
+        };
+    }
+
+    const invalidIndices = [];
+    const details = [];
+
+    for (let i = 0; i < options.length; i++) {
+        const opt = options[i];
+        const optStr = typeof opt === 'string' ? opt : (opt && opt.line ? opt.line : JSON.stringify(opt));
+        const res = validateFinalOption(optStr, feature, languageProfile, i);
+        if (!res.valid) {
+            invalidIndices.push(i);
+            details.push({ index: i, reason: res.reason, option: optStr });
+        }
+    }
+
+    return {
+        valid: invalidIndices.length === 0,
+        invalidIndices,
+        details
+    };
+}
+
 module.exports = {
     requestLanguageMode,
     languageDirective,
     bioMarketLock,
     inferLocalLanguage,
     resolveLanguageTarget,
+    resolveLanguageProfile,
     getAuthoritativeLanguageDirective,
+    getAuthoritativeProfileDirective,
     validateGeneratedLanguage,
+    validateFinalOption,
+    validateFinalBatch,
     isOptionAuthenticHinglish,
     isOptionPureEnglish,
-    containsDevanagari
+    containsDevanagari,
+    LANGUAGE_PROFILES
 };
+
