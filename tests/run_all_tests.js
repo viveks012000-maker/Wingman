@@ -107,7 +107,10 @@ const testSuites = [
     { name: '88. Credit Session Safety & Browser Monotonic Guard', file: 'credit_session_safety_override.test.js', timeoutMs: 30_000 },
     { name: '89. Credit Authoritative Execution Suite', file: 'credit_authoritative_execution.test.js', timeoutMs: 30_000 },
     { name: '90. Ledger Ambiguous Transport Recovery & Distinction Suite', file: 'ledger_ambiguous_transport_recovery.test.js', timeoutMs: 30_000 },
-    { name: '91. Language Token Scorer & Natural Grammar Suite', file: 'score_language_tokens.test.js', timeoutMs: 30_000 }
+    { name: '91. Language Token Scorer & Natural Grammar Suite', file: 'score_language_tokens.test.js', timeoutMs: 30_000 },
+    { name: '92. Profile Validation Matrix & Contract Suite', file: 'profile_validation_matrix.test.js', timeoutMs: 30_000 },
+    { name: '93. Client Credit Race & ForceFresh Semantics Suite', file: 'client_credit_race_and_forcefresh.test.js', timeoutMs: 30_000 },
+    { name: '94. Real Latency Telemetry & Zero-PII Instrumentation Suite', file: 'perf_telemetry_instrumentation.test.js', timeoutMs: 30_000 }
 ];
 
 console.log('========================================================================');

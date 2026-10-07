@@ -46,7 +46,7 @@ assert(
 );
 
 const missingWrites = [...canonicalSafety.matchAll(/state\.creditsStatus = "missing_profile";/g)];
-assert(missingWrites.length >= 2, 'All profile-missing result paths must remain explicit');
+assert(missingWrites.length >= 1, 'Profile-missing result path must remain explicit');
 for (const match of missingWrites) {
     const prefix = canonicalSafety.slice(Math.max(0, match.index - 500), match.index);
     assert(
@@ -66,12 +66,12 @@ for (const match of errorWrites) {
 }
 
 assert(
-    canonicalSafety.includes('const creditsRes = await window.fetchProfileCredits(userId);'),
-    'Client fallback must receive only the authoritative Supabase user ID'
+    !canonicalSafety.includes('window.fetchProfileCredits') && !canonicalSafety.includes(".from('profiles')"),
+    'Canonical wallet verification must use /api/credits only and never fall back to direct Supabase queries'
 );
 assert(
     canonicalSafety.includes("const resp = await fetch((apiBase || '') + '/api/credits', { headers: authHeaders });"),
-    'Authenticated /api/credits fallback must remain available'
+    'Authenticated /api/credits canonical query must remain available'
 );
 assert(
     canonicalSafety.includes('inFlightCreditCheckPromises.get(mapKey) === newPromise') &&

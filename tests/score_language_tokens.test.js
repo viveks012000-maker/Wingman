@@ -79,32 +79,49 @@ assert.strictEqual(
 console.log('✔ All 4 canonical fixtures resolve to their expected language profiles.\n');
 
 // -----------------------------------------------------------------
-// TEST 3: Unnatural Code-Switching Detection
+// TEST 3: Unnatural Code-Switching Detection & Signature Sensitivity
 // -----------------------------------------------------------------
-console.log('▶ [TEST 3] Unnatural Code-Switching Rejection');
+console.log('▶ [TEST 3] Unnatural Code-Switching Rejection & Signature Sensitivity');
 
-const unnatural1 = validateFinalOption('I love basketball hai', 0, 'icebreaker', LANGUAGE_PROFILES.BALANCED_MIXED);
+const unnatural1 = validateFinalOption('I love basketball hai', 'icebreaker', LANGUAGE_PROFILES.BALANCED_MIXED, 0);
 assert.strictEqual(unnatural1.valid, false);
 assert.strictEqual(unnatural1.reason, 'unnatural_code_switching', '"I love basketball hai" must be rejected as unnatural code switching');
 
-const unnatural2 = validateFinalOption('You like pizza hai.', 0, 'icebreaker', LANGUAGE_PROFILES.BALANCED_MIXED);
+const unnatural2 = validateFinalOption('You like pizza hai.', 'icebreaker', LANGUAGE_PROFILES.BALANCED_MIXED, 0);
 assert.strictEqual(unnatural2.valid, false);
 assert.strictEqual(unnatural2.reason, 'unnatural_code_switching', '"You like pizza hai." must be rejected as unnatural code switching');
 
-const unnatural3 = validateFinalOption('I enjoy travelling on weekends tha', 0, 'icebreaker', LANGUAGE_PROFILES.BALANCED_MIXED);
+const unnatural3 = validateFinalOption('I enjoy travelling on weekends tha', 'icebreaker', LANGUAGE_PROFILES.BALANCED_MIXED, 0);
 assert.strictEqual(unnatural3.valid, false);
 assert.strictEqual(unnatural3.reason, 'unnatural_code_switching', '"I enjoy travelling on weekends tha" must be rejected as unnatural code switching');
 
 // Natural Hinglish sentences must NOT be rejected as unnatural code-switching
-const natural1 = validateFinalOption('mujhe basketball bahut pasand hai, court pe challenge kab?', 0, 'icebreaker', LANGUAGE_PROFILES.BALANCED_MIXED);
+const natural1 = validateFinalOption('mujhe basketball bahut pasand hai, court pe challenge kab?', 'icebreaker', LANGUAGE_PROFILES.BALANCED_MIXED, 0);
 assert.strictEqual(natural1.valid, true, 'Natural Hinglish with proper Hindi grammar must pass');
 
-const natural2 = validateFinalOption('basketball kaafi pasand hai, weekends usually court pe milunga', 0, 'icebreaker', LANGUAGE_PROFILES.BALANCED_MIXED);
+const natural2 = validateFinalOption('basketball kaafi pasand hai, weekends usually court pe milunga', 'icebreaker', LANGUAGE_PROFILES.BALANCED_MIXED, 0);
 assert.strictEqual(natural2.valid, true, 'Natural Hinglish blend must pass');
 
-const natural3 = validateFinalOption('aapke hisaab se sabse underrated cafe kaunsa hai?', 0, 'icebreaker', LANGUAGE_PROFILES.BALANCED_MIXED);
+const natural3 = validateFinalOption('aapke hisaab se sabse underrated cafe kaunsa hai?', 'icebreaker', LANGUAGE_PROFILES.BALANCED_MIXED, 0);
 assert.strictEqual(natural3.valid, true, 'Natural question with aapke hisaab se must pass');
-console.log('✔ Unnatural code-switching correctly rejected; natural Hinglish accepted.\n');
+
+// Signature-Sensitive Tests:
+// Pure English text supplied with BALANCED_MIXED must fail specifically for insufficient_hinglish
+const pureEnglishCheck = validateFinalOption('I really like playing basketball and exploring cafes on weekends.', 'icebreaker', LANGUAGE_PROFILES.BALANCED_MIXED, 0);
+assert.strictEqual(pureEnglishCheck.valid, false);
+assert.strictEqual(pureEnglishCheck.reason, 'insufficient_hinglish', 'Pure English text in BALANCED_MIXED must fail specifically with insufficient_hinglish');
+
+// Genuine English-heavy mixed candidate
+const englishHeavyCandidate = 'I love playing basketball on weekends with friends, court pe milenge';
+assert.strictEqual(
+    resolveLanguageProfile(englishHeavyCandidate),
+    LANGUAGE_PROFILES.ENGLISH_HEAVY_MIXED,
+    'English-heavy candidate must resolve to ENGLISH_HEAVY_MIXED'
+);
+const englishHeavyCheck = validateFinalOption(englishHeavyCandidate, 'icebreaker', LANGUAGE_PROFILES.ENGLISH_HEAVY_MIXED, 0);
+assert.strictEqual(englishHeavyCheck.valid, true, 'English-heavy mixed candidate must pass ENGLISH_HEAVY_MIXED validation');
+
+console.log('✔ Unnatural code-switching correctly rejected; signature sensitivity and English-heavy candidate verified.\n');
 
 // -----------------------------------------------------------------
 // TEST 4: Batch Diversity & Banned Anchor Detection
