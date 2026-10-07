@@ -276,9 +276,8 @@ function verifyCriticalRuntimeContent() {
   if (!appJs.includes('const freshCreditCheck = await window.checkCreditBalance();')) {
     fail('Fresh authoritative balance guard is absent');
   }
-  if (!appJs.includes('const authoritativeBalanceCheck = await window.checkCreditBalance({ forceFresh: true });') &&
-      !appJs.includes('const authoritativeBalanceCheck = await window.checkCreditBalance();')) {
-    fail('HTTP 402 authoritative wallet re-check is absent');
+  if (!appJs.includes('const authoritativeBalanceCheck = await window.checkCreditBalance({ forceFresh: true });')) {
+    fail('HTTP 402 authoritative wallet re-check with forceFresh is absent');
   }
 
   for (const rel of PUBLIC_FILES.filter(file => file.endsWith('.html'))) {

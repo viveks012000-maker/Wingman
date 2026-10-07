@@ -3425,14 +3425,9 @@ STRICT LAWS:
                 }
 
                 if (response.status >= 500) {
-                    if (typeof errJson.credits === "number") {
-                        if (typeof window.commitAuthoritativeCreditBalance === 'function') {
-                            window.commitAuthoritativeCreditBalance(errJson.credits);
-                        } else {
-                            window.updateUICredits(errJson.credits);
-                        }
-                    }
-                    if (typeof window.checkCreditBalance === 'function') {
+                    if (typeof window.reconcileCreditPayload === 'function') {
+                        await window.reconcileCreditPayload(errJson);
+                    } else if (typeof window.checkCreditBalance === 'function') {
                         await window.checkCreditBalance({ forceFresh: true });
                     }
                     trackWingmanEvent('generation_failed', { endpoint: endpoint, status: response.status });
@@ -3442,12 +3437,10 @@ STRICT LAWS:
                     return null;
                 }
 
-                if (typeof errJson.credits === "number") {
-                    if (typeof window.commitAuthoritativeCreditBalance === 'function') {
-                        window.commitAuthoritativeCreditBalance(errJson.credits);
-                    } else {
-                        window.updateUICredits(errJson.credits);
-                    }
+                if (typeof window.reconcileCreditPayload === 'function') {
+                    await window.reconcileCreditPayload(errJson);
+                } else if (typeof window.checkCreditBalance === 'function') {
+                    await window.checkCreditBalance({ forceFresh: true });
                 }
                 trackWingmanEvent('generation_failed', { endpoint: endpoint, status: response.status });
                 if (typeof window.showToast === 'function') {
@@ -3459,7 +3452,7 @@ STRICT LAWS:
             const data = await response.json();
             if (typeof window.reconcileCreditPayload === 'function') {
                 window.reconcileCreditPayload(data);
-            } else if (typeof data.credits === "number") {
+            } else if (data && data.creditsVerified === true && typeof data.credits === "number" && Number.isFinite(data.credits)) {
                 if (typeof window.commitAuthoritativeCreditBalance === 'function') {
                     window.commitAuthoritativeCreditBalance(data.credits);
                 } else {
@@ -4355,9 +4348,9 @@ STRICT LAWS:
                         : chatData.reply;
                     if (typeof window.reconcileCreditPayload === 'function') {
                         window.reconcileCreditPayload(chatData);
-                    } else {
+                    } else if (chatData && chatData.creditsVerified === true) {
                         const updatedBal = typeof chatData.credits === 'number' ? chatData.credits : (typeof chatData.creditsRemaining === 'number' ? chatData.creditsRemaining : null);
-                        if (updatedBal !== null) {
+                        if (updatedBal !== null && Number.isFinite(updatedBal)) {
                             if (typeof window.commitAuthoritativeCreditBalance === 'function') {
                                 window.commitAuthoritativeCreditBalance(updatedBal);
                             } else {
@@ -4424,10 +4417,11 @@ STRICT LAWS:
             } else {
                 if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 const errJson = await chatResp.json().catch(() => ({}));
-                if (typeof errJson.credits === 'number') {
-                    window.updateUICredits(errJson.credits);
+                if (typeof window.reconcileCreditPayload === 'function') {
+                    await window.reconcileCreditPayload(errJson);
+                } else if (typeof window.checkCreditBalance === 'function') {
+                    await window.checkCreditBalance({ forceFresh: true });
                 }
-                if (typeof window.checkCreditBalance === 'function') await window.checkCreditBalance({ forceFresh: true });
                 const errMsg = errJson.error || "Sorry, Maeve is taking a quick breath. If you were charged credits, please contact support.mywingman@gmail.com.";
                 window.renderChatboxBubble("Notice: " + errMsg, "assistant");
             }

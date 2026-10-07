@@ -62,7 +62,7 @@ const { validateImagePayload } = require('./middleware/imageValidator');
 const { forRequest } = require('./middleware/rls');
 const { withPromptBoundary, wrapUntrustedUserData, canonicalizePracticeScenario, canonicalizeAnalyzerTone, canonicalizeIcebreakerVibe, DEFAULT_ICEBREAKER_VIBE, wrapConversationHistory, containsInternalPromptBoundary, cleanInternalPromptTags } = require('./middleware/promptBoundary');
 const { isPrivateDevelopmentOrigin } = require('./middleware/developmentOrigin');
-const { configuredOrigin, AICREDITS_HOST, safeLogValue } = require('./middleware/securityBoundaries');
+const { configuredOrigin, AICREDITS_HOST, safeLogValue, logRef } = require('./middleware/securityBoundaries');
 
 // Outbound providers are fixed infrastructure, never request-controlled destinations. The
 // production validator rejects HTTP, credentials, ports, queries, fragments, and host changes
@@ -328,7 +328,7 @@ async function ensureUserProfile(uid, email) {
         );
         return uid;
     } catch (err) {
-        console.error('[ensureUserProfile ERROR] Profile provisioning failed.', safeLogValue(uid), safeLogValue(err && err.message));
+        console.error('[ensureUserProfile ERROR] Profile provisioning failed.', logRef(uid), safeLogValue(err && err.message));
         return uid;
     }
 }
@@ -372,7 +372,7 @@ async function getUserCreditsByUid(uid, options = {}) {
                 .maybeSingle();
 
             if (error) {
-                console.error('[getUserCreditsDB Error] Failed to fetch profile.', safeLogValue(uid), safeLogValue(error && error.message));
+                console.error('[getUserCreditsDB Error] Failed to fetch profile.', logRef(uid), safeLogValue(error && error.message));
                 const err = new Error("Failed to fetch user profile credits.");
                 err.statusCode = 503;
                 throw err;
@@ -390,7 +390,7 @@ async function getUserCreditsByUid(uid, options = {}) {
             throw missingErr;
         } catch (e) {
             if (e.statusCode) throw e;
-            console.warn('[getUserCreditsDB Notice] Supabase query notice.', safeLogValue(uid), safeLogValue(e && e.message));
+            console.warn('[getUserCreditsDB Notice] Supabase query notice.', logRef(uid), safeLogValue(e && e.message));
             const err = new Error("Failed to fetch user profile credits.");
             err.statusCode = 503;
             throw err;
@@ -2166,13 +2166,13 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
 
     const cachedResponse = getCompletedAiResponse(opKey);
     if (cachedResponse) {
-        console.log('[Idempotency Replay]:', safeLogValue(reqId));
+        console.log('[Idempotency Replay]:', logRef(reqId));
         return res.status(cachedResponse.statusCode).json(cachedResponse.data);
     }
 
     const ongoingOperation = inFlightAiOperations.get(opKey);
     if (ongoingOperation) {
-        console.log('[In-Flight Coalescing]:', safeLogValue(reqId));
+        console.log('[In-Flight Coalescing]:', logRef(reqId));
         try {
             const result = await ongoingOperation;
             return res.status(result.statusCode).json(result.data);
@@ -2197,7 +2197,9 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
                 success: false,
                 error: "This request ID is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
-                duplicate: true
+                duplicate: true,
+                credits: null,
+                creditsVerified: false
             });
         }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
@@ -2380,7 +2382,8 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
                 error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
                 duplicate: true,
-                credits: deduction.remainingCredits
+                credits: null,
+                creditsVerified: false
             });
         }
 
@@ -2744,7 +2747,7 @@ ${formattingRule}`;
             durationMs: performance.now() - tSettleStart
         });
         if (!settleResult || !settleResult.success) {
-            console.error('[Ledger Error] Failed to settle analyzer credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
+            console.error('[Ledger Error] Failed to settle analyzer credits.', logRef(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
                 success: false,
                 error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -2845,13 +2848,13 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
 
     const cachedResponse = getCompletedAiResponse(opKey);
     if (cachedResponse) {
-        console.log('[Idempotency Replay] Serving completed response for reqId:', safeLogValue(reqId));
+        console.log('[Idempotency Replay] Serving completed response for reqId:', logRef(reqId));
         return res.status(cachedResponse.statusCode).json(cachedResponse.data);
     }
 
     const ongoingOperation = inFlightAiOperations.get(opKey);
     if (ongoingOperation) {
-        console.log('[In-Flight Coalescing] Awaiting ongoing operation for reqId:', safeLogValue(reqId));
+        console.log('[In-Flight Coalescing] Awaiting ongoing operation for reqId:', logRef(reqId));
         try {
             const result = await ongoingOperation;
             return res.status(result.statusCode).json(result.data);
@@ -2876,7 +2879,9 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
                 success: false,
                 error: "This request ID is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
-                duplicate: true
+                duplicate: true,
+                credits: null,
+                creditsVerified: false
             });
         }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
@@ -2952,7 +2957,8 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
                 error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
                 duplicate: true,
-                credits: deduction.remainingCredits
+                credits: null,
+                creditsVerified: false
             });
         }
 
@@ -3150,7 +3156,7 @@ GENERAL ICEBREAKER LAWS:
             durationMs: performance.now() - tSettleStart
         });
         if (!settleResult || !settleResult.success) {
-            console.error('[Ledger Error] Failed to settle icebreaker credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
+            console.error('[Ledger Error] Failed to settle icebreaker credits.', logRef(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
                 success: false,
                 error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -3245,7 +3251,6 @@ function sanitizeBioInput(rawInput, language = 'en') {
     cleaned = cleaned.replace(/^(hello|hi|hey|greetings)?\s*(my\s+name\s+is|i\s+am|i'm)\s+[a-z0-9_-]+\s*(,|and|\.)?\s*/gi, '');
     cleaned = cleaned.replace(/^(hello|hi|hey)\s+(my\s+name\s+is)\s*/gi, '');
     cleaned = cleaned.replace(/^(just\s+)?downloaded\s+(hinge|tinder|bumble)\s*(and)?\s*/gi, '');
-    cleaned = cleaned.replace(/i am a playboy/gi, 'confident and outgoing');
 
     // 2. Grammar Cleanup (Fix broken verb forms & user typos without dropping subjects)
     cleaned = cleaned.replace(/\bi\s+rides\b/gi, 'i ride');
@@ -3321,13 +3326,13 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
 
     const cachedResponse = getCompletedAiResponse(opKey);
     if (cachedResponse) {
-        console.log('[Idempotency Replay] Serving completed response for reqId:', safeLogValue(reqId));
+        console.log('[Idempotency Replay] Serving completed response for reqId:', logRef(reqId));
         return res.status(cachedResponse.statusCode).json(cachedResponse.data);
     }
 
     const ongoingOperation = inFlightAiOperations.get(opKey);
     if (ongoingOperation) {
-        console.log('[In-Flight Coalescing] Awaiting ongoing operation for reqId:', safeLogValue(reqId));
+        console.log('[In-Flight Coalescing] Awaiting ongoing operation for reqId:', logRef(reqId));
         try {
             const result = await ongoingOperation;
             return res.status(result.statusCode).json(result.data);
@@ -3352,7 +3357,9 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
                 success: false,
                 error: "This request ID is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
-                duplicate: true
+                duplicate: true,
+                credits: null,
+                creditsVerified: false
             });
         }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
@@ -3437,7 +3444,8 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
                 error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
                 duplicate: true,
-                credits: deduction.remainingCredits
+                credits: null,
+                creditsVerified: false
             });
         }
 
@@ -3671,7 +3679,7 @@ FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(langua
             durationMs: performance.now() - tSettleStart
         });
         if (!settleResult || !settleResult.success) {
-            console.error('[Ledger Error] Failed to settle bio credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
+            console.error('[Ledger Error] Failed to settle bio credits.', logRef(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
                 success: false,
                 error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -3758,13 +3766,13 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
 
     const cachedResponse = getCompletedAiResponse(opKey);
     if (cachedResponse) {
-        console.log('[Idempotency Replay] Serving completed response for reqId:', safeLogValue(reqId));
+        console.log('[Idempotency Replay] Serving completed response for reqId:', logRef(reqId));
         return res.status(cachedResponse.statusCode).json(cachedResponse.data);
     }
 
     const ongoingOperation = inFlightAiOperations.get(opKey);
     if (ongoingOperation) {
-        console.log('[In-Flight Coalescing] Awaiting ongoing operation for reqId:', safeLogValue(reqId));
+        console.log('[In-Flight Coalescing] Awaiting ongoing operation for reqId:', logRef(reqId));
         try {
             const result = await ongoingOperation;
             return res.status(result.statusCode).json(result.data);
@@ -3789,7 +3797,9 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
                 success: false,
                 error: "This request ID is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
-                duplicate: true
+                duplicate: true,
+                credits: null,
+                creditsVerified: false
             });
         }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
@@ -3899,7 +3909,8 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
                 error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
                 duplicate: true,
-                credits: deduction.remainingCredits
+                credits: null,
+                creditsVerified: false
             });
         }
 
@@ -3980,7 +3991,7 @@ CONVERSATIONAL FREEDOM & LAWS:
 
             const settleResult = await settleCreditsDB(req, reqId);
             if (!settleResult || !settleResult.success) {
-                console.error('[Ledger Error] Failed to settle hotline credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
+                console.error('[Ledger Error] Failed to settle hotline credits.', logRef(reqId), safeLogValue(settleResult && settleResult.error));
                 return res.status(503).json({
                     success: false,
                     error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -4228,7 +4239,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
 
         const settleResult = await settleCreditsDB(req, reqId);
         if (!settleResult || !settleResult.success) {
-            console.error('[Ledger Error] Failed to settle roleplay credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
+            console.error('[Ledger Error] Failed to settle roleplay credits.', logRef(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
                 success: false,
                 error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -4323,7 +4334,9 @@ app.post('/api/simulator/review', requireSupabaseAuth, requireActiveConsent, api
                 success: false,
                 error: "This request ID is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
-                duplicate: true
+                duplicate: true,
+                credits: null,
+                creditsVerified: false
             });
         }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
@@ -4386,7 +4399,8 @@ app.post('/api/simulator/review', requireSupabaseAuth, requireActiveConsent, api
                 error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
                 duplicate: true,
-                credits: deduction.remainingCredits
+                credits: null,
+                creditsVerified: false
             });
         }
 
@@ -4534,7 +4548,7 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
 
         const settleResult = await settleCreditsDB(req, reqId);
         if (!settleResult || !settleResult.success) {
-            console.error('[Ledger Error] Failed to settle review credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
+            console.error('[Ledger Error] Failed to settle review credits.', logRef(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
                 success: false,
                 error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -4953,7 +4967,7 @@ app.post('/api/user/delete-account', requireSupabaseAuth, apiLimiter, async (req
         if (authDelErr) {
             // Provider error detail stays in server logs only; the client receives a
             // stable sanitized message with a stable code.
-            console.error('[delete-account] Auth deletion failed.', safeLogValue(uid), safeLogValue(authDelErr && authDelErr.message));
+            console.error('[delete-account] Auth deletion failed.', logRef(uid), safeLogValue(authDelErr && authDelErr.message));
             return res.status(500).json({
                 success: false,
                 error: 'Unable to delete the account at this time. Please try again later.',
@@ -5095,6 +5109,7 @@ module.exports.recordPerfTelemetry = recordPerfTelemetry;
 module.exports.executeQualityPipeline = executeQualityPipeline;
 module.exports.readVerifiedCreditState = readVerifiedCreditState;
 module.exports.sanitizeBioInput = sanitizeBioInput;
+module.exports.logRef = logRef;
 
 if (require.main === module) {
     startWingmanServer().catch(() => process.exit(1));

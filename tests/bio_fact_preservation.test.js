@@ -60,19 +60,25 @@ console.log('\nTest 2: Specific biographical facts and cultural terms are strict
         {
             input: 'Walking in the Mumbai monsoon with cutting chai.',
             expectedSnippet: 'monsoon'
+        },
+        {
+            input: 'I am a playboy and love basketball.',
+            expectedSnippet: 'playboy'
         }
     ];
 
     for (const { input, expectedSnippet } of testCases) {
         const sanitized = sanitizeBioInput(input);
         assert.ok(sanitized.includes(expectedSnippet), `Expected sanitized bio to preserve "${expectedSnippet}". Result: "${sanitized}"`);
-        // Verify no replacement was made to Western equivalents
+        // Verify no replacement was made to Western equivalents or fact distortions
         assert.ok(!sanitized.includes('24-hour diner'), 'Must NOT replace dhaba with 24-hour diner');
         assert.ok(!sanitized.includes('street tacos'), 'Must NOT replace pani puri with street tacos');
         assert.ok(!sanitized.includes('coffee shop'), 'Must NOT replace chai tapri with coffee shop');
         assert.ok(!sanitized.includes('college town'), 'Must NOT replace Roorkee with college town');
         assert.ok(!sanitized.includes('rainy days'), 'Must NOT replace monsoon with rainy days');
+        assert.ok(!sanitized.includes('confident and outgoing'), 'Must NOT replace playboy with confident and outgoing');
     }
+    assert.ok(sanitizeBioInput('I am a playboy and love basketball.').includes('basketball'), 'Must preserve basketball fact');
 
     console.log('  ✓ Verified: All cultural facts, locations, and idioms preserved without alteration.');
 }
@@ -115,7 +121,8 @@ console.log('\nTest 4: Static audit of server.js for forbidden fact-altering rep
         /replace\([^)]*pani puri[^)]*street tacos/i,
         /replace\([^)]*chai tapri[^)]*coffee shop/i,
         /replace\([^)]*Roorkee[^)]*college town/i,
-        /replace\([^)]*monsoon[^)]*rainy days/i
+        /replace\([^)]*monsoon[^)]*rainy days/i,
+        /replace\([^)]*playboy[^)]*confident/i
     ];
 
     for (const pattern of forbiddenPatterns) {

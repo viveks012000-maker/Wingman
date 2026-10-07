@@ -72,7 +72,7 @@ try {
   assert.strictEqual((headers.match(/'unsafe-eval'/g) || []).length, 0, 'unsafe-eval must not appear in any CSP block');
   assert.ok(!appJs.includes("if (response.status === 401) {\n                        window.updateUICredits(0);"), '401 must never become fake zero credits');
   assert.ok(appJs.includes('const freshCreditCheck = await window.checkCreditBalance();'), 'low client balance must be freshly rechecked');
-  assert.ok(appJs.includes('const authoritativeBalanceCheck = await window.checkCreditBalance({ forceFresh: true });') || appJs.includes('const authoritativeBalanceCheck = await window.checkCreditBalance();'), 'HTTP 402 must recheck authoritative wallet');
+  assert.ok(appJs.includes('const authoritativeBalanceCheck = await window.checkCreditBalance({ forceFresh: true });'), 'HTTP 402 must recheck authoritative wallet with forceFresh');
 
   const release = JSON.parse(fs.readFileSync(path.join(OUT, 'release.json'), 'utf8'));
   assert.strictEqual(release.build, 'frontend-only-netlify');

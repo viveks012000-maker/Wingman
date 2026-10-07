@@ -331,7 +331,7 @@
 
             if (typeof window.reconcileCreditPayload === 'function') {
                 window.reconcileCreditPayload(data);
-            } else if (typeof data.credits === 'number' && typeof window.updateUICredits === 'function') {
+            } else if (data && data.creditsVerified === true && typeof data.credits === 'number' && Number.isFinite(data.credits) && typeof window.updateUICredits === 'function') {
                 window.updateUICredits(data.credits);
             }
             renderReview(data);

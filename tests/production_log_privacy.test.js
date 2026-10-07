@@ -20,7 +20,8 @@ console.log('============================================================\n');
 const server = require('../server.js');
 const {
     recordPerfTelemetry,
-    executeQualityPipeline
+    executeQualityPipeline,
+    logRef
 } = server;
 
 async function runTests() {
@@ -151,6 +152,29 @@ async function runTests() {
         assert.ok(!fnBody.includes('text: d.opt') && !fnBody.includes('text: d.text'), 'Must NOT log text in validation details');
 
         console.log('  ✓ Verified: executeQualityPipeline only logs index and reason metadata.');
+    }
+
+    // --- Test 5: logRef helper produces 12-char irreversible hashes and audits server.js ---
+    console.log('\nTest 5: logRef produces 12-char irreversible hash and audits server.js logs');
+    {
+        assert.strictEqual(typeof logRef, 'function', 'logRef must be exported');
+        const hash1 = logRef('usr_sensitive_user_id_123');
+        const hash2 = logRef('req_client_request_id_456');
+        assert.strictEqual(hash1.length, 12, 'logRef must produce 12-char hash');
+        assert.strictEqual(hash2.length, 12, 'logRef must produce 12-char hash');
+        assert.notStrictEqual(hash1, 'usr_sensitive_user_id_123');
+        assert.notStrictEqual(hash2, 'req_client_request_id_456');
+        assert.strictEqual(logRef(null), 'none', 'logRef(null) must return "none"');
+        assert.strictEqual(logRef(undefined), 'none', 'logRef(undefined) must return "none"');
+        assert.strictEqual(logRef(''), 'none', 'logRef("") must return "none"');
+
+        const serverSource = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+        assert.ok(!serverSource.includes('safeLogValue(uid)'), 'server.js must NOT pass raw uid to safeLogValue');
+        assert.ok(!serverSource.includes('safeLogValue(reqId)'), 'server.js must NOT pass raw reqId to safeLogValue');
+        assert.ok(serverSource.includes('logRef(uid)'), 'server.js must use logRef(uid)');
+        assert.ok(serverSource.includes('logRef(reqId)'), 'server.js must use logRef(reqId)');
+
+        console.log('  ✓ Verified: Zero raw uid/reqId passed to safeLogValue in server.js.');
     }
 
     console.log('\n============================================================');
