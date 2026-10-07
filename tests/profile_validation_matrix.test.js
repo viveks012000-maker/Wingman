@@ -96,16 +96,27 @@ console.log('✔ Profile 4 (ROMAN_HINDI_HEAVY) verified: Fluent Roman Hindi acce
 // BATCH VALIDATION SUITE
 // -------------------------------------------------------------
 console.log('▶ [BATCH VALIDATION]');
-const validBatchEnglish = Array(10).fill("How do you survive a road trip without an elite playlist?");
+const validBatchEnglish = [
+    "What would you say is the most underrated coffee spot in town?",
+    "Tell me your take on spontaneous weekend road trips with good playlists.",
+    "Which playlist do you put on when driving late at night?",
+    "Are you more of an early morning explorer or late night conversationalist?",
+    "How do you usually unwind after an intense week of work?",
+    "Could you survive a long road trip without any music?",
+    "Never thought I would come across someone who shares this exact music taste.",
+    "Your profile caught my attention with that travel story in the bio.",
+    "Let us debate who has the better taste in Sunday brunch spots.",
+    "Pick a side between mountain cabin getaways and sunny coastal beaches."
+];
 const b1 = validateFinalBatch(validBatchEnglish, 'icebreaker', LANGUAGE_PROFILES.ENGLISH);
 assert.strictEqual(b1.valid, true, 'All 10 valid English options must pass batch validation');
 assert.strictEqual(b1.invalidIndices.length, 0);
 
 const mixedBatch = [
     "Always down for basketball, court pe milunga on weekends.",
-    "Always down for basketball, court pe milunga on weekends.",
+    "Usually free for coffee after work, cafe pe milte hain.",
     "Completely pure English option with no Hindi at all.", // index 2 fails
-    "Always down for basketball, court pe milunga on weekends."
+    "Weekend plans usually sorted hain, court pe match chalega."
 ];
 const b2 = validateFinalBatch(mixedBatch, 'icebreaker', LANGUAGE_PROFILES.ENGLISH_HEAVY_MIXED);
 assert.strictEqual(b2.valid, false, 'Batch with pure English in English-heavy profile must fail');

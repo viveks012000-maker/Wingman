@@ -181,7 +181,20 @@ function setupRuntimeEnvironment(options = {}) {
         Object.entries(options.initialStorage).forEach(([k, v]) => mockStorage.setItem(k, v));
     }
 
-    let currentFetch = options.fetchHandler || (async () => ({ ok: true, json: async () => ({ success: true }) }));
+    let currentFetch = options.fetchHandler || (async (url) => {
+        if (typeof url === 'string' && url.includes('/api/credits')) {
+            if (options.dbProfileMissing) {
+                return { ok: false, status: 404, json: async () => ({ success: false, error: 'PROFILE_MISSING', code: 'PROFILE_MISSING' }) };
+            }
+            if (options.dbProfileError) {
+                return { ok: false, status: 500, json: async () => ({ success: false, error: 'DB_ERROR' }) };
+            }
+            if (typeof options.dbCredits === 'number') {
+                return { ok: true, json: async () => ({ success: true, credits: options.dbCredits }) };
+            }
+        }
+        return { ok: true, json: async () => ({ success: true }) };
+    });
 
     const sandbox = {
         window: windowMock,

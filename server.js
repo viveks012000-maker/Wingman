@@ -116,6 +116,12 @@ app.use((req, res, next) => {
     next();
 });
 
+// Monotonic Request Start Time Tracking for Real Latency Telemetry
+app.use((req, res, next) => {
+    req._startTime = Date.now();
+    next();
+});
+
 // 2. Configure Locked CORS Policy
 const productionAllowedOrigins = [
     'https://mywingmanapp.com'
@@ -1974,7 +1980,14 @@ async function executeQualityPipeline(options, feature = 'generic', languageProf
         return await repairLanguageMismatch(options, feature, languageProfile === 'english' ? 'english' : 'hinglish', source, history, deadlineAt);
     }
 
+    const tValStart = Date.now();
     const validation = validateFinalBatch(options, feature, languageProfile);
+    recordPerfTelemetry({
+        feature: feature,
+        stage: 'quality_validation',
+        durationMs: Date.now() - tValStart,
+        outputCount: options.length
+    });
     if (validation.valid && options.length === 10) {
         return options;
     }
@@ -2022,6 +2035,7 @@ ${getAuthoritativeProfileDirective(languageProfile, repairFeature)}
         { role: 'user', content: `Original user context:\n${wrapUntrustedUserData(sourceLabel, sourceStr)}\n\nGenerate high-quality replacements for slots [${neededIndices.map(i => i + 1).join(', ')}] now.` }
     ];
 
+    const tRepairStart = Date.now();
     try {
         if (deadlineAt) {
             getOperationRemainingMs(deadlineAt, 1000);
@@ -2074,6 +2088,12 @@ ${getAuthoritativeProfileDirective(languageProfile, repairFeature)}
 
         const postValidation = validateFinalBatch(mergedOptions, feature, languageProfile);
         if (postValidation.valid && mergedOptions.length === 10 && mergedOptions.every(o => typeof o === 'string' && o.trim().length >= 3)) {
+            recordPerfTelemetry({
+                feature: feature,
+                stage: 'selective_repair',
+                durationMs: Date.now() - tRepairStart,
+                repairSlotCount: neededIndices.length
+            });
             return mergedOptions;
         }
 
@@ -2267,7 +2287,13 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
             return res.status(400).json({ success: false, error: "Please upload at least 1 chat screenshot to analyze." });
         }
 
+        const tReserveStart = Date.now();
         deduction = await verifyAndDeductCreditsDB(req, 10, 'analyze', reqId);
+        recordPerfTelemetry({
+            feature: 'analyze',
+            stage: 'credit_reserve',
+            durationMs: Date.now() - tReserveStart
+        });
         if (!deduction.success) {
             if (deduction.profileMissing) {
                 return res.status(404).json({ success: false, error: "PROFILE_MISSING", code: "PROFILE_MISSING" });
@@ -2357,6 +2383,7 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
 }`;
 
                     console.log('[Analyzer] Executing Stage 1 optical vision parsing.', imageList.length);
+            const tVisionStart = Date.now();
             const transcriptionPromises = imageList.map(async (imgUrl, i) => {
                 const positionTag = (i === imageList.length - 1)
                     ? `SCREENSHOT ${i + 1} OF ${imageList.length} (LATEST SCREENSHOT - CONTAINS FINAL MESSAGE)`
@@ -2380,6 +2407,12 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
 
             const transcriptions = await Promise.all(transcriptionPromises);
             extractedTextContext = transcriptions.join("\n\n");
+            recordPerfTelemetry({
+                feature: 'analyze',
+                stage: 'vision_total',
+                durationMs: Date.now() - tVisionStart,
+                outputCount: imageList.length
+            });
 
             if (!IS_PROD && process.env.DEBUG_PAYLOADS === 'true') {
                 console.log("\n================ [STAGE 1 VISION JSON OUTPUT] ================");
@@ -2577,7 +2610,13 @@ ${formattingRule}`;
 
             console.log('[Analyzer] Executing Stage 2 response-card generation.', safeLogValue(modeConfig.name));
         let finalCardsOutput = "";
+        const tStage2Start = Date.now();
         finalCardsOutput = await queryAnalyzerProvider('main', generationMessages, 0.20, 800, 25000, null, deadlineAt);
+        recordPerfTelemetry({
+            feature: 'analyze',
+            stage: 'stage2_generation',
+            durationMs: Date.now() - tStage2Start
+        });
 
         let optionsList = [];
         try {
@@ -2653,7 +2692,13 @@ ${formattingRule}`;
             throw countErr;
         }
 
+        const tSettleStart = Date.now();
         const settleResult = await settleCreditsDB(req, reqId);
+        recordPerfTelemetry({
+            feature: 'analyze',
+            stage: 'credit_settle',
+            durationMs: Date.now() - tSettleStart
+        });
         if (!settleResult || !settleResult.success) {
             console.error('[Ledger Error] Failed to settle analyzer credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
@@ -2666,6 +2711,7 @@ ${formattingRule}`;
         let authoritativeBalance = (settleResult && typeof settleResult.remainingCredits === 'number')
             ? settleResult.remainingCredits
             : deduction.remainingCredits;
+        const tReadStart = Date.now();
         try {
             const currentUserId = getUserIdFromReq(req);
             if (currentUserId) {
@@ -2677,10 +2723,15 @@ ${formattingRule}`;
         } catch (balErr) {
             console.warn('[Post-settle Credit Fetch Notice]', balErr.message);
         }
+        recordPerfTelemetry({
+            feature: 'analyze',
+            stage: 'credit_read',
+            durationMs: Date.now() - tReadStart
+        });
 
         recordPerfTelemetry({
             feature: 'analyze',
-            stage: 'completion',
+            stage: 'total',
             durationMs: Date.now() - (req._startTime || Date.now()),
             outputCount: optionsList.length
         });
@@ -2815,7 +2866,13 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
             });
         }
 
+        const tReserveStart = Date.now();
         deduction = await verifyAndDeductCreditsDB(req, 10, 'icebreaker', reqId);
+        recordPerfTelemetry({
+            feature: 'icebreaker',
+            stage: 'credit_reserve',
+            durationMs: Date.now() - tReserveStart
+        });
         if (!deduction.success) {
             if (deduction.profileMissing) {
                 return res.status(404).json({ success: false, error: "PROFILE_MISSING", code: "PROFILE_MISSING" });
@@ -2957,10 +3014,16 @@ GENERAL ICEBREAKER LAWS:
 2. NO CREEPY / POETIC PHRASING: Avoid romantic poetry, Wattpad villain tropes, or intense lines ("stolen glances", "destiny", "pushing boundaries").
 3. ${formattingRule}` + getAuthoritativeProfileDirective(languageProfile, 'icebreaker');
 
+        const tGenStart = Date.now();
         const responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(icebreakerSystemPrompt) },
             { role: "user", content: `${wrapUntrustedUserData('match_details', text)}\n\nRequested Tone: ${canonicalizeIcebreakerVibe(requestedVibe)}. Output the 10 numbered options now.` }
         ], 0.8, 650, 25000, null, deadlineAt);
+        recordPerfTelemetry({
+            feature: 'icebreaker',
+            stage: 'provider_generation',
+            durationMs: Date.now() - tGenStart
+        });
 
         let rawOptions = [];
         try {
@@ -3042,7 +3105,13 @@ GENERAL ICEBREAKER LAWS:
 
         const formattedText = cleanedOptions.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
 
+        const tSettleStart = Date.now();
         const settleResult = await settleCreditsDB(req, reqId);
+        recordPerfTelemetry({
+            feature: 'icebreaker',
+            stage: 'credit_settle',
+            durationMs: Date.now() - tSettleStart
+        });
         if (!settleResult || !settleResult.success) {
             console.error('[Ledger Error] Failed to settle icebreaker credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
@@ -3055,6 +3124,7 @@ GENERAL ICEBREAKER LAWS:
         let authoritativeBalance = (settleResult && typeof settleResult.remainingCredits === 'number')
             ? settleResult.remainingCredits
             : deduction.remainingCredits;
+        const tReadStart = Date.now();
         try {
             const currentUserId = getUserIdFromReq(req);
             if (currentUserId) {
@@ -3066,10 +3136,15 @@ GENERAL ICEBREAKER LAWS:
         } catch (balErr) {
             console.warn('[Post-settle Credit Fetch Notice]', balErr.message);
         }
+        recordPerfTelemetry({
+            feature: 'icebreaker',
+            stage: 'credit_read',
+            durationMs: Date.now() - tReadStart
+        });
 
         recordPerfTelemetry({
             feature: 'icebreaker',
-            stage: 'completion',
+            stage: 'total',
             durationMs: Date.now() - (req._startTime || Date.now()),
             outputCount: cleanedOptions.length
         });
@@ -3289,7 +3364,13 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
             });
         }
 
+        const tReserveStart = Date.now();
         deduction = await verifyAndDeductCreditsDB(req, 10, 'optimize', reqId);
+        recordPerfTelemetry({
+            feature: 'optimize',
+            stage: 'credit_reserve',
+            durationMs: Date.now() - tReserveStart
+        });
         if (!deduction.success) {
             if (deduction.profileMissing) {
                 return res.status(404).json({ success: false, error: "PROFILE_MISSING", code: "PROFILE_MISSING" });
@@ -3427,10 +3508,16 @@ GLOBAL TONE & SYNTAX RULES:
 
 FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(languageProfile, 'optimize');
 
+        const tGenStart = Date.now();
         let responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(bioOptimizerSystemPrompt) },
             { role: "user", content: `[SELECTED MODE: ${modeKey.toUpperCase()}]\n${wrapUntrustedUserData('bio_input', textPayload)}${language === 'auto' ? '\n' + wrapUntrustedUserData('bio_language_source', originalBioText) : ''}\n\nOutput the 10 numbered options now.` }
         ], 0.25, 1200, 25000, 0.80, deadlineAt);
+        recordPerfTelemetry({
+            feature: 'optimize',
+            stage: 'provider_generation',
+            durationMs: Date.now() - tGenStart
+        });
 
         let optionsList = [];
         try {
@@ -3563,7 +3650,13 @@ FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(langua
             throw countErr;
         }
 
+        const tSettleStart = Date.now();
         const settleResult = await settleCreditsDB(req, reqId);
+        recordPerfTelemetry({
+            feature: 'optimize',
+            stage: 'credit_settle',
+            durationMs: Date.now() - tSettleStart
+        });
         if (!settleResult || !settleResult.success) {
             console.error('[Ledger Error] Failed to settle bio credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
@@ -3576,6 +3669,7 @@ FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(langua
         let authoritativeBalance = (settleResult && typeof settleResult.remainingCredits === 'number')
             ? settleResult.remainingCredits
             : deduction.remainingCredits;
+        const tReadStart = Date.now();
         try {
             const currentUserId = getUserIdFromReq(req);
             if (currentUserId) {
@@ -3587,10 +3681,15 @@ FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(langua
         } catch (balErr) {
             console.warn('[Post-settle Credit Fetch Notice]', balErr.message);
         }
+        recordPerfTelemetry({
+            feature: 'optimize',
+            stage: 'credit_read',
+            durationMs: Date.now() - tReadStart
+        });
 
         recordPerfTelemetry({
             feature: 'optimize',
-            stage: 'completion',
+            stage: 'total',
             durationMs: Date.now() - (req._startTime || Date.now()),
             outputCount: optionsList.length
         });
@@ -4971,6 +5070,7 @@ module.exports.cacheCompletedAiResponse = cacheCompletedAiResponse;
 module.exports.getCompletedAiResponse = getCompletedAiResponse;
 module.exports.getCreditTransactionState = getCreditTransactionState;
 module.exports.recordPerfTelemetry = recordPerfTelemetry;
+module.exports.executeQualityPipeline = executeQualityPipeline;
 
 if (require.main === module) {
     startWingmanServer().catch(() => process.exit(1));

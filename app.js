@@ -325,13 +325,34 @@ STRICT LAWS:
         return null;
     }
 
-    // Supabase Postgres Direct Profile Credit Sync – Canonical Balance & Wallet Truth
+    // Authoritative Credit Commit: Increments wallet epoch, invalidates in-flight reads,
+    // and commits the server/database confirmed balance directly to application state and DOM.
+    window.commitAuthoritativeCreditBalance = function (amount) {
+        if (typeof amount !== 'number' || isNaN(amount)) return null;
+        latestCreditSyncSeq++;
+        const uid = getActiveCreditUserId();
+        if (uid !== null) {
+            inFlightCreditCheckPromises.delete(uid);
+        }
+        state.credits = amount;
+        state.creditsStatus = "loaded";
+        syncCredits();
+        return amount;
+    };
+
+    // Supabase Postgres Canonical Balance & Wallet Truth via authenticated /api/credits
     window.checkCreditBalance = function () {
+        const opts = (arguments && typeof arguments[0] === 'object' && arguments[0] !== null) ? arguments[0] : {};
+        const isForceFresh = opts.forceFresh === true;
         const initialUserId = getActiveCreditUserId();
         const mapKey = initialUserId;
 
-        // If there is an in-flight promise for the SAME user, return it (coalescing)
-        if (mapKey !== null && inFlightCreditCheckPromises.has(mapKey)) {
+        // ForceFresh mode: explicitly bypass/invalidate existing in-flight promise for this user
+        // and force a brand new fetch that supersedes older reads.
+        if (isForceFresh && mapKey !== null) {
+            inFlightCreditCheckPromises.delete(mapKey);
+        } else if (!isForceFresh && mapKey !== null && inFlightCreditCheckPromises.has(mapKey)) {
+            // Normal mode: coalesce identical concurrent requests for the SAME user
             return inFlightCreditCheckPromises.get(mapKey);
         }
 
@@ -405,7 +426,7 @@ STRICT LAWS:
                     return staleResult();
                 }
 
-                // 1. Primary: Authenticated query to /api/credits (Single Canonical Verified Balance Endpoint)
+                // Sole Canonical Verified Balance Endpoint: Authenticated GET /api/credits
                 const apiBase = typeof window.getApiBase === 'function' ? window.getApiBase() : '';
                 const authHeaders = typeof window.getSupabaseAuthHeaders === 'function' ? await window.getSupabaseAuthHeaders() : {};
 
@@ -430,11 +451,15 @@ STRICT LAWS:
                             const resJson = await resp.json();
                             if (!requestIsCurrent()) return staleResult();
                             if (resJson && typeof resJson.credits === 'number') {
-                                window.updateUICredits(resJson.credits);
+                                state.credits = resJson.credits;
+                                state.creditsStatus = "loaded";
+                                syncCredits();
                                 return { success: true, status: "loaded", credits: resJson.credits };
                             } else if (resJson && resJson.data && typeof resJson.data.credits_inr === 'number') {
                                 const count = Math.round(resJson.data.credits_inr * 10);
-                                window.updateUICredits(count);
+                                state.credits = count;
+                                state.creditsStatus = "loaded";
+                                syncCredits();
                                 return { success: true, status: "loaded", credits: count };
                             }
                         }
@@ -443,67 +468,13 @@ STRICT LAWS:
                     }
                 }
 
-                if (!requestIsCurrent()) return staleResult();
-
-                // 2. Direct Supabase 'profiles' table query fallback
-                let directQueryAttempted = false;
-                if (window.supabaseClient && typeof window.supabaseClient.from === 'function') {
-                    directQueryAttempted = true;
-                    try {
-                        const directResult = await window.supabaseClient
-                            .from('profiles')
-                            .select('credits')
-                            .eq('id', userId)
-                            .maybeSingle();
-
-                        if (!requestIsCurrent()) return staleResult();
-
-                        if (!directResult.error && directResult.data && typeof directResult.data.credits === 'number') {
-                            window.updateUICredits(directResult.data.credits);
-                            return { success: true, status: "loaded", credits: directResult.data.credits };
-                        }
-                        if (!directResult.error && !directResult.data) {
-                            if (!requestIsCurrent()) return staleResult();
-                            state.credits = null;
-                            state.creditsStatus = "missing_profile";
-                            syncCredits();
-                            return { success: false, status: "missing_profile", code: "PROFILE_MISSING" };
-                        }
-                    } catch (dbErr) {
-                        console.warn('[CreditSync] Supabase direct profiles query notice:', dbErr);
-                    }
-                }
-
-                if (!requestIsCurrent()) return staleResult();
-
-                // 3. Fetch via fetchProfileCredits fallback
-                if (!directQueryAttempted && typeof window.fetchProfileCredits === 'function') {
-                    try {
-                        const creditsRes = await window.fetchProfileCredits(userId);
-                        if (!requestIsCurrent()) return staleResult();
-
-                        if (typeof creditsRes === 'number') {
-                            window.updateUICredits(creditsRes);
-                            return { success: true, status: "loaded", credits: creditsRes };
-                        } else if (creditsRes && creditsRes.profileMissing) {
-                            if (!requestIsCurrent()) return staleResult();
-                            state.credits = null;
-                            state.creditsStatus = "missing_profile";
-                            syncCredits();
-                            return { success: false, status: "missing_profile", code: "PROFILE_MISSING" };
-                        }
-                    } catch (fErr) {
-                        console.warn('[CreditSync] fetchProfileCredits notice:', fErr);
-                    }
-                }
-
-                // If balance cannot be verified, record error state without setting credits to 0
+                // If balance cannot be verified via /api/credits, record error state without setting credits to 0
                 if (!requestIsCurrent()) return staleResult();
                 state.creditsStatus = "error";
                 syncCredits();
                 return { success: false, status: "error", credits: state.credits };
             } catch (e) {
-                console.warn('[CreditSync] Error syncing credits from Supabase profiles:', e);
+                console.warn('[CreditSync] Error syncing credits from /api/credits:', e);
                 if (!requestIsCurrent()) return staleResult();
                 state.creditsStatus = "error";
                 syncCredits();
@@ -3445,10 +3416,14 @@ STRICT LAWS:
 
                 if (response.status >= 500) {
                     if (typeof errJson.credits === "number") {
-                        window.updateUICredits(errJson.credits);
+                        if (typeof window.commitAuthoritativeCreditBalance === 'function') {
+                            window.commitAuthoritativeCreditBalance(errJson.credits);
+                        } else {
+                            window.updateUICredits(errJson.credits);
+                        }
                     }
                     if (typeof window.checkCreditBalance === 'function') {
-                        await window.checkCreditBalance();
+                        await window.checkCreditBalance({ forceFresh: true });
                     }
                     trackWingmanEvent('generation_failed', { endpoint: endpoint, status: response.status });
                     if (typeof window.showToast === 'function') {
@@ -3458,7 +3433,11 @@ STRICT LAWS:
                 }
 
                 if (typeof errJson.credits === "number") {
-                    window.updateUICredits(errJson.credits);
+                    if (typeof window.commitAuthoritativeCreditBalance === 'function') {
+                        window.commitAuthoritativeCreditBalance(errJson.credits);
+                    } else {
+                        window.updateUICredits(errJson.credits);
+                    }
                 }
                 trackWingmanEvent('generation_failed', { endpoint: endpoint, status: response.status });
                 if (typeof window.showToast === 'function') {
@@ -3469,7 +3448,11 @@ STRICT LAWS:
 
             const data = await response.json();
             if (typeof data.credits === "number") {
-                window.updateUICredits(data.credits);
+                if (typeof window.commitAuthoritativeCreditBalance === 'function') {
+                    window.commitAuthoritativeCreditBalance(data.credits);
+                } else {
+                    window.updateUICredits(data.credits);
+                }
             }
             trackWingmanEvent('generation_succeeded', { endpoint: endpoint, remainingCredits: data.credits });
             return data.options || data.text || data.reply || (data.choices && data.choices[0] && (data.choices[0].message ? data.choices[0].message.content : data.choices[0].message)) || "";
@@ -3480,7 +3463,7 @@ STRICT LAWS:
                 window.showToast("Generation status could not be confirmed. Refreshing your credit balance…", "warning");
             }
             if (typeof window.checkCreditBalance === 'function') {
-                await window.checkCreditBalance();
+                await window.checkCreditBalance({ forceFresh: true });
             }
             return null;
         }
@@ -4360,7 +4343,11 @@ STRICT LAWS:
                         : chatData.reply;
                     const updatedBal = typeof chatData.credits === 'number' ? chatData.credits : (typeof chatData.creditsRemaining === 'number' ? chatData.creditsRemaining : null);
                     if (updatedBal !== null) {
-                        window.updateUICredits(updatedBal);
+                        if (typeof window.commitAuthoritativeCreditBalance === 'function') {
+                            window.commitAuthoritativeCreditBalance(updatedBal);
+                        } else {
+                            window.updateUICredits(updatedBal);
+                        }
                     }
                     if (requestGeneration !== simulatorGeneration) return;
                     activeSimulatorThread.push({ role: "assistant", content: aiReply });
@@ -4374,7 +4361,7 @@ STRICT LAWS:
                 if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 if (requestGeneration !== simulatorGeneration) return;
                 const errJson = await chatResp.json().catch(() => ({}));
-                if (typeof window.checkCreditBalance === 'function') await window.checkCreditBalance();
+                if (typeof window.checkCreditBalance === 'function') await window.checkCreditBalance({ forceFresh: true });
                 window.renderChatboxBubble(errJson.error || "This message is already being processed. No additional credits were deducted.", "assistant");
             } else if (chatResp.status === 403) {
                 if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();

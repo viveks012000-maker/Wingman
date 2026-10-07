@@ -199,7 +199,7 @@ function getAuthoritativeProfileDirective(profile, feature) {
         return `\n\n[AUTO LANGUAGE SELECTION]
 [AUTHORITATIVE TARGET DETERMINATION: ENGLISH]
 [PROFILE: HIGH-STATUS ENGLISH]
-The conversation/input context is in English.
+The conversation/input context is in English (e.g. "I like basketball and travelling on weekends").
 Write all generated response options in natural, high-status modern English.
 - Use 100% LATIN / ENGLISH ALPHABET ONLY. ABSOLUTE BAN ON DEVANAGARI CHARACTERS. Zero Devanagari.
 - Preserve all existing formatting rules, slot counts, and tone constraints.`;
@@ -209,7 +209,7 @@ Write all generated response options in natural, high-status modern English.
         return `\n\n[AUTO LANGUAGE SELECTION]
 [AUTHORITATIVE TARGET DETERMINATION: ROMAN-SCRIPT HINGLISH]
 [PROFILE: ENGLISH-DOMINANT HINGLISH BLEND]
-The user's context mixes English with Roman Hindi, with dominant English framing (e.g. "mera naam sumit hai and i like basketball").
+The user's context mixes English with Roman Hindi, with dominant English framing (e.g. "I love playing basketball on weekends with friends, court pe milenge").
 Generate response options with modern English conversational flow, naturally anchored with authentic Roman Hindi phrasing (e.g., "kaafi", "usually court pe milunga", "scene sort karte hain", "real question: pickup game ya proper league?").
 - DO NOT flatten the output to pure English. Respect the user's Roman Hindi elements.
 - DO NOT force archaic or pure Hindi. Maintain the user's sleek English-dominant bilingual style.
@@ -245,7 +245,7 @@ Generate response options in authentic, fluent Roman-script Hindi/Hinglish as te
     return `\n\n[AUTO LANGUAGE SELECTION]
 [AUTHORITATIVE TARGET DETERMINATION: ROMAN-SCRIPT HINGLISH]
 [PROFILE: BALANCED ROMAN-SCRIPT HINGLISH]
-The conversation/input context is in Hinglish or mixed Roman Hindi + English.
+The conversation/input context is in Hinglish or mixed Roman Hindi + English (e.g. "mera naam sumit hai and i like basketball").
 You MUST write all generated response options in natural, modern Roman-script Hinglish (the authentic, casual blend of English and Hindi texted by urban young adults in Delhi/Mumbai/Bangalore).
 - Do NOT output pure English. Mixed inputs MUST receive natural Roman-script Hinglish responses matching the mixed conversational style.
 - Naturally integrate conversational Roman Hindi phrasing throughout every option (e.g., "kaafi pasand hai", "weekends usually court pe milunga", "scene sort karte hain", "kaafi sahi", "kya lagta hai", "milte hain").${featureExamples}
