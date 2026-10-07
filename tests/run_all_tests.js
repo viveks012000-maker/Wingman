@@ -110,7 +110,13 @@ const testSuites = [
     { name: '91. Language Token Scorer & Natural Grammar Suite', file: 'score_language_tokens.test.js', timeoutMs: 30_000 },
     { name: '92. Profile Validation Matrix & Contract Suite', file: 'profile_validation_matrix.test.js', timeoutMs: 30_000 },
     { name: '93. Client Credit Race & ForceFresh Semantics Suite', file: 'client_credit_race_and_forcefresh.test.js', timeoutMs: 30_000 },
-    { name: '94. Real Latency Telemetry & Zero-PII Instrumentation Suite', file: 'perf_telemetry_instrumentation.test.js', timeoutMs: 30_000 }
+    { name: '94. Real Latency Telemetry & Zero-PII Instrumentation Suite', file: 'perf_telemetry_instrumentation.test.js', timeoutMs: 30_000 },
+    { name: '95. Credit Verified Response Contract Suite', file: 'credit_verified_response_contract.test.js', timeoutMs: 30_000 },
+    { name: '96. Cached Replay Credit Freshness Suite', file: 'cached_replay_credit_freshness.test.js', timeoutMs: 30_000 },
+    { name: '97. Financial Error ForceFresh Semantics Suite', file: 'financial_error_forcefresh.test.js', timeoutMs: 30_000 },
+    { name: '98. Bio Fact Preservation & Anti-Hallucination Suite', file: 'bio_fact_preservation.test.js', timeoutMs: 30_000 },
+    { name: '99. Production Log Privacy & Zero-PII Suite', file: 'production_log_privacy.test.js', timeoutMs: 30_000 },
+    { name: '100. Monotonic Performance Telemetry Suite', file: 'monotonic_perf_telemetry.test.js', timeoutMs: 30_000 }
 ];
 
 console.log('========================================================================');

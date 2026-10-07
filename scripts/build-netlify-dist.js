@@ -276,7 +276,8 @@ function verifyCriticalRuntimeContent() {
   if (!appJs.includes('const freshCreditCheck = await window.checkCreditBalance();')) {
     fail('Fresh authoritative balance guard is absent');
   }
-  if (!appJs.includes('const authoritativeBalanceCheck = await window.checkCreditBalance();')) {
+  if (!appJs.includes('const authoritativeBalanceCheck = await window.checkCreditBalance({ forceFresh: true });') &&
+      !appJs.includes('const authoritativeBalanceCheck = await window.checkCreditBalance();')) {
     fail('HTTP 402 authoritative wallet re-check is absent');
   }
 
