@@ -73,10 +73,17 @@ function appendConfiguredPath(baseOrigin, relativePath) {
     return base.toString();
 }
 
+const crypto = require('crypto');
+
 function safeLogValue(value, maxLength = 160) {
     const text = value === null || value === undefined ? '' : String(value);
     if (/\r|\n|[\u0000-\u001f\u007f]/.test(text)) return '[invalid-log-value]';
     return text.slice(0, maxLength);
+}
+
+function logRef(value) {
+    if (value === null || value === undefined || value === '') return 'none';
+    return crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 12);
 }
 
 module.exports = {
@@ -86,5 +93,7 @@ module.exports = {
     parseConfiguredOrigin,
     configuredOrigin,
     appendConfiguredPath,
-    safeLogValue
+    safeLogValue,
+    logRef
 };
+

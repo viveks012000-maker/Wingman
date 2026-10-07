@@ -27,6 +27,7 @@ const express = require('express');
 const path = require('path');
 const cors = require('cors');
 const crypto = require('crypto');
+const { performance } = require('node:perf_hooks');
 
 const CREDITS_PER_INR = 10;
 const helmet = require('helmet');
@@ -61,7 +62,7 @@ const { validateImagePayload } = require('./middleware/imageValidator');
 const { forRequest } = require('./middleware/rls');
 const { withPromptBoundary, wrapUntrustedUserData, canonicalizePracticeScenario, canonicalizeAnalyzerTone, canonicalizeIcebreakerVibe, DEFAULT_ICEBREAKER_VIBE, wrapConversationHistory, containsInternalPromptBoundary, cleanInternalPromptTags } = require('./middleware/promptBoundary');
 const { isPrivateDevelopmentOrigin } = require('./middleware/developmentOrigin');
-const { configuredOrigin, AICREDITS_HOST, safeLogValue } = require('./middleware/securityBoundaries');
+const { configuredOrigin, AICREDITS_HOST, safeLogValue, logRef } = require('./middleware/securityBoundaries');
 
 // Outbound providers are fixed infrastructure, never request-controlled destinations. The
 // production validator rejects HTTP, credentials, ports, queries, fragments, and host changes
@@ -119,6 +120,7 @@ app.use((req, res, next) => {
 // Monotonic Request Start Time Tracking for Real Latency Telemetry
 app.use((req, res, next) => {
     req._startTime = Date.now();
+    req._perfStartMs = performance.now();
     next();
 });
 
@@ -276,7 +278,7 @@ app.get('/app', globalLimiter, (req, res) => {
 // impersonation is impossible. Unauthenticated callers resolve to null (guest), never to an
 // arbitrary or spoofable account id. All credits are stored strictly in SQLite (user_profiles).
 function getUserIdFromReq(req) {
-    return req.user ? req.user.id : null;
+    return (req && req.user) ? req.user.id : null;
 }
 
 // Auto-provision a local profile (and FK-safe auth stub for Supabase users) under the exact
@@ -326,7 +328,7 @@ async function ensureUserProfile(uid, email) {
         );
         return uid;
     } catch (err) {
-        console.error('[ensureUserProfile ERROR] Profile provisioning failed.', safeLogValue(uid), safeLogValue(err && err.message));
+        console.error('[ensureUserProfile ERROR] Profile provisioning failed.', logRef(uid), safeLogValue(err && err.message));
         return uid;
     }
 }
@@ -370,7 +372,7 @@ async function getUserCreditsByUid(uid, options = {}) {
                 .maybeSingle();
 
             if (error) {
-                console.error('[getUserCreditsDB Error] Failed to fetch profile.', safeLogValue(uid), safeLogValue(error && error.message));
+                console.error('[getUserCreditsDB Error] Failed to fetch profile.', logRef(uid), safeLogValue(error && error.message));
                 const err = new Error("Failed to fetch user profile credits.");
                 err.statusCode = 503;
                 throw err;
@@ -388,7 +390,7 @@ async function getUserCreditsByUid(uid, options = {}) {
             throw missingErr;
         } catch (e) {
             if (e.statusCode) throw e;
-            console.warn('[getUserCreditsDB Notice] Supabase query notice.', safeLogValue(uid), safeLogValue(e && e.message));
+            console.warn('[getUserCreditsDB Notice] Supabase query notice.', logRef(uid), safeLogValue(e && e.message));
             const err = new Error("Failed to fetch user profile credits.");
             err.statusCode = 503;
             throw err;
@@ -410,6 +412,22 @@ async function getUserCreditsDB(req, options = {}) {
     }
     const uid = getUserIdFromReq(req);
     return await getUserCreditsByUid(uid, options);
+}
+
+// Verified credit reader: guarantees fresh balance read without falling back to reservation snapshots
+async function readVerifiedCreditState(reqOrUid) {
+    try {
+        const uid = typeof reqOrUid === 'string' ? reqOrUid : getUserIdFromReq(reqOrUid);
+        if (!uid || uid === 'guest_user') return { credits: null, creditsVerified: false };
+        const freshBal = await getUserCreditsByUid(uid, { forceFresh: true });
+        if (typeof freshBal === 'number') {
+            return { credits: freshBal, creditsVerified: true };
+        }
+        return { credits: null, creditsVerified: false };
+    } catch (err) {
+        console.warn('[readVerifiedCreditState Notice]:', err && err.message);
+        return { credits: null, creditsVerified: false };
+    }
 }
 
 // Fetch ledger transaction state from Supabase Postgres 'credit_transactions' table
@@ -564,7 +582,16 @@ function cacheCompletedAiResponse(key, statusCode, data) {
         const oldestKey = completedAiResponses.keys().next().value;
         if (oldestKey) completedAiResponses.delete(oldestKey);
     }
-    completedAiResponses.set(key, { statusCode, data, completedAt: Date.now() });
+    // Sanitize cached wallet state: replay of cached response must not regress newer balance
+    let cachedData = data;
+    if (data && typeof data === 'object') {
+        cachedData = {
+            ...data,
+            credits: null,
+            creditsVerified: false
+        };
+    }
+    completedAiResponses.set(key, { statusCode, data: cachedData, completedAt: Date.now() });
 }
 
 function getCompletedAiResponse(key) {
@@ -837,7 +864,7 @@ async function settleCreditsDB(req, reqId) {
 async function releaseCreditsDB(req, reqId, reason = 'ai_failure') {
     const uid = typeof req === 'string' ? req : getUserIdFromReq(req);
     invalidateInFlightCreditQuery(uid);
-    if (!uid || uid === 'guest_user' || !reqId) return { success: false, remainingCredits: 0 };
+    if (!uid || uid === 'guest_user' || !reqId) return { success: false, remainingCredits: null, balanceVerified: false };
 
     const maxAttempts = 3;
     let lastErr = null;
@@ -860,7 +887,10 @@ async function releaseCreditsDB(req, reqId, reason = 'ai_failure') {
                 }
                 if (rpcRes) {
                     const row = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
-                    const rem = typeof (row && row.new_balance) === 'number' ? row.new_balance : (typeof (row && row.remainingCredits) === 'number' ? row.remainingCredits : 0);
+                    const rem = typeof (row && row.new_balance) === 'number'
+                        ? row.new_balance
+                        : (typeof (row && row.remainingCredits) === 'number' ? row.remainingCredits : null);
+                    const balanceVerified = typeof rem === 'number';
                     if (!row || row.success !== true) {
                         if (row && row.success === false && (row.already_settled === true || row.error_code === 'ALREADY_SETTLED')) {
                             return {
@@ -868,15 +898,16 @@ async function releaseCreditsDB(req, reqId, reason = 'ai_failure') {
                                 alreadySettled: true,
                                 error_code: 'ALREADY_SETTLED',
                                 remainingCredits: rem,
+                                balanceVerified,
                                 error: row.error_message || 'Cannot release settled transaction.'
                             };
                         }
-                        return { success: false, remainingCredits: rem, error: (row && row.error_message) || 'Credit release was rejected.' };
+                        return { success: false, remainingCredits: rem, balanceVerified, error: (row && row.error_message) || 'Credit release was rejected.' };
                     }
-                    return { success: true, remainingCredits: rem, alreadyReleased: Boolean(row.already_released) };
+                    return { success: true, remainingCredits: rem, balanceVerified, alreadyReleased: Boolean(row.already_released) };
                 }
             }
-            return { success: false, remainingCredits: 0, error: 'Credit release service returned no response.' };
+            return { success: false, remainingCredits: null, balanceVerified: false, error: 'Credit release service returned no response.' };
         } catch (e) {
             lastErr = e.message;
             console.error(`[releaseCreditsDB Exception attempt ${attempt}/${maxAttempts}]:`, e.message);
@@ -892,28 +923,39 @@ async function releaseCreditsDB(req, reqId, reason = 'ai_failure') {
     if (supabaseAdmin) {
         const tx = await getCreditTransactionState(uid, reqId);
         if (tx && tx.status === 'cancelled') {
-            let freshBal = 0;
+            let freshBal = null;
+            let balanceVerified = false;
             try {
-                freshBal = await getUserCreditsByUid(uid, { forceFresh: true });
+                const bal = await getUserCreditsByUid(uid, { forceFresh: true });
+                if (typeof bal === 'number') {
+                    freshBal = bal;
+                    balanceVerified = true;
+                }
             } catch (_) {}
-            return { success: true, reconciled: true, remainingCredits: freshBal, alreadyReleased: true };
+            return { success: true, reconciled: true, remainingCredits: freshBal, balanceVerified, alreadyReleased: true };
         }
         if (tx && tx.status === 'completed') {
-            let freshBal = 0;
+            let freshBal = null;
+            let balanceVerified = false;
             try {
-                freshBal = await getUserCreditsByUid(uid, { forceFresh: true });
+                const bal = await getUserCreditsByUid(uid, { forceFresh: true });
+                if (typeof bal === 'number') {
+                    freshBal = bal;
+                    balanceVerified = true;
+                }
             } catch (_) {}
             return {
                 success: false,
                 alreadySettled: true,
                 error_code: 'ALREADY_SETTLED',
                 remainingCredits: freshBal,
+                balanceVerified,
                 error: 'Cannot release settled transaction.'
             };
         }
     }
 
-    return { success: false, remainingCredits: 0, error: lastErr || 'Credit release service returned no response.' };
+    return { success: false, remainingCredits: null, balanceVerified: false, error: lastErr || 'Credit release service returned no response.' };
 }
 
 // Fallback SQLite Deduction Helper
@@ -1980,19 +2022,20 @@ async function executeQualityPipeline(options, feature = 'generic', languageProf
         return await repairLanguageMismatch(options, feature, languageProfile === 'english' ? 'english' : 'hinglish', source, history, deadlineAt);
     }
 
-    const tValStart = Date.now();
+    const tValStart = performance.now();
     const validation = validateFinalBatch(options, feature, languageProfile);
     recordPerfTelemetry({
         feature: feature,
         stage: 'quality_validation',
-        durationMs: Date.now() - tValStart,
+        durationMs: performance.now() - tValStart,
         outputCount: options.length
     });
     if (validation.valid && options.length === 10) {
         return options;
     }
 
-    console.warn(`[Quality Pipeline] Feature: ${feature}, Profile: ${languageProfile}, Invalid: ${validation.invalidIndices.length}, Total: ${options.length}. Details: ${JSON.stringify(validation.details)}. Initiating selective repair...`);
+    const sanitizedDetails = (validation.details || []).map(d => ({ index: d.index, reason: d.reason }));
+    console.warn(`[Quality Pipeline] Feature: ${feature}, Profile: ${languageProfile}, Invalid: ${validation.invalidIndices.length}, Total: ${options.length}. Details: ${JSON.stringify(sanitizedDetails)}. Initiating selective repair...`);
 
     const repairFeature = feature.startsWith('chat_') ? 'chat' : feature;
     const sourceLabel = feature === 'analyze' ? 'stage1_transcript' : feature === 'optimize' ? 'bio_language_source' : 'language_source';
@@ -2035,7 +2078,7 @@ ${getAuthoritativeProfileDirective(languageProfile, repairFeature)}
         { role: 'user', content: `Original user context:\n${wrapUntrustedUserData(sourceLabel, sourceStr)}\n\nGenerate high-quality replacements for slots [${neededIndices.map(i => i + 1).join(', ')}] now.` }
     ];
 
-    const tRepairStart = Date.now();
+    const tRepairStart = performance.now();
     try {
         if (deadlineAt) {
             getOperationRemainingMs(deadlineAt, 1000);
@@ -2091,13 +2134,14 @@ ${getAuthoritativeProfileDirective(languageProfile, repairFeature)}
             recordPerfTelemetry({
                 feature: feature,
                 stage: 'selective_repair',
-                durationMs: Date.now() - tRepairStart,
+                durationMs: performance.now() - tRepairStart,
                 repairSlotCount: neededIndices.length
             });
             return mergedOptions;
         }
 
-        console.warn(`[Quality Pipeline Post-Repair Validation Failed] Details: ${JSON.stringify(postValidation.details)}`);
+        const sanitizedPostDetails = (postValidation.details || []).map(d => ({ index: d.index, reason: d.reason }));
+        console.warn(`[Quality Pipeline Post-Repair Validation Failed] Details: ${JSON.stringify(sanitizedPostDetails)}`);
         const err = new Error(`Quality policy violation: Output failed final quality validation after selective repair.`);
         err.code = 'LANGUAGE_OR_QUALITY_VIOLATION';
         throw err;
@@ -2122,13 +2166,13 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
 
     const cachedResponse = getCompletedAiResponse(opKey);
     if (cachedResponse) {
-        console.log(`[Idempotency Replay] Serving completed response for opKey: ${opKey}`);
+        console.log('[Idempotency Replay]:', logRef(reqId));
         return res.status(cachedResponse.statusCode).json(cachedResponse.data);
     }
 
     const ongoingOperation = inFlightAiOperations.get(opKey);
     if (ongoingOperation) {
-        console.log(`[In-Flight Coalescing] Awaiting ongoing operation for opKey: ${opKey}`);
+        console.log('[In-Flight Coalescing]:', logRef(reqId));
         try {
             const result = await ongoingOperation;
             return res.status(result.statusCode).json(result.data);
@@ -2153,7 +2197,9 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
                 success: false,
                 error: "This request ID is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
-                duplicate: true
+                duplicate: true,
+                credits: null,
+                creditsVerified: false
             });
         }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
@@ -2287,12 +2333,12 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
             return res.status(400).json({ success: false, error: "Please upload at least 1 chat screenshot to analyze." });
         }
 
-        const tReserveStart = Date.now();
+        const tReserveStart = performance.now();
         deduction = await verifyAndDeductCreditsDB(req, 10, 'analyze', reqId);
         recordPerfTelemetry({
             feature: 'analyze',
             stage: 'credit_reserve',
-            durationMs: Date.now() - tReserveStart
+            durationMs: performance.now() - tReserveStart
         });
         if (!deduction.success) {
             if (deduction.profileMissing) {
@@ -2336,7 +2382,8 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
                 error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
                 duplicate: true,
-                credits: deduction.remainingCredits
+                credits: null,
+                creditsVerified: false
             });
         }
 
@@ -2383,7 +2430,7 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
 }`;
 
                     console.log('[Analyzer] Executing Stage 1 optical vision parsing.', imageList.length);
-            const tVisionStart = Date.now();
+            const tVisionStart = performance.now();
             const transcriptionPromises = imageList.map(async (imgUrl, i) => {
                 const positionTag = (i === imageList.length - 1)
                     ? `SCREENSHOT ${i + 1} OF ${imageList.length} (LATEST SCREENSHOT - CONTAINS FINAL MESSAGE)`
@@ -2410,7 +2457,7 @@ JSON SCHEMA OUTPUT (OUTPUT ONLY VALID JSON, NO MARKDOWN):
             recordPerfTelemetry({
                 feature: 'analyze',
                 stage: 'vision_total',
-                durationMs: Date.now() - tVisionStart,
+                durationMs: performance.now() - tVisionStart,
                 outputCount: imageList.length
             });
 
@@ -2692,15 +2739,15 @@ ${formattingRule}`;
             throw countErr;
         }
 
-        const tSettleStart = Date.now();
+        const tSettleStart = performance.now();
         const settleResult = await settleCreditsDB(req, reqId);
         recordPerfTelemetry({
             feature: 'analyze',
             stage: 'credit_settle',
-            durationMs: Date.now() - tSettleStart
+            durationMs: performance.now() - tSettleStart
         });
         if (!settleResult || !settleResult.success) {
-            console.error('[Ledger Error] Failed to settle analyzer credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
+            console.error('[Ledger Error] Failed to settle analyzer credits.', logRef(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
                 success: false,
                 error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -2708,31 +2755,18 @@ ${formattingRule}`;
             });
         }
 
-        let authoritativeBalance = (settleResult && typeof settleResult.remainingCredits === 'number')
-            ? settleResult.remainingCredits
-            : deduction.remainingCredits;
-        const tReadStart = Date.now();
-        try {
-            const currentUserId = getUserIdFromReq(req);
-            if (currentUserId) {
-                const freshBal = await getUserCreditsByUid(currentUserId, { forceFresh: true });
-                if (typeof freshBal === 'number') {
-                    authoritativeBalance = freshBal;
-                }
-            }
-        } catch (balErr) {
-            console.warn('[Post-settle Credit Fetch Notice]', balErr.message);
-        }
+        const tReadStart = performance.now();
+        const creditState = await readVerifiedCreditState(req);
         recordPerfTelemetry({
             feature: 'analyze',
             stage: 'credit_read',
-            durationMs: Date.now() - tReadStart
+            durationMs: performance.now() - tReadStart
         });
 
         recordPerfTelemetry({
             feature: 'analyze',
             stage: 'total',
-            durationMs: Date.now() - (req._startTime || Date.now()),
+            durationMs: performance.now() - (req._perfStartMs || performance.now()),
             outputCount: optionsList.length
         });
 
@@ -2740,7 +2774,8 @@ ${formattingRule}`;
             success: true,
             options: optionsList,
             text: formattedText,
-            credits: authoritativeBalance
+            credits: creditState.credits,
+            creditsVerified: creditState.creditsVerified
         };
         cacheCompletedAiResponse(opKey, 200, successPayload);
         if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
@@ -2751,14 +2786,16 @@ ${formattingRule}`;
         const analyzerFailureCode = analyzerFailureStage === 'pipeline'
             ? 'ANALYZER_PIPELINE_FAILURE'
             : getAnalyzerProviderFailureCode(error);
-        let currentBal = deduction ? deduction.remainingCredits : 0;
+        let currentBal = null;
+        let balanceVerified = false;
         let releaseSucceeded = false;
         if (deduction && deduction.success && !deduction.duplicate) {
             const relRes = await releaseCreditsDB(req, reqId, error.message);
             if (relRes && relRes.success) {
                 releaseSucceeded = true;
-                if (typeof relRes.remainingCredits === 'number') {
+                if (typeof relRes.remainingCredits === 'number' && relRes.balanceVerified !== false) {
                     currentBal = relRes.remainingCredits;
+                    balanceVerified = true;
                 }
             }
         }
@@ -2767,7 +2804,8 @@ ${formattingRule}`;
                 success: false,
                 error: `Analysis failed and credit release could not be confirmed (Ref: ${reqId}). Please refresh your balance or contact support.mywingman@gmail.com.`,
                 reqId: reqId,
-                credits: deduction.currentCredits
+                credits: null,
+                creditsVerified: false
             };
             if (rejectOperation) rejectOperation({ statusCode: 500, data: failurePayload });
             return res.status(500).json(failurePayload);
@@ -2779,7 +2817,8 @@ ${formattingRule}`;
                 code: analyzerFailureCode,
                 stage: analyzerFailureStage,
                 reqId: reqId,
-                credits: currentBal
+                credits: currentBal,
+                creditsVerified: balanceVerified
             };
             if (rejectOperation) rejectOperation({ statusCode: 504, data: timeoutPayload });
             return res.status(504).json(timeoutPayload);
@@ -2790,7 +2829,8 @@ ${formattingRule}`;
             code: analyzerFailureCode,
             stage: analyzerFailureStage,
             reqId: reqId,
-            credits: currentBal
+            credits: currentBal,
+            creditsVerified: balanceVerified
         };
         if (rejectOperation) rejectOperation({ statusCode: 500, data: errorPayload });
         res.status(500).json(errorPayload);
@@ -2808,13 +2848,13 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
 
     const cachedResponse = getCompletedAiResponse(opKey);
     if (cachedResponse) {
-        console.log(`[Idempotency Replay] Serving completed response for opKey: ${opKey}`);
+        console.log('[Idempotency Replay] Serving completed response for reqId:', logRef(reqId));
         return res.status(cachedResponse.statusCode).json(cachedResponse.data);
     }
 
     const ongoingOperation = inFlightAiOperations.get(opKey);
     if (ongoingOperation) {
-        console.log(`[In-Flight Coalescing] Awaiting ongoing operation for opKey: ${opKey}`);
+        console.log('[In-Flight Coalescing] Awaiting ongoing operation for reqId:', logRef(reqId));
         try {
             const result = await ongoingOperation;
             return res.status(result.statusCode).json(result.data);
@@ -2839,7 +2879,9 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
                 success: false,
                 error: "This request ID is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
-                duplicate: true
+                duplicate: true,
+                credits: null,
+                creditsVerified: false
             });
         }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
@@ -2866,12 +2908,12 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
             });
         }
 
-        const tReserveStart = Date.now();
+        const tReserveStart = performance.now();
         deduction = await verifyAndDeductCreditsDB(req, 10, 'icebreaker', reqId);
         recordPerfTelemetry({
             feature: 'icebreaker',
             stage: 'credit_reserve',
-            durationMs: Date.now() - tReserveStart
+            durationMs: performance.now() - tReserveStart
         });
         if (!deduction.success) {
             if (deduction.profileMissing) {
@@ -2915,7 +2957,8 @@ app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimite
                 error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
                 duplicate: true,
-                credits: deduction.remainingCredits
+                credits: null,
+                creditsVerified: false
             });
         }
 
@@ -3014,7 +3057,7 @@ GENERAL ICEBREAKER LAWS:
 2. NO CREEPY / POETIC PHRASING: Avoid romantic poetry, Wattpad villain tropes, or intense lines ("stolen glances", "destiny", "pushing boundaries").
 3. ${formattingRule}` + getAuthoritativeProfileDirective(languageProfile, 'icebreaker');
 
-        const tGenStart = Date.now();
+        const tGenStart = performance.now();
         const responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(icebreakerSystemPrompt) },
             { role: "user", content: `${wrapUntrustedUserData('match_details', text)}\n\nRequested Tone: ${canonicalizeIcebreakerVibe(requestedVibe)}. Output the 10 numbered options now.` }
@@ -3022,7 +3065,7 @@ GENERAL ICEBREAKER LAWS:
         recordPerfTelemetry({
             feature: 'icebreaker',
             stage: 'provider_generation',
-            durationMs: Date.now() - tGenStart
+            durationMs: performance.now() - tGenStart
         });
 
         let rawOptions = [];
@@ -3105,15 +3148,15 @@ GENERAL ICEBREAKER LAWS:
 
         const formattedText = cleanedOptions.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
 
-        const tSettleStart = Date.now();
+        const tSettleStart = performance.now();
         const settleResult = await settleCreditsDB(req, reqId);
         recordPerfTelemetry({
             feature: 'icebreaker',
             stage: 'credit_settle',
-            durationMs: Date.now() - tSettleStart
+            durationMs: performance.now() - tSettleStart
         });
         if (!settleResult || !settleResult.success) {
-            console.error('[Ledger Error] Failed to settle icebreaker credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
+            console.error('[Ledger Error] Failed to settle icebreaker credits.', logRef(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
                 success: false,
                 error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -3121,31 +3164,18 @@ GENERAL ICEBREAKER LAWS:
             });
         }
 
-        let authoritativeBalance = (settleResult && typeof settleResult.remainingCredits === 'number')
-            ? settleResult.remainingCredits
-            : deduction.remainingCredits;
-        const tReadStart = Date.now();
-        try {
-            const currentUserId = getUserIdFromReq(req);
-            if (currentUserId) {
-                const freshBal = await getUserCreditsByUid(currentUserId, { forceFresh: true });
-                if (typeof freshBal === 'number') {
-                    authoritativeBalance = freshBal;
-                }
-            }
-        } catch (balErr) {
-            console.warn('[Post-settle Credit Fetch Notice]', balErr.message);
-        }
+        const tReadStart = performance.now();
+        const creditState = await readVerifiedCreditState(req);
         recordPerfTelemetry({
             feature: 'icebreaker',
             stage: 'credit_read',
-            durationMs: Date.now() - tReadStart
+            durationMs: performance.now() - tReadStart
         });
 
         recordPerfTelemetry({
             feature: 'icebreaker',
             stage: 'total',
-            durationMs: Date.now() - (req._startTime || Date.now()),
+            durationMs: performance.now() - (req._perfStartMs || performance.now()),
             outputCount: cleanedOptions.length
         });
 
@@ -3153,7 +3183,8 @@ GENERAL ICEBREAKER LAWS:
             success: true,
             text: formattedText,
             options: cleanedOptions,
-            credits: authoritativeBalance
+            credits: creditState.credits,
+            creditsVerified: creditState.creditsVerified
         };
         cacheCompletedAiResponse(opKey, 200, successPayload);
         if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
@@ -3161,14 +3192,16 @@ GENERAL ICEBREAKER LAWS:
     } catch (error) {
         if (rejectOperation) rejectOperation(error);
         console.error("Icebreaker breakdown:", error.message);
-        let currentBal = deduction ? deduction.remainingCredits : 0;
+        let currentBal = null;
+        let balanceVerified = false;
         let releaseSucceeded = false;
         if (deduction && deduction.success && !deduction.duplicate) {
             const relRes = await releaseCreditsDB(req, reqId, error.message);
             if (relRes && relRes.success) {
                 releaseSucceeded = true;
-                if (typeof relRes.remainingCredits === 'number') {
+                if (typeof relRes.remainingCredits === 'number' && relRes.balanceVerified !== false) {
                     currentBal = relRes.remainingCredits;
+                    balanceVerified = true;
                 }
             }
         }
@@ -3177,20 +3210,23 @@ GENERAL ICEBREAKER LAWS:
                 success: false,
                 error: `Icebreaker generation failed and credit release could not be confirmed (Ref: ${reqId}). Please refresh your balance or contact support.mywingman@gmail.com.`,
                 reqId: reqId,
-                credits: deduction.currentCredits
+                credits: null,
+                creditsVerified: false
             });
         }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
                 error: "Icebreaker generation timed out. Your credits were restored.",
-                credits: currentBal
+                credits: currentBal,
+                creditsVerified: balanceVerified
             });
         }
         res.status(500).json({
             success: false,
             error: "Icebreaker generation failed. Your credits were restored.",
-            credits: currentBal
+            credits: currentBal,
+            creditsVerified: balanceVerified
         });
     } finally {
         inFlightAiOperations.delete(opKey);
@@ -3200,7 +3236,11 @@ GENERAL ICEBREAKER LAWS:
 
 function sanitizeBioInput(rawInput, language = 'en') {
     if (!rawInput || typeof rawInput !== "string") {
-        return language === 'hinglish' ? "Loves late-night drives, gym sessions, chai tapri runs, aur achhi coffee." : "Loves late-night drives, gym sessions, finding 24-hour diners, and good coffee.";
+        return "";
+    }
+
+    if (language === 'en') {
+        // Enforce standard bio input formatting without altering factual content
     }
 
     let cleaned = rawInput.trim();
@@ -3211,7 +3251,6 @@ function sanitizeBioInput(rawInput, language = 'en') {
     cleaned = cleaned.replace(/^(hello|hi|hey|greetings)?\s*(my\s+name\s+is|i\s+am|i'm)\s+[a-z0-9_-]+\s*(,|and|\.)?\s*/gi, '');
     cleaned = cleaned.replace(/^(hello|hi|hey)\s+(my\s+name\s+is)\s*/gi, '');
     cleaned = cleaned.replace(/^(just\s+)?downloaded\s+(hinge|tinder|bumble)\s*(and)?\s*/gi, '');
-    cleaned = cleaned.replace(/i am a playboy/gi, 'confident and outgoing');
 
     // 2. Grammar Cleanup (Fix broken verb forms & user typos without dropping subjects)
     cleaned = cleaned.replace(/\bi\s+rides\b/gi, 'i ride');
@@ -3221,22 +3260,12 @@ function sanitizeBioInput(rawInput, language = 'en') {
     cleaned = cleaned.replace(/\bme\s+likes\b/gi, 'i like');
     cleaned = cleaned.replace(/\bi\s+loves\b/gi, 'i love');
 
-    // 3. Demographic & Cultural Isolation Law (US / Western Lock)
-    if (language === 'en') {
-        cleaned = cleaned.replace(/\bdhaba(s)?\b/gi, '24-hour diner');
-        cleaned = cleaned.replace(/\b(pani puri|vada pav|samosa(s)?|dosa(s)?|paratha(s)?)\b/gi, 'taco truck snacks');
-        cleaned = cleaned.replace(/\bchai tapri\b/gi, 'local coffee spot');
-        cleaned = cleaned.replace(/\bauto(s)?\b/gi, 'rideshare');
-        cleaned = cleaned.replace(/\broorkee\b/gi, 'hometown');
-        cleaned = cleaned.replace(/\bmonsoon(s)?\b/gi, 'rainy days');
-    }
-
-    // 4. Spelling & Typo Corrections (Zero fact-changing substitutions)
+    // 3. Spelling & Typo Corrections (Zero fact-changing substitutions)
     cleaned = cleaned.replace(/threaters|threatre|theaters/gi, 'theater');
     cleaned = cleaned.replace(/favaortae/gi, 'favorite');
 
     if (cleaned.length < 2) {
-        return language === 'hinglish' ? "Loves late-night drives, gym sessions, chai tapri runs, aur achhi coffee." : "Loves late-night drives, gym sessions, finding 24-hour diners, and good coffee.";
+        return "";
     }
     return cleaned;
 }
@@ -3297,13 +3326,13 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
 
     const cachedResponse = getCompletedAiResponse(opKey);
     if (cachedResponse) {
-        console.log(`[Idempotency Replay] Serving completed response for opKey: ${opKey}`);
+        console.log('[Idempotency Replay] Serving completed response for reqId:', logRef(reqId));
         return res.status(cachedResponse.statusCode).json(cachedResponse.data);
     }
 
     const ongoingOperation = inFlightAiOperations.get(opKey);
     if (ongoingOperation) {
-        console.log(`[In-Flight Coalescing] Awaiting ongoing operation for opKey: ${opKey}`);
+        console.log('[In-Flight Coalescing] Awaiting ongoing operation for reqId:', logRef(reqId));
         try {
             const result = await ongoingOperation;
             return res.status(result.statusCode).json(result.data);
@@ -3328,7 +3357,9 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
                 success: false,
                 error: "This request ID is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
-                duplicate: true
+                duplicate: true,
+                credits: null,
+                creditsVerified: false
             });
         }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
@@ -3364,12 +3395,12 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
             });
         }
 
-        const tReserveStart = Date.now();
+        const tReserveStart = performance.now();
         deduction = await verifyAndDeductCreditsDB(req, 10, 'optimize', reqId);
         recordPerfTelemetry({
             feature: 'optimize',
             stage: 'credit_reserve',
-            durationMs: Date.now() - tReserveStart
+            durationMs: performance.now() - tReserveStart
         });
         if (!deduction.success) {
             if (deduction.profileMissing) {
@@ -3413,7 +3444,8 @@ app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireAc
                 error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
                 duplicate: true,
-                credits: deduction.remainingCredits
+                credits: null,
+                creditsVerified: false
             });
         }
 
@@ -3508,7 +3540,7 @@ GLOBAL TONE & SYNTAX RULES:
 
 FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(languageProfile, 'optimize');
 
-        const tGenStart = Date.now();
+        const tGenStart = performance.now();
         let responseText = await queryOpenRouter("qwen3-235b-a22b-2507", [
             { role: "system", content: withPromptBoundary(bioOptimizerSystemPrompt) },
             { role: "user", content: `[SELECTED MODE: ${modeKey.toUpperCase()}]\n${wrapUntrustedUserData('bio_input', textPayload)}${language === 'auto' ? '\n' + wrapUntrustedUserData('bio_language_source', originalBioText) : ''}\n\nOutput the 10 numbered options now.` }
@@ -3516,7 +3548,7 @@ FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(langua
         recordPerfTelemetry({
             feature: 'optimize',
             stage: 'provider_generation',
-            durationMs: Date.now() - tGenStart
+            durationMs: performance.now() - tGenStart
         });
 
         let optionsList = [];
@@ -3550,17 +3582,6 @@ FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(langua
             cleaned = cleaned.replace(/\([^\)]*no\s+pop\s+playlists[^\)]*\)/gi, '');
             cleaned = cleaned.replace(/\([^\)]*no\s+fast\s+food[^\)]*\)/gi, '');
             cleaned = cleaned.replace(/don't swipe if[^\.\,\n]*/gi, '');
-
-            // Demographic & Cultural Isolation Law Safety Net (US / Western Lock)
-            if (languageTarget === 'english') {
-                cleaned = cleaned.replace(/\bdhaba(s)?\b/gi, '24-hour diner');
-                cleaned = cleaned.replace(/\b(pani puri|vada pav|samosa(s)?|dosa(s)?|paratha(s)?)\s*(roll|run)?\b/gi, 'taco truck run');
-                cleaned = cleaned.replace(/\bchai tapri\b/gi, 'coffee spot');
-                cleaned = cleaned.replace(/\bchai\b/gi, 'coffee');
-                cleaned = cleaned.replace(/\bauto(s)?\b/gi, 'rideshare');
-                cleaned = cleaned.replace(/\broorkee\b/gi, 'hometown');
-                cleaned = cleaned.replace(/\bmonsoon(s)?\b/gi, 'rainy days');
-            }
 
             // ABSOLUTE UNCONDITIONAL PURGE OF "settle this" FOREVER
             if (/settle this/i.test(cleaned)) {
@@ -3650,15 +3671,15 @@ FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(langua
             throw countErr;
         }
 
-        const tSettleStart = Date.now();
+        const tSettleStart = performance.now();
         const settleResult = await settleCreditsDB(req, reqId);
         recordPerfTelemetry({
             feature: 'optimize',
             stage: 'credit_settle',
-            durationMs: Date.now() - tSettleStart
+            durationMs: performance.now() - tSettleStart
         });
         if (!settleResult || !settleResult.success) {
-            console.error('[Ledger Error] Failed to settle bio credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
+            console.error('[Ledger Error] Failed to settle bio credits.', logRef(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
                 success: false,
                 error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -3666,31 +3687,18 @@ FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(langua
             });
         }
 
-        let authoritativeBalance = (settleResult && typeof settleResult.remainingCredits === 'number')
-            ? settleResult.remainingCredits
-            : deduction.remainingCredits;
-        const tReadStart = Date.now();
-        try {
-            const currentUserId = getUserIdFromReq(req);
-            if (currentUserId) {
-                const freshBal = await getUserCreditsByUid(currentUserId, { forceFresh: true });
-                if (typeof freshBal === 'number') {
-                    authoritativeBalance = freshBal;
-                }
-            }
-        } catch (balErr) {
-            console.warn('[Post-settle Credit Fetch Notice]', balErr.message);
-        }
+        const tReadStart = performance.now();
+        const creditState = await readVerifiedCreditState(req);
         recordPerfTelemetry({
             feature: 'optimize',
             stage: 'credit_read',
-            durationMs: Date.now() - tReadStart
+            durationMs: performance.now() - tReadStart
         });
 
         recordPerfTelemetry({
             feature: 'optimize',
             stage: 'total',
-            durationMs: Date.now() - (req._startTime || Date.now()),
+            durationMs: performance.now() - (req._perfStartMs || performance.now()),
             outputCount: optionsList.length
         });
 
@@ -3698,7 +3706,8 @@ FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(langua
             success: true,
             options: optionsList,
             text: formattedText,
-            credits: authoritativeBalance
+            credits: creditState.credits,
+            creditsVerified: creditState.creditsVerified
         };
         cacheCompletedAiResponse(opKey, 200, successPayload);
         if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
@@ -3706,14 +3715,16 @@ FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(langua
     } catch (error) {
         if (rejectOperation) rejectOperation(error);
         console.error("Bio optimizer breakdown:", error.message);
-        let currentBal = deduction ? deduction.remainingCredits : 0;
+        let currentBal = null;
+        let balanceVerified = false;
         let releaseSucceeded = false;
         if (deduction && deduction.success && !deduction.duplicate) {
             const relRes = await releaseCreditsDB(req, reqId, error.message);
             if (relRes && relRes.success) {
                 releaseSucceeded = true;
-                if (typeof relRes.remainingCredits === 'number') {
+                if (typeof relRes.remainingCredits === 'number' && relRes.balanceVerified !== false) {
                     currentBal = relRes.remainingCredits;
+                    balanceVerified = true;
                 }
             }
         }
@@ -3722,20 +3733,23 @@ FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(langua
                 success: false,
                 error: `Bio optimization failed and credit release could not be confirmed (Ref: ${reqId}). Please refresh your balance or contact support.mywingman@gmail.com.`,
                 reqId: reqId,
-                credits: deduction.currentCredits
+                credits: null,
+                creditsVerified: false
             });
         }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
                 error: "Bio optimization timed out. Your credits were restored.",
-                credits: currentBal
+                credits: currentBal,
+                creditsVerified: balanceVerified
             });
         }
         res.status(500).json({
             success: false,
             error: "Bio optimization failed. Your credits were restored.",
-            credits: currentBal
+            credits: currentBal,
+            creditsVerified: balanceVerified
         });
     } finally {
         inFlightAiOperations.delete(opKey);
@@ -3752,13 +3766,13 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
 
     const cachedResponse = getCompletedAiResponse(opKey);
     if (cachedResponse) {
-        console.log(`[Idempotency Replay] Serving completed response for opKey: ${opKey}`);
+        console.log('[Idempotency Replay] Serving completed response for reqId:', logRef(reqId));
         return res.status(cachedResponse.statusCode).json(cachedResponse.data);
     }
 
     const ongoingOperation = inFlightAiOperations.get(opKey);
     if (ongoingOperation) {
-        console.log(`[In-Flight Coalescing] Awaiting ongoing operation for opKey: ${opKey}`);
+        console.log('[In-Flight Coalescing] Awaiting ongoing operation for reqId:', logRef(reqId));
         try {
             const result = await ongoingOperation;
             return res.status(result.statusCode).json(result.data);
@@ -3783,7 +3797,9 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
                 success: false,
                 error: "This request ID is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
-                duplicate: true
+                duplicate: true,
+                credits: null,
+                creditsVerified: false
             });
         }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
@@ -3893,7 +3909,8 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
                 error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
                 duplicate: true,
-                credits: deduction.remainingCredits
+                credits: null,
+                creditsVerified: false
             });
         }
 
@@ -3974,7 +3991,7 @@ CONVERSATIONAL FREEDOM & LAWS:
 
             const settleResult = await settleCreditsDB(req, reqId);
             if (!settleResult || !settleResult.success) {
-                console.error('[Ledger Error] Failed to settle hotline credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
+                console.error('[Ledger Error] Failed to settle hotline credits.', logRef(reqId), safeLogValue(settleResult && settleResult.error));
                 return res.status(503).json({
                     success: false,
                     error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -3982,6 +3999,7 @@ CONVERSATIONAL FREEDOM & LAWS:
                 });
             }
 
+            const creditState = await readVerifiedCreditState(req);
             const successPayload = {
                 success: true,
                 mode: "hotline",
@@ -3990,7 +4008,8 @@ CONVERSATIONAL FREEDOM & LAWS:
                 attraction_score: 80,
                 attraction_change: 0,
                 character_mood: "Coach",
-                credits: deduction.remainingCredits
+                credits: creditState.credits,
+                creditsVerified: creditState.creditsVerified
             };
             cacheCompletedAiResponse(opKey, 200, successPayload);
             if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
@@ -4220,7 +4239,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
 
         const settleResult = await settleCreditsDB(req, reqId);
         if (!settleResult || !settleResult.success) {
-            console.error('[Ledger Error] Failed to settle roleplay credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
+            console.error('[Ledger Error] Failed to settle roleplay credits.', logRef(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
                 success: false,
                 error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -4228,11 +4247,13 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
             });
         }
 
+        const creditState = await readVerifiedCreditState(req);
         const successPayload = {
             success: true,
             reply: replyText,
             roleplay_response: replyText,
-            credits: deduction.remainingCredits
+            credits: creditState.credits,
+            creditsVerified: creditState.creditsVerified
         };
         cacheCompletedAiResponse(opKey, 200, successPayload);
         if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
@@ -4240,14 +4261,16 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
     } catch (error) {
         if (rejectOperation) rejectOperation(error);
         console.error("Maeve AI Chat Pipeline Error:", error.stack || error.message || error);
-        let currentBal = deduction ? deduction.remainingCredits : 0;
+        let currentBal = null;
+        let balanceVerified = false;
         let releaseSucceeded = false;
         if (deduction && deduction.success && !deduction.duplicate) {
             const relRes = await releaseCreditsDB(req, reqId, error.message);
             if (relRes && relRes.success) {
                 releaseSucceeded = true;
-                if (typeof relRes.remainingCredits === 'number') {
+                if (typeof relRes.remainingCredits === 'number' && relRes.balanceVerified !== false) {
                     currentBal = relRes.remainingCredits;
+                    balanceVerified = true;
                 }
             }
         }
@@ -4256,14 +4279,16 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
                 success: false,
                 error: `Maeve AI Coach failed to respond and credit release could not be confirmed (Ref: ${reqId}). Please refresh your balance or contact support.mywingman@gmail.com.`,
                 reqId: reqId,
-                credits: deduction.currentCredits
+                credits: null,
+                creditsVerified: false
             });
         }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
                 error: "Maeve AI Coach timed out. Your credits were restored.",
-                credits: currentBal
+                credits: currentBal,
+                creditsVerified: balanceVerified
             });
         }
         const providerCode = getMaeveProviderFailureCode(error);
@@ -4271,7 +4296,8 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
             success: false,
             error: "Maeve AI Coach failed to respond. Your credits were restored.",
             code: providerCode,
-            credits: currentBal
+            credits: currentBal,
+            creditsVerified: balanceVerified
         });
     } finally {
         inFlightAiOperations.delete(opKey);
@@ -4308,7 +4334,9 @@ app.post('/api/simulator/review', requireSupabaseAuth, requireActiveConsent, api
                 success: false,
                 error: "This request ID is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
-                duplicate: true
+                duplicate: true,
+                credits: null,
+                creditsVerified: false
             });
         }
         return res.status(429).json({ success: false, error: "A generation is already in progress for your account. Please wait for it to complete." });
@@ -4371,7 +4399,8 @@ app.post('/api/simulator/review', requireSupabaseAuth, requireActiveConsent, api
                 error: "This request ID has already been processed or is already in progress. No additional credits were deducted.",
                 code: "DUPLICATE_REQUEST",
                 duplicate: true,
-                credits: deduction.remainingCredits
+                credits: null,
+                creditsVerified: false
             });
         }
 
@@ -4519,7 +4548,7 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
 
         const settleResult = await settleCreditsDB(req, reqId);
         if (!settleResult || !settleResult.success) {
-            console.error('[Ledger Error] Failed to settle review credits.', safeLogValue(reqId), safeLogValue(settleResult && settleResult.error));
+            console.error('[Ledger Error] Failed to settle review credits.', logRef(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
                 success: false,
                 error: `Transaction completion error (Ref: ${reqId}). Your credit balance may need reconciliation. Please refresh or contact support.mywingman@gmail.com.`,
@@ -4527,6 +4556,7 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
             });
         }
 
+        const creditState = await readVerifiedCreditState(req);
         const successPayload = {
             success: true,
             overall_score: overallScore,
@@ -4539,7 +4569,8 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
             biggest_mistake: biggestMistake,
             priority_focus: priorityFocus,
             priority_tip: priorityFocus,
-            credits: deduction.remainingCredits
+            credits: creditState.credits,
+            creditsVerified: creditState.creditsVerified
         };
         cacheCompletedAiResponse(opKey, 200, successPayload);
         if (resolveOperation) resolveOperation({ statusCode: 200, data: successPayload });
@@ -4548,14 +4579,16 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
     } catch (error) {
         if (rejectOperation) rejectOperation(error);
         console.error("Qwen Review API Error:", error.message);
-        let currentBal = deduction ? deduction.remainingCredits : 0;
+        let currentBal = null;
+        let balanceVerified = false;
         let releaseSucceeded = false;
         if (deduction && deduction.success && !deduction.duplicate) {
             const relRes = await releaseCreditsDB(req, reqId, error.message);
             if (relRes && relRes.success) {
                 releaseSucceeded = true;
-                if (typeof relRes.remainingCredits === 'number') {
+                if (typeof relRes.remainingCredits === 'number' && relRes.balanceVerified !== false) {
                     currentBal = relRes.remainingCredits;
+                    balanceVerified = true;
                 }
             }
         }
@@ -4564,20 +4597,23 @@ You MUST reply with ONLY a single valid JSON object strictly adhering to this st
                 success: false,
                 error: `Simulation review failed and credit release could not be confirmed (Ref: ${reqId}). Please refresh your balance or contact support.mywingman@gmail.com.`,
                 reqId: reqId,
-                credits: deduction.currentCredits
+                credits: null,
+                creditsVerified: false
             });
         }
         if (error.isTimeout || (error.message && error.message.includes("timed out"))) {
             return res.status(504).json({
                 success: false,
                 error: "Simulation review timed out. Your credits were restored.",
-                credits: currentBal
+                credits: currentBal,
+                creditsVerified: balanceVerified
             });
         }
         res.status(500).json({
             success: false,
             error: "Simulation review failed. Your credits were restored.",
-            credits: currentBal
+            credits: currentBal,
+            creditsVerified: balanceVerified
         });
     } finally {
         inFlightAiOperations.delete(opKey);
@@ -4931,7 +4967,7 @@ app.post('/api/user/delete-account', requireSupabaseAuth, apiLimiter, async (req
         if (authDelErr) {
             // Provider error detail stays in server logs only; the client receives a
             // stable sanitized message with a stable code.
-            console.error('[delete-account] Auth deletion failed.', safeLogValue(uid), safeLogValue(authDelErr && authDelErr.message));
+            console.error('[delete-account] Auth deletion failed.', logRef(uid), safeLogValue(authDelErr && authDelErr.message));
             return res.status(500).json({
                 success: false,
                 error: 'Unable to delete the account at this time. Please try again later.',
@@ -5071,6 +5107,9 @@ module.exports.getCompletedAiResponse = getCompletedAiResponse;
 module.exports.getCreditTransactionState = getCreditTransactionState;
 module.exports.recordPerfTelemetry = recordPerfTelemetry;
 module.exports.executeQualityPipeline = executeQualityPipeline;
+module.exports.readVerifiedCreditState = readVerifiedCreditState;
+module.exports.sanitizeBioInput = sanitizeBioInput;
+module.exports.logRef = logRef;
 
 if (require.main === module) {
     startWingmanServer().catch(() => process.exit(1));

@@ -324,12 +324,14 @@
 
             if (!response.ok || !data.success) {
                 if (response.status === 402 && typeof window.checkCreditBalance === 'function') {
-                    try { await window.checkCreditBalance(); } catch (_) {}
+                    try { await window.checkCreditBalance({ forceFresh: true }); } catch (_) {}
                 }
                 throw new Error(data.error || ('Conversation review failed with HTTP ' + response.status + '.'));
             }
 
-            if (typeof data.credits === 'number' && typeof window.updateUICredits === 'function') {
+            if (typeof window.reconcileCreditPayload === 'function') {
+                window.reconcileCreditPayload(data);
+            } else if (data && data.creditsVerified === true && typeof data.credits === 'number' && Number.isFinite(data.credits) && typeof window.updateUICredits === 'function') {
                 window.updateUICredits(data.credits);
             }
             renderReview(data);
@@ -341,6 +343,9 @@
             notify('Conversation review complete. 2 credits processed.', 'success');
         } catch (err) {
             console.error('[Simulator Review Error]:', err);
+            if (typeof window.checkCreditBalance === 'function') {
+                try { await window.checkCreditBalance({ forceFresh: true }); } catch (_) {}
+            }
             notify((err && err.message) || 'Conversation review failed. Your credits should remain protected by the server ledger.', 'error');
         } finally {
             reviewBusy = false;

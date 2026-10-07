@@ -62,7 +62,7 @@ assert.strictEqual(serverCode.includes('At least 2 messages are required to eval
 // Must release credits and return error on AI failure (NO score 78 fallback)
 const reviewEndpointIdx = serverCode.indexOf("app.post('/api/simulator/review'");
 assert.ok(reviewEndpointIdx !== -1, "Review endpoint must exist");
-const reviewSection = serverCode.substring(reviewEndpointIdx, reviewEndpointIdx + 15000);
+const reviewSection = serverCode.substring(reviewEndpointIdx, reviewEndpointIdx + 25000);
 
 assert.strictEqual(reviewSection.includes('throw new Error("Failed to parse simulation review output from AI model.");'), true, "Review endpoint must throw on parse error rather than return fake score");
 assert.strictEqual(reviewSection.includes('releaseCreditsDB(req, reqId, error.message)'), true, "Review endpoint must release credits on catch");

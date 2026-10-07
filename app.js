@@ -340,6 +340,22 @@ STRICT LAWS:
         return amount;
     };
 
+    // Centralized wallet reconciler: commits verified balances immediately;
+    // unverified or null balances mark state as loading ("Syncing…") and trigger fresh /api/credits read
+    window.reconcileCreditPayload = function (payload) {
+        if (!payload || typeof payload !== 'object') {
+            state.creditsStatus = "loading";
+            syncCredits();
+            return window.checkCreditBalance({ forceFresh: true });
+        }
+        if (payload.creditsVerified === true && typeof payload.credits === 'number' && !isNaN(payload.credits)) {
+            return window.commitAuthoritativeCreditBalance(payload.credits);
+        }
+        state.creditsStatus = "loading";
+        syncCredits();
+        return window.checkCreditBalance({ forceFresh: true });
+    };
+
     // Supabase Postgres Canonical Balance & Wallet Truth via authenticated /api/credits
     window.checkCreditBalance = function () {
         const opts = (arguments && typeof arguments[0] === 'object' && arguments[0] !== null) ? arguments[0] : {};
@@ -455,12 +471,6 @@ STRICT LAWS:
                                 state.creditsStatus = "loaded";
                                 syncCredits();
                                 return { success: true, status: "loaded", credits: resJson.credits };
-                            } else if (resJson && resJson.data && typeof resJson.data.credits_inr === 'number') {
-                                const count = Math.round(resJson.data.credits_inr * 10);
-                                state.credits = count;
-                                state.creditsStatus = "loaded";
-                                syncCredits();
-                                return { success: true, status: "loaded", credits: count };
                             }
                         }
                     } catch (apiErr) {
@@ -3334,7 +3344,7 @@ STRICT LAWS:
                 if (response.status === 402) {
                     trackWingmanEvent('credits_exhausted', { endpoint: endpoint, currentCredits: state.credits || 0 });
                     const requiredCreditCost = (endpoint === '/api/chat' || endpoint === '/api/simulator/chat' || endpoint === '/api/simulator/review') ? 2 : 10;
-                    const authoritativeBalanceCheck = await window.checkCreditBalance();
+                    const authoritativeBalanceCheck = await window.checkCreditBalance({ forceFresh: true });
                     if (!authoritativeBalanceCheck || !authoritativeBalanceCheck.success || typeof state.credits !== 'number') {
                         if (typeof window.showToast === 'function') {
                             window.showToast("The server rejected this request for credits, but your current wallet balance could not be verified. Please refresh or sign in again.", "warning");
@@ -3376,7 +3386,7 @@ STRICT LAWS:
                 if (response.status === 409) {
                     trackWingmanEvent('generation_duplicate', { endpoint: endpoint });
                     if (typeof window.checkCreditBalance === 'function') {
-                        await window.checkCreditBalance();
+                        await window.checkCreditBalance({ forceFresh: true });
                     }
                     if (typeof window.showToast === 'function') {
                         window.showToast(errJson.error || "This request ID has already been processed or is already in progress. No additional credits were deducted.", "info");
@@ -3403,7 +3413,7 @@ STRICT LAWS:
                         return null;
                     }
                     if (typeof window.checkCreditBalance === 'function') {
-                        await window.checkCreditBalance();
+                        await window.checkCreditBalance({ forceFresh: true });
                     }
                     if (typeof window.showToast === 'function') {
                         const offlineMsg = (response.status === 404 || response.status === 502 || response.status === 504 || !errJson.error)
@@ -3415,14 +3425,9 @@ STRICT LAWS:
                 }
 
                 if (response.status >= 500) {
-                    if (typeof errJson.credits === "number") {
-                        if (typeof window.commitAuthoritativeCreditBalance === 'function') {
-                            window.commitAuthoritativeCreditBalance(errJson.credits);
-                        } else {
-                            window.updateUICredits(errJson.credits);
-                        }
-                    }
-                    if (typeof window.checkCreditBalance === 'function') {
+                    if (typeof window.reconcileCreditPayload === 'function') {
+                        await window.reconcileCreditPayload(errJson);
+                    } else if (typeof window.checkCreditBalance === 'function') {
                         await window.checkCreditBalance({ forceFresh: true });
                     }
                     trackWingmanEvent('generation_failed', { endpoint: endpoint, status: response.status });
@@ -3432,12 +3437,10 @@ STRICT LAWS:
                     return null;
                 }
 
-                if (typeof errJson.credits === "number") {
-                    if (typeof window.commitAuthoritativeCreditBalance === 'function') {
-                        window.commitAuthoritativeCreditBalance(errJson.credits);
-                    } else {
-                        window.updateUICredits(errJson.credits);
-                    }
+                if (typeof window.reconcileCreditPayload === 'function') {
+                    await window.reconcileCreditPayload(errJson);
+                } else if (typeof window.checkCreditBalance === 'function') {
+                    await window.checkCreditBalance({ forceFresh: true });
                 }
                 trackWingmanEvent('generation_failed', { endpoint: endpoint, status: response.status });
                 if (typeof window.showToast === 'function') {
@@ -3447,7 +3450,9 @@ STRICT LAWS:
             }
 
             const data = await response.json();
-            if (typeof data.credits === "number") {
+            if (typeof window.reconcileCreditPayload === 'function') {
+                window.reconcileCreditPayload(data);
+            } else if (data && data.creditsVerified === true && typeof data.credits === "number" && Number.isFinite(data.credits)) {
                 if (typeof window.commitAuthoritativeCreditBalance === 'function') {
                     window.commitAuthoritativeCreditBalance(data.credits);
                 } else {
@@ -4341,12 +4346,16 @@ STRICT LAWS:
                     const aiReply = typeof chatData.reply === 'string'
                         ? chatData.reply.replace(/<\/?user_?data[^<>]*>/gi, '').replace(/\blabel=["'][^"']*["']/gi, '').trim()
                         : chatData.reply;
-                    const updatedBal = typeof chatData.credits === 'number' ? chatData.credits : (typeof chatData.creditsRemaining === 'number' ? chatData.creditsRemaining : null);
-                    if (updatedBal !== null) {
-                        if (typeof window.commitAuthoritativeCreditBalance === 'function') {
-                            window.commitAuthoritativeCreditBalance(updatedBal);
-                        } else {
-                            window.updateUICredits(updatedBal);
+                    if (typeof window.reconcileCreditPayload === 'function') {
+                        window.reconcileCreditPayload(chatData);
+                    } else if (chatData && chatData.creditsVerified === true) {
+                        const updatedBal = typeof chatData.credits === 'number' ? chatData.credits : (typeof chatData.creditsRemaining === 'number' ? chatData.creditsRemaining : null);
+                        if (updatedBal !== null && Number.isFinite(updatedBal)) {
+                            if (typeof window.commitAuthoritativeCreditBalance === 'function') {
+                                window.commitAuthoritativeCreditBalance(updatedBal);
+                            } else {
+                                window.updateUICredits(updatedBal);
+                            }
                         }
                     }
                     if (requestGeneration !== simulatorGeneration) return;
@@ -4379,6 +4388,7 @@ STRICT LAWS:
             } else if (chatResp.status === 503 || chatResp.status === 502 || chatResp.status === 504 || chatResp.status === 404) {
                 if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 const errJson = await chatResp.json().catch(() => ({}));
+                if (typeof window.checkCreditBalance === 'function') await window.checkCreditBalance({ forceFresh: true });
                 if (errJson.code === "CONSENT_SERVICE_UNAVAILABLE") {
                     state.isTermsAccepted = false;
                     state.consentStatus = 'service_unavailable';
@@ -4395,7 +4405,7 @@ STRICT LAWS:
             } else if (chatResp.status === 402) {
                 if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 const errJson = await chatResp.json().catch(() => ({}));
-                const authoritativeChatBalance = await window.checkCreditBalance();
+                const authoritativeChatBalance = await window.checkCreditBalance({ forceFresh: true });
                 if (!authoritativeChatBalance || !authoritativeChatBalance.success || typeof state.credits !== 'number') {
                     window.renderChatboxBubble("The credit service rejected this message, but your wallet could not be verified. Please refresh or sign in again.", "assistant");
                 } else if (state.credits >= 2) {
@@ -4407,14 +4417,17 @@ STRICT LAWS:
             } else {
                 if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 const errJson = await chatResp.json().catch(() => ({}));
-                if (typeof errJson.credits === 'number') {
-                    window.updateUICredits(errJson.credits);
+                if (typeof window.reconcileCreditPayload === 'function') {
+                    await window.reconcileCreditPayload(errJson);
+                } else if (typeof window.checkCreditBalance === 'function') {
+                    await window.checkCreditBalance({ forceFresh: true });
                 }
                 const errMsg = errJson.error || "Sorry, Maeve is taking a quick breath. If you were charged credits, please contact support.mywingman@gmail.com.";
                 window.renderChatboxBubble("Notice: " + errMsg, "assistant");
             }
         } catch (chatErr) {
             if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
+            if (typeof window.checkCreditBalance === 'function') await window.checkCreditBalance({ forceFresh: true });
             if (requestGeneration !== simulatorGeneration) return;
             window.showChatboxTypingIndicator(false);
             console.error("Chatbox API Error:", chatErr);
