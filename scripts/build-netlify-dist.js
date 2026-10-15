@@ -232,7 +232,7 @@ function stripDevelopmentCspSources() {
   for (const rel of PUBLIC_FILES.filter(file => file.endsWith('.html'))) {
     const target = path.join(OUT, rel);
     const source = fs.readFileSync(target, 'utf8');
-    const production = source.replace(/\s+http:\/\/localhost:\*/g, '')
+    const production = source.replace(/<!-- Local File Protocol Warning Banner[\s\S]*?<\/script>/, '').replace(/\s+http:\/\/localhost:\*/g, '')
       .replace(/\s+ws:\/\/localhost:\*/g, '')
       .replace(/\s+http:\/\/\*:\*/g, '')
       .replace(/\s+ws:\/\/\*:\*/g, '')

@@ -730,9 +730,9 @@ console.log("✔ Test 20 Passed: Chat 503 consent service failure locks controls
 console.log("▶ [TEST 21] Privacy Affirmative Consent Copy Audit");
 
 assert.strictEqual(
-    privacyHtmlCode.includes("By explicitly completing the consent and 18+ verification flow, you consent to this processing."),
+    privacyHtmlCode.includes("By clicking the existing Unlock Workspace action after reviewing the visible 18+ adult declaration and AI-processing consent notice, you explicitly consent to this processing."),
     true,
-    "privacy.html must state consent is granted by completing verification flow"
+    "privacy.html must tie affirmative adult declaration and processing consent to the existing Unlock Workspace action"
 );
 assert.strictEqual(
     privacyHtmlCode.includes("By accessing these tools"),

@@ -2389,6 +2389,12 @@ STRICT LAWS:
         const formattedPrice = window.wingmanCurrency ? window.wingmanCurrency.formatPlanSale(tierValue, currentCurrency) : ('₹' + (Number(radio.getAttribute("data-price")) || 1799).toLocaleString('en-IN'));
         const priceNumber = window.wingmanCurrency ? window.wingmanCurrency.getPlanPriceNumber(tierValue, currentCurrency) : (Number(radio.getAttribute("data-price")) || 1799);
 
+        const summaryPlan = window.wingmanCurrency && window.wingmanCurrency.getPlan(tierValue);
+        const summaryName = $("summaryPlanName"), summaryCredits = $("summaryCredits"), summaryAmount = $("summaryAmount");
+        if (summaryName && summaryPlan) summaryName.textContent = summaryPlan.name;
+        if (summaryCredits) summaryCredits.textContent = credits.toLocaleString('en-IN');
+        if (summaryAmount) summaryAmount.textContent = formattedPrice;
+
         state.selectedTier = {
             value: tierValue,
             credits: credits,
@@ -4468,21 +4474,6 @@ STRICT LAWS:
         }
     };
 
-    window.toggleInterstitialAcceptButton = function() {
-        const chk = document.getElementById('interstitialAgreementCheck');
-        const btn = document.getElementById('interstitialAcceptBtn');
-        if (!btn) return;
-        if (chk && chk.checked) {
-            btn.classList.remove('opacity-50', 'pointer-events-none');
-            btn.classList.add('opacity-100', 'pointer-events-auto');
-            btn.disabled = false;
-        } else {
-            btn.classList.add('opacity-50', 'pointer-events-none');
-            btn.classList.remove('opacity-100', 'pointer-events-auto');
-            btn.disabled = true;
-        }
-    };
-
     window.checkServerConsentStatus = async function() {
         try {
             const isAuth = !!(window.currentSupabaseSession && window.currentSupabaseSession.access_token);
@@ -4571,13 +4562,8 @@ STRICT LAWS:
     };
 
     window.acceptInterstitialTerms = async function() {
-        const chk = document.getElementById('interstitialAgreementCheck');
-        if (!chk || !chk.checked) {
-            if (typeof window.showToast === 'function') {
-                window.showToast("Please check the box to confirm you are 18+ and agree to the Terms of Service & Privacy Policy.", "warning");
-            }
-            return;
-        }
+        const existingButton = document.getElementById('interstitialAcceptBtn');
+        if (existingButton && existingButton.disabled) return;
 
         const isAuth = !!(window.currentSupabaseSession && window.currentSupabaseSession.access_token);
         if (!isAuth) {
@@ -4601,7 +4587,7 @@ STRICT LAWS:
             if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
             if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
             if (typeof window.showToast === 'function') {
-                window.showToast("18+ Age verification & legal terms accepted.", "success");
+                window.showToast("Adult declaration and AI-processing consent accepted.", "success");
             }
             return;
         }
@@ -4644,7 +4630,7 @@ STRICT LAWS:
             if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
             if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
             if (typeof window.showToast === 'function') {
-                window.showToast("18+ Age verification & legal consent successfully recorded.", "success");
+                window.showToast("Adult declaration and AI-processing consent recorded.", "success");
             }
         } catch (err) {
             state.isTermsAccepted = false;

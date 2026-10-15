@@ -908,7 +908,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
     }
 
     function setCurrency(newCurrency) {
-        var valid = canonicalize(newCurrency);
+        var valid = document.body && document.body.getAttribute('data-purchase-currency') === 'INR' ? 'INR' : canonicalize(newCurrency);
         currentCurrency = valid;
         safeSetStorage(STORAGE_KEY, valid);
 
@@ -959,7 +959,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 
     function init() {
         var saved = safeGetStorage(STORAGE_KEY);
-        var initial = canonicalize(saved || DEFAULT_CURRENCY);
+        var initial = document.body && document.body.getAttribute('data-purchase-currency') === 'INR' ? 'INR' : canonicalize(saved || DEFAULT_CURRENCY);
         currentCurrency = initial;
         bindCurrencyButtons();
         updatePricingDisplay();
