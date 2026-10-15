@@ -1897,7 +1897,7 @@ STRICT LAWS:
             if (forgotBtn) forgotBtn.classList.add("hidden");
         } else {
             if (title) title.textContent = "Sign In to MyWingman";
-            if (desc) desc.textContent = "Sync your credit wallet balance and secure your workspace sessions.";
+            if (desc) desc.textContent = "Sync your AI usage credits and secure your workspace sessions.";
             if (submitBtn) submitBtn.textContent = "Sign In with Email";
             if (toggleBtn) toggleBtn.textContent = "Need an account? Sign Up";
             if (forgotBtn) forgotBtn.classList.remove("hidden");
@@ -1961,7 +1961,7 @@ STRICT LAWS:
             if (desc) desc.textContent = "Sign up to save your preferences and manage credit balance.";
         } else {
             if (title) title.textContent = "Sign In to MyWingman";
-            if (desc) desc.textContent = "Sync your credit wallet balance and secure your workspace sessions.";
+            if (desc) desc.textContent = "Sync your AI usage credits and secure your workspace sessions.";
         }
     };
 
@@ -3353,13 +3353,13 @@ STRICT LAWS:
                     const authoritativeBalanceCheck = await window.checkCreditBalance({ forceFresh: true });
                     if (!authoritativeBalanceCheck || !authoritativeBalanceCheck.success || typeof state.credits !== 'number') {
                         if (typeof window.showToast === 'function') {
-                            window.showToast("The server rejected this request for credits, but your current wallet balance could not be verified. Please refresh or sign in again.", "warning");
+                            window.showToast("The server rejected this request for credits, but your current AI usage credit balance could not be verified. Please refresh or sign in again.", "warning");
                         }
                         return null;
                     }
                     if (state.credits >= requiredCreditCost) {
                         if (typeof window.showToast === 'function') {
-                            window.showToast("Your wallet has enough credits, but this request was rejected by the credit service. Please refresh or sign in again; no purchase is required.", "warning");
+                            window.showToast("Your AI usage credit balance is sufficient, but this request was rejected by the credit service. Please refresh or sign in again; no purchase is required.", "warning");
                         }
                         return null;
                     }
@@ -4413,9 +4413,9 @@ STRICT LAWS:
                 const errJson = await chatResp.json().catch(() => ({}));
                 const authoritativeChatBalance = await window.checkCreditBalance({ forceFresh: true });
                 if (!authoritativeChatBalance || !authoritativeChatBalance.success || typeof state.credits !== 'number') {
-                    window.renderChatboxBubble("The credit service rejected this message, but your wallet could not be verified. Please refresh or sign in again.", "assistant");
+                    window.renderChatboxBubble("The credit service rejected this message, but your AI usage credits could not be verified. Please refresh or sign in again.", "assistant");
                 } else if (state.credits >= 2) {
-                    window.renderChatboxBubble("Your wallet has enough credits, but this message was rejected by the credit service. Please refresh or sign in again; no purchase is required.", "assistant");
+                    window.renderChatboxBubble("Your AI usage credit balance is sufficient, but this message was rejected by the credit service. Please refresh or sign in again; no purchase is required.", "assistant");
                 } else {
                     window.renderChatboxBubble(errJson.error || "⚠️ Insufficient credits. Please top up credits to continue practicing.", "assistant");
                     if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal(2);

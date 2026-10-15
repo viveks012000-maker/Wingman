@@ -25,6 +25,16 @@ async function main() {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     let browser;
     try {
+        const base = 'http://127.0.0.1:' + server.address().port;
+        for (const [file, heading] of [
+            ['about.html', 'About Wingman'], ['contact.html', 'Contact and Support'],
+            ['terms.html', 'Terms of Service'], ['privacy.html', 'Privacy Policy'],
+            ['refund.html', 'CANCELLATION &amp; REFUND POLICY'], ['service-delivery.html', 'Service Delivery Policy']
+        ]) {
+            const response = await fetch(base + '/' + file);
+            assert.equal(response.status, 200, 'Generated policy route must load: ' + file);
+            assert((await response.text()).includes(heading), 'Generated policy content missing: ' + file);
+        }
         browser = await chromium.launch({ headless: true });
         for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
             const page = await browser.newPage({ viewport });
@@ -36,16 +46,26 @@ async function main() {
                 return route.abort();
             });
             await page.addInitScript(() => localStorage.setItem('wingman_setting_currency', 'USD'));
-            const base = 'http://127.0.0.1:' + server.address().port;
             await page.goto(base + '/', { waitUntil: 'load' });
             assert.equal(await page.locator('#interstitialCheckbox').count(), 0, 'landing age checkbox must be removed');
             assert(await page.locator('#workspaceConsentNotice').innerText().then(text => text.includes('18') && text.includes('AI')));
-            assert.equal(await page.title(), 'MyWingman — AI Messaging & Conversation Writing Assistant');
+            assert.equal(await page.title(), 'MyWingman — The AI Texting Assistant');
+            assert.equal((await page.locator('h1').innerText()).replace(/\s+/g, ' ').trim(), 'The AI Texting Assistant');
+            for (const phrase of [
+                'MYWINGMAN · THE AI TEXTING ASSISTANT',
+                'Stop staring at the typing box. Find a better starting point.',
+                "Because knowing what you mean and knowing how to say it aren't always the same thing.",
+                'The reply you keep rewriting', 'The first-message dilemma', 'Your words, just clearer'
+            ]) assert((await page.locator('body').innerText()).includes(phrase), 'Missing marketing copy: ' + phrase);
+            assert.equal(await page.locator('img[src="maeve.jpg"]:visible').count(), 0, 'preserve the requested hidden coach image');
             assert.equal(await page.locator('[data-currency="USD"]:visible').count(), 0);
             assert.equal(await page.evaluate(() => window.wingmanCurrency.getCurrency()), 'INR');
             assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
             await page.waitForFunction(() => Number(getComputedStyle(document.getElementById('hero-reveal-container')).opacity) === 1);
             await page.screenshot({ path: path.join(root, '..', '..', 'homepage-' + viewport.width + '.png') });
+            await page.locator('#differentiation').scrollIntoViewIfNeeded();
+            await page.waitForFunction(() => Number(getComputedStyle(document.getElementById('differentiation')).opacity) === 1);
+            await page.locator('#differentiation').screenshot({ path: path.join(root, '..', '..', 'benefits-' + viewport.width + '.png') });
             await page.evaluate(() => {
                 window.__consentCalls = [];
                 window.getSupabaseAuthHeaders = async () => ({ Authorization: 'Bearer isolated-browser-fixture' });
@@ -96,6 +116,7 @@ async function main() {
             assert.equal(await page.evaluate(() => window.wingmanCurrency.setCurrency('USD')), 'INR');
             await page.screenshot({ path: path.join(root, '..', '..', 'purchase-' + viewport.width + '.png') });
             assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+            assert.equal(await page.locator('img[src="maeve.jpg"]:visible').count(), 0, 'workspace coach image must remain hidden');
             assert.equal(await page.locator('#interstitialAgreementCheck').count(), 0, 'dashboard age checkbox must be removed');
             assert(await page.locator('#workspaceConsentNotice').innerText().then(text => text.includes('18') && text.includes('AI')));
             const handlers = await page.evaluate(() => ['runAnalysis', 'generateIcebreaker', 'runAudit', 'submitChatboxMessage'].map(key => typeof window[key]));

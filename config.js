@@ -512,11 +512,11 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             nav_faq: "FAQ",
             nav_sign_in: "Sign In",
             nav_launch_app: "Launch App",
-            hero_badge: "AI Dating Conversation & Profile Coaching",
-            hero_title_1: "Dating Chat &",
-            hero_title_2: "Profile AI.",
-            hero_title_3: "Messaging Suggestions.",
-            hero_subtitle: "Analyze chats, draft replies, improve a profile bio, and practice conversations. Coaching only; no user matching or date booking.",
+            hero_badge: "MYWINGMAN · THE AI TEXTING ASSISTANT",
+            hero_title_1: "The AI",
+            hero_title_2: "Texting Assistant",
+            hero_title_3: "Stop staring at the typing box. Find a better starting point.",
+            hero_subtitle: "Not sure what to reply? Worried your message sounds off? MyWingman helps you explore AI-written replies from your own chats, improve profile bios, generate icebreakers, and practise conversations. Pick what fits, edit it your way, and send it yourself.",
             hero_cta: "Explore the Tools",
             tab_screenshot: "Screenshot Analyzer",
             tab_icebreakers: "Icebreakers",
@@ -524,9 +524,9 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             tab_practice: "Practice Partner",
             tab_saved: "Saved Items",
             screenshot_desc: "Upload a chat screenshot to get 10 strategic reply options.",
-            icebreakers_desc: "Drop her bio or profile details to generate 10 charismatic openers.",
+            icebreakers_desc: "Use profile details to explore 10 conversation starters. Review and edit them before use.",
             bio_desc: "Generate 10 AI-written profile bio drafts to review and edit.",
-            coach_desc: "Real-time communication drills and unfiltered dating advice with Maeve.",
+            coach_desc: "Practise social and romantic conversation wording with optional AI-generated feedback from Maeve.",
             btn_generate_replies: "Generate Replies",
             btn_generate_openers: "Generate Openers",
             btn_optimize_bio: "Optimize My Bio",
@@ -551,11 +551,11 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             nav_faq: "FAQ",
             nav_sign_in: "Sign In",
             nav_launch_app: "Launch App",
-            hero_badge: "AI Dating Chat aur Profile Coaching",
-            hero_title_1: "Dating Chat aur",
-            hero_title_2: "Profile AI.",
-            hero_title_3: "Messaging Suggestions.",
-            hero_subtitle: "Chats analyze karo, replies draft karo, profile bio improve karo aur practice conversations karo. Coaching only; matching ya date booking nahi.",
+            hero_badge: "MYWINGMAN · THE AI TEXTING ASSISTANT",
+            hero_title_1: "The AI",
+            hero_title_2: "Texting Assistant",
+            hero_title_3: "Stop staring at the typing box. Find a better starting point.",
+            hero_subtitle: "Apne chats se reply options dekho, profile bio improve karo, icebreakers banao aur conversations practise karo. Jo fit lage use edit karo aur khud send karo. Social aur romantic communication ke liye; matching ya date booking nahi.",
             hero_cta: "Tools Dekho",
             tab_screenshot: "Screenshot Analyzer",
             tab_icebreakers: "Icebreakers",
@@ -563,9 +563,9 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             tab_practice: "Practice Partner",
             tab_saved: "Saved Items",
             screenshot_desc: "Chat screenshot upload karo aur 10 strategic reply options pao.",
-            icebreakers_desc: "Uski bio ya profile details daalo aur 10 witty openers generate karo.",
+            icebreakers_desc: "Profile details se 10 conversation starters explore karo. Use karne se pehle review aur edit karo.",
             bio_desc: "Apni profile ke liye 10 AI-written bio drafts banao, phir unhe review aur edit karo.",
-            coach_desc: "Maeve ke saath real-time chat drills aur dating strategy advice.",
+            coach_desc: "Maeve ke optional AI feedback ke saath social aur romantic conversation wording practise karo.",
             btn_generate_replies: "Replies Generate Karo",
             btn_generate_openers: "Openers Generate Karo",
             btn_optimize_bio: "Bio Optimize Karo",
@@ -901,7 +901,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             var selectedPricing = getPlanPricing(selectedTierValue, currentCurrency);
             if (selectedPlan && selectedPricing) {
                 var bundleLabel = selectedPlan.modalBundleName || 'Bundle';
-                purchaseBtnTextEl.textContent = 'Paid checkout unavailable';
+                purchaseBtnTextEl.textContent = 'Purchasing not yet enabled';
                 if (window.wingmanPayments) window.wingmanPayments.sync();
             }
         }

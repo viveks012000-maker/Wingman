@@ -31,12 +31,12 @@
         const text = document.getElementById('purchaseBtnText');
         const currencyAllowed = !window.wingmanCurrency || window.wingmanCurrency.getCurrency() === 'INR';
         if (button) { button.disabled = !enabled || busy || !currencyAllowed; button.setAttribute && button.setAttribute('aria-disabled', String(button.disabled)); }
-        if (text) text.textContent = !currencyAllowed ? 'USD payments unavailable — choose INR' : (enabled ? (busy ? 'Preparing test checkout…' : 'Continue to Test Mode checkout') : 'Paid checkout unavailable');
+        if (text) text.textContent = !currencyAllowed ? 'USD payments unavailable — choose INR' : (enabled ? (busy ? 'Preparing test checkout…' : 'Continue to Test Mode checkout') : 'Purchasing not yet enabled');
     }
     async function purchase() {
         const currency = window.wingmanCurrency ? window.wingmanCurrency.getCurrency() : 'INR';
         if (currency !== 'INR') { toast('USD prices are for display only. USD/international payment collection is not enabled. Select INR for supported checkout.', 'warning'); return; }
-        if (!enabled || busy) { toast('Credit purchasing is currently unavailable while payment gateway upgrades are underway.', 'warning'); return; }
+        if (!enabled || busy) { toast('Secure purchasing will be enabled after payment activation.', 'warning'); return; }
         busy = true; sync();
         try {
             const selected = document.querySelector("input[name='pricing_tier']:checked");

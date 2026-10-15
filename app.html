@@ -7,9 +7,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
     <meta name="theme-color" content="#000000"/>
     <meta name="mobile-web-app-capable" content="yes"/>
-    <title>MyWingman - Dashboard Workspace</title>
+    <title>MyWingman — AI Texting Assistant Workspace</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦅</text></svg>"/>
-    <meta name="description" content="MyWingman Dashboard Tool: Upload chat screenshots for instant reply breakdown, icebreaker generation, and conversation optimization."/>
+    <meta name="description" content="MyWingman AI texting tools: explore replies from your own chats, dating-profile bio drafts, icebreakers and AI conversation practice for social and romantic communication."/>
     <meta name="robots" content="noindex, nofollow, noarchive"/>
     <!-- Content Security Policy Meta Tag -->
         <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co http://localhost:* ws://localhost:*; script-src 'self' 'unsafe-inline' https://*.supabase.co https://static.cloudflareinsights.com https://checkout.razorpay.com; script-src-elem 'self' 'unsafe-inline' https://*.supabase.co https://static.cloudflareinsights.com https://checkout.razorpay.com; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src https://api.razorpay.com https://checkout.razorpay.com 'self' https://*.supabase.co wss://*.supabase.co http://localhost:* ws://localhost:* http://*:* ws://*:* https://*:* wss://*:* https://aicredits.in https://wingman-production-c6ce.up.railway.app https://cloudflareinsights.com; frame-src https://api.razorpay.com https://checkout.razorpay.com; worker-src 'self' blob:;"/>
@@ -1462,7 +1462,7 @@
             <div id="chatbox-simulator-panel" class="tab-content-panel w-full relative z-10">
               <div style="margin-bottom: 16px;">
                 <h2 class="font-headline text-white" style="margin-bottom: 6px;">Practice Partner & Conversation Coach</h2>
-                <p style="color: #94a3b8; font-size: 14px;">Practice real-world flirting, teasing, and dating scenarios with real-time feedback to build natural confidence.</p>
+                <p style="color: #94a3b8; font-size: 14px;">Practise conversation wording with AI-generated feedback. Explore social and romantic scenarios, review suggestions, and choose what fits your own voice.</p>
               </div>
 
               <!-- Practice Scenario Selector Bar Header & Horizontal Touch Ribbon -->
@@ -1484,7 +1484,7 @@
                 <div class="gf-profile-header">
                     <div class="gf-header-banner"></div>
                     <div class="gf-profile-info-block">
-                        <div class="gf-avatar-container">
+                        <div class="gf-avatar-container" style="display:none">
                             <img src="maeve.jpg" onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2250%22 fill=%22%237c3aed%22/%3E%3Ctext x=%2250%22 y=%2255%22 text-anchor=%22middle%22 font-size=%2236%22 font-family=%22sans-serif%22 fill=%22white%22%3EM%3C/text%3E%3C/svg%3E'" class="gf-profile-pic" alt="Maeve">
                             <span class="gf-online-dot"></span>
                         </div>
@@ -1792,7 +1792,7 @@
                 </div>
                 <h3 class="font-headline text-lg font-bold text-white tracking-tight" id="authModalTitle">Sign In to MyWingman</h3>
                 <p class="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto" id="authModalDesc">
-                    Sync your credit wallet balance and secure your workspace sessions.
+                    Sync your AI usage credits and secure your workspace sessions.
                 </p>
             </div>
 
@@ -1929,7 +1929,7 @@
                     <span>Pay-Per-Use Access</span>
                 </div>
                 <h2 class="font-headline text-2xl font-extrabold text-white tracking-tight">Flexible Credit Pricing</h2>
-                <p class="font-body text-xs text-slate-300 mt-1 max-w-sm leading-relaxed">Premium credit access only. Purchase a credit tier below to unlock instant AI analysis. No subscriptions, pay only for what you use.</p>
+                <p class="font-body text-xs text-slate-300 mt-1 max-w-sm leading-relaxed">Explore one-time AI usage credit packs for the existing tools. Secure purchasing will be enabled after payment activation. No recurring subscriptions.</p>
                 <p id="purchaseCreditContext" class="hidden mt-2 max-w-sm rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 font-body text-[11px] font-semibold leading-relaxed text-amber-200" role="status" aria-live="polite"></p>
                 <!-- Domestic INR pricing -->
                 <div class="flex items-center justify-center mt-3" id="appPricingCurrencySelectorWrapper">
@@ -2185,10 +2185,10 @@
             <div class="p-4 border-t border-white/10 bg-[#06040d]/95 backdrop-blur-md mt-auto shrink-0 z-10 flex flex-col items-center justify-between gap-2.5 text-center">
                 <p class="font-mono text-[10px] text-slate-400 flex items-center justify-center gap-1.5" aria-live="polite">
                     <span class="material-symbols-outlined text-[14px] text-violet-400">info</span>
-                    <span id="paymentAvailabilityNotice">Paid checkout is unavailable in production. Displayed INR prices are final customer totals with no extra checkout fees. This purchase experience displays INR only. International payment collection is not enabled.</span>
+                    <span id="paymentAvailabilityNotice">Secure purchasing will be enabled after payment activation. Displayed INR prices are final customer totals with no extra checkout fees. This purchase experience displays INR only. International payment collection is not enabled.</span>
                 </p>
                 <button type="button" id="confirmPurchaseBtn" class="w-full primary-btn bg-violet-600 hover:bg-violet-500 text-white font-label text-sm py-3 px-6 rounded-full border border-violet-400/40 transition-all flex items-center justify-center gap-2 font-bold cursor-not-allowed shrink-0 shadow-none" aria-disabled="true" disabled>
-                    <span id="purchaseBtnText">Paid checkout unavailable</span>
+                    <span id="purchaseBtnText">Purchasing not yet enabled</span>
                 </button>
             </div>
         </div>
