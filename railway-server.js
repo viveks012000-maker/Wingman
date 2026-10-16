@@ -16,6 +16,9 @@ const LARGE_BODY_ANALYZER_PATHS = new Set([
     '/api/analyze-chat-screenshot',
     '/api/analyze-chat-screenshot/'
 ]);
+// Match the same case-insensitive prefix and segment boundary as the inner
+// app.use() JSON parsers, including subpaths that will eventually return 404.
+const LARGE_BODY_ANALYZER_MATCH = /^\/api\/(?:analyze|analyze-chat-screenshot)(?:\/|$)/i;
 
 const GATEWAY_PRODUCTION_ALLOWED_ORIGINS = [
     'https://mywingmanapp.com'
@@ -93,7 +96,7 @@ app.use((req, res, next) => {
 // into an unbounded Supabase token-verification amplifier.
 app.use((req, res, next) => {
     const pathname = typeof req.path === 'string' ? req.path : '';
-    if (req.method === 'OPTIONS' || !LARGE_BODY_ANALYZER_PATHS.has(pathname)) {
+    if (req.method === 'OPTIONS' || !LARGE_BODY_ANALYZER_MATCH.test(pathname)) {
         return next();
     }
 
