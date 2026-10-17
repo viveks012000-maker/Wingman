@@ -17,6 +17,14 @@ const LARGE_BODY_ANALYZER_PATHS = new Set([
     '/api/analyze-chat-screenshot/'
 ]);
 
+function isLargeBodyAnalyzerPath(pathname) {
+    if (typeof pathname !== 'string') return false;
+    const normalized = pathname.toLowerCase();
+    return ['/api/analyze', '/api/analyze-chat-screenshot'].some((route) =>
+        normalized === route || normalized.startsWith(`${route}/`)
+    );
+}
+
 const GATEWAY_PRODUCTION_ALLOWED_ORIGINS = [
     'https://mywingmanapp.com'
 ];
@@ -93,7 +101,7 @@ app.use((req, res, next) => {
 // into an unbounded Supabase token-verification amplifier.
 app.use((req, res, next) => {
     const pathname = typeof req.path === 'string' ? req.path : '';
-    if (req.method === 'OPTIONS' || !LARGE_BODY_ANALYZER_PATHS.has(pathname)) {
+    if (req.method === 'OPTIONS' || !isLargeBodyAnalyzerPath(pathname)) {
         return next();
     }
 
