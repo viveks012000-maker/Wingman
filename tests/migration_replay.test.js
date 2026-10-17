@@ -241,10 +241,37 @@ DO $$ DECLARE result json; BEGIN
   IF result->>'released' <> 'true' OR (result->>'remainingCredits')::int <> 40 THEN RAISE EXCEPTION 'release failed: %', result; END IF;
   result := public.release_credits('${userId}', 'replay-2', 'test');
   IF result->>'already_released' <> 'true' OR (result->>'remainingCredits')::int <> 40 THEN RAISE EXCEPTION 'release replay was not idempotent: %', result; END IF;
+  INSERT INTO public.credit_transactions(user_id, amount, type, feature, request_id, status)
+  VALUES ('${userId}', -7, 'purchase', 'fixture', 'release-wrong-type', 'pending');
+  result := public.release_credits('${userId}', 'release-wrong-type', 'test');
+  IF result->>'success' <> 'false' OR (SELECT credits FROM public.profiles WHERE id='${userId}') <> 40 OR (SELECT status FROM public.credit_transactions WHERE user_id='${userId}' AND request_id='release-wrong-type') <> 'pending' THEN RAISE EXCEPTION 'pending non-usage row was restored or changed: %', result; END IF;
+  INSERT INTO public.credit_transactions(user_id, amount, type, feature, request_id, status)
+  VALUES ('${userId}', 5, 'feature_usage', 'fixture', 'release-positive-amount', 'pending'),
+         ('${userId}', 0, 'feature_usage', 'fixture', 'release-zero-amount', 'pending');
+  result := public.release_credits('${userId}', 'release-positive-amount', 'test');
+  IF result->>'success' <> 'false' OR (SELECT credits FROM public.profiles WHERE id='${userId}') <> 40 OR (SELECT status FROM public.credit_transactions WHERE user_id='${userId}' AND request_id='release-positive-amount') <> 'pending' THEN RAISE EXCEPTION 'positive reservation amount was restored or changed: %', result; END IF;
+  result := public.release_credits('${userId}', 'release-zero-amount', 'test');
+  IF result->>'success' <> 'false' OR (SELECT credits FROM public.profiles WHERE id='${userId}') <> 40 OR (SELECT status FROM public.credit_transactions WHERE user_id='${userId}' AND request_id='release-zero-amount') <> 'pending' THEN RAISE EXCEPTION 'zero reservation amount was restored or changed: %', result; END IF;
+  INSERT INTO public.credit_transactions(user_id, amount, type, feature, request_id, status)
+  VALUES ('${userId}', -2147483648, 'feature_usage', 'fixture', 'release-overflow', 'pending');
+  result := public.release_credits('${userId}', 'release-overflow', 'test');
+  IF result->>'success' <> 'false' OR (SELECT credits FROM public.profiles WHERE id='${userId}') <> 40 OR (SELECT status FROM public.credit_transactions WHERE user_id='${userId}' AND request_id='release-overflow') <> 'pending' THEN RAISE EXCEPTION 'out-of-range reservation was restored or changed: %', result; END IF;
+  INSERT INTO public.credit_transactions(user_id, amount, type, feature, request_id, status)
+  VALUES ('${userId}', -5, 'cancelled_purchase', 'fixture', 'release-cancelled-wrong-type', 'cancelled');
+  result := public.release_credits('${userId}', 'release-cancelled-wrong-type', 'test');
+  IF result->>'success' <> 'false' OR (SELECT credits FROM public.profiles WHERE id='${userId}') <> 40 THEN RAISE EXCEPTION 'unrelated cancelled row was reported as released: %', result; END IF;
   result := public.reserve_credits('${userId}', 1000, 'analyzer', 'replay-insufficient');
   IF result->>'error' <> 'INSUFFICIENT_CREDITS' THEN RAISE EXCEPTION 'insufficient balance was not rejected: %', result; END IF;
   result := public.record_user_consent('terms-v1', 'privacy-v1', true, true, NULL, NULL, '${userId}');
   IF result->>'success' <> 'true' OR result->>'user_id' <> '${userId}' THEN RAISE EXCEPTION 'consent flow failed: %', result; END IF;
+END $$;
+INSERT INTO auth.users(id, email_confirmed_at) VALUES ('33333333-3333-4333-8333-333333333333', pg_catalog.now());
+DELETE FROM public.profiles WHERE id='33333333-3333-4333-8333-333333333333';
+INSERT INTO public.credit_transactions(user_id, amount, type, feature, request_id, status)
+VALUES ('33333333-3333-4333-8333-333333333333', -3, 'feature_usage', 'fixture', 'release-missing-profile', 'pending');
+DO $$ DECLARE result json; BEGIN
+  result := public.release_credits('33333333-3333-4333-8333-333333333333', 'release-missing-profile', 'test');
+  IF result->>'success' <> 'false' OR EXISTS (SELECT 1 FROM public.profiles WHERE id='33333333-3333-4333-8333-333333333333') OR (SELECT status FROM public.credit_transactions WHERE user_id='33333333-3333-4333-8333-333333333333' AND request_id='release-missing-profile') <> 'pending' THEN RAISE EXCEPTION 'missing profile release must fail without changing ledger: %', result; END IF;
 END $$;
 DO $$ BEGIN
   IF (SELECT credits FROM public.profiles WHERE id = '${userId}') <> 40 THEN RAISE EXCEPTION 'balance invariant failed'; END IF;
