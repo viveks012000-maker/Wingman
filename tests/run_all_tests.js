@@ -95,6 +95,7 @@ const testSuites = [
     { name: '76. Roleplay & Hotline Real Provider Path', file: 'roleplay_provider_path.test.js', timeoutMs: 120_000 },
     { name: '77. UI/API Product-Contract Matrix (16 mode checks)', file: 'ui_api_contract.test.js', timeoutMs: 120_000 },
     { name: '78. Auth Sign-In & Credit Regression Guard', file: 'auth_signin_regression.test.js', timeoutMs: 30_000 },
+    { name: '78a. Google-Only Signup Presentation Guard', file: 'google_only_beta_auth.test.js', timeoutMs: 30_000 },
     { name: '79. Internal Prompt Tag Leak Prevention & Output Safety', file: 'internal_prompt_tag_leak_regression.test.js', timeoutMs: 60_000 },
     { name: '80. Maeve Practice Partner & Coach Modes Matrix', file: 'maeve_modes_matrix.test.js', timeoutMs: 60_000 },
     { name: '81. Non-Chat Lifecycle & Hinglish Repair Guard', file: 'non_chat_lifecycle_and_hinglish_repair.test.js', timeoutMs: 30_000 },

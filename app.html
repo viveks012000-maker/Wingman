@@ -1807,12 +1807,7 @@
                 <span>Continue with Google</span>
             </button>
 
-            <div class="flex items-center gap-2 my-1">
-                <div class="h-px bg-white/10 flex-1"></div>
-                <span class="text-[11px] font-mono text-slate-400 uppercase">OR EMAIL</span>
-                <div class="h-px bg-white/10 flex-1"></div>
-            </div>
-            <p class="text-[11px] text-slate-400 text-center leading-normal px-2">If you created your account with Google, continue with Google above. You can add an email password later in your account settings.</p>
+            <p class="text-[11px] text-slate-400 text-center leading-normal px-2">New accounts use Google. Existing accounts can still sign in with email and password below.</p>
             <form id="supabaseAuthForm" onsubmit="window.handleSupabaseAuthSubmit(event); return false;" novalidate class="space-y-3">
                 <!-- Domain 5: Bot Defense Honeypot Input Field -->
                 <input type="text" id="website_hp" name="website_hp" tabindex="-1" autocomplete="off" style="display:none !important;" aria-hidden="true" />
@@ -1853,12 +1848,6 @@
                 </button>
                 <button type="button" class="w-full text-xs text-slate-400 hover:text-white font-medium cursor-pointer transition-colors py-1" onclick="window.hideForgotPasswordView()">
                     ← Back to Sign In
-                </button>
-            </div>
-
-            <div class="text-center pt-1" id="authToggleContainer">
-                <button type="button" id="authToggleModeBtn" class="text-xs text-violet-400 hover:underline font-medium" onclick="window.toggleAuthMode()">
-                    Need an account? Sign Up
                 </button>
             </div>
 

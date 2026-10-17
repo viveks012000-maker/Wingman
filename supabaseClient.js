@@ -3,9 +3,9 @@
  * MYWINGMAN SUPABASE AUTHENTICATION CLIENT & SESSION CONTROLLER
  * =========================================================================================
  * Full Supabase Auth Integration:
- * 1. Email/Password Signup (signUpUser)
+ * 1. Google OAuth account creation
  * 2. Email/Password Login (loginUser)
- * 3. Google OAuth Login (signInWithGoogle)
+ * 3. Google OAuth sign-in (existing or new accounts)
  * 4. Sign Out & Session Erasure (logoutUser)
  * 5. Active Session Persistence Listener (onAuthStateChange)
  * =========================================================================================
@@ -660,63 +660,6 @@
         } catch (err) {
             console.warn('[SupabaseClient] Auth session verification failed:', err && err.message ? err.message : err);
             return null;
-        }
-    };
-
-    // 1. Email/Password Signup
-    window.signUpUser = async function (email, password) {
-        const cleanEmail = (email || "").trim().toLowerCase();
-        if (!cleanEmail || !emailRegex.test(cleanEmail)) {
-            const msg = 'Please enter a valid email address (e.g. name@domain.com).';
-            notifyUser(msg, 'warning');
-            return { success: false, error: msg };
-        }
-        if (!password || password.length < 8) {
-            const msg = 'Password must be at least 8 characters long.';
-            notifyUser(msg, 'warning');
-            return { success: false, error: msg };
-        }
-
-        const client = await initSupabase();
-        if (!client) {
-            const msg = 'Authentication service is initializing. Please try again.';
-            notifyUser(msg, 'warning');
-            return { success: false, error: msg };
-        }
-
-        try {
-            const resp = await client.auth.signUp({
-                email: cleanEmail,
-                password: password
-            });
-
-            if (resp.error) {
-                var signupMessage = formatAuthError(resp.error, 'Sign up failed.');
-                console.warn('Supabase Signup Error:', authErrorCode(resp.error) || resp.error.message);
-                notifyUser(signupMessage, 'warning');
-                return { success: false, error: signupMessage, code: authErrorCode(resp.error), reasons: authErrorReasons(resp.error) };
-            }
-
-            if (resp.data && resp.data.user) {
-                if (resp.data.session && resp.data.session.access_token) {
-                    safeSet('wingman_authenticated', 'true');
-                    safeSet('wingman_login_agreed', 'true');
-                    safeSet('wingman_user_authenticated', 'true');
-                    safeSet('wingman_user_email', resp.data.user.email || cleanEmail);
-                    updateAuthUIState(resp.data.user);
-                    notifyUser('Account created! Welcome to MyWingman.', 'success');
-                    return { success: true, authenticated: true, user: resp.data.user, session: resp.data.session };
-                } else {
-                    notifyUser('Check your email to finish signup. Eligible welcome credits are added after your account is verified.', 'info');
-                    return { success: true, authenticated: false, user: resp.data.user, session: null, confirmationRequired: true };
-                }
-            }
-            return { success: false, error: 'Sign up failed.' };
-        } catch (err) {
-            const errMsg = err ? (err.message || err.toString()) : 'Sign up error occurred.';
-            console.error('Supabase Signup Error:', errMsg);
-            notifyUser(errMsg, 'warning');
-            return { success: false, error: errMsg };
         }
     };
 

@@ -1495,12 +1495,7 @@
                 <span>Continue with Google</span>
             </button>
 
-            <div class="flex items-center gap-2 my-1">
-                <div class="h-px bg-white/10 flex-1"></div>
-                <span class="text-[11px] font-mono text-slate-400 uppercase">OR EMAIL</span>
-                <div class="h-px bg-white/10 flex-1"></div>
-            </div>
-            <p class="text-[11px] text-slate-400 text-center leading-normal px-2">If you created your account with Google, continue with Google above. You can add an email password later in your account settings.</p>
+            <p class="text-[11px] text-slate-400 text-center leading-normal px-2">New accounts use Google. Existing accounts can still sign in with email and password below.</p>
 
             <form id="supabaseAuthForm" onsubmit="window.handleSupabaseAuthSubmit(event); return false;" novalidate
                 class="space-y-3">
@@ -1568,13 +1563,6 @@
                 </button>
             </div>
 
-            <div class="text-center pt-1" id="authToggleContainer">
-                <button type="button" id="authToggleModeBtn"
-                    class="text-xs text-violet-400 hover:text-violet-300 font-label transition-colors cursor-pointer"
-                    onclick="window.toggleAuthMode()">
-                    Need an account? Sign Up
-                </button>
-            </div>
         </div>
     </div>
 
@@ -1663,36 +1651,6 @@
         // ==========================================
         // AUTH FORM HANDLERS (CRITICAL: these were missing on index.html)
         // ==========================================
-        window.isSignupMode = false;
-
-        window.toggleAuthMode = function () {
-            window.isSignupMode = !window.isSignupMode;
-            const submitBtn = $("authSubmitBtn");
-            const toggleBtn = $("authToggleModeBtn");
-            const title = $("authModalTitle");
-            const desc = $("authModalDesc");
-            const errBox = $("authErrorMessage");
-            const forgotBtn = $("forgotPasswordBtn");
-
-            if (errBox) errBox.classList.add("hidden");
-
-            window.hideForgotPasswordView();
-
-            if (window.isSignupMode) {
-                if (title) title.textContent = "Create an Account";
-                if (desc) desc.textContent = "Sign up to save your preferences and manage credit balance.";
-                if (submitBtn) submitBtn.textContent = "Sign Up with Email";
-                if (toggleBtn) toggleBtn.textContent = "Already have an account? Sign In";
-                if (forgotBtn) forgotBtn.classList.add("hidden");
-            } else {
-                if (title) title.textContent = "Sign In to MyWingman";
-                if (desc) desc.textContent = "Sync your AI usage credits and secure your workspace sessions.";
-                if (submitBtn) submitBtn.textContent = "Sign In with Email";
-                if (toggleBtn) toggleBtn.textContent = "Need an account? Sign Up";
-                if (forgotBtn) forgotBtn.classList.remove("hidden");
-            }
-        };
-
         window.togglePasswordVisibility = function () {
             const pwInput = $("authPasswordInput");
             const toggleBtn = $("togglePasswordBtn");
@@ -1747,13 +1705,8 @@
             if (forgotView) forgotView.classList.add("hidden");
             if (toggleContainer) toggleContainer.classList.remove("hidden");
 
-            if (window.isSignupMode) {
-                if (title) title.textContent = "Create an Account";
-                if (desc) desc.textContent = "Sign up to save your preferences and manage credit balance.";
-            } else {
-                if (title) title.textContent = "Sign In to MyWingman";
-                if (desc) desc.textContent = "Sync your AI usage credits and secure your workspace sessions.";
-            }
+            if (title) title.textContent = "Sign In to MyWingman";
+            if (desc) desc.textContent = "Sync your AI usage credits and secure your workspace sessions.";
         };
 
         window.handleResetPassword = async function () {
@@ -1917,15 +1870,13 @@
             if (submitBtn) {
                 submitBtn.disabled = true;
                 submitBtn.classList.add("opacity-70", "cursor-not-allowed");
-                submitBtn.textContent = window.isSignupMode ? "Creating Account..." : "Signing In...";
+                submitBtn.textContent = "Signing In...";
             }
 
             try {
                 let authResult = { success: false, error: 'Authentication service unavailable.' };
 
-                if (typeof window.signUpUser === 'function' && window.isSignupMode) {
-                    authResult = await window.signUpUser(email, password);
-                } else if (typeof window.loginUser === 'function') {
+                if (typeof window.loginUser === 'function') {
                     authResult = await window.loginUser(email, password);
                 }
 
@@ -1963,8 +1914,7 @@
                 // Redirect only after a real Supabase session is independently verified.
                 window.closeAuthRequiredModal();
                 if (typeof window.showToast === "function") {
-                    const actionText = window.isSignupMode ? "Account created as " : "Signed in as ";
-                    window.showToast(actionText + verifiedEmail + " 🚀", "success");
+                    window.showToast("Signed in as " + verifiedEmail + " 🚀", "success");
                 }
 
                 window.location.href = "app.html";
@@ -1973,7 +1923,7 @@
                 if (submitBtn) {
                     submitBtn.disabled = false;
                     submitBtn.classList.remove("opacity-70", "cursor-not-allowed");
-                    submitBtn.textContent = originalBtnText || (window.isSignupMode ? "Sign Up with Email" : "Sign In with Email");
+                    submitBtn.textContent = originalBtnText || "Sign In with Email";
                 }
             }
         };

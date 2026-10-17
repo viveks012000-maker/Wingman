@@ -1875,35 +1875,6 @@ STRICT LAWS:
         if (typeof window.updateTermsLockState === "function") window.updateTermsLockState();
     };
 
-    window.isSignupMode = false;
-
-    window.toggleAuthMode = function () {
-        window.isSignupMode = !window.isSignupMode;
-        const submitBtn = $("authSubmitBtn");
-        const toggleBtn = $("authToggleModeBtn");
-        const title = $("authModalTitle");
-        const desc = $("authModalDesc");
-        const errBox = $("authErrorMessage");
-        const forgotBtn = $("forgotPasswordBtn");
-
-        if (errBox) errBox.classList.add("hidden");
-        window.hideForgotPasswordView();
-
-        if (window.isSignupMode) {
-            if (title) title.textContent = "Create an Account";
-            if (desc) desc.textContent = "Sign up to save your preferences and manage credit balance.";
-            if (submitBtn) submitBtn.textContent = "Sign Up with Email";
-            if (toggleBtn) toggleBtn.textContent = "Already have an account? Sign In";
-            if (forgotBtn) forgotBtn.classList.add("hidden");
-        } else {
-            if (title) title.textContent = "Sign In to MyWingman";
-            if (desc) desc.textContent = "Sync your AI usage credits and secure your workspace sessions.";
-            if (submitBtn) submitBtn.textContent = "Sign In with Email";
-            if (toggleBtn) toggleBtn.textContent = "Need an account? Sign Up";
-            if (forgotBtn) forgotBtn.classList.remove("hidden");
-        }
-    };
-
     window.togglePasswordVisibility = function (targetId) {
         const pwInput = $(targetId || "authPasswordInput");
         const toggleBtn = targetId ? (pwInput && pwInput.parentElement ? pwInput.parentElement.querySelector("button") : null) : $("togglePasswordBtn");
@@ -1956,13 +1927,8 @@ STRICT LAWS:
         if (forgotView) forgotView.classList.add("hidden");
         if (toggleContainer) toggleContainer.classList.remove("hidden");
 
-        if (window.isSignupMode) {
-            if (title) title.textContent = "Create an Account";
-            if (desc) desc.textContent = "Sign up to save your preferences and manage credit balance.";
-        } else {
-            if (title) title.textContent = "Sign In to MyWingman";
-            if (desc) desc.textContent = "Sync your AI usage credits and secure your workspace sessions.";
-        }
+        if (title) title.textContent = "Sign In to MyWingman";
+        if (desc) desc.textContent = "Sync your AI usage credits and secure your workspace sessions.";
     };
 
     window.handleResetPassword = async function () {
@@ -2121,15 +2087,13 @@ STRICT LAWS:
         if (submitBtn) {
             submitBtn.disabled = true;
             submitBtn.classList.add("opacity-70", "cursor-not-allowed");
-            submitBtn.textContent = window.isSignupMode ? "Creating Account..." : "Signing In...";
+            submitBtn.textContent = "Signing In...";
         }
 
         try {
             let authResult = { success: false, error: 'Authentication service unavailable.' };
 
-            if (typeof window.signUpUser === 'function' && window.isSignupMode) {
-                authResult = await window.signUpUser(email, password);
-            } else if (typeof window.loginUser === 'function') {
+            if (typeof window.loginUser === 'function') {
                 authResult = await window.loginUser(email, password);
             }
 
@@ -2174,8 +2138,7 @@ STRICT LAWS:
             if (typeof window.checkCreditBalance === "function") window.checkCreditBalance();
             if (typeof window.checkServerConsentStatus === "function") window.checkServerConsentStatus();
             if (typeof window.showToast === "function") {
-                const actionText = window.isSignupMode ? "Account created as " : "Signed in as ";
-                window.showToast(actionText + verifiedEmail + " 🚀", "success");
+                window.showToast("Signed in as " + verifiedEmail + " 🚀", "success");
             }
 
             if (window.pendingPurchaseTargetUrl) {
@@ -2188,7 +2151,7 @@ STRICT LAWS:
             if (submitBtn) {
                 submitBtn.disabled = false;
                 submitBtn.classList.remove("opacity-70", "cursor-not-allowed");
-                submitBtn.textContent = originalBtnText || (window.isSignupMode ? "Sign Up with Email" : "Sign In with Email");
+                submitBtn.textContent = originalBtnText || "Sign In with Email";
             }
         }
     };
