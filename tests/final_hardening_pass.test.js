@@ -7,20 +7,20 @@ console.log('🛡️  STARTING FINAL TECHNICAL HARDENING PASS VERIFICATION');
 console.log('============================================================\n');
 
 // 1. CANONICAL INITIAL CREDITS: EXACTLY 50 FOR NEW USERS
-console.log('--- 1. NEW USER INITIAL CREDITS (CANONICAL 20 (latest migrations)) ---');
+console.log('--- 1. NEW USER INITIAL CREDITS (CURRENT 50-CREDIT CUTOVER) ---');
 const serverFile = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8').replace(/\r\n/g, '\n');
 const migrationSql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '002_atomic_credits_and_transactions.sql'), 'utf8').replace(/\r\n/g, '\n');
 const userProvFile = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'userProvisioning.js'), 'utf8').replace(/\r\n/g, '\n');
 const dbFile = fs.readFileSync(path.join(__dirname, '..', 'database.js'), 'utf8').replace(/\r\n/g, '\n');
 
-assert.strictEqual(serverFile.includes('const INITIAL_FREE_CREDITS = 20;'), true, 'server.js must define INITIAL_FREE_CREDITS = 20');
+assert.strictEqual(serverFile.includes('const INITIAL_FREE_CREDITS = 50;'), true, 'server.js must define INITIAL_FREE_CREDITS = 50');
 assert.strictEqual(migrationSql.includes('ALTER TABLE public.profiles ALTER COLUMN credits SET DEFAULT 50;'), true, 'Migration 002 must set default 50 credits on profiles');
 assert.strictEqual(migrationSql.includes('VALUES (NEW.id, 50, NOW(), NOW())'), true, 'handle_new_user trigger must insert 50 credits');
 assert.strictEqual(migrationSql.includes('ON CONFLICT (id) DO NOTHING;'), true, 'handle_new_user trigger must handle conflict safely');
 assert.strictEqual(userProvFile.includes('2.00, \'free\''), true, 'userProvisioning.js must provision with 2.00 INR (20 credits)');
 assert.strictEqual(dbFile.includes('credits_balance REAL DEFAULT 2.00'), true, 'database.js schema must default to 2.00 INR (20 credits)');
-assert.ok(fs.readFileSync(path.join(__dirname,'..','migrations',fs.readdirSync(path.join(__dirname,'..','migrations')).find(name=>name.startsWith('013_'))),'utf8').includes('20'), 'latest default migration must define canonical 20');
-console.log('✔ Passed: Exactly 20 runtime signup credits; historical migration 002 preserved alongside latest initialization paths.');
+assert.ok(fs.readFileSync(path.join(__dirname,'..','migrations',fs.readdirSync(path.join(__dirname,'..','migrations')).find(name=>name.startsWith('013_'))),'utf8').includes('20'), 'Migration 013 must preserve the historical 20-credit policy before the 50-credit cutover');
+console.log('✔ Passed: Exactly 50 current eligible signup credits; historical migration 002 preserved alongside latest initialization paths.');
 
 // 2. EXISTING BALANCES PRESERVED (NO BLANKET RESET)
 console.log('\n--- 2. EXISTING USER BALANCES PRESERVED ---');

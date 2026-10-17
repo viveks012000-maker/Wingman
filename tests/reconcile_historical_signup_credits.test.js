@@ -141,31 +141,36 @@ async function runTests() {
     });
 
     // 10. Migration replay from clean database succeeds
-    await test('10. Tracked migrations chain includes 014 and 015 in strict order', () => {
+    await test('10. Tracked migrations chain includes the verified 50-credit cutover in strict order', () => {
         const migrations = fs.readdirSync(migrationDir).filter(f => f.endsWith('.sql')).sort();
         assert.ok(migrations.some(f => f.startsWith('014')), 'Migration 014 must be present in migrations directory');
         assert.ok(migrations.some(f => f.startsWith('015')), 'Migration 015 must be present in migrations directory');
         const prefixes = migrations.map(m => m.slice(0, 3));
         assert.deepStrictEqual(prefixes, [
-            '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013', '014', '015', '016', '017'
-        ], 'Migration chain must be strictly ordered through payment ledger migration 017');
+            '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013', '014', '015', '016', '017', '018'
+        ], 'Migration chain must be strictly ordered through verified signup-credit migration 018');
     });
 
-    // 11. No migration can subsequently restore the old 50-credit signup default
-    await test('11. No subsequent migration restores 50 credits default or trigger', () => {
+    // 11. Only migration 018 can grant 50 after the verified cutover; older migrations must retain 20.
+    await test('11. Migration 018 is the only post-013 50-credit path and gates it on verified account creation', () => {
         const migrations = fs.readdirSync(migrationDir).filter(f => f.endsWith('.sql')).sort();
-        const post013 = migrations.filter(f => f >= '013');
-        for (const f of post013) {
+        const post013BeforeCutover = migrations.filter(f => f >= '013' && !f.startsWith('018'));
+        for (const f of post013BeforeCutover) {
             const sql = fs.readFileSync(path.join(migrationDir, f), 'utf8');
             assert.ok(
                 !sql.includes('DEFAULT 50'),
-                `Migration ${f} must NOT restore DEFAULT 50`
+                `Migration ${f} must not restore DEFAULT 50 before the verified cutover`
             );
             assert.ok(
                 !/VALUES\s*\(\s*NEW\.id\s*,\s*50\s*,/i.test(sql),
-                `Migration ${f} must NOT insert 50 credits in handle_new_user`
+                `Migration ${f} must not insert 50 credits in handle_new_user before the verified cutover`
             );
         }
+        const cutover = fs.readFileSync(path.join(migrationDir, '018_signup_credits_fifty_after_verification.sql'), 'utf8');
+        assert.ok(/ALTER TABLE public\.profiles ALTER COLUMN credits SET DEFAULT 50/i.test(cutover), 'Migration 018 must set the new profile default to 50');
+        assert.ok(/NEW\.email_confirmed_at\s+IS\s+NOT\s+NULL/i.test(cutover), 'Migration 018 must require verified email before granting credits');
+        assert.ok(/NEW\.created_at\s*>=\s*v_cutover_at/i.test(cutover), 'Migration 018 must restrict 50 credits to identities created at or after cutover');
+        assert.ok(/ON CONFLICT\s*\(id\)\s+DO NOTHING/i.test(cutover), 'Migration 018 must not overwrite an existing profile balance');
     });
 
     console.log('\n------------------------------------------------------------------------');

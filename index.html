@@ -53,7 +53,7 @@
             "@type": "Offer",
             "price": "0",
             "priceCurrency": "INR",
-            "description": "Free trial with 20 complimentary starting credits upon signup."
+            "description": "Free trial with complimentary welcome credits after account verification."
           }
         }
       ]
@@ -1962,7 +1962,7 @@
 
                 if (authResult.confirmationRequired && authResult.authenticated !== true) {
                     if (errBox) {
-                        errBox.textContent = "Check your email to finish signup. Your account and 20 free credits activate after verification.";
+                        errBox.textContent = "Check your email to finish signup. Eligible welcome credits are added after your account is verified.";
                         errBox.classList.remove("hidden");
                     }
                     return;
