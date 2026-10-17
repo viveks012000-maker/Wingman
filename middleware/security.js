@@ -61,7 +61,14 @@ const globalLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => {
-        const isStaticAsset = !req.path.startsWith('/api/');
+        // A mounted Express middleware sees a prefix-stripped req.path, so use the original
+        // request URL to retain the /api scope after app.use('/api/', globalLimiter).
+        const originalUrl = typeof req.originalUrl === 'string'
+            ? req.originalUrl
+            : (typeof req.url === 'string' ? req.url : req.path);
+        const pathname = typeof originalUrl === 'string' ? originalUrl.split('?')[0] : '';
+        const isApiRequest = /^\/api(?:\/|$)/i.test(pathname);
+        const isStaticAsset = !isApiRequest;
         const clientIp = getRateLimitClientIp(req);
         const isLocalhost = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === '::ffff:127.0.0.1';
         return isStaticAsset || (process.env.NODE_ENV !== 'production' && isLocalhost);

@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('assert');
+const express = require('express');
 const request = require('supertest');
 
 // Keep production secrets out of this suite. Mock auth is requested per request only.
@@ -11,6 +12,8 @@ delete process.env.ALLOWED_ORIGINS;
 process.env.NODE_ENV = 'test';
 
 const {
+  globalLimiter,
+  apiLimiter,
   getRateLimitClientIp,
   getRateLimitIpKey,
   getApiRateLimitKey
@@ -23,9 +26,10 @@ const {
   getGatewayAllowedOrigins
 } = require('../railway-server');
 
-function mockReq({ ip = '198.51.100.9', realIp, remoteAddress = '10.0.0.7', user } = {}) {
+function mockReq({ ip = '198.51.100.9', realIp, forwardedFor, remoteAddress = '10.0.0.7', user } = {}) {
   const headers = {};
   if (realIp !== undefined) headers['x-real-ip'] = realIp;
+  if (forwardedFor !== undefined) headers['x-forwarded-for'] = forwardedFor;
   return { ip, headers, socket: { remoteAddress }, user };
 }
 
@@ -49,6 +53,16 @@ async function runVerify(req) {
     getRateLimitClientIp(mockReq({ realIp: '203.0.113.41' })),
     '203.0.113.41',
     'Railway must rate-limit by the validated X-Real-IP client address'
+  );
+  assert.strictEqual(
+    getRateLimitClientIp(mockReq({ realIp: '203.0.113.41', forwardedFor: '192.0.2.88' })),
+    '203.0.113.41',
+    'a client-supplied X-Forwarded-For value must not override Railway X-Real-IP'
+  );
+  assert.strictEqual(
+    getRateLimitClientIp(mockReq({ forwardedFor: '192.0.2.88' })),
+    '198.51.100.9',
+    'X-Forwarded-For must not replace the trusted request/socket identity'
   );
   assert.strictEqual(
     getRateLimitClientIp(mockReq({ realIp: '203.0.113.41, 10.0.0.1' })),
@@ -100,6 +114,72 @@ async function runVerify(req) {
     'user-123',
     'authenticated AI rate limiting must remain user-ID based'
   );
+  const sharedClientIp = '203.0.113.42';
+  assert.notStrictEqual(
+    getApiRateLimitKey(mockReq({ realIp: sharedClientIp, user: { id: 'user-a' } })),
+    getApiRateLimitKey(mockReq({ realIp: sharedClientIp, user: { id: 'user-b' } })),
+    'two authenticated users sharing one public IP must keep separate per-user API buckets'
+  );
+
+  // Express removes a mounted prefix from req.path. The global limiter must inspect the
+  // original URL so /api/* calls are counted even while it is mounted at /api/.
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousRailwayEnv = process.env.RAILWAY_ENVIRONMENT;
+  process.env.NODE_ENV = 'production';
+  process.env.RAILWAY_ENVIRONMENT = 'production';
+  const limiterApp = express();
+  limiterApp.use('/api/', globalLimiter);
+  limiterApp.get('/api/limiter-probe', (req, res) => res.status(204).end());
+  const firstLimitedRequest = await request(limiterApp)
+    .get('/api/limiter-probe')
+    .set('X-Real-IP', sharedClientIp)
+    .set('X-Forwarded-For', '192.0.2.1');
+  const secondLimitedRequest = await request(limiterApp)
+    .get('/api/limiter-probe')
+    .set('X-Real-IP', sharedClientIp)
+    .set('X-Forwarded-For', '192.0.2.222');
+  assert.strictEqual(firstLimitedRequest.status, 204);
+  assert.strictEqual(secondLimitedRequest.status, 204);
+  assert(firstLimitedRequest.headers['ratelimit-remaining'], 'mounted API traffic must receive standard rate-limit headers');
+  assert(secondLimitedRequest.headers['ratelimit-remaining'], 'subsequent mounted API traffic must remain rate-limited');
+  const firstRemaining = Number(firstLimitedRequest.headers['ratelimit-remaining']);
+  const secondRemaining = Number(secondLimitedRequest.headers['ratelimit-remaining']);
+  assert.strictEqual(secondRemaining, firstRemaining - 1, 'spoofed X-Forwarded-For values must not create new IP buckets');
+
+  // Authenticated callers sharing a household, office, or mobile-carrier IP must still have
+  // independent AI/API quotas because the per-user limiter key is the verified user ID.
+  const perUserLimiterApp = express();
+  perUserLimiterApp.use((req, res, next) => {
+    req.user = { id: req.get('X-Test-User') };
+    next();
+  });
+  perUserLimiterApp.use('/api/', apiLimiter);
+  perUserLimiterApp.get('/api/per-user-limiter-probe', (req, res) => res.status(204).end());
+  const firstUserA = await request(perUserLimiterApp)
+    .get('/api/per-user-limiter-probe')
+    .set('X-Test-User', 'user-a')
+    .set('X-Real-IP', sharedClientIp);
+  const firstUserB = await request(perUserLimiterApp)
+    .get('/api/per-user-limiter-probe')
+    .set('X-Test-User', 'user-b')
+    .set('X-Real-IP', sharedClientIp);
+  const secondUserA = await request(perUserLimiterApp)
+    .get('/api/per-user-limiter-probe')
+    .set('X-Test-User', 'user-a')
+    .set('X-Real-IP', sharedClientIp);
+  assert.strictEqual(firstUserA.status, 204);
+  assert.strictEqual(firstUserB.status, 204);
+  assert.strictEqual(secondUserA.status, 204);
+  const firstUserARemaining = Number(firstUserA.headers['ratelimit-remaining']);
+  const firstUserBRemaining = Number(firstUserB.headers['ratelimit-remaining']);
+  const secondUserARemaining = Number(secondUserA.headers['ratelimit-remaining']);
+  assert.strictEqual(firstUserARemaining, firstUserBRemaining, 'different users sharing one IP must start in separate per-user API buckets');
+  assert.strictEqual(secondUserARemaining, firstUserARemaining - 1, 'a repeat request must consume only that authenticated user’s API bucket');
+
+  if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = previousNodeEnv;
+  if (previousRailwayEnv === undefined) delete process.env.RAILWAY_ENVIRONMENT;
+  else process.env.RAILWAY_ENVIRONMENT = previousRailwayEnv;
 
   assert(LARGE_BODY_ANALYZER_PATHS.has('/api/analyze'));
   assert(LARGE_BODY_ANALYZER_PATHS.has('/api/analyze/'));
@@ -142,6 +222,30 @@ async function runVerify(req) {
   assert.strictEqual(response.status, 401, 'custom-domain unauthenticated Analyzer request must be rejected before parsing');
   assert.strictEqual(response.headers['access-control-allow-origin'], 'https://mywingmanapp.com', 'early 401 must remain readable by the custom production domain');
   assert.strictEqual(response.headers['access-control-allow-credentials'], 'true', 'custom-domain early 401 must preserve credentialed CORS semantics');
+
+  response = await request(app)
+    .post('/api/ANALYZE')
+    .set('Origin', 'https://mywingmanapp.com')
+    .set('Content-Type', 'application/json')
+    .send('{"broken":');
+  assert.strictEqual(response.status, 401, 'case-insensitive Analyzer paths must be rejected before parsing');
+  assert.strictEqual(response.headers['access-control-allow-origin'], 'https://mywingmanapp.com', 'case-insensitive Analyzer early 401 must preserve canonical CORS');
+
+  response = await request(app)
+    .post('/api/analyze/extra')
+    .set('Origin', 'https://attacker.example')
+    .set('Content-Type', 'application/json')
+    .send('{"broken":');
+  assert.strictEqual(response.status, 401, 'Analyzer parser-prefix subpaths must be rejected before parsing');
+  assert.strictEqual(response.headers['access-control-allow-origin'], undefined, 'hostile-origin Analyzer subpath must receive no CORS grant');
+
+  response = await request(app)
+    .post('/api/analyze-chat-screenshot/extra')
+    .set('Origin', 'https://mywingmanapp.com')
+    .set('Content-Type', 'application/json')
+    .send('{"broken":');
+  assert.strictEqual(response.status, 401, 'chat-screenshot parser-prefix subpaths must be rejected before parsing');
+  assert.strictEqual(response.headers['access-control-allow-origin'], 'https://mywingmanapp.com', 'chat-screenshot subpath early 401 must preserve canonical CORS');
 
   const beforeMalformedJwt = remoteFetchCalls;
   response = await request(app)
