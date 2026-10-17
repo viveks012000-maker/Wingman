@@ -707,7 +707,7 @@
                     notifyUser('Account created! Welcome to MyWingman.', 'success');
                     return { success: true, authenticated: true, user: resp.data.user, session: resp.data.session };
                 } else {
-                    notifyUser('Check your email to finish signup. Your account and 20 free credits activate after verification.', 'info');
+                    notifyUser('Check your email to finish signup. Eligible welcome credits are added after your account is verified.', 'info');
                     return { success: true, authenticated: false, user: resp.data.user, session: null, confirmationRequired: true };
                 }
             }

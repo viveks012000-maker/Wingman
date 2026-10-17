@@ -14,7 +14,7 @@ const migrations = fs.readdirSync(migrationDir)
     .filter(name => name.endsWith('.sql'))
     .sort();
 assert.deepEqual(migrations.map(name => name.slice(0, 3)), [
-    '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013', '014', '015', '016', '017'
+    '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013', '014', '015', '016', '017', '018'
 ], 'tracked migration order must remain explicit and stable');
 
 const container = `wingman-migration-replay-${process.pid}`;
@@ -23,6 +23,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE SCHEMA auth;
 CREATE TABLE auth.users (
   id uuid PRIMARY KEY,
+  created_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
   email_confirmed_at timestamptz
 );
 CREATE ROLE anon NOLOGIN;
@@ -67,7 +68,7 @@ try {
         throw checkErr;
     }
 
-    docker(['run', '--rm', '-d', '--name', container, '-e', 'POSTGRES_PASSWORD=postgres', '-e', 'POSTGRES_DB=wingman_replay', 'postgres:16-alpine']);
+    docker(['run', '--rm', '-d', '--name', container, '-e', 'POSTGRES_PASSWORD=postgres', '-e', 'POSTGRES_DB=wingman_replay', 'postgres:17.6-alpine']);
     let ready = false;
     for (let attempt = 0; attempt < 90; attempt += 1) {
         try {
@@ -127,6 +128,19 @@ try {
                 WHERE id = '77777777-7777-4777-8777-777777777777';
             `);
         }
+        if (name.startsWith('018')) {
+            // Keep these email signups pending across the cutover. A profile with an
+            // existing balance must survive confirmation unchanged.
+            psql(`
+                INSERT INTO auth.users(id, created_at, email_confirmed_at) VALUES
+                    ('81818181-8181-4818-8818-818181818181', '2026-10-15T00:00:00Z', NULL),
+                    ('82828282-8282-4828-8828-828282828282', '2026-10-15T00:00:00Z', NULL),
+                    ('83838383-8383-4838-8838-838383838383', '2026-10-15T00:00:00Z', NULL);
+                INSERT INTO public.profiles(id, credits, has_paid_credits) VALUES
+                    ('82828282-8282-4828-8828-828282828282', 73, true),
+                    ('83838383-8383-4838-8838-838383838383', 0, true);
+            `);
+        }
         psql(fs.readFileSync(path.join(migrationDir, name), 'utf8'));
     }
 
@@ -151,6 +165,33 @@ try {
     assert.equal(scalar("SELECT credits FROM public.profiles WHERE id = '77777777-7777-4777-8777-777777777777';"), '20',
         'Confirmed identity missing a profile and with no credit history must be safely backfilled to 20');
 
+    // Migration 018 keeps pending pre-cutover registrations at 20 and preserves all
+    // pre-existing balances/paid markers; new post-cutover verification earns 50.
+    psql(`
+        UPDATE auth.users SET email_confirmed_at = pg_catalog.now()
+        WHERE id = '81818181-8181-4818-8818-818181818181';
+        UPDATE auth.users SET email_confirmed_at = pg_catalog.now()
+        WHERE id IN ('82828282-8282-4828-8828-828282828282', '83838383-8383-4838-8838-838383838383');
+        INSERT INTO auth.users(id, email_confirmed_at)
+        VALUES ('84848484-8484-4848-8848-848484848484', NULL);
+        UPDATE auth.users SET email_confirmed_at = pg_catalog.now()
+        WHERE id = '84848484-8484-4848-8848-848484848484';
+        INSERT INTO auth.users(id, email_confirmed_at)
+        VALUES ('85858585-8585-4858-8858-858585858585', pg_catalog.now());
+        DO $$ BEGIN
+          IF (SELECT credits FROM public.profiles WHERE id='81818181-8181-4818-8818-818181818181') <> 20 THEN RAISE EXCEPTION 'pre-cutover pending signup must retain 20 credits'; END IF;
+          IF (SELECT credits FROM public.profiles WHERE id='82828282-8282-4828-8828-828282828282') <> 73 OR (SELECT has_paid_credits FROM public.profiles WHERE id='82828282-8282-4828-8828-828282828282') <> true THEN RAISE EXCEPTION 'existing pending-profile balance was overwritten'; END IF;
+          IF (SELECT credits FROM public.profiles WHERE id='83838383-8383-4838-8838-838383838383') <> 0 OR (SELECT has_paid_credits FROM public.profiles WHERE id='83838383-8383-4838-8838-838383838383') <> true THEN RAISE EXCEPTION 'existing zero paid balance was overwritten'; END IF;
+          IF (SELECT credits FROM public.profiles WHERE id='84848484-8484-4848-8848-848484848484') <> 50 THEN RAISE EXCEPTION 'new verified signup must receive exactly 50'; END IF;
+          IF (SELECT credits FROM public.profiles WHERE id='85858585-8585-4858-8858-858585858585') <> 50 THEN RAISE EXCEPTION 'confirmed OAuth signup must receive exactly 50'; END IF;
+          IF has_table_privilege('anon','public.signup_credit_policy','SELECT') OR has_table_privilege('authenticated','public.signup_credit_policy','INSERT') THEN RAISE EXCEPTION 'browser role can access signup policy'; END IF;
+        END $$;
+        UPDATE auth.users SET email_confirmed_at = email_confirmed_at WHERE id='84848484-8484-4848-8848-848484848484';
+        DO $$ BEGIN
+          IF (SELECT credits FROM public.profiles WHERE id='84848484-8484-4848-8848-848484848484') <> 50 THEN RAISE EXCEPTION 'repeated confirmation must not regrant'; END IF;
+        END $$;
+    `);
+
     const userId = '11111111-1111-4111-8111-111111111111';
     const otherId = '22222222-2222-4222-8222-222222222222';
     const smoke = `
@@ -167,46 +208,46 @@ END $$;
 -- The first NULL -> non-NULL email confirmation transition provisions exactly once.
 UPDATE auth.users SET email_confirmed_at = pg_catalog.now() WHERE id = '${userId}';
 DO $$ BEGIN
-  IF (SELECT credits FROM public.profiles WHERE id = '${userId}') <> 20 THEN RAISE EXCEPTION 'verified signup must grant exactly 20 credits'; END IF;
+  IF (SELECT credits FROM public.profiles WHERE id = '${userId}') <> 50 THEN RAISE EXCEPTION 'post-cutover verified signup must grant exactly 50 credits'; END IF;
   IF (SELECT has_paid_credits FROM public.profiles WHERE id = '${userId}') <> false THEN RAISE EXCEPTION 'verified signup must be on Free Plan'; END IF;
 END $$;
 
 -- Subsequent updates cannot re-award signup credits.
 UPDATE auth.users SET email_confirmed_at = email_confirmed_at WHERE id = '${userId}';
 DO $$ BEGIN
-  IF (SELECT credits FROM public.profiles WHERE id = '${userId}') <> 20 THEN RAISE EXCEPTION 'confirmation replay changed signup credits'; END IF;
+  IF (SELECT credits FROM public.profiles WHERE id = '${userId}') <> 50 THEN RAISE EXCEPTION 'confirmation replay changed signup credits'; END IF;
 END $$;
 
 -- OAuth-like users that are already confirmed at INSERT still provision immediately.
 INSERT INTO auth.users(id, email_confirmed_at) VALUES ('${otherId}', pg_catalog.now());
 DO $$ BEGIN
-  IF (SELECT credits FROM public.profiles WHERE id = '${otherId}') <> 20 THEN RAISE EXCEPTION 'confirmed-at-insert user must receive exactly 20 credits'; END IF;
+  IF (SELECT credits FROM public.profiles WHERE id = '${otherId}') <> 50 THEN RAISE EXCEPTION 'confirmed-at-insert user must receive exactly 50 credits'; END IF;
   IF (SELECT has_paid_credits FROM public.profiles WHERE id = '${otherId}') <> false THEN RAISE EXCEPTION 'confirmed-at-insert user must be on Free Plan'; END IF;
 END $$;
 
 SELECT set_config('request.jwt.claim.role', 'service_role', true);
 DO $$ DECLARE result json; BEGIN
   result := public.reserve_credits('${userId}', 10, 'analyzer', 'replay-1');
-  IF result->>'success' <> 'true' OR (result->>'remainingCredits')::int <> 10 THEN RAISE EXCEPTION 'reservation failed: %', result; END IF;
+  IF result->>'success' <> 'true' OR (result->>'remainingCredits')::int <> 40 THEN RAISE EXCEPTION 'reservation failed: %', result; END IF;
   result := public.reserve_credits('${userId}', 10, 'analyzer', 'replay-1');
-  IF result->>'duplicate' <> 'true' OR (result->>'remainingCredits')::int <> 10 THEN RAISE EXCEPTION 'reservation was not idempotent: %', result; END IF;
+  IF result->>'duplicate' <> 'true' OR (result->>'remainingCredits')::int <> 40 THEN RAISE EXCEPTION 'reservation was not idempotent: %', result; END IF;
   result := public.settle_credits('${userId}', 'replay-1');
   IF result->>'success' <> 'true' THEN RAISE EXCEPTION 'settlement failed: %', result; END IF;
   result := public.settle_credits('${userId}', 'replay-1');
   IF result->>'success' <> 'true' THEN RAISE EXCEPTION 'settlement replay failed: %', result; END IF;
   result := public.reserve_credits('${userId}', 10, 'analyzer', 'replay-2');
-  IF result->>'success' <> 'true' OR (result->>'remainingCredits')::int <> 0 THEN RAISE EXCEPTION 'second reservation failed: %', result; END IF;
+  IF result->>'success' <> 'true' OR (result->>'remainingCredits')::int <> 30 THEN RAISE EXCEPTION 'second reservation failed: %', result; END IF;
   result := public.release_credits('${userId}', 'replay-2', 'test');
-  IF result->>'released' <> 'true' OR (result->>'remainingCredits')::int <> 10 THEN RAISE EXCEPTION 'release failed: %', result; END IF;
+  IF result->>'released' <> 'true' OR (result->>'remainingCredits')::int <> 40 THEN RAISE EXCEPTION 'release failed: %', result; END IF;
   result := public.release_credits('${userId}', 'replay-2', 'test');
-  IF result->>'already_settled_or_released' <> 'true' OR (result->>'remainingCredits')::int <> 10 THEN RAISE EXCEPTION 'release replay was not idempotent: %', result; END IF;
+  IF result->>'already_released' <> 'true' OR (result->>'remainingCredits')::int <> 40 THEN RAISE EXCEPTION 'release replay was not idempotent: %', result; END IF;
   result := public.reserve_credits('${userId}', 1000, 'analyzer', 'replay-insufficient');
   IF result->>'error' <> 'INSUFFICIENT_CREDITS' THEN RAISE EXCEPTION 'insufficient balance was not rejected: %', result; END IF;
   result := public.record_user_consent('terms-v1', 'privacy-v1', true, true, NULL, NULL, '${userId}');
   IF result->>'success' <> 'true' OR result->>'user_id' <> '${userId}' THEN RAISE EXCEPTION 'consent flow failed: %', result; END IF;
 END $$;
 DO $$ BEGIN
-  IF (SELECT credits FROM public.profiles WHERE id = '${userId}') <> 10 THEN RAISE EXCEPTION 'balance invariant failed'; END IF;
+  IF (SELECT credits FROM public.profiles WHERE id = '${userId}') <> 40 THEN RAISE EXCEPTION 'balance invariant failed'; END IF;
 END $$;
 DELETE FROM auth.users WHERE id = '${userId}';
 DO $$ BEGIN
@@ -224,15 +265,15 @@ VALUES ('order_replay','${userId}','starter',250,44900,'INR','test'),
        ('order_other','${otherId}','starter',250,44900,'INR','test');
 DO $$ DECLARE result json; BEGIN
  result := public.fulfill_razorpay_order('order_replay','pay_replay',44900,'INR');
- IF result->>'success' <> 'true' OR (result->>'credits')::int <> 270 THEN RAISE EXCEPTION 'payment fulfillment failed: %',result; END IF;
+ IF result->>'success' <> 'true' OR (result->>'credits')::int <> 300 THEN RAISE EXCEPTION 'payment fulfillment failed: %',result; END IF;
  result := public.fulfill_razorpay_order('order_replay','pay_replay',44900,'INR');
- IF result->>'duplicate' <> 'true' OR (result->>'credits')::int <> 270 THEN RAISE EXCEPTION 'duplicate payment grant: %',result; END IF;
+ IF result->>'duplicate' <> 'true' OR (result->>'credits')::int <> 300 THEN RAISE EXCEPTION 'duplicate payment grant: %',result; END IF;
  BEGIN
    PERFORM public.fulfill_razorpay_order('order_other','pay_replay',44900,'INR');
    RAISE EXCEPTION 'payment reuse unexpectedly succeeded';
  EXCEPTION WHEN unique_violation THEN NULL;
  END;
- IF (SELECT credits FROM public.profiles WHERE id='${otherId}') <> 20 THEN RAISE EXCEPTION 'other wallet changed'; END IF;
+ IF (SELECT credits FROM public.profiles WHERE id='${otherId}') <> 50 THEN RAISE EXCEPTION 'other wallet changed'; END IF;
  IF (SELECT count(*) FROM public.credit_transactions WHERE user_id='${userId}' AND request_id='pay_replay') <> 1 THEN RAISE EXCEPTION 'purchase ledger is not exactly once'; END IF;
  IF pg_catalog.has_function_privilege('authenticated','public.fulfill_razorpay_order(text,text,integer,text)','EXECUTE') THEN RAISE EXCEPTION 'browser can grant credits'; END IF;
  IF pg_catalog.has_table_privilege('anon','public.razorpay_orders','SELECT') THEN RAISE EXCEPTION 'anonymous payment record access'; END IF;
