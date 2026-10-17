@@ -266,9 +266,14 @@ DO $$ DECLARE result json; BEGIN
   IF result->>'success' <> 'true' OR result->>'user_id' <> '${userId}' THEN RAISE EXCEPTION 'consent flow failed: %', result; END IF;
 END $$;
 INSERT INTO auth.users(id, email_confirmed_at) VALUES ('33333333-3333-4333-8333-333333333333', pg_catalog.now());
-DELETE FROM public.profiles WHERE id='33333333-3333-4333-8333-333333333333';
 INSERT INTO public.credit_transactions(user_id, amount, type, feature, request_id, status)
 VALUES ('33333333-3333-4333-8333-333333333333', -3, 'feature_usage', 'fixture', 'release-missing-profile', 'pending');
+-- Model a legacy orphan in this disposable database only. Production's ON DELETE
+-- CASCADE normally prevents this state; suppressing FK triggers here lets the
+-- regression prove release_credits fails closed if historical corruption exists.
+SET session_replication_role = replica;
+DELETE FROM public.profiles WHERE id='33333333-3333-4333-8333-333333333333';
+SET session_replication_role = origin;
 DO $$ DECLARE result json; BEGIN
   result := public.release_credits('33333333-3333-4333-8333-333333333333', 'release-missing-profile', 'test');
   IF result->>'success' <> 'false' OR EXISTS (SELECT 1 FROM public.profiles WHERE id='33333333-3333-4333-8333-333333333333') OR (SELECT status FROM public.credit_transactions WHERE user_id='33333333-3333-4333-8333-333333333333' AND request_id='release-missing-profile') <> 'pending' THEN RAISE EXCEPTION 'missing profile release must fail without changing ledger: %', result; END IF;
