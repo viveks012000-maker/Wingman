@@ -333,8 +333,8 @@ async function ensureUserProfile(uid, email) {
     }
 }
 
-// Canonical Initial Free Credits for all newly provisioned accounts
-const INITIAL_FREE_CREDITS = 20;
+// Current initial free-credit grant for newly eligible accounts.
+const INITIAL_FREE_CREDITS = 50;
 
 // In-flight read query coalescing per authenticated user ID (Deduplicates concurrent credit reads)
 const inFlightUserCreditQueries = new Map();
