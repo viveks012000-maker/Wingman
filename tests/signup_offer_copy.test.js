@@ -19,8 +19,12 @@ for (const [name, content] of [['homepage', home], ['signup page', app], ['signu
 }
 
 assert.match(home, /Free trial with complimentary welcome credits after account verification\./);
-assert.match(appJs, /Eligible welcome credits are added after your account is verified\./);
-assert.match(auth, /Eligible welcome credits are added after your account is verified\./);
+assert.match(appJs, /Eligible welcome credits are added after your account is verified\./,
+  'unverified email/password attempts must not be described as successful signups');
+assert.doesNotMatch(auth, /client\.auth\.signUp\s*\(/,
+  'the Auth client must not expose email/password registration in the Google-only beta');
+assert.match(auth, /client\.auth\.signInWithPassword\s*\(/,
+  'existing email/password login must remain supported');
 assert.match(terms, /created at or after the welcome-credit cutover receive fifty \(50\).*after verification/i);
 assert.match(terms, /created before the cutover retain the prior twenty \(20\) credit welcome policy/i);
 assert.doesNotMatch(config, /canonical\s+20\s+signup/i);

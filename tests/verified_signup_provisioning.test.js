@@ -8,6 +8,7 @@ const root = path.join(__dirname, '..');
 const migrationPath = path.join(root, 'migrations', '015_provision_profile_after_email_verification.sql');
 const supabaseClientSrc = fs.readFileSync(path.join(root, 'supabaseClient.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const appHtml = fs.readFileSync(path.join(root, 'app.html'), 'utf8');
 const appSrc = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const replaySrc = fs.readFileSync(path.join(root, 'tests', 'migration_replay.test.js'), 'utf8');
 
@@ -38,7 +39,6 @@ console.log('===================================================================
 const migrationExists = fs.existsSync(migrationPath);
 const migrationSrc = migrationExists ? fs.readFileSync(migrationPath, 'utf8') : '';
 const sql = normalizedSql(migrationSrc);
-const pendingMessage = 'Check your email to finish signup. Eligible welcome credits are added after your account is verified.';
 
 test('1. A forward-only migration exists for verified-email provisioning', () => {
   assert.ok(migrationExists, 'migrations/015_provision_profile_after_email_verification.sql must exist');
@@ -81,18 +81,19 @@ test('5. Safely recoverable confirmed users missing profiles are backfilled with
   assert.ok(sql.includes('on conflict (id) do nothing'), 'backfill must be idempotent');
 });
 
-test('6. Pending signup UI accurately says verification finishes signup and activates credits', () => {
-  assert.ok(!supabaseClientSrc.includes('Account created! Please check your email to confirm your account and sign in.'), 'pending signup toast must not claim Account created');
-  assert.ok(!indexHtml.includes('Account created. Check your email to verify it before signing in.'), 'landing pending-signup message must not claim Account created');
-  assert.ok(!appSrc.includes('Account created. Check your email to verify it before signing in.'), 'dashboard pending-signup message must not claim Account created');
-  assert.ok(supabaseClientSrc.includes(pendingMessage), 'Supabase signup helper must show the canonical pending-verification message');
-  assert.ok(indexHtml.includes(pendingMessage), 'landing auth form must show the canonical pending-verification message');
-  assert.ok(appSrc.includes(pendingMessage), 'dashboard auth form must show the canonical pending-verification message');
+test('6. New email/password registration is unavailable in the Google-only beta', () => {
+  assert.ok(!/window\.signUpUser|client\.auth\.signUp\s*\(/.test(supabaseClientSrc), 'Auth client must not expose email/password signup');
+  assert.ok(!/Need an account\? Sign Up|Sign Up with Email/i.test(indexHtml), 'landing page must not invite email/password registration');
+  assert.ok(!/Need an account\? Sign Up|Sign Up with Email/i.test(appHtml), 'app page must not invite email/password registration');
+  assert.ok(indexHtml.includes('Continue with Google'), 'landing page must offer Google for new accounts');
+  assert.ok(appHtml.includes('Continue with Google'), 'app page must offer Google for new accounts');
 });
 
-test('7. Pending signup remains explicitly unauthenticated until Supabase returns a real session', () => {
-  assert.ok(/authenticated:\s*false/.test(supabaseClientSrc), 'confirmation-required signup must remain authenticated=false');
-  assert.ok(/confirmationRequired:\s*true/.test(supabaseClientSrc), 'confirmation-required signup marker must remain present');
+test('7. Existing email/password login remains available and session-verified', () => {
+  assert.ok(/client\.auth\.signInWithPassword\s*\(/.test(supabaseClientSrc), 'existing users must retain email/password login');
+  assert.ok(indexHtml.includes('Sign In with Email'), 'landing page must retain the existing-account login control');
+  assert.ok(appHtml.includes('Sign In with Email'), 'app page must retain the existing-account login control');
+  assert.ok(appSrc.includes('verifiedSession.user.id !== authResult.user.id'), 'app must verify the returned session identity before treating login as authenticated');
 });
 
 test('8. Migration replay is extended through migration 015 and exercises its repair paths', () => {

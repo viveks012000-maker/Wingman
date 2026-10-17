@@ -25,11 +25,9 @@ async function test(name, fn) {
   }
 }
 
-async function createRuntime({ signupSession = null } = {}) {
-  const signupUser = { id: 'new-user', email: 'new@example.com' };
+async function createRuntime() {
   const auth = {
     getSession: async () => ({ data: { session: null }, error: null }),
-    signUp: async () => ({ data: { user: signupUser, session: signupSession }, error: null }),
     signInWithPassword: async () => ({ data: { user: null, session: null }, error: { code: 'invalid_credentials', message: 'Invalid login credentials' } }),
     signOut: async () => ({ error: null }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } })
@@ -82,12 +80,10 @@ async function run() {
   console.log('🔒 FAIL-CLOSED EMAIL AUTH REGRESSION SUITE');
   console.log('========================================================================\n');
 
-  await test('1. Confirmation-required signup is explicitly unauthenticated', async () => {
-    const runtime = await createRuntime({ signupSession: null });
-    const result = await runtime.window.signUpUser('new@example.com', 'correct-horse');
-    assert.strictEqual(result.success, true, 'account creation may succeed pending confirmation');
-    assert.strictEqual(result.confirmationRequired, true, 'confirmation must be required');
-    assert.strictEqual(result.authenticated, false, 'pending-confirmation signup must be explicitly unauthenticated');
+  await test('1. Email/password account creation is unavailable in the Google-only beta', async () => {
+    const runtime = await createRuntime();
+    assert.strictEqual(typeof runtime.window.signUpUser, 'undefined', 'email/password signup must not be callable from the client');
+    assert.doesNotMatch(supabaseClientSrc, /client\.auth\.signUp\s*\(/, 'the auth client must not call Supabase email signup');
   });
 
   await test('2. Supabase client exports a fresh-session verifier for auth UI decisions', () => {
@@ -109,9 +105,14 @@ async function run() {
     assert.ok(indexHtml.includes('verifiedSession.user.id !== authResult.user.id'), 'index.html must verify the fresh session belongs to the credential result user');
   });
 
-  await test('5. Successful password/signup auth results are explicitly marked authenticated', () => {
-    const matches = supabaseClientSrc.match(/authenticated:\s*true/g) || [];
-    assert.ok(matches.length >= 2, 'email signup-with-session and password login success must both set authenticated=true');
+  await test('5. Existing password login remains authenticated only after a real session', () => {
+    const loginStart = supabaseClientSrc.indexOf('window.loginUser = async function');
+    const googleStart = supabaseClientSrc.indexOf('window.signInWithGoogle = async function');
+    const loginSource = supabaseClientSrc.slice(loginStart, googleStart);
+    assert.ok(loginStart >= 0 && googleStart > loginStart, 'email/password login boundary must be identifiable');
+    assert.match(loginSource, /client\.auth\.signInWithPassword\s*\(/, 'existing users must still use Supabase password login');
+    assert.match(loginSource, /authenticated:\s*true/, 'successful password login must be marked authenticated');
+    assert.match(loginSource, /session\.access_token/, 'password login must require a real access-token session');
   });
 
   console.log(`\nResults: ${passed} passed, ${failed} failed.`);

@@ -161,13 +161,10 @@ function createEnvironment(options = {}) {
   console.log('Running password recovery compatibility tests...');
 
   const weak = { code: 'weak_password', name: 'AuthWeakPasswordError', message: 'Password is weak', reasons: ['leaked_password'] };
-  const signupEnv = createEnvironment({ signUpResponse: { data: { user: null, session: null }, error: weak } });
-  const signup = await signupEnv.window.signUpUser('test@example.com', 'Password123!');
-  assert.strictEqual(signup.success, false);
-  assert.strictEqual(signup.code, 'weak_password');
-  assert(signup.error.includes('known data breaches'));
-  assert.strictEqual(signupEnv.localStore.get('wingman_authenticated'), undefined);
-  console.log('✓ weak/leaked signup is rejected using structured Auth error data');
+  const googleOnlyEnv = createEnvironment();
+  assert.strictEqual(typeof googleOnlyEnv.window.signUpUser, 'undefined', 'email/password registration must stay unavailable in the Google-only beta');
+  assert.strictEqual(googleOnlyEnv.calls.signUp.length, 0, 'loading auth handlers must not create an email/password account');
+  console.log('✓ email/password registration is unavailable while existing password login remains supported');
 
   const loginEnv = createEnvironment({ signInResponse: { data: { user: null, session: null }, error: weak } });
   const login = await loginEnv.window.loginUser('test@example.com', 'Password123!');
