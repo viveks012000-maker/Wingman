@@ -174,10 +174,10 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 
 /*
  * Account plan badge.
- * "Free Plan" means the account has only ever received the canonical 20 signup credits.
- * "Paid Plan" means the account has ever had credits beyond that signup grant. The database
- * persists this monotonic fact on the authenticated user's RLS-protected profile so refreshes
- * stay O(1) regardless of credit-ledger size.
+ * "Free Plan" means no paid credit purchase has been recorded, regardless of whether the
+ * account received the historical 20-credit grant or the post-cutover 50-credit welcome grant.
+ * "Paid Plan" means the database has recorded paid credits. This monotonic fact is stored on
+ * the authenticated user's RLS-protected profile so refreshes stay O(1) regardless of ledger size.
  */
 (function () {
     'use strict';

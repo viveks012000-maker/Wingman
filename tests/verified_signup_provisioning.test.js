@@ -38,7 +38,7 @@ console.log('===================================================================
 const migrationExists = fs.existsSync(migrationPath);
 const migrationSrc = migrationExists ? fs.readFileSync(migrationPath, 'utf8') : '';
 const sql = normalizedSql(migrationSrc);
-const pendingMessage = 'Check your email to finish signup. Your account and 20 free credits activate after verification.';
+const pendingMessage = 'Check your email to finish signup. Eligible welcome credits are added after your account is verified.';
 
 test('1. A forward-only migration exists for verified-email provisioning', () => {
   assert.ok(migrationExists, 'migrations/015_provision_profile_after_email_verification.sql must exist');
