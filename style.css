@@ -159,14 +159,14 @@ select,
     }
 
     body.landing-page > section:first-of-type {
-        padding: 28px 16px 44px !important;
+        padding: 28px 16px 28px !important;
         overflow-x: clip !important;
         overflow-y: visible !important;
         touch-action: pan-y !important;
     }
 
     body.landing-page #hero-reveal-container {
-        gap: 18px !important;
+        gap: 16px !important;
         max-width: 36rem;
     }
 

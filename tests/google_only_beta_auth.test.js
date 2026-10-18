@@ -17,8 +17,10 @@ for (const [name, html] of [['landing page', landing], ['app page', app]]) {
         `${name} does not offer email/password registration`);
     assert.match(html, /New accounts use Google/i,
         `${name} explains that new beta accounts use Google`);
-    assert.doesNotMatch(html, /Get 50 Free AI Credits|50 free AI credits/i,
-        `${name} does not publish the 50-credit promotion before live-account verification`);
+    assert.match(html, /Get 50 Free AI Credits/i,
+        `${name} presents the eligible welcome offer`);
+    assert.match(html, /Sign up with Google and receive 50 free AI credits\. No purchase required\. Available once to eligible new users\./,
+        `${name} states the same accurate Google-only offer terms`);
 }
 
 for (const [name, source] of [['landing page', landing], ['app page', appJs]]) {
@@ -37,4 +39,4 @@ assert.doesNotMatch(supabaseClient, /window\.signUpUser|client\.auth\.signUp\s*\
 assert.match(supabaseClient, /client\.auth\.signInWithPassword\s*\(/,
     'application client keeps email/password sign-in for existing accounts');
 
-console.log('PASS: Google-only new-account UI, existing email/password login, and unpublished 50-credit promotion.');
+console.log('PASS: Google-only welcome offer, existing email/password login, and no email/password registration path.');
