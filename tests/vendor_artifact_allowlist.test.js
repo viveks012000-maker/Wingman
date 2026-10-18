@@ -15,7 +15,15 @@ const EXPECTED_VENDOR_FILES = [
   'cropperjs/cropper.min.js',
   'heic2any-adapter.js',
   'heic2any-loader.js',
+  'heic-runtime/LICENSE-heic-to.txt',
+  'heic-runtime/LICENSE-libde265.txt',
+  'heic-runtime/LICENSE-libheif.txt',
+  'heic-runtime/NOTICE.txt',
+  'heic-runtime/SOURCE.txt',
+  'heic-runtime/build-info.json',
   'heic-runtime/heic-to-csp.js',
+  'heic-runtime/source/heic-to-worker.js',
+  'heic-runtime/source/libheif-build-emscripten.sh',
   'production-runtime.js',
   'supabase.min.js'
 ].sort();
@@ -73,7 +81,18 @@ for (const requiredRef of [
 
 // The heavy HEIC converter is intentionally not referenced eagerly, but must remain available
 // for heic2any-loader.js to fetch on first HEIC/HEIF conversion.
-assert(fs.existsSync(path.join(VENDOR, 'heic-runtime', 'heic-to-csp.js')), 'lazy HEIC runtime payload must remain available');
+for (const requiredHeicFile of [
+  'heic-runtime/heic-to-csp.js',
+  'heic-runtime/LICENSE-heic-to.txt',
+  'heic-runtime/LICENSE-libde265.txt',
+  'heic-runtime/LICENSE-libheif.txt',
+  'heic-runtime/NOTICE.txt',
+  'heic-runtime/SOURCE.txt',
+  'heic-runtime/source/heic-to-worker.js',
+  'heic-runtime/source/libheif-build-emscripten.sh'
+]) {
+  assert(fs.existsSync(path.join(VENDOR, requiredHeicFile)), `HEIC runtime distribution must preserve required licensing/provenance file: ${requiredHeicFile}`);
+}
 assert(fs.existsSync(path.join(VENDOR, 'heic2any-adapter.js')), 'lazy HEIC adapter must remain available');
 assert(indexHtml.includes('https://wingman-production-c6ce.up.railway.app'), 'production landing CSP must retain the exact Railway origin');
 assert(!indexHtml.includes('http://localhost:*') && !indexHtml.includes('ws://localhost:*'), 'production landing CSP must not retain development-only localhost sources');
@@ -96,4 +115,4 @@ for (const rel of EXPECTED_VENDOR_FILES) {
 const duplicateBytesRemoved = 37035 + 3804;
 assert.strictEqual(duplicateBytesRemoved, 40839, 'documented duplicate payload saving must remain 40,839 bytes');
 
-console.log('✅ Public vendor artifact is exact-allowlisted; duplicate Cropper payload removed (40,839 bytes).');
+console.log('✅ Public vendor artifact is exact-allowlisted; HEIC licensing/provenance is preserved; duplicate Cropper payload removed (40,839 bytes).');

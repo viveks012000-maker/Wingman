@@ -76,6 +76,13 @@ jobs:
                     ! grep -q '<script src="./vendor/heic2any.min.js"></script>' netlify-dist/app.html
                     test -f netlify-dist/vendor/heic2any-loader.js
                     test -f netlify-dist/vendor/heic-runtime/heic-to-csp.js
+          test -s netlify-dist/vendor/heic-runtime/NOTICE.txt
+          test -s netlify-dist/vendor/heic-runtime/SOURCE.txt
+          test -s netlify-dist/vendor/heic-runtime/LICENSE-heic-to.txt
+          test -s netlify-dist/vendor/heic-runtime/LICENSE-libheif.txt
+          test -s netlify-dist/vendor/heic-runtime/LICENSE-libde265.txt
+          test -s netlify-dist/vendor/heic-runtime/source/heic-to-worker.js
+          test -s netlify-dist/vendor/heic-runtime/source/libheif-build-emscripten.sh
           for page in index.html app.html 404.html; do
             test "$(grep -Fo 'data-inline-source="style.css"' "netlify-dist/$page" | wc -l | tr -d ' ')" = 1
             ! grep -Eq 'href="/?style\.css"' "netlify-dist/$page"
