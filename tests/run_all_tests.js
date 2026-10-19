@@ -117,7 +117,9 @@ const testSuites = [
     { name: '97. Financial Error ForceFresh Semantics Suite', file: 'financial_error_forcefresh.test.js', timeoutMs: 30_000 },
     { name: '98. Bio Fact Preservation & Anti-Hallucination Suite', file: 'bio_fact_preservation.test.js', timeoutMs: 30_000 },
     { name: '99. Production Log Privacy & Zero-PII Suite', file: 'production_log_privacy.test.js', timeoutMs: 30_000 },
-    { name: '100. Monotonic Performance Telemetry Suite', file: 'monotonic_perf_telemetry.test.js', timeoutMs: 30_000 }
+    { name: '100. Monotonic Performance Telemetry Suite', file: 'monotonic_perf_telemetry.test.js', timeoutMs: 30_000 },
+    { name: '101. Homepage Auth State Rendering & Session Flicker Guard', file: 'homepage_auth_state.test.js', timeoutMs: 30_000 },
+    { name: '102. Runtime Session Restoration, Failure, and Private-State Cleanup', file: 'refresh_session_bootstrap_runtime.test.js', timeoutMs: 30_000 }
 ];
 
 console.log('========================================================================');

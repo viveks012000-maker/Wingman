@@ -75,6 +75,37 @@
     window.supabaseClient = null;
     window.currentSupabaseUser = null;
     window.currentSupabaseSession = null;
+    window.__wingmanAuthStateResolved = false;
+    window.__wingmanAuthStateRevision = 0;
+
+    let resolveAuthStateReady = null;
+    let authStateResolutionTimer = null;
+    window.wingmanAuthStateReady = new Promise(function (resolve) {
+        resolveAuthStateReady = resolve;
+    });
+
+    function markAuthStateResolved() {
+        if (window.__wingmanAuthStateResolved === true) return;
+        window.__wingmanAuthStateResolved = true;
+        if (authStateResolutionTimer) {
+            clearTimeout(authStateResolutionTimer);
+            authStateResolutionTimer = null;
+        }
+        if (resolveAuthStateReady) {
+            resolveAuthStateReady(window.currentSupabaseSession || null);
+            resolveAuthStateReady = null;
+        }
+    }
+
+    // An unusually slow storage refresh/network call must not leave every auth control hidden
+    // forever. A later canonical Supabase event can still replace this temporary signed-out UI.
+    authStateResolutionTimer = setTimeout(function () {
+        if (window.__wingmanAuthStateResolved === true) return;
+        window.currentSupabaseSession = null;
+        window.currentSupabaseUser = null;
+        markAuthStateResolved();
+        updateAuthUIState(null, { skipDataRefresh: true });
+    }, 8000);
 
     window.__memoryStore = window.__memoryStore || {};
 
@@ -148,28 +179,43 @@
 
     // Global Centralized Fresh Supabase Auth Header Provider
     window.getSupabaseAuthHeaders = async function () {
+        const canonicalSession = window.currentSupabaseSession;
+        if (window.__wingmanAuthStateResolved === true && canonicalSession && canonicalSession.access_token) {
+            return { 'Authorization': 'Bearer ' + canonicalSession.access_token };
+        }
         const client = window.supabaseClient;
         if (!client) {
-            if (window.currentSupabaseSession && window.currentSupabaseSession.access_token) {
-                return { 'Authorization': 'Bearer ' + window.currentSupabaseSession.access_token };
+            if (canonicalSession && canonicalSession.access_token) {
+                return { 'Authorization': 'Bearer ' + canonicalSession.access_token };
             }
             return {};
         }
+        const revisionAtStart = Number(window.__wingmanAuthStateRevision) || 0;
         try {
-            const { data: { session } } = await client.auth.getSession();
-            if (session && session.access_token) {
+            const result = await client.auth.getSession();
+            if ((Number(window.__wingmanAuthStateRevision) || 0) !== revisionAtStart) {
+                const latestSession = window.currentSupabaseSession;
+                return latestSession && latestSession.access_token
+                    ? { 'Authorization': 'Bearer ' + latestSession.access_token }
+                    : {};
+            }
+            const session = result && result.data ? result.data.session : null;
+            if (!(result && result.error) && session && session.access_token) {
                 return { 'Authorization': 'Bearer ' + session.access_token };
             }
         } catch (e) {
             console.warn('Failed to get session token:', e);
         }
-        if (window.currentSupabaseSession && window.currentSupabaseSession.access_token) {
-            return { 'Authorization': 'Bearer ' + window.currentSupabaseSession.access_token };
+        const latestSession = window.currentSupabaseSession;
+        if (latestSession && latestSession.access_token) {
+            return { 'Authorization': 'Bearer ' + latestSession.access_token };
         }
         return {};
     };
 
     let initPromise = null;
+    let authStateRevision = 0;
+    let logoutPending = false;
 
     // Initialize Supabase Client (Singleton Promise Pattern)
     async function initSupabase() {
@@ -207,6 +253,8 @@
 
             if (!url || !key) {
                 console.warn('[SupabaseClient] Notice: SUPABASE_URL and SUPABASE_ANON_KEY are not configured on server.');
+                markAuthStateResolved();
+                updateAuthUIState(null, { skipDataRefresh: true });
                 return null;
             }
 
@@ -220,45 +268,31 @@
                                 detectSessionInUrl: true
                             }
                         });
-                        window.getSupabaseAuthHeaders = async function() {
-                            const client = window.supabaseClient;
-                            if (!client) {
-                                if (window.currentSupabaseSession && window.currentSupabaseSession.access_token) {
-                                    return { 'Authorization': 'Bearer ' + window.currentSupabaseSession.access_token };
-                                }
-                                return {};
-                            }
-                            try {
-                                const { data: { session } } = await client.auth.getSession();
-                                if (session && session.access_token) {
-                                    return { 'Authorization': 'Bearer ' + session.access_token };
-                                }
-                            } catch (e) {
-                                console.warn('Failed to get session token:', e);
-                            }
-                            if (window.currentSupabaseSession && window.currentSupabaseSession.access_token) {
-                                return { 'Authorization': 'Bearer ' + window.currentSupabaseSession.access_token };
-                            }
-                            return {};
-                        };
                     }
 
                 // Attach Active Auth State Change Listener
                 window.supabaseClient.auth.onAuthStateChange(function (event, session) {
+                    authStateRevision += 1;
+                    window.__wingmanAuthStateRevision = authStateRevision;
+                    // Ignore late session restoration/refresh callbacks once local logout has
+                    // started. The matching SIGNED_OUT event is still allowed through.
+                    if (logoutPending && event !== 'SIGNED_OUT') return;
                     const previousSession = window.currentSupabaseSession;
                     const previousUser = (previousSession && previousSession.user) || window.currentSupabaseUser;
                     const previousStateUserId = window.state && window.state.consentUserId;
                     const previousUserId = (previousUser && previousUser.id) || previousStateUserId || null;
-                    const nextUserId = session && session.user && session.user.id ? session.user.id : null;
+                    const hasNextSession = !!(session && session.access_token && session.user && session.user.id);
+                    const nextUserId = hasNextSession ? session.user.id : null;
                     const accountChanged = !!(previousUserId && nextUserId && String(previousUserId) !== String(nextUserId));
-
-                    window.currentSupabaseSession = session;
-                    window.currentSupabaseUser = session ? session.user : null;
+                    const identityChanged = String(previousUserId || '') !== String(nextUserId || '');
 
                     // Clear state when the authenticated account changes or genuinely signs out.
                     // Repeated SIGNED_IN and TOKEN_REFRESHED events for the same account retain
-                    // the server-confirmed consent state while still triggering a status refresh below.
+                    // their existing credit and consent state; a new identity hydrates both once.
                     if (event === 'SIGNED_OUT' || accountChanged) {
+                        if (typeof window.clearAppState === 'function') {
+                            window.clearAppState();
+                        }
                         if (typeof window.resetConsentSessionState === 'function') {
                             window.resetConsentSessionState();
                         } else {
@@ -272,27 +306,25 @@
                         }
                     }
 
+                    window.currentSupabaseSession = hasNextSession ? session : null;
+                    window.currentSupabaseUser = hasNextSession ? session.user : null;
+                    markAuthStateResolved();
+
                     if (event === 'PASSWORD_RECOVERY') {
                         setPasswordRecoveryActive(true);
                         showPasswordRecoveryDialog();
                     }
 
-                    if (session && session.user && session.access_token) {
+                    if (hasNextSession) {
                         safeSet('wingman_authenticated', 'true');
                         safeSet('wingman_login_agreed', 'true');
                         safeSet('wingman_user_authenticated', 'true');
                         safeSet('wingman_user_email', session.user.email || '');
-                        updateAuthUIState(session.user);
-                        if (typeof window.checkDashboardAuth === 'function') {
-                            window.checkDashboardAuth();
-                        }
-                        if (typeof window.checkCreditBalance === 'function') {
-                            window.checkCreditBalance();
-                        }
-                        if (typeof window.checkServerConsentStatus === 'function') {
+                        updateAuthUIState(session.user, { skipDataRefresh: !identityChanged });
+                        if (identityChanged && typeof window.checkServerConsentStatus === 'function') {
                             window.checkServerConsentStatus();
                         }
-                    } else if (event === 'SIGNED_OUT') {
+                    } else if (event === 'SIGNED_OUT' || event === 'INITIAL_SESSION') {
                         safeRemove('wingman_authenticated');
                         safeRemove('wingman_user_authenticated');
                         safeRemove('wingman_user_email');
@@ -300,34 +332,51 @@
                             setPasswordRecoveryActive(false);
                             removePasswordRecoveryDialog();
                         }
-                        updateAuthUIState(null);
+                        updateAuthUIState(null, { skipDataRefresh: true });
                     }
                 });
 
                 // Hydrate existing session or URL hash token on initial boot
+                const hydrationRevision = authStateRevision;
                 const sessionResp = await window.supabaseClient.auth.getSession();
-                if (sessionResp && sessionResp.data && sessionResp.data.session) {
-                    window.currentSupabaseSession = sessionResp.data.session;
-                    window.currentSupabaseUser = sessionResp.data.session.user;
-                    updateAuthUIState(window.currentSupabaseUser);
+                if (authStateRevision !== hydrationRevision) return window.supabaseClient;
+
+                const hydratedSession = sessionResp && sessionResp.data ? sessionResp.data.session : null;
+                const validHydratedSession = !!(hydratedSession && hydratedSession.access_token && hydratedSession.user && hydratedSession.user.id);
+                const previousUserId = window.currentSupabaseUser && window.currentSupabaseUser.id;
+                const hydratedUserId = validHydratedSession ? hydratedSession.user.id : null;
+                const identityChanged = String(previousUserId || '') !== String(hydratedUserId || '');
+
+                window.currentSupabaseSession = validHydratedSession ? hydratedSession : null;
+                window.currentSupabaseUser = validHydratedSession ? hydratedSession.user : null;
+                markAuthStateResolved();
+
+                if (validHydratedSession) {
+                    updateAuthUIState(window.currentSupabaseUser, { skipDataRefresh: !identityChanged });
+                    if (identityChanged && typeof window.checkServerConsentStatus === 'function') {
+                        window.checkServerConsentStatus();
+                    }
                     if (passwordRecoveryActive || hasPasswordRecoveryUrlMarker()) {
                         setPasswordRecoveryActive(true);
                         showPasswordRecoveryDialog();
                     }
-                } else if (window.location.hash && window.location.hash.includes('access_token')) {
-                    setTimeout(async function () {
-                        const s = await window.supabaseClient.auth.getSession();
-                        if (s && s.data && s.data.session) {
-                            window.currentSupabaseSession = s.data.session;
-                            window.currentSupabaseUser = s.data.session.user;
-                            updateAuthUIState(s.data.session.user);
-                        }
-                    }, 200);
+                } else {
+                    updateAuthUIState(null, { skipDataRefresh: true });
                 }
 
             } catch (err) {
                 console.error('Supabase Client initialization error:', err);
+                if (window.__wingmanAuthStateResolved !== true) {
+                    window.currentSupabaseSession = null;
+                    window.currentSupabaseUser = null;
+                    markAuthStateResolved();
+                    updateAuthUIState(null, { skipDataRefresh: true });
+                }
             }
+            }
+            if (!window.supabaseClient) {
+                markAuthStateResolved();
+                updateAuthUIState(null, { skipDataRefresh: true });
             }
             return window.supabaseClient;
         })();
@@ -336,9 +385,17 @@
     }
 
     // Dynamic UI Update Helper for Authentication State
-    function updateAuthUIState(user) {
-        // ONLY trust real Supabase user objects — never self-authenticate from stale storage
-        const isUserLoggedIn = !!(user || window.currentSupabaseUser);
+    function updateAuthUIState(user, options) {
+        const settings = options || {};
+        const session = window.currentSupabaseSession;
+        const authenticatedUser = session && session.access_token && session.user && session.user.id
+            ? session.user
+            : null;
+        const isUserLoggedIn = !!authenticatedUser;
+
+        if (typeof window.renderHomepageAuthState === 'function') {
+            window.renderHomepageAuthState();
+        }
 
         if (isUserLoggedIn) {
             safeSet('wingman_authenticated', 'true');
@@ -363,8 +420,8 @@
             } catch (e) {}
         }
 
-        if (typeof window.loadUserCreditState === 'function') {
-            window.loadUserCreditState(user || window.currentSupabaseUser);
+        if (isUserLoggedIn && !settings.skipDataRefresh && typeof window.loadUserCreditState === 'function') {
+            window.loadUserCreditState(authenticatedUser);
         }
         if (typeof window.checkDashboardAuth === 'function') {
             window.checkDashboardAuth();
@@ -387,8 +444,8 @@
 
         const userEmailBadge = document.getElementById('userEmailBadge');
         if (userEmailBadge) {
-            if (user && user.email) {
-                userEmailBadge.textContent = user.email;
+            if (authenticatedUser && authenticatedUser.email) {
+                userEmailBadge.textContent = authenticatedUser.email;
                 userEmailBadge.classList.remove('hidden');
             } else {
                 userEmailBadge.textContent = '';
@@ -634,7 +691,7 @@
             return { success: false, error: 'Passwords do not match.' };
         }
 
-        var client = await initSupabase();
+        var client = window.supabaseClient || await initSupabase();
         if (!client || !client.auth) {
             return { success: false, error: 'Authentication service is initializing. Please try again.' };
         }
@@ -667,7 +724,7 @@
     // Return only a currently authenticated Supabase session whose user identity is
     // verified by the Auth server. Auth UI decisions must fail closed when this is null.
     window.getCurrentAuthenticatedSession = async function () {
-        const client = await initSupabase();
+        const client = window.supabaseClient || await initSupabase();
         if (!client || !client.auth) return null;
 
         try {
@@ -701,7 +758,7 @@
             return { success: false, error: msg };
         }
 
-        const client = await initSupabase();
+        const client = window.supabaseClient || await initSupabase();
         if (!client) {
             const msg = 'Authentication service is initializing. Please try again.';
             notifyUser(msg, 'warning');
@@ -709,6 +766,7 @@
         }
 
         try {
+            logoutPending = false;
             const resp = await client.auth.signInWithPassword({
                 email: cleanEmail,
                 password: password
@@ -753,14 +811,22 @@
     window.signInWithGoogle = async function (e) {
         if (e && typeof e.preventDefault === 'function') e.preventDefault();
 
+        const currentSession = window.currentSupabaseSession;
+        if (currentSession && currentSession.access_token && currentSession.user && currentSession.user.id) {
+            if (typeof window.closeAuthRequiredModal === 'function') window.closeAuthRequiredModal();
+            if (typeof window.renderHomepageAuthState === 'function') window.renderHomepageAuthState();
+            return { success: true, alreadyAuthenticated: true };
+        }
+
         try {
-            const client = await initSupabase();
+            const client = window.supabaseClient || await initSupabase();
 
             if (client && client.auth) {
                 const targetRedirect = (window.location.origin && window.location.origin !== 'null')
                     ? (window.location.origin + '/app.html')
                     : 'http://localhost:3000/app.html';
 
+                logoutPending = false;
                 const resp = await client.auth.signInWithOAuth({
                     provider: 'google',
                     options: {
@@ -801,7 +867,7 @@
             return { success: false, error: matchMsg };
         }
 
-        var client = await initSupabase();
+        var client = window.supabaseClient || await initSupabase();
         if (!client || !client.auth) {
             var initMsg = 'Authentication service is initializing. Please try again.';
             notifyUser(initMsg, 'warning');
@@ -857,7 +923,7 @@
             return { success: false, error: 'Please enter a valid email address (e.g. name@domain.com).' };
         }
 
-        const client = await initSupabase();
+        const client = window.supabaseClient || await initSupabase();
         if (!client) {
             return { success: false, error: 'Authentication service is initializing. Please try again.' };
         }
@@ -885,6 +951,12 @@
     };
 
     let logoutInFlight = null;
+    const persistedPreferenceKeys = new Set([
+        'wingman_setting_plexus',
+        'wingman_setting_shorthand',
+        'wingman_setting_emoji',
+        'wingman_setting_currency'
+    ]);
 
     // Helper: Safely identify the Supabase auth storage key for this application without deleting unrelated data
     function getApplicationAuthStorageKeys() {
@@ -922,6 +994,16 @@
         if (logoutInFlight) return logoutInFlight;
 
         logoutInFlight = (async function () {
+            logoutPending = true;
+            authStateRevision += 1;
+            window.__wingmanAuthStateRevision = authStateRevision;
+            // Keep cleanup centralized so direct logout calls clear the same private state as
+            // the app's visible Log Out control.
+            try {
+                if (typeof window.clearAppState === 'function') window.clearAppState();
+                if (typeof window.resetConsentSessionState === 'function') window.resetConsentSessionState();
+            } catch (_) {}
+
             // 1. Immediately wipe in-memory session globals to prevent ghost reads
             try {
                 window.currentSupabaseUser = null;
@@ -936,21 +1018,34 @@
                     if (!storage) return;
                     for (let i = storage.length - 1; i >= 0; i -= 1) {
                         const key = storage.key(i);
-                        if (key && key.indexOf('wingman_') === 0) storage.removeItem(key);
+                        if (key && key.indexOf('wingman_') === 0 && !persistedPreferenceKeys.has(key)) {
+                            storage.removeItem(key);
+                        }
                     }
                 });
             } catch (_) {}
 
             // 3. Await Supabase auth.signOut() with timeout safeguard (local session scope preferred)
+            let signOutFailure = null;
             try {
                 if (window.supabaseClient && window.supabaseClient.auth && typeof window.supabaseClient.auth.signOut === 'function') {
-                    await Promise.race([
+                    let timeoutId = null;
+                    const signOutResult = await Promise.race([
                         window.supabaseClient.auth.signOut({ scope: 'local' }),
-                        new Promise(function (resolve) { setTimeout(resolve, 2500); })
+                        new Promise(function (resolve) {
+                            timeoutId = setTimeout(function () { resolve({ __wingmanTimedOut: true }); }, 2500);
+                        })
                     ]);
+                    if (timeoutId) clearTimeout(timeoutId);
+                    if (signOutResult && signOutResult.__wingmanTimedOut) {
+                        signOutFailure = 'Supabase did not confirm local sign-out before the timeout.';
+                    } else if (signOutResult && signOutResult.error) {
+                        signOutFailure = signOutResult.error.message || 'Supabase could not confirm local sign-out.';
+                    }
                 }
             } catch (signOutErr) {
-                console.warn('[SupabaseClient] auth.signOut notice:', signOutErr && signOutErr.message ? signOutErr.message : signOutErr);
+                signOutFailure = signOutErr && signOutErr.message ? signOutErr.message : 'Supabase could not confirm local sign-out.';
+                console.warn('[SupabaseClient] auth.signOut notice:', signOutFailure);
             }
 
             // 4. Authoritative fallback: Ensure exact application Supabase auth tokens are purged
@@ -977,6 +1072,10 @@
             } catch (_) {
                 window.location.assign('index.html');
             }
+
+            return signOutFailure
+                ? { success: false, localSignedOut: true, error: signOutFailure }
+                : { success: true, localSignedOut: true };
         })().finally(function () {
             logoutInFlight = null;
         });

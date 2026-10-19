@@ -1355,3 +1355,7 @@ select,
         transition-duration: 0.01ms !important;
     }
 }
+
+.auth-state-hidden {
+    display: none !important;
+}

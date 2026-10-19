@@ -79,15 +79,22 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         var hasAuthoritativeNumber = state.creditsStatus === 'loaded' && typeof state.credits === 'number';
         if (hasAuthoritativeNumber) return;
 
-        // Only show "0 Credits" for signed-out state.
-        // If authenticated, leave display so the loading/unknown state
-        // resolves once the authoritative balance is restored.
+        if (window.__wingmanAuthStateResolved !== true) {
+            ['desktopCreditCount', 'mobileCreditCount'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) el.textContent = 'Syncing…';
+            });
+            return;
+        }
+
+        // A signed-out visitor has no authoritative account balance. Do not present the
+        // absence of an account as a zero-credit balance.
         if (window.currentSupabaseSession && window.currentSupabaseSession.access_token) return;
 
-        ['desktopCreditCount', 'mobileCreditCount'].forEach(function (id) {
-            var el = document.getElementById(id);
-            if (el) el.textContent = '0 Credits';
-        });
+        var desktop = document.getElementById('desktopCreditCount');
+        var mobile = document.getElementById('mobileCreditCount');
+        if (desktop) desktop.textContent = 'Sign in for credits';
+        if (mobile) mobile.textContent = 'Sign in';
     }
 
     function patchRuntime() {
@@ -318,6 +325,25 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             return Promise.resolve(window.currentSupabaseSession);
         }
 
+        if (window.__wingmanAuthStateResolved === true) {
+            return Promise.resolve(null);
+        }
+
+        if (window.wingmanAuthStateReady && typeof window.wingmanAuthStateReady.then === 'function') {
+            if (sessionHydrationInFlight) return sessionHydrationInFlight;
+
+            var authReadyPromise;
+            authReadyPromise = Promise.resolve(window.wingmanAuthStateReady).then(function () {
+                return hasRestoredDashboardSession() ? window.currentSupabaseSession : null;
+            }).finally(function () {
+                if (sessionHydrationInFlight === authReadyPromise) {
+                    sessionHydrationInFlight = null;
+                }
+            });
+            sessionHydrationInFlight = authReadyPromise;
+            return authReadyPromise;
+        }
+
         if (!window.supabaseClient || !window.supabaseClient.auth || typeof window.supabaseClient.auth.getSession !== 'function') {
             return Promise.resolve(null);
         }
@@ -326,13 +352,14 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 
         var hydrationPromise;
         hydrationPromise = (async function () {
+            var hydrationRevision = Number(window.__wingmanAuthStateRevision) || 0;
             try {
                 var result = await window.supabaseClient.auth.getSession();
                 if (result && result.error) throw result.error;
 
-                // Do not replace a newer authenticated session that may have arrived while the
-                // canonical getSession() call was pending.
-                if (hasRestoredDashboardSession()) {
+                // Do not replace a newer auth event that may have arrived while getSession()
+                // was pending, including a sign-out or switch to another account.
+                if ((Number(window.__wingmanAuthStateRevision) || 0) !== hydrationRevision) {
                     return window.currentSupabaseSession;
                 }
 
@@ -340,10 +367,34 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
                 if (session && session.access_token && session.user && session.user.id) {
                     window.currentSupabaseSession = session;
                     window.currentSupabaseUser = session.user;
-                    return session;
+                } else {
+                    window.currentSupabaseSession = null;
+                    window.currentSupabaseUser = null;
                 }
 
-                return null;
+                window.__wingmanAuthStateResolved = true;
+                if (typeof window.renderHomepageAuthState === 'function') {
+                    window.renderHomepageAuthState();
+                }
+                if (typeof window.checkDashboardAuth === 'function') {
+                    window.checkDashboardAuth();
+                }
+                return window.currentSupabaseSession;
+            } catch (err) {
+                if ((Number(window.__wingmanAuthStateRevision) || 0) === hydrationRevision) {
+                    // A failed canonical check must settle the UI into a recoverable signed-out
+                    // state instead of leaving authentication controls in a loading state.
+                    window.currentSupabaseSession = null;
+                    window.currentSupabaseUser = null;
+                    window.__wingmanAuthStateResolved = true;
+                    if (typeof window.renderHomepageAuthState === 'function') {
+                        window.renderHomepageAuthState();
+                    }
+                    if (typeof window.checkDashboardAuth === 'function') {
+                        window.checkDashboardAuth();
+                    }
+                }
+                throw err;
             } finally {
                 if (sessionHydrationInFlight === hydrationPromise) {
                     sessionHydrationInFlight = null;
@@ -358,6 +409,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
     function refreshAuthoritativeCredits() {
         if (!hasRestoredDashboardSession() || typeof window.checkCreditBalance !== 'function') return;
         if (reconcileInFlight) return;
+        if (window.state && ['loading', 'loaded', 'missing_profile'].indexOf(window.state.creditsStatus) !== -1) return;
 
         reconcileInFlight = true;
         try {

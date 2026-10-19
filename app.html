@@ -952,15 +952,16 @@
                 </button>
                 <button id="signOutBtn" type="button" onclick="window.handleSignOut(event)" class="w-full py-1.5 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium transition flex items-center justify-center gap-2 border border-red-500/20 cursor-pointer">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-                    Sign Out
+                    Log Out
                 </button>
             </div>
 
-            <button type="button" id="desktopAuthBtn" class="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-label text-xs py-2.5 px-3 rounded-xl font-bold shadow-lg shadow-violet-600/30 transition-all transform active:scale-95 cursor-pointer border border-violet-400/30" onclick="window.handleAuthBtnClick(event)">
+            <span id="desktopAuthLoading" role="status" aria-live="polite" class="text-slate-300 text-xs text-center py-2.5">Restoring session…</span>
+            <button type="button" id="desktopAuthBtn" aria-hidden="true" tabindex="-1" class="auth-state-hidden w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-label text-xs py-2.5 px-3 rounded-xl font-bold shadow-lg shadow-violet-600/30 transition-all transform active:scale-95 cursor-pointer border border-violet-400/30" onclick="window.handleAuthBtnClick(event)">
                 <svg class="w-4 h-4 text-white shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
                 </svg>
-                <span id="desktopAuthBtnLabel">Sign In / Account</span>
+                <span id="desktopAuthBtnLabel">Sign In</span>
             </button>
 
 
@@ -987,8 +988,9 @@
         </a>
         
         <div class="flex items-center gap-1.5 shrink-0">
-            <!-- Mobile Sign In / Sign Out Button -->
-            <button type="button" id="mobileAuthBtn" class="h-8 px-2.5 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 border border-violet-400/40 text-white flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shrink-0 font-label text-xs font-bold" title="Sign In" onclick="window.handleAuthBtnClick(event)">
+            <!-- Mobile Sign In / Log Out Button -->
+            <span id="mobileAuthLoading" role="status" aria-live="polite" class="text-slate-300 text-[10px] px-1 whitespace-nowrap">Restoring…</span>
+            <button type="button" id="mobileAuthBtn" aria-hidden="true" tabindex="-1" class="auth-state-hidden h-8 px-2.5 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 border border-violet-400/40 text-white flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shrink-0 font-label text-xs font-bold" title="Sign In" onclick="window.handleAuthBtnClick(event)">
                 <span id="mobileAuthBtnIcon" class="flex items-center">
                     <svg class="w-3.5 h-3.5 text-white shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />

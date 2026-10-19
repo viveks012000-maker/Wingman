@@ -540,9 +540,33 @@ function setupDOMEnvironment() {
     assert.strictEqual(lastToast.msg.includes('Insufficient credits'), false, '503 MUST NOT show Insufficient credits');
     console.log('✔ Test 10 Passed: HTTP 503 Credit Service Unavailable handled cleanly (No purchase modal, no insufficient credit message)');
 
-    // 11. TEST SINGLE CLICK SINGLE REQUEST
+    // 11. A late feature response must not restore the previous account's balance or output.
+    let resolveLateFeatureResponse = null;
+    env.setFetch((url) => {
+        if (String(url).includes('/api/late-account-response')) {
+            return new Promise(resolve => { resolveLateFeatureResponse = resolve; });
+        }
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ success: true }) });
+    });
+    const lateFeatureResponse = env.sandbox.window.generateWingmanResponse('/api/late-account-response', {});
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.strictEqual(typeof resolveLateFeatureResponse, 'function', 'the previous account request is pending');
+    env.sandbox.window.clearAppState();
+    env.sandbox.window.currentSupabaseSession = { access_token: 'user-b-token', user: { id: 'user-b' } };
+    env.sandbox.window.currentSupabaseUser = env.sandbox.window.currentSupabaseSession.user;
+    resolveLateFeatureResponse({
+        ok: true,
+        status: 200,
+        json: async () => ({ creditsVerified: true, credits: 42, text: 'private response from user A' })
+    });
+    assert.strictEqual(await lateFeatureResponse, null, 'a response from the cleared account is discarded');
+    assert.strictEqual(env.sandbox.window.state.credits, null, 'the old response cannot restore a previous account balance');
+    assert.strictEqual(env.sandbox.window.state.lastResults, null, 'private prior-account output stays cleared');
+    console.log('✔ Test 11 Passed: Late feature response cannot restore previous-account credits or output');
+
+    // 12. TEST SINGLE CLICK SINGLE REQUEST
     assert.strictEqual(analyzeCalls, 1, 'Single generation trigger must produce exactly 1 network request to /api/analyze');
-    console.log('✔ Test 11 Passed: Single click produces exactly 1 generation request (zero duplicate dispatch)');
+    console.log('✔ Test 12 Passed: Single click produces exactly 1 generation request (zero duplicate dispatch)');
 
     console.log('\n🎉 ALL RUNTIME CROSS-FEATURE ISOLATION & BUTTON STATE TESTS PASSED!\n');
 })();

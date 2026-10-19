@@ -98,7 +98,7 @@ async function runTests() {
     // -------------------------------------------------------------------------
     // RUNTIME LIFECYCLE SIMULATION (12 REQUIRED PRODUCTION CASES)
     // -------------------------------------------------------------------------
-    async function createRuntimeSandbox() {
+    async function createRuntimeSandbox(options = {}) {
         const storageData = {
             'sb-gstnghuhhrxtwjdafufd-auth-token': JSON.stringify({
                 access_token: 'valid-test-access-token',
@@ -107,6 +107,10 @@ async function runTests() {
             }),
             'wingman_authenticated': 'true',
             'wingman_user_email': 'testuser@example.com',
+            'wingman_setting_plexus': 'false',
+            'wingman_setting_shorthand': 'false',
+            'wingman_setting_emoji': '0',
+            'wingman_setting_currency': 'USD',
             'unrelated_vendor_key': 'keep-me'
         };
 
@@ -133,6 +137,10 @@ async function runTests() {
         let authStateChangeCallback = null;
         let consentResetCount = 0;
         let consentStatusCheckCount = 0;
+        let creditRefreshCount = 0;
+        let appStateClearCount = 0;
+        let deferInitialGetSession = options.deferInitialGetSession === true;
+        let pendingInitialGetSessionResolver = null;
 
         const fakeSupabase = {
             storageKey: 'sb-gstnghuhhrxtwjdafufd-auth-token',
@@ -146,6 +154,10 @@ async function runTests() {
                     return { error: null };
                 },
                 getSession: async () => {
+                    if (deferInitialGetSession) {
+                        deferInitialGetSession = false;
+                        return new Promise((resolve) => { pendingInitialGetSessionResolver = resolve; });
+                    }
                     const raw = storageData['sb-gstnghuhhrxtwjdafufd-auth-token'];
                     if (!raw) return { data: { session: null }, error: null };
                     return { data: { session: JSON.parse(raw) }, error: null };
@@ -186,6 +198,16 @@ async function runTests() {
                 windowMock.state.consentStatus = 'unauthenticated';
                 windowMock.state.consentUserId = null;
             },
+            clearAppState: () => {
+                appStateClearCount++;
+                windowMock.currentSupabaseUser = null;
+                windowMock.currentSupabaseSession = null;
+                windowMock.privateWorkspaceData = null;
+            },
+            loadUserCreditState: () => {
+                creditRefreshCount++;
+            },
+            privateWorkspaceData: 'private-user-a-content',
             checkServerConsentStatus: () => {
                 consentStatusCheckCount += 1;
                 const userId = windowMock.currentSupabaseUser && windowMock.currentSupabaseUser.id;
@@ -236,9 +258,16 @@ async function runTests() {
             getSignOutScopes: () => signOutScopes,
             getConsentResetCount: () => consentResetCount,
             getConsentStatusCheckCount: () => consentStatusCheckCount,
+            getCreditRefreshCount: () => creditRefreshCount,
+            getAppStateClearCount: () => appStateClearCount,
             emitAuthEvent: (event, session) => {
                 if (typeof authStateChangeCallback !== 'function') throw new Error('Supabase auth callback was not registered');
                 return authStateChangeCallback(event, session);
+            },
+            resolveInitialGetSession: (session) => {
+                if (!pendingInitialGetSessionResolver) throw new Error('No deferred initial getSession() request');
+                pendingInitialGetSessionResolver({ data: { session }, error: null });
+                pendingInitialGetSessionResolver = null;
             },
             getNavigatedTo: () => navigatedTo,
             fakeSupabase
@@ -286,6 +315,11 @@ async function runTests() {
         await runtime.window.logoutUser();
         assert.strictEqual(runtime.storageData['unrelated_vendor_key'], 'keep-me',
             'Unrelated keys must not be deleted');
+        assert.strictEqual(runtime.storageData['wingman_setting_plexus'], 'false',
+            'Legitimate UI preferences must remain persisted across logout');
+        assert.strictEqual(runtime.storageData['wingman_setting_shorthand'], 'false');
+        assert.strictEqual(runtime.storageData['wingman_setting_emoji'], '0');
+        assert.strictEqual(runtime.storageData['wingman_setting_currency'], 'USD');
     });
 
     await test('17. Rapid concurrent calls to logoutUser coalesce into exactly 1 signOut execution', async () => {
@@ -305,13 +339,17 @@ async function runTests() {
             throw new Error('Network error: failed to fetch');
         };
 
-        await runtime.window.logoutUser();
+        const result = await runtime.window.logoutUser();
         assert.strictEqual(runtime.storageData['sb-gstnghuhhrxtwjdafufd-auth-token'], undefined,
             'Storage fallback must ensure token is purged even if remote signOut throws');
         assert.strictEqual(runtime.window.currentSupabaseSession, null,
             'Session must be null even if remote signOut throws');
         assert.strictEqual(runtime.getNavigatedTo(), 'index.html',
             'Navigation must still complete even if remote signOut throws');
+        assert.strictEqual(result.success, false,
+            'A signOut error must be reported as unconfirmed instead of falsely returning success');
+        assert.strictEqual(result.localSignedOut, true,
+            'Even when Supabase signOut fails, this browser must still be cleared locally');
     });
 
     await test('19. Correct verified credentials produce single signInWithPassword call', async () => {
@@ -349,24 +387,65 @@ async function runTests() {
         await runtime.emitAuthEvent('SIGNED_IN', { ...originalSession, access_token: 'another-token' });
         await runtime.emitAuthEvent('TOKEN_REFRESHED', { ...originalSession, access_token: 'refreshed-token' });
         assert.strictEqual(runtime.getConsentResetCount(), 0, 'same-user sign-in repeats and token refresh must not clear consent');
-        assert.strictEqual(runtime.getConsentStatusCheckCount(), 3, 'authenticated events still recheck the authoritative server status');
+        assert.strictEqual(runtime.getConsentStatusCheckCount(), 1, 'repeated same-user sign-in and token refresh must not re-fetch consent');
+        assert.strictEqual(runtime.getCreditRefreshCount(), 1, 'repeated same-user sign-in and token refresh must not re-fetch credits');
         assert.strictEqual(runtime.window.state.isTermsAccepted, true, 'same-user authentication events preserve server-confirmed consent');
 
         const switchedUser = { access_token: 'user-b-token', user: { id: 'user-67890', email: 'other@example.com' } };
         await runtime.emitAuthEvent('SIGNED_IN', switchedUser);
         assert.strictEqual(runtime.getConsentResetCount(), 1, 'a different user invalidates the previous local consent state');
+        assert.strictEqual(runtime.getAppStateClearCount(), 1, 'a different user clears the previous account private workspace state');
+        assert.strictEqual(runtime.window.privateWorkspaceData, null, 'previous account private workspace content is removed');
+        assert.strictEqual(runtime.getCreditRefreshCount(), 2, 'the new account gets one authoritative credit hydration');
+        assert.strictEqual(runtime.getConsentStatusCheckCount(), 2, 'the new account gets one authoritative consent check');
         assert.strictEqual(runtime.window.currentSupabaseUser.id, 'user-67890');
         assert.strictEqual(runtime.window.state.isTermsAccepted, false, 'the previous account consent is not inherited by the new account');
         assert.strictEqual(runtime.window.state.consentUserId, 'user-67890');
 
         await runtime.emitAuthEvent('SIGNED_OUT', null);
         assert.strictEqual(runtime.getConsentResetCount(), 2, 'genuine sign-out clears the current user consent state');
+        assert.strictEqual(runtime.getAppStateClearCount(), 2, 'genuine sign-out clears the current account private workspace state');
         assert.strictEqual(runtime.window.currentSupabaseSession, null);
 
         await runtime.emitAuthEvent('SIGNED_IN', { ...originalSession, access_token: 'relogin-token' });
-        assert.strictEqual(runtime.getConsentStatusCheckCount(), 5, 'relogin requests the server status instead of asking for acceptance locally');
+        assert.strictEqual(runtime.getConsentStatusCheckCount(), 3, 'relogin makes one authoritative consent request instead of asking for acceptance locally');
+        assert.strictEqual(runtime.getCreditRefreshCount(), 3, 'relogin restores the account balance once');
         assert.strictEqual(runtime.getConsentResetCount(), 2, 'relogin from signed-out state does not perform an extra stale reset');
         assert.strictEqual(runtime.window.state.isTermsAccepted, true, 'same-user relogin restores active consent from the server status check');
+    });
+
+    await test('22. Late initial getSession response cannot overwrite a newer sign-in', async () => {
+        const runtime = await createRuntimeSandbox({ deferInitialGetSession: true });
+        const newerSession = { access_token: 'new-user-token', user: { id: 'user-newer', email: 'newer@example.com' } };
+        const staleSession = { access_token: 'stale-user-token', user: { id: 'user-stale', email: 'stale@example.com' } };
+
+        assert.strictEqual(runtime.window.currentSupabaseSession, null, 'deferred startup has not hydrated a session yet');
+        await runtime.emitAuthEvent('SIGNED_IN', newerSession);
+        runtime.resolveInitialGetSession(staleSession);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        assert.strictEqual(runtime.window.currentSupabaseUser.id, 'user-newer', 'late older getSession result must not replace the newer event');
+        assert.strictEqual(runtime.window.currentSupabaseSession.access_token, 'new-user-token');
+        assert.strictEqual(runtime.getCreditRefreshCount(), 1, 'only the newer authenticated account is hydrated');
+        assert.strictEqual(runtime.getConsentStatusCheckCount(), 1, 'only the newer authenticated account consent is checked');
+    });
+
+    await test('23. Late startup restoration and refresh events cannot resurrect a logged-out account', async () => {
+        const runtime = await createRuntimeSandbox({ deferInitialGetSession: true });
+        const previousSession = { access_token: 'old-user-token', user: { id: 'user-old', email: 'old@example.com' } };
+        const result = await runtime.window.logoutUser();
+        assert.strictEqual(result.localSignedOut, true);
+
+        runtime.resolveInitialGetSession(previousSession);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await runtime.emitAuthEvent('TOKEN_REFRESHED', previousSession);
+
+        assert.strictEqual(runtime.window.currentSupabaseSession, null,
+            'a late startup getSession result must not restore the session after local logout');
+        assert.strictEqual(runtime.window.currentSupabaseUser, null,
+            'a late token refresh event must not restore the logged-out account');
+        assert.strictEqual(runtime.getCreditRefreshCount(), 0,
+            'late auth callbacks after logout must not reload private account credits');
     });
 
     console.log('\n------------------------------------------------------------------------');

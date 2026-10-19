@@ -124,6 +124,7 @@
     let activeSimulatorThread = [];
     let simulatorGeneration = 0;
     let simulatorRequestInFlight = false;
+    let appStateGeneration = 0;
 
     const state = {
         credits: null,
@@ -597,20 +598,33 @@ STRICT LAWS:
 
     // Authoritative Authentication Check using real Supabase session
     async function isUserAuthenticated() {
+        const canonicalSession = window.currentSupabaseSession;
+        if (window.__wingmanAuthStateResolved === true && canonicalSession && canonicalSession.access_token && canonicalSession.user && canonicalSession.user.id) {
+            return true;
+        }
+
         if (window.supabaseClient && window.supabaseClient.auth && typeof window.supabaseClient.auth.getSession === 'function') {
+            const revisionAtStart = Number(window.__wingmanAuthStateRevision) || 0;
+            const uiGenerationAtStart = appStateGeneration;
             try {
                 const { data, error } = await window.supabaseClient.auth.getSession();
+                if (uiGenerationAtStart !== appStateGeneration ||
+                    revisionAtStart !== (Number(window.__wingmanAuthStateRevision) || 0)) {
+                    const latest = window.currentSupabaseSession;
+                    return !!(latest && latest.access_token && latest.user && latest.user.id);
+                }
                 if (!error && data && data.session && data.session.user && data.session.access_token) {
                     window.currentSupabaseSession = data.session;
                     window.currentSupabaseUser = data.session.user;
+                    window.__wingmanAuthStateResolved = true;
+                    if (typeof window.renderHomepageAuthState === 'function') window.renderHomepageAuthState();
+                    if (typeof window.checkDashboardAuth === 'function') window.checkDashboardAuth();
                     return true;
                 }
             } catch (e) {}
         }
-        if (window.currentSupabaseSession && window.currentSupabaseSession.access_token && window.currentSupabaseUser) {
-            return true;
-        }
-        return false;
+        const latest = window.currentSupabaseSession;
+        return !!(latest && latest.access_token && latest.user && latest.user.id);
     }
     window.isUserAuthenticated = isUserAuthenticated;
 
@@ -2244,83 +2258,188 @@ STRICT LAWS:
     };
 
     window.clearAppState = function () {
+        // Invalidate every UI operation owned by the previous account before clearing data.
+        // Late promises must not paint their results or credit state after a logout/switch.
+        appStateGeneration += 1;
+        simulatorGeneration += 1;
+        simulatorRequestInFlight = false;
+        activeSimulatorThread = [];
+        state.isLoading = false;
+
         window.currentSupabaseUser = null;
         window.currentSupabaseSession = null;
 
         state.uploadedFiles = [];
+        state.rawImageFile = null;
         state.croppedWebpDataUrl = null;
+        state.activeTranscriptCache = null;
         state.lastResults = null;
+        state.icebreakCardsData = null;
+        state.optimizeCardsData = null;
         state.credits = null;
         state.creditsStatus = "idle";
+        state.lifecycle = "EMPTY";
+
+        currentUploadedRawDataUrl = null;
+        currentWorkingCropperDataUrl = null;
+        window.currentAttractionScore = 65;
+        window.sessionStats = {
+            messagesSent: 0,
+            attractionHistory: [65],
+            dryMessageCount: 0,
+            totalWords: 0,
+            apologyCount: 0,
+            hasDateOffer: false
+        };
+
+        try { if (typeof window.closeCropModal === 'function') window.closeCropModal(); } catch (_) {}
+        try { if (typeof window.clearAllTelemetry === 'function') window.clearAllTelemetry(); } catch (_) {}
 
         const desk = $("desktopCreditCount");
-        if (desk) desk.textContent = "0 Credits";
+        if (desk) desk.textContent = "Credits —";
         const mob = $("mobileCreditCount");
-        if (mob) mob.textContent = "0 Credits";
+        if (mob) mob.textContent = "Credits —";
 
         const analyzeCards = $("analyzeResultsCards");
         if (analyzeCards) analyzeCards.innerHTML = "";
-        const icebreakCards = $("icebreakResultsCards");
-        if (icebreakCards) icebreakCards.innerHTML = "";
-        const optimizeCards = $("optimizeResultsCards");
-        if (optimizeCards) optimizeCards.innerHTML = "";
+        const icebreakResults = $("icebreakResultsState");
+        if (icebreakResults) {
+            icebreakResults.innerHTML = "";
+            icebreakResults.classList.add("hidden");
+        }
+        const icebreakEmpty = $("icebreakEmptyState");
+        if (icebreakEmpty) icebreakEmpty.classList.remove("hidden");
+        const icebreakSkeleton = $("icebreakSkeletonState");
+        if (icebreakSkeleton) icebreakSkeleton.classList.add("hidden");
+
+        const optimizeResults = $("optimizeResultsState");
+        if (optimizeResults) {
+            optimizeResults.innerHTML = "";
+            optimizeResults.classList.add("hidden");
+        }
+        const optimizeEmpty = $("optimizeEmptyState");
+        if (optimizeEmpty) optimizeEmpty.classList.remove("hidden");
+        const optimizeSkeleton = $("optimizeSkeletonState");
+        if (optimizeSkeleton) optimizeSkeleton.classList.add("hidden");
+
+        const cropImage = $("cropperTargetImage");
+        if (cropImage) {
+            cropImage.onload = null;
+            cropImage.removeAttribute("src");
+        }
+        const momentum = $("momentum-status-val");
+        if (momentum) momentum.textContent = "Analyzing...";
 
         const bioInput = $("bioInput");
         if (bioInput) bioInput.value = "";
+        const auditBioInput = $("auditBioInput");
+        if (auditBioInput) auditBioInput.value = "";
+        const simulatorInput = $("simulator-chat-input");
+        if (simulatorInput) simulatorInput.value = "";
         const chatBox = $("chatMessagesContainer");
         if (chatBox) chatBox.innerHTML = "";
+        if (typeof window.showChatboxTypingIndicator === 'function') window.showChatboxTypingIndicator(false);
+
+        try {
+            if (typeof renderThumbnailGrid === 'function') renderThumbnailGrid();
+            if (typeof window.setLifecycleState === 'function') window.setLifecycleState("EMPTY");
+            if (typeof window.checkDashboardAuth === 'function') window.checkDashboardAuth();
+            if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
+        } catch (_) {}
 
         try { safeStorage.clear(); } catch(e){}
     };
 
     window.handleSignOut = async function (e) {
         if (e && typeof e.preventDefault === 'function') e.preventDefault();
-        window.clearAppState();
         if (typeof window.logoutUser === 'function') {
             await window.logoutUser(e);
         } else {
+            window.clearAppState();
             window.location.href = "index.html";
         }
     };
 
     window.checkDashboardAuth = function () {
-        const isAuth = !!(window.currentSupabaseSession && window.currentSupabaseSession.access_token);
+        const authResolved = window.__wingmanAuthStateResolved === true;
+        const session = window.currentSupabaseSession;
+        const isAuth = !!(authResolved && session && session.access_token && session.user && session.user.id);
         const userEmail = safeStorage.get("wingman_user_email") || (window.currentSupabaseUser && window.currentSupabaseUser.email) || "";
         const avatarLetter = userEmail ? userEmail.charAt(0).toUpperCase() : "U";
 
         const userCard = $("sidebarUserCard");
         const desktopBtn = $("desktopAuthBtn");
+        const desktopPlaceholder = $("desktopAuthLoading");
         const emailBadge = $("userEmailBadge");
         const avatarBadge = $("userAvatarBadge");
+        const mobilePlaceholder = $("mobileAuthLoading");
 
-        if (emailBadge && userEmail) emailBadge.textContent = userEmail;
-        if (avatarBadge) avatarBadge.textContent = avatarLetter;
+        const setControlAvailable = function (button, available) {
+            if (!button) return;
+            if (available) {
+                button.removeAttribute("aria-hidden");
+                button.removeAttribute("tabindex");
+            } else {
+                button.setAttribute("aria-hidden", "true");
+                button.setAttribute("tabindex", "-1");
+            }
+        };
 
-        if (isAuth) {
+        if (desktopPlaceholder) desktopPlaceholder.classList.toggle("hidden", authResolved);
+        if (mobilePlaceholder) mobilePlaceholder.classList.toggle("hidden", authResolved);
+
+        if (emailBadge) emailBadge.textContent = isAuth ? userEmail : "";
+        if (avatarBadge) avatarBadge.textContent = isAuth ? avatarLetter : "U";
+
+        if (!authResolved) {
+            if (userCard) userCard.classList.add("hidden");
+            if (desktopBtn) {
+                desktopBtn.classList.add("hidden");
+                desktopBtn.classList.add("auth-state-hidden");
+            }
+            setControlAvailable(desktopBtn, false);
+        } else if (isAuth) {
             if (userCard) userCard.classList.remove("hidden");
-            if (desktopBtn) desktopBtn.classList.add("hidden");
+            if (desktopBtn) {
+                desktopBtn.classList.add("hidden");
+                desktopBtn.classList.add("auth-state-hidden");
+            }
+            setControlAvailable(desktopBtn, false);
         } else {
             if (userCard) userCard.classList.add("hidden");
-            if (desktopBtn) desktopBtn.classList.remove("hidden");
+            if (desktopBtn) {
+                desktopBtn.classList.remove("hidden");
+                desktopBtn.classList.remove("auth-state-hidden");
+            }
+            setControlAvailable(desktopBtn, true);
         }
 
         const mobileLabel = $("mobileAuthBtnLabel");
         const mobileBtn = $("mobileAuthBtn");
         const mobileIcon = $("mobileAuthBtnIcon");
-        if (isAuth) {
+        if (!authResolved) {
+            if (mobileBtn) {
+                mobileBtn.classList.add("hidden");
+                mobileBtn.classList.add("auth-state-hidden");
+            }
+            setControlAvailable(mobileBtn, false);
+        } else if (isAuth) {
+            if (mobileBtn) mobileBtn.classList.remove("auth-state-hidden");
             if (mobileLabel) {
-                mobileLabel.textContent = "Sign Out";
+                mobileLabel.textContent = "Log Out";
                 mobileLabel.className = "text-[11px] font-semibold text-red-400 whitespace-nowrap";
             }
             if (mobileBtn) {
                 mobileBtn.className = "h-8 px-2.5 rounded-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer shadow-sm shrink-0 font-label text-xs font-semibold";
-                mobileBtn.title = "Sign Out";
+                mobileBtn.title = "Log Out";
                 mobileBtn.onclick = function (e) { window.handleSignOut(e); };
             }
+            setControlAvailable(mobileBtn, true);
             if (mobileIcon) {
                 mobileIcon.innerHTML = '<svg class="w-3.5 h-3.5 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>';
             }
         } else {
+            if (mobileBtn) mobileBtn.classList.remove("auth-state-hidden");
             if (mobileLabel) {
                 mobileLabel.textContent = "Sign In";
                 mobileLabel.className = "text-[11px] font-bold text-white whitespace-nowrap";
@@ -2332,6 +2451,7 @@ STRICT LAWS:
                     if (typeof window.openAuthRequiredModal === 'function') window.openAuthRequiredModal(e);
                 };
             }
+            setControlAvailable(mobileBtn, true);
             if (mobileIcon) {
                 mobileIcon.innerHTML = '<svg class="w-3.5 h-3.5 text-white shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" /></svg>';
             }
@@ -2339,7 +2459,7 @@ STRICT LAWS:
 
         const b = $("topAuthBanner");
         if (b) {
-            if (isAuth) b.classList.add("hidden");
+            if (!authResolved || isAuth) b.classList.add("hidden");
             else b.classList.remove("hidden");
         }
 
@@ -3333,12 +3453,24 @@ STRICT LAWS:
     // API HELPER – handles 402 with credit sync
     // ============================================================
     window.generateWingmanResponse = async function (endpoint, payload, operationId) {
+        const initialUiGeneration = appStateGeneration;
         const isAuth = await isUserAuthenticated();
+        if (initialUiGeneration !== appStateGeneration) return null;
         if (!isAuth) {
             if (typeof window.showToast === 'function') window.showToast("Authentication required to use AI features. Please sign in.", "warning");
             if (typeof window.openAuthRequiredModal === 'function') window.openAuthRequiredModal();
             return null;
         }
+
+        const requestSession = window.currentSupabaseSession;
+        const requestUserId = requestSession && requestSession.user ? String(requestSession.user.id || '') : '';
+        const requestUiGeneration = appStateGeneration;
+        const isCurrentRequest = function () {
+            const currentSession = window.currentSupabaseSession;
+            return !!requestUserId && requestUiGeneration === appStateGeneration &&
+                !!(currentSession && currentSession.user && String(currentSession.user.id || '') === requestUserId);
+        };
+        if (!isCurrentRequest()) return null;
 
         const featureTag = (endpoint || '').replace('/api/', '').replace(/-/g, '_');
         const idempotencyKey = operationId || (payload && payload.idempotencyKey) || createAiOperationId(featureTag);
@@ -3358,6 +3490,10 @@ STRICT LAWS:
             const userHeaderEmail = (window.currentSupabaseUser ? window.currentSupabaseUser.email : (safeStorage.get("wingman_user_email") || ""));
 
             const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
+            if (!isCurrentRequest()) {
+                clearTimeout(timeoutId);
+                return null;
+            }
             const reqHeaders = {
                 'Content-Type': 'application/json',
                 'X-User-Id': userHeaderId,
@@ -3374,9 +3510,11 @@ STRICT LAWS:
                 body: JSON.stringify(payload)
             });
             clearTimeout(timeoutId);
+            if (!isCurrentRequest()) return null;
 
             if (!response.ok) {
                 const errJson = await response.json().catch(function() { return {}; });
+                if (!isCurrentRequest()) return null;
 
                 if (response.status === 401) {
                     state.credits = null;
@@ -3495,6 +3633,7 @@ STRICT LAWS:
             }
 
             const data = await response.json();
+            if (!isCurrentRequest()) return null;
             if (typeof window.reconcileCreditPayload === 'function') {
                 window.reconcileCreditPayload(data);
             } else if (data && data.creditsVerified === true && typeof data.credits === "number" && Number.isFinite(data.credits)) {
@@ -3507,6 +3646,7 @@ STRICT LAWS:
             trackWingmanEvent('generation_succeeded', { endpoint: endpoint, remainingCredits: data.credits });
             return data.options || data.text || data.reply || (data.choices && data.choices[0] && (data.choices[0].message ? data.choices[0].message.content : data.choices[0].message)) || "";
         } catch (err) {
+            if (!isCurrentRequest()) return null;
             console.warn("API request failed:", err.message);
             trackWingmanEvent('generation_failed', { endpoint: endpoint, status: err.status || 500 });
             if (typeof window.showToast === 'function') {
@@ -3650,7 +3790,7 @@ STRICT LAWS:
         refreshIcon.textContent = "refresh";
 
         const refreshLabel = document.createElement("span");
-        refreshLabel.textContent = "Re-Roll Variations";
+        refreshLabel.textContent = "Generate 10 New Options — 10 Credits";
 
         refreshBtn.appendChild(refreshIcon);
         refreshBtn.appendChild(refreshLabel);
@@ -3678,6 +3818,7 @@ STRICT LAWS:
     window.runAnalysis = async function (e) {
         if (e) e.preventDefault();
         if (state.isLoading) return;
+        const requestUiGeneration = appStateGeneration;
         state.isLoading = true;
         setButtonLoadingState("runAnalysisBtn", true, "Analyzing Context...", "Generate Reply Suggestions");
         window.setLifecycleState("ANALYZING");
@@ -3691,14 +3832,18 @@ STRICT LAWS:
             return;
         }
 
-        if (!(await hasSufficientCredits(10))) {
+        const hasCredits = await hasSufficientCredits(10);
+        if (requestUiGeneration !== appStateGeneration) return;
+        if (!hasCredits) {
             state.isLoading = false;
             setButtonLoadingState("runAnalysisBtn", false, "Analyzing Context...", "Generate Reply Suggestions");
             window.setLifecycleState(state.uploadedFiles.length > 0 ? "SELECTED" : "EMPTY");
             return;
         }
 
-        if (!(await window.ensureActiveConsent())) {
+        const hasConsent = await window.ensureActiveConsent();
+        if (requestUiGeneration !== appStateGeneration) return;
+        if (!hasConsent) {
             state.isLoading = false;
             setButtonLoadingState("runAnalysisBtn", false, "Analyzing Context...", "Generate Reply Suggestions");
             window.setLifecycleState(state.uploadedFiles.length > 0 ? "SELECTED" : "EMPTY");
@@ -3741,6 +3886,7 @@ STRICT LAWS:
 
             const operationId = createAiOperationId('analyzer');
             const aiText = await window.generateWingmanResponse('/api/analyze', promptPayload, operationId);
+            if (requestUiGeneration !== appStateGeneration) return;
 
             if (aiText && (Array.isArray(aiText) ? aiText.length > 0 : String(aiText).trim().length > 0)) {
                 let momentumVal = "Conversation context summarized";
@@ -3763,23 +3909,27 @@ STRICT LAWS:
                 window.setLifecycleState(state.uploadedFiles.length > 0 ? "SELECTED" : "EMPTY");
             }
         } catch (err) {
+            if (requestUiGeneration !== appStateGeneration) return;
             console.error("Screenshot Analysis Error:", err);
             window.setLifecycleState(state.uploadedFiles.length > 0 ? "SELECTED" : "EMPTY");
             if (typeof window.showToast === 'function') {
                 window.showToast(err.message || "Screenshot analysis failed. Your credits were preserved.", "error");
             }
         } finally {
-            stopTelemetryTracker("analyze", "analyze-telemetry-status", "analyze-telemetry-pct", "analyze-telemetry-bar", "ANALYSIS COMPLETE");
-            state.isLoading = false;
-            setButtonLoadingState("runAnalysisBtn", false, "Analyzing Context...", "Generate Reply Suggestions");
-            window.updateTermsLockState();
-            window.updateButtonStates();
+            if (requestUiGeneration === appStateGeneration) {
+                stopTelemetryTracker("analyze", "analyze-telemetry-status", "analyze-telemetry-pct", "analyze-telemetry-bar", "ANALYSIS COMPLETE");
+                state.isLoading = false;
+                setButtonLoadingState("runAnalysisBtn", false, "Analyzing Context...", "Generate Reply Suggestions");
+                window.updateTermsLockState();
+                window.updateButtonStates();
+            }
         }
     };
 
     window.generateIcebreaker = async function (e) {
         if (e) e.preventDefault();
         if (state.isLoading) return;
+        const requestUiGeneration = appStateGeneration;
         state.isLoading = true;
         setButtonLoadingState("generateIcebreakerBtn", true, "Crafting Openers...", "Generate Icebreaker");
 
@@ -3799,13 +3949,17 @@ STRICT LAWS:
         }
         text = enforceWordLimitClient(text, 500);
 
-        if (!(await hasSufficientCredits(10))) {
+        const hasCredits = await hasSufficientCredits(10);
+        if (requestUiGeneration !== appStateGeneration) return;
+        if (!hasCredits) {
             state.isLoading = false;
             setButtonLoadingState("generateIcebreakerBtn", false, "Crafting Openers...", "Generate Icebreaker");
             return;
         }
 
-        if (!(await window.ensureActiveConsent())) {
+        const hasConsent = await window.ensureActiveConsent();
+        if (requestUiGeneration !== appStateGeneration) return;
+        if (!hasConsent) {
             state.isLoading = false;
             setButtonLoadingState("generateIcebreakerBtn", false, "Crafting Openers...", "Generate Icebreaker");
             if (state.consentStatus === 'consent_required') {
@@ -3847,6 +4001,7 @@ STRICT LAWS:
 
             const operationId = createAiOperationId('icebreaker');
             const aiText = await window.generateWingmanResponse('/api/icebreaker', promptPayload, operationId);
+            if (requestUiGeneration !== appStateGeneration) return;
 
             if (aiText) {
                 if (skel) skel.classList.add("hidden");
@@ -3862,6 +4017,7 @@ STRICT LAWS:
                 if (skel) skel.classList.add("hidden");
             }
         } catch (err) {
+            if (requestUiGeneration !== appStateGeneration) return;
             console.error("Icebreaker Error:", err);
             if (emp) emp.classList.remove("hidden");
             if (skel) skel.classList.add("hidden");
@@ -3869,16 +4025,19 @@ STRICT LAWS:
                 window.showToast(err.message || "Icebreaker generation failed. Your credits were preserved.", "error");
             }
         } finally {
-            stopTelemetryTracker("icebreaker", "icebreak-telemetry-status", "icebreak-telemetry-pct", "icebreak-telemetry-bar", "OPENERS CRAFTED");
-            state.isLoading = false;
-            setButtonLoadingState("generateIcebreakerBtn", false, "Crafting Openers...", "Generate Icebreaker");
-            window.updateTermsLockState();
+            if (requestUiGeneration === appStateGeneration) {
+                stopTelemetryTracker("icebreaker", "icebreak-telemetry-status", "icebreak-telemetry-pct", "icebreak-telemetry-bar", "OPENERS CRAFTED");
+                state.isLoading = false;
+                setButtonLoadingState("generateIcebreakerBtn", false, "Crafting Openers...", "Generate Icebreaker");
+                window.updateTermsLockState();
+            }
         }
     };
 
     window.runAudit = async function (e) {
         if (e) e.preventDefault();
         if (state.isLoading) return;
+        const requestUiGeneration = appStateGeneration;
         state.isLoading = true;
         setButtonLoadingState("runAuditBtn", true, "Optimizing Bio...", "Optimize My Bio");
 
@@ -3899,13 +4058,17 @@ STRICT LAWS:
         }
         raw = enforceWordLimitClient(raw, 500);
 
-        if (!(await hasSufficientCredits(10))) {
+        const hasCredits = await hasSufficientCredits(10);
+        if (requestUiGeneration !== appStateGeneration) return;
+        if (!hasCredits) {
             state.isLoading = false;
             setButtonLoadingState("runAuditBtn", false, "Optimizing Bio...", "Optimize My Bio");
             return;
         }
 
-        if (!(await window.ensureActiveConsent())) {
+        const hasConsent = await window.ensureActiveConsent();
+        if (requestUiGeneration !== appStateGeneration) return;
+        if (!hasConsent) {
             state.isLoading = false;
             setButtonLoadingState("runAuditBtn", false, "Optimizing Bio...", "Optimize My Bio");
             if (state.consentStatus === 'consent_required') {
@@ -3947,6 +4110,7 @@ STRICT LAWS:
 
             const operationId = createAiOperationId('bio');
             const aiText = await window.generateWingmanResponse('/api/optimize', promptPayload, operationId);
+            if (requestUiGeneration !== appStateGeneration) return;
 
             if (aiText) {
                 if (skel) skel.classList.add("hidden");
@@ -3962,6 +4126,7 @@ STRICT LAWS:
                 if (skel) skel.classList.add("hidden");
             }
         } catch (err) {
+            if (requestUiGeneration !== appStateGeneration) return;
             console.error("Bio Optimizer Error:", err);
             if (emp) emp.classList.remove("hidden");
             if (skel) skel.classList.add("hidden");
@@ -3969,10 +4134,12 @@ STRICT LAWS:
                 window.showToast(err.message || "Bio optimization failed. Your credits were preserved.", "error");
             }
         } finally {
-            stopTelemetryTracker("optimize", "optimize-telemetry-status", "optimize-telemetry-pct", "optimize-telemetry-bar", "BIO OPTIMIZED");
-            state.isLoading = false;
-            setButtonLoadingState("runAuditBtn", false, "Optimizing Bio...", "Optimize My Bio");
-            window.updateTermsLockState();
+            if (requestUiGeneration === appStateGeneration) {
+                stopTelemetryTracker("optimize", "optimize-telemetry-status", "optimize-telemetry-pct", "optimize-telemetry-bar", "BIO OPTIMIZED");
+                state.isLoading = false;
+                setButtonLoadingState("runAuditBtn", false, "Optimizing Bio...", "Optimize My Bio");
+                window.updateTermsLockState();
+            }
         }
     };
 
@@ -4293,6 +4460,7 @@ STRICT LAWS:
         if (!inputField) return;
         let userText = inputField.value.trim();
         if (!userText) return;
+        const requestUiGeneration = appStateGeneration;
 
         if (simulatorRequestInFlight) return;
         simulatorRequestInFlight = true;
@@ -4311,13 +4479,17 @@ STRICT LAWS:
 
         userText = enforceWordLimitClient(userText, 500);
 
-        if (!(await hasSufficientCredits(2))) {
+        const hasCredits = await hasSufficientCredits(2);
+        if (requestUiGeneration !== appStateGeneration) return;
+        if (!hasCredits) {
             simulatorRequestInFlight = false;
             if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
             return;
         }
 
-        if (!(await window.ensureActiveConsent())) {
+        const hasConsent = await window.ensureActiveConsent();
+        if (requestUiGeneration !== appStateGeneration) return;
+        if (!hasConsent) {
             simulatorRequestInFlight = false;
             if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
             if (state.consentStatus === 'consent_required') {
@@ -4328,6 +4500,9 @@ STRICT LAWS:
         }
 
         const requestGeneration = simulatorGeneration;
+        const isCurrentChatRequest = function () {
+            return requestUiGeneration === appStateGeneration && requestGeneration === simulatorGeneration;
+        };
         const idempotencyKey = createAiOperationId('chat');
 
         const isDryMsg = /^(hi|hello|hey|nothing|idk|ok|k|whatever|dunno|nevermind|nm)$/i.test(userText);
@@ -4363,6 +4538,7 @@ STRICT LAWS:
             const activeMode = isHotlineMode ? "hotline" : "roleplay";
 
             const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
+            if (!isCurrentChatRequest()) return;
             const headers = {
                 'Content-Type': 'application/json',
                 'X-Idempotency-Key': idempotencyKey,
@@ -4382,6 +4558,7 @@ STRICT LAWS:
                     idempotencyKey
                 })
             });
+            if (!isCurrentChatRequest()) return;
 
             if (requestGeneration === simulatorGeneration) {
                 window.showChatboxTypingIndicator(false);
@@ -4391,6 +4568,7 @@ STRICT LAWS:
 
             if (chatResp.ok) {
                 const chatData = await chatResp.json();
+                if (!isCurrentChatRequest()) return;
                 if (chatData && chatData.reply) {
                     const aiReply = typeof chatData.reply === 'string'
                         ? chatData.reply.replace(/<\/?user_?data[^<>]*>/gi, '').replace(/\blabel=["'][^"']*["']/gi, '').trim()
@@ -4416,17 +4594,19 @@ STRICT LAWS:
                     window.renderChatboxBubble("Notice: " + chatData.error, "assistant");
                 }
             } else if (chatResp.status === 409) {
-                if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
-                if (requestGeneration !== simulatorGeneration) return;
                 const errJson = await chatResp.json().catch(() => ({}));
+                if (!isCurrentChatRequest()) return;
+                if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 if (typeof window.checkCreditBalance === 'function') await window.checkCreditBalance({ forceFresh: true });
+                if (!isCurrentChatRequest()) return;
                 window.renderChatboxBubble(errJson.error || "This message is already being processed. No additional credits were deducted.", "assistant");
             } else if (chatResp.status === 403) {
-                if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
-                if (requestGeneration !== simulatorGeneration) return;
                 const errJson = await chatResp.json().catch(() => ({}));
+                if (!isCurrentChatRequest()) return;
+                if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 if (errJson.code === "CONSENT_REQUIRED" || (errJson.error && errJson.error.toLowerCase().includes("consent"))) {
                     const consentResult = await window.refreshConsentAfterRejection();
+                    if (!isCurrentChatRequest()) return;
                     if (consentResult === 'service_unavailable') {
                         window.renderChatboxBubble("Consent verification is temporarily unavailable. Your message was not sent.", "assistant");
                         return;
@@ -4438,9 +4618,11 @@ STRICT LAWS:
                 }
                 window.renderChatboxBubble("18+ age verification and consent required to continue chatting.", "assistant");
             } else if (chatResp.status === 503 || chatResp.status === 502 || chatResp.status === 504 || chatResp.status === 404) {
-                if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 const errJson = await chatResp.json().catch(() => ({}));
+                if (!isCurrentChatRequest()) return;
+                if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 if (typeof window.checkCreditBalance === 'function') await window.checkCreditBalance({ forceFresh: true });
+                if (!isCurrentChatRequest()) return;
                 if (errJson.code === "CONSENT_SERVICE_UNAVAILABLE") {
                     state.isTermsAccepted = false;
                     state.consentStatus = 'service_unavailable';
@@ -4455,9 +4637,11 @@ STRICT LAWS:
                     window.renderChatboxBubble(offlineChatMsg, "assistant");
                 }
             } else if (chatResp.status === 402) {
-                if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 const errJson = await chatResp.json().catch(() => ({}));
+                if (!isCurrentChatRequest()) return;
+                if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 const authoritativeChatBalance = await window.checkCreditBalance({ forceFresh: true });
+                if (!isCurrentChatRequest()) return;
                 if (!authoritativeChatBalance || !authoritativeChatBalance.success || typeof state.credits !== 'number') {
                     window.renderChatboxBubble("The credit service rejected this message, but your AI usage credits could not be verified. Please refresh or sign in again.", "assistant");
                 } else if (state.credits >= 2) {
@@ -4467,27 +4651,32 @@ STRICT LAWS:
                     if (typeof window.openPurchaseModal === 'function') window.openPurchaseModal(2);
                 }
             } else {
-                if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 const errJson = await chatResp.json().catch(() => ({}));
+                if (!isCurrentChatRequest()) return;
+                if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
                 if (typeof window.reconcileCreditPayload === 'function') {
                     await window.reconcileCreditPayload(errJson);
                 } else if (typeof window.checkCreditBalance === 'function') {
                     await window.checkCreditBalance({ forceFresh: true });
                 }
+                if (!isCurrentChatRequest()) return;
                 const errMsg = errJson.error || "Sorry, Maeve is taking a quick breath. If you were charged credits, please contact support.mywingman@gmail.com.";
                 window.renderChatboxBubble("Notice: " + errMsg, "assistant");
             }
         } catch (chatErr) {
+            if (!isCurrentChatRequest()) return;
             if (activeSimulatorThread.length > 0 && activeSimulatorThread[activeSimulatorThread.length - 1].role === 'user') activeSimulatorThread.pop();
             if (typeof window.checkCreditBalance === 'function') await window.checkCreditBalance({ forceFresh: true });
-            if (requestGeneration !== simulatorGeneration) return;
+            if (!isCurrentChatRequest()) return;
             window.showChatboxTypingIndicator(false);
             console.error("Chatbox API Error:", chatErr);
             window.renderChatboxBubble("Wingman's AI service is temporarily unavailable. Please try again later.", "assistant");
         } finally {
-            simulatorRequestInFlight = false;
-            if (typeof window.updateButtonStates === 'function') {
-                window.updateButtonStates();
+            if (isCurrentChatRequest()) {
+                simulatorRequestInFlight = false;
+                if (typeof window.updateButtonStates === 'function') {
+                    window.updateButtonStates();
+                }
             }
         }
     };
