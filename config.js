@@ -62,16 +62,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 (function () {
     'use strict';
 
-    var MOBILE_QUERY = '(max-width: 767px)';
     var patched = false;
-
-    function isMobile() {
-        try {
-            return window.matchMedia && window.matchMedia(MOBILE_QUERY).matches;
-        } catch (_) {
-            return window.innerWidth < 768;
-        }
-    }
 
     function refreshUnknownCreditLabels() {
         var state = window.state;
@@ -129,23 +120,6 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
                 }
 
                 refreshUnknownCreditLabels();
-                return result;
-            };
-        }
-
-        if (typeof window.switchTab === 'function') {
-            var originalSwitchTab = window.switchTab;
-            window.switchTab = function (tabId) {
-                var result = originalSwitchTab.apply(this, arguments);
-                if (isMobile()) {
-                    requestAnimationFrame(function () {
-                        var main = document.getElementById('mainContentCanvas') || document.querySelector('main');
-                        try {
-                            if (main && typeof main.scrollTo === 'function') main.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-                        } catch (_) {}
-                        try { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); } catch (_) { window.scrollTo(0, 0); }
-                    });
-                }
                 return result;
             };
         }

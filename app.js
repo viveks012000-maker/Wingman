@@ -1555,6 +1555,8 @@ STRICT LAWS:
                     if (typeof window.clearAndResetChatbox === "function") window.clearAndResetChatbox();
                 }
             } else {
+                const chatInput = $("simulator-chat-input");
+                if (chatInput && document.activeElement === chatInput) chatInput.blur();
                 document.body.classList.remove("chat-keyboard-open");
             }
 
@@ -3067,36 +3069,82 @@ STRICT LAWS:
     }
 
     let _lastVisualHeight = 0;
+    let _lastVisualTop = -1;
+    let _lastVisualBottomInset = -1;
+    let _unfocusedVisualViewportBottom = 0;
+    let _unfocusedVisualViewportScale = 1;
+    let _lastViewportWidth = 0;
+    let _visualViewportUpdateScheduled = false;
+
     function updateVisualViewportHeight() {
         const viewport = window.visualViewport;
         const height = viewport && Number.isFinite(viewport.height) ? viewport.height : window.innerHeight;
-        const rounded = Math.round(height);
-        if (rounded && rounded !== _lastVisualHeight && document.documentElement && document.documentElement.style) {
-            _lastVisualHeight = rounded;
-            document.documentElement.style.setProperty('--wingman-visual-height', `${rounded}px`);
+        const top = viewport && Number.isFinite(viewport.offsetTop) ? viewport.offsetTop : 0;
+        const layoutHeight = Number.isFinite(window.innerHeight) ? window.innerHeight : height;
+        const visualBottom = Math.max(0, top + height);
+        const roundedHeight = Math.round(height);
+        const roundedTop = Math.round(top);
+        const width = window.innerWidth || 0;
+        const viewportScale = viewport && Number.isFinite(viewport.scale) ? viewport.scale : 1;
+
+        if (_lastViewportWidth && Math.abs(width - _lastViewportWidth) > 80) {
+            _unfocusedVisualViewportBottom = visualBottom;
+            _unfocusedVisualViewportScale = viewportScale;
+        }
+        _lastViewportWidth = width;
+
+        const rootStyle = document.documentElement && document.documentElement.style;
+        if (rootStyle && roundedHeight > 0 && roundedHeight !== _lastVisualHeight) {
+            _lastVisualHeight = roundedHeight;
+            rootStyle.setProperty('--wingman-visual-height', `${roundedHeight}px`);
+        }
+        if (rootStyle && roundedTop !== _lastVisualTop) {
+            _lastVisualTop = roundedTop;
+            rootStyle.setProperty('--wingman-visual-top', `${roundedTop}px`);
         }
 
         const chatInput = $("simulator-chat-input");
+        let keyboardOpen = false;
         if (chatInput && document.body) {
             const isChatActive = document.activeElement === chatInput;
             const isMobile = window.innerWidth < 768;
-            const keyboardOpen = isChatActive && (
-                isMobile ||
-                (window.visualViewport && window.innerHeight && window.visualViewport.height < window.innerHeight * 0.85) ||
-                (window.screen && window.screen.height && window.innerHeight < window.screen.height * 0.75)
-            );
+            if (isMobile && isChatActive) {
+                const baseline = _unfocusedVisualViewportBottom || Math.max(layoutHeight, visualBottom);
+                const zoomChanged = Math.abs(viewportScale - _unfocusedVisualViewportScale) > 0.01;
+                const obscuredHeight = zoomChanged ? 0 : Math.max(0, baseline - visualBottom, layoutHeight - visualBottom);
+                keyboardOpen = obscuredHeight > Math.max(80, baseline * 0.12);
+            } else if (!isChatActive) {
+                _unfocusedVisualViewportBottom = visualBottom;
+                _unfocusedVisualViewportScale = viewportScale;
+            }
             document.body.classList.toggle('chat-keyboard-open', keyboardOpen);
         }
+
+        const bottomInset = keyboardOpen ? Math.max(0, layoutHeight - visualBottom) : 0;
+        const roundedBottomInset = Math.round(bottomInset);
+        if (rootStyle && roundedBottomInset !== _lastVisualBottomInset) {
+            _lastVisualBottomInset = roundedBottomInset;
+            rootStyle.setProperty('--wingman-visual-bottom-inset', `${roundedBottomInset}px`);
+        }
+    }
+
+    function scheduleVisualViewportUpdate() {
+        if (_visualViewportUpdateScheduled) return;
+        _visualViewportUpdateScheduled = true;
+        window.requestAnimationFrame(function () {
+            _visualViewportUpdateScheduled = false;
+            updateVisualViewportHeight();
+        });
     }
 
     function initVisualViewportSupport() {
         if (window._wingmanVisualViewportReady) return;
         window._wingmanVisualViewportReady = true;
         updateVisualViewportHeight();
-        window.addEventListener('resize', updateVisualViewportHeight, { passive: true });
+        window.addEventListener('resize', scheduleVisualViewportUpdate, { passive: true });
         if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', updateVisualViewportHeight, { passive: true });
-            window.visualViewport.addEventListener('scroll', updateVisualViewportHeight, { passive: true });
+            window.visualViewport.addEventListener('resize', scheduleVisualViewportUpdate, { passive: true });
+            window.visualViewport.addEventListener('scroll', scheduleVisualViewportUpdate, { passive: true });
         }
     }
 
@@ -3125,35 +3173,10 @@ STRICT LAWS:
             ci.addEventListener("input", function() { window.updateButtonStates(); });
             ci.addEventListener("keyup", function() { window.updateButtonStates(); });
             ci.addEventListener("paste", function() { setTimeout(window.updateButtonStates, 50); });
-            ci.addEventListener("focus", function() {
-                if (window.innerWidth < 768) {
-                    document.body.classList.add("chat-keyboard-open");
-                }
-                setTimeout(function() {
-                    updateVisualViewportHeight();
-                    try {
-                        ci.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                        if (typeof window.scrollToBottom === 'function') window.scrollToBottom(true);
-                    } catch(e) {}
-                }, 100);
-                setTimeout(function() {
-                    updateVisualViewportHeight();
-                    try {
-                        ci.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                        if (typeof window.scrollToBottom === 'function') window.scrollToBottom(true);
-                    } catch(e) {}
-                }, 300);
-            });
+            ci.addEventListener("focus", scheduleVisualViewportUpdate);
             ci.addEventListener("blur", function() {
                 document.body.classList.remove("chat-keyboard-open");
-                setTimeout(updateVisualViewportHeight, 100);
-                setTimeout(function() {
-                    updateVisualViewportHeight();
-                    // On iOS Safari, resetting window scroll after keyboard dismiss eliminates residual viewport shift
-                    if (/iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent))) {
-                        window.scrollTo(0, 0);
-                    }
-                }, 350);
+                scheduleVisualViewportUpdate();
             });
         }
 
@@ -4251,9 +4274,14 @@ STRICT LAWS:
         return output;
     }
 
+    function chatIsNearBottom(container, threshold = 72) {
+        return container.scrollHeight - container.clientHeight - container.scrollTop <= threshold;
+    }
+
     window.renderChatboxBubble = function(text, sender) {
         const container = $("chatbox-messages-container");
         if (!container) return;
+        const shouldFollowConversation = sender === "user" || chatIsNearBottom(container);
 
         let cleanText = text;
         if (typeof cleanText === "string") {
@@ -4306,7 +4334,7 @@ STRICT LAWS:
 
         bubble.textContent = cleanText;
         container.appendChild(bubble);
-        window.scrollToBottom(true);
+        if (shouldFollowConversation) window.scrollToBottom(true);
     };
 
     window.scrollToBottom = function(smooth = true) {
@@ -4337,7 +4365,7 @@ STRICT LAWS:
             indicator.style.fontSize = "14px";
             indicator.textContent = "Typing...";
             container.appendChild(indicator);
-            container.scrollTop = container.scrollHeight;
+            window.scrollToBottom(false);
         }
     };
 
@@ -4345,6 +4373,7 @@ STRICT LAWS:
         if (!evalData) return;
         const container = $("chatbox-messages-container");
         if (!container) return;
+        const shouldFollowConversation = chatIsNearBottom(container);
 
         const isSuccess = evalData.status === "PASSED";
         const badgeColor = isSuccess ? "#10b981" : (evalData.status === "FAILED" ? "#ef4444" : "#f59e0b");
@@ -4393,7 +4422,7 @@ STRICT LAWS:
             card.appendChild(alternative);
         }
         container.appendChild(card);
-        window.scrollToBottom(true);
+        if (shouldFollowConversation) window.scrollToBottom(true);
     };
 
     window.retryLastTurn = function() {
@@ -4520,13 +4549,6 @@ STRICT LAWS:
 
         inputField.value = "";
         window.renderChatboxBubble(userText, "user");
-        try {
-            inputField.focus();
-            if (window.innerWidth < 768) {
-                document.body.classList.add("chat-keyboard-open");
-            }
-        } catch(e) {}
-        window.scrollToBottom(true);
 
         activeSimulatorThread.push({ role: "user", content: userText, text: userText, attractionScore: window.currentAttractionScore });
         window.showChatboxTypingIndicator(true);
