@@ -1385,7 +1385,7 @@
 
     <!-- ==================== INTERSTITIAL AGE & LEGAL AGREEMENT MODAL ==================== -->
     <div id="interstitialModal"
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300 overflow-y-auto">
+        class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300 overflow-y-auto">
         <div class="relative w-full max-w-md bg-gradient-to-b from-[#0f1424] via-[#090d16] to-[#05070d] rounded-3xl border border-violet-500/30 shadow-[0_0_60px_rgba(139,92,246,0.3)] flex flex-col p-6 space-y-5 my-auto transform scale-95 transition-all duration-300"
             id="interstitialCard">
 
@@ -1578,13 +1578,8 @@
         function $(id) { return document.getElementById(id); }
 
         window.openInterstitialModal = function () {
-            const m = $("interstitialModal"), c = $("interstitialCard");
-            if (!m || !c) return;
-            m.style.display = "flex";
-            m.classList.remove("opacity-0", "pointer-events-none", "hidden");
-            m.classList.add("opacity-100", "pointer-events-auto");
-            c.classList.remove("scale-95");
-            c.classList.add("scale-100");
+            // Age and Terms confirmation belongs in the signed-in workspace, never on the public home page.
+            window.location.href = "app.html";
         };
 
         window.closeInterstitialModal = function () {
@@ -1599,34 +1594,9 @@
 
         window.handleEnterDashboard = async function (e) {
             if (e) e.preventDefault();
-            const button = $("enterDashboardBtn");
-            if (button && button.disabled) return;
-            if (button) button.disabled = true;
-            try {
-                const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
-                if (authHeaders && authHeaders.Authorization) {
-                    const response = await fetch(window.getApiBase() + '/api/consent', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', ...authHeaders },
-                        body: JSON.stringify({ age18Plus: true, aiProcessingConsent: true })
-                    });
-                    const result = await response.json().catch(() => ({}));
-                    if (!response.ok || !result.success || !result.consentRecorded) {
-                        throw new Error("Unable to record consent. Please try again; workspace remains locked.");
-                    }
-                }
-                try {
-                    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem("wingman_guest_terms_accepted", "true");
-                } catch (_) {}
-                if (typeof window.closeInterstitialModal === "function") window.closeInterstitialModal();
-                const destination = window.pendingPurchaseTargetUrl || "app.html";
-                window.pendingPurchaseTargetUrl = null;
-                window.location.href = destination;
-            } catch (error) {
-                if (typeof window.showToast === 'function') window.showToast(error.message, 'warning');
-            } finally {
-                if (button) button.disabled = false;
-            }
+            const destination = window.pendingPurchaseTargetUrl || "app.html";
+            window.pendingPurchaseTargetUrl = null;
+            window.location.href = destination;
         };
 
         window.openAuthRequiredModal = function (e) {
@@ -1937,13 +1907,8 @@
 
         window.handlePricingPurchase = function (e, targetUrl) {
             if (e) e.preventDefault();
-            window.pendingPurchaseTargetUrl = targetUrl;
-            const isAuthenticated = !!(window.currentSupabaseUser && window.currentSupabaseSession && window.currentSupabaseSession.access_token);
-            if (isAuthenticated) {
-                window.location.href = targetUrl;
-            } else {
-                window.openInterstitialModal();
-            }
+            // Let the app handle sign-in first; its consent screen is shown only after login.
+            window.location.href = targetUrl || "app.html";
         };
 
         window.handlePricingGoogleSignIn = function (e) {
@@ -1971,19 +1936,6 @@
                     window.open("privacy.html", "_blank");
                 });
             }
-
-            // Intercept dashboard workspace navigation links
-            document.querySelectorAll('a[href^="app.html"]').forEach(function (link) {
-                link.addEventListener("click", function (e) {
-                    const isAuth = !!(window.currentSupabaseUser && window.currentSupabaseSession && window.currentSupabaseSession.access_token);
-                    const agreed = isAuth;
-                    if (!isAuth && !agreed) {
-                        e.preventDefault();
-                        window.pendingPurchaseTargetUrl = link.getAttribute("href");
-                        window.openInterstitialModal();
-                    }
-                });
-            });
 
             // Intersection Observer scroll reveal setup
             if (typeof IntersectionObserver !== "undefined") {

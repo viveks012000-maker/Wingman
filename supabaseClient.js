@@ -248,6 +248,22 @@
                     window.currentSupabaseSession = session;
                     window.currentSupabaseUser = session ? session.user : null;
 
+                    // Consent acknowledgement belongs to one authenticated session only.
+                    // Clear it on a fresh sign-in and sign-out so it cannot carry across accounts.
+                    if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+                        if (typeof window.resetConsentSessionState === 'function') {
+                            window.resetConsentSessionState();
+                        } else {
+                            try {
+                                if (typeof sessionStorage !== 'undefined') {
+                                    sessionStorage.removeItem('wingman_consent_session');
+                                    sessionStorage.removeItem('wingman_consent_prompted');
+                                    sessionStorage.removeItem('wingman_guest_terms_accepted');
+                                }
+                            } catch (_) {}
+                        }
+                    }
+
                     if (event === 'PASSWORD_RECOVERY') {
                         setPasswordRecoveryActive(true);
                         showPasswordRecoveryDialog();

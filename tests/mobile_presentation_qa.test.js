@@ -267,15 +267,8 @@ async function assertLanding(browser, viewport) {
             assert(authInputs.every(size => size >= 16), `landing auth inputs must use 16px text at ${viewport.join('x')}`);
             await opened.page.evaluate(() => window.closeAuthRequiredModal());
 
-            await opened.page.evaluate(() => window.openInterstitialModal());
-            await opened.page.waitForTimeout(30);
-            const consent = await getLayout(opened.page);
-            assert(consent.interstitialCard && consent.interstitialCard.bottom <= consent.viewport.visualHeight + 1, `landing consent dialog exceeds visual viewport at ${viewport.join('x')}`);
-            if (consent.interstitialCard.scrollHeight > consent.interstitialCard.clientHeight) {
-                assert(['auto', 'scroll'].includes(consent.interstitialCard.overflowY), `landing consent dialog is not internally scrollable at ${viewport.join('x')}`);
-            }
-            await opened.page.evaluate(() => window.closeInterstitialModal());
-            await opened.page.waitForTimeout(30);
+            const landingConsentHidden = await opened.page.locator('#interstitialModal').evaluate(modal => modal.classList.contains('hidden'));
+            assert(landingConsentHidden, `landing page must defer age/Terms consent until after sign-in at ${viewport.join('x')}`);
         }
     } finally {
         await opened.context.close();
@@ -466,6 +459,8 @@ async function assertApp(browser, viewport) {
                     const session = { access_token: 'test-token', user: { id: 'qa-user', email: 'qa@example.com' } };
                     window.currentSupabaseSession = session;
                     window.currentSupabaseUser = session.user;
+                    sessionStorage.setItem('wingman_consent_session', JSON.stringify({ userId: 'qa-user', termsVersion: '2026.1' }));
+                    sessionStorage.setItem('wingman_consent_prompted', JSON.stringify({ userId: 'qa-user', termsVersion: '2026.1' }));
                     window.supabaseClient = { auth: { getSession: async () => ({ data: { session }, error: null }) } };
                     window.getSupabaseAuthHeaders = async () => ({ Authorization: 'Bearer test-token' });
                     window.checkCreditBalance = async () => {

@@ -45,6 +45,10 @@ async function main() {
                 if (route.request().url().startsWith('http://127.0.0.1:')) return route.continue();
                 return route.abort();
             });
+            let consentPostCount = 0;
+            page.on('request', request => {
+                if (request.url().endsWith('/api/consent') && request.method() === 'POST') consentPostCount += 1;
+            });
             await page.addInitScript(() => localStorage.setItem('wingman_setting_currency', 'USD'));
             await page.goto(base + '/', { waitUntil: 'load' });
             assert.equal(await page.locator('#interstitialCheckbox').count(), 0, 'landing age checkbox must be removed');
@@ -53,7 +57,7 @@ async function main() {
             assert.equal((await page.locator('h1').innerText()).replace(/\s+/g, ' ').trim(), 'The AI Texting Assistant');
             for (const phrase of [
                 'MYWINGMAN · THE AI TEXTING ASSISTANT',
-                'Stop staring at the typing box. Find a better starting point.',
+                'Find a better starting point.',
                 "Because knowing what you mean and knowing how to say it aren't always the same thing.",
                 'The reply you keep rewriting', 'The first-message dilemma', 'Your words, just clearer'
             ]) assert((await page.locator('body').innerText()).includes(phrase), 'Missing marketing copy: ' + phrase);
@@ -67,23 +71,49 @@ async function main() {
             await page.waitForFunction(() => Number(getComputedStyle(document.getElementById('differentiation')).opacity) === 1);
             await page.locator('#differentiation').screenshot({ path: path.join(root, '..', '..', 'benefits-' + viewport.width + '.png') });
             await page.evaluate(() => {
-                window.__consentCalls = [];
-                window.getSupabaseAuthHeaders = async () => ({ Authorization: 'Bearer isolated-browser-fixture' });
-                const originalFetch = window.fetch;
-                window.fetch = async (url, options) => {
-                    if (String(url).endsWith('/api/consent')) {
-                        window.__consentCalls.push(JSON.parse(options.body));
-                        return { ok: false, json: async () => ({ success: false }) };
-                    }
-                    return originalFetch(url, options);
-                };
-                window.openInterstitialModal();
+                window.__landingConsentVisible = getComputedStyle(document.getElementById('interstitialModal')).display !== 'none';
             });
-            assert.equal(await page.evaluate(() => window.__consentCalls.length), 0, 'opening notice must not record consent');
-            await page.locator('#enterDashboardBtn').click();
-            assert.equal(await page.evaluate(() => window.__consentCalls.length), 1);
-            assert.equal(await page.evaluate(() => sessionStorage.getItem('wingman_guest_terms_accepted')), null, 'failed persistence must not grant acceptance');
-            assert.equal(await page.locator('#enterDashboardBtn').isDisabled(), false);
+            assert.equal(await page.evaluate(() => window.__landingConsentVisible), false, 'the public home page must not ask for age or Terms consent before sign-in');
+            await page.getByRole('link', { name: /Explore the Tools/ }).click();
+            await page.waitForURL('**/app.html');
+            assert.equal(consentPostCount, 0, 'entering the app while signed out must not record consent');
+            assert.equal(await page.evaluate(() => sessionStorage.getItem('wingman_guest_terms_accepted')), null, 'guest navigation must not create consent state');
+
+            // Simulate one signed-in browser session and carry its confirmed acknowledgement
+            // across a real home -> app navigation in this same tab.
+            await page.evaluate(() => {
+                window.currentSupabaseSession = { access_token: 'isolated-navigation-session', user: { id: 'navigation-test-user' } };
+                window.currentSupabaseUser = window.currentSupabaseSession.user;
+                window.getSupabaseAuthHeaders = async () => ({ Authorization: 'Bearer isolated-navigation-session' });
+                window.fetch = async (url, options) => {
+                    if (String(url).endsWith('/api/consent/status')) {
+                        return { ok: true, status: 200, json: async () => ({ success: true, hasActiveConsent: true, termsVersion: '2026.1' }) };
+                    }
+                    if (String(url).endsWith('/api/consent') && options && options.method === 'POST') {
+                        return { ok: true, status: 200, json: async () => ({ success: true, consentRecorded: true, termsVersion: '2026.1' }) };
+                    }
+                    throw new Error('Unexpected request in isolated consent navigation test');
+                };
+            });
+            assert.equal(await page.evaluate(() => window.checkServerConsentStatus()), false, 'a newly authenticated session must be asked once');
+            assert.equal(await page.locator('#interstitialModal').isVisible(), true);
+            await page.locator('#interstitialAcceptBtn').click();
+            assert.equal(await page.evaluate(() => window.state.isTermsAccepted), true);
+            assert.notEqual(await page.evaluate(() => sessionStorage.getItem('wingman_consent_session')), null);
+            await page.locator('a[href="index.html"]:visible').first().click();
+            await page.waitForURL('**/index.html');
+            await page.getByRole('link', { name: /Explore the Tools/ }).click();
+            await page.waitForURL('**/app.html');
+            assert.equal(await page.locator('#interstitialModal').isVisible(), false, 'same-tab navigation must not repeat the accepted prompt');
+            await page.evaluate(() => {
+                window.currentSupabaseSession = { access_token: 'isolated-navigation-session', user: { id: 'navigation-test-user' } };
+                window.currentSupabaseUser = window.currentSupabaseSession.user;
+                window.getSupabaseAuthHeaders = async () => ({ Authorization: 'Bearer isolated-navigation-session' });
+                window.fetch = async () => ({ ok: true, status: 200, json: async () => ({ success: true, hasActiveConsent: true, termsVersion: '2026.1' }) });
+            });
+            assert.equal(await page.evaluate(() => window.checkServerConsentStatus()), true, 'the current session remains unlocked after app re-entry');
+            assert.equal(await page.locator('#interstitialModal').isVisible(), false);
+
             for (const [id, name, credits, price] of [
                 ['starter', 'Starter Pack', '250', '₹449'],
                 ['pro', 'Pro Pack', '600', '₹899'],
@@ -92,11 +122,8 @@ async function main() {
             ]) {
                 await page.goto(base + '/?review-plan=' + id + '#pricing', { waitUntil: 'load' });
                 await page.locator('a[href="app.html?tier=' + id + '"]').click();
-                assert(await page.locator('#interstitialModal').isVisible());
-                assert.equal(await page.evaluate(() => window.pendingPurchaseTargetUrl), 'app.html?tier=' + id);
-                // Actual existing Unlock Workspace action for a signed-out visitor.
-                await page.locator('#enterDashboardBtn').click();
-                await page.waitForURL('**/app.html*');
+                await page.waitForURL('**/app.html?tier=' + id);
+                assert.equal(await page.locator('#interstitialModal').isVisible(), false, 'pricing navigation must not show pre-login consent');
                 await page.waitForFunction(() => typeof window.openPurchaseModal === 'function');
                 assert.equal(await page.locator('#purchaseModal').isVisible(), true);
                 const linkedSummary = await page.locator('#purchaseOrderSummary').innerText();
@@ -124,7 +151,7 @@ async function main() {
             await page.evaluate(() => {
                 window.closePurchaseModal();
                 window.state.isTermsAccepted = false;
-                window.currentSupabaseSession = { access_token: 'isolated-browser-fixture' };
+                window.currentSupabaseSession = { access_token: 'isolated-browser-fixture', user: { id: 'isolated-ui-test-user' } };
                 window.getSupabaseAuthHeaders = async () => ({ Authorization: 'Bearer isolated-browser-fixture' });
                 window.__consentCalls = [];
                 window.__consentSucceeds = false;

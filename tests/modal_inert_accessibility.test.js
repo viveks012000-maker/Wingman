@@ -59,6 +59,16 @@ async function verifyModal(page, id, openFn, closeFn) {
 
     await page.goto(`http://localhost:${PORT}/index.html`, {waitUntil:'domcontentloaded'});
     await page.waitForTimeout(40);
+    const landingConsentHidden = await page.locator('#interstitialModal').evaluate(modal => modal.classList.contains('hidden'));
+    assert(landingConsentHidden, 'the public landing page must not show age/Terms consent before sign-in');
+    await verifyModal(page, 'authRequiredModal', 'openAuthRequiredModal', 'closeAuthRequiredModal');
+
+    await page.goto(`http://localhost:${PORT}/app.html`, {waitUntil:'domcontentloaded'});
+    await page.waitForTimeout(40);
+    await page.evaluate(() => {
+      window.currentSupabaseSession = { access_token: 'modal-test-session', user: { id: 'modal-test-user' } };
+      window.currentSupabaseUser = window.currentSupabaseSession.user;
+    });
     await verifyModal(page, 'interstitialModal', 'openInterstitialModal', 'closeInterstitialModal');
     await verifyModal(page, 'authRequiredModal', 'openAuthRequiredModal', 'closeAuthRequiredModal');
 
@@ -107,10 +117,8 @@ async function verifyModal(page, id, openFn, closeFn) {
       active: document.activeElement && document.activeElement.id,
       activeIsAuthTrigger: !!(document.activeElement && document.activeElement.matches('button[onclick*="openAuthRequiredModal"]'))
     }));
-    assert(restored.activeIsAuthTrigger, 'Closing auth must not restore focus into the closed interstitial', restored);
+    assert(restored.activeIsAuthTrigger || restored.active === 'mobileAuthBtn', 'Closing auth must restore focus to an auth control, not the closed interstitial', restored);
 
-    await page.goto(`http://localhost:${PORT}/app.html`, {waitUntil:'domcontentloaded'});
-    await page.waitForTimeout(40);
     await verifyModal(page, 'authRequiredModal', 'openAuthRequiredModal', 'closeAuthRequiredModal');
 
     console.log('✅ Closed dialogs are inert; open dialogs are focused; immediate modal transitions preserve focus in the active dialog.');

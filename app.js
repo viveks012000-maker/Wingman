@@ -111,6 +111,11 @@
     const STORAGE_KEY = "wingman_credits";
     const SESSION_KEY = "wingman_session_data";
     const CREDITS_PER_INR = 10;
+    const CONSENT_SESSION_KEY = "wingman_consent_session";
+    const CONSENT_PROMPTED_SESSION_KEY = "wingman_consent_prompted";
+    let consentSessionGeneration = 0;
+    let consentStatusRequestGeneration = 0;
+    let consentStatusCheckInFlight = null;
 
     let activeCropperInstance = null;
     let currentUploadedRawDataUrl = null;
@@ -142,6 +147,70 @@
         emojiOption: parseInt(safeStorage.get("wingman_setting_emoji", "1") || "1")
     };
     window.state = state;
+
+    function currentConsentUserId() {
+        const sessionUser = window.currentSupabaseSession && window.currentSupabaseSession.user;
+        const currentUser = window.currentSupabaseUser;
+        return (sessionUser && sessionUser.id) || (currentUser && currentUser.id) || null;
+    }
+
+    function readSessionConsentMarker(key) {
+        try {
+            if (typeof sessionStorage === 'undefined') return null;
+            const raw = sessionStorage.getItem(key);
+            return raw ? JSON.parse(raw) : null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function writeSessionConsentMarker(key, userId, termsVersion) {
+        if (!userId) return false;
+        try {
+            if (typeof sessionStorage === 'undefined') return false;
+            sessionStorage.setItem(key, JSON.stringify({ userId: String(userId), termsVersion: String(termsVersion || '2026.1') }));
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function clearSessionConsentMarkers() {
+        try {
+            if (typeof sessionStorage !== 'undefined') {
+                sessionStorage.removeItem(CONSENT_SESSION_KEY);
+                sessionStorage.removeItem(CONSENT_PROMPTED_SESSION_KEY);
+                sessionStorage.removeItem('wingman_guest_terms_accepted');
+            }
+        } catch (_) {}
+    }
+
+    function hasSessionConsentMarker(userId, termsVersion) {
+        const marker = readSessionConsentMarker(CONSENT_SESSION_KEY);
+        return !!(marker && marker.userId === String(userId) && marker.termsVersion === String(termsVersion || '2026.1'));
+    }
+
+    function hasPromptedForConsent(userId, termsVersion) {
+        const marker = readSessionConsentMarker(CONSENT_PROMPTED_SESSION_KEY);
+        return !!(marker && marker.userId === String(userId) && marker.termsVersion === String(termsVersion || '2026.1'));
+    }
+
+    function clearDisplayedConsentState(status) {
+        state.isTermsAccepted = false;
+        state.consentStatus = status || 'unauthenticated';
+        safeStorage.remove('wingman_terms_accepted');
+        if (typeof window.closeInterstitialModal === 'function') window.closeInterstitialModal();
+        if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+        if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
+    }
+
+    window.resetConsentSessionState = function() {
+        consentSessionGeneration += 1;
+        consentStatusRequestGeneration += 1;
+        consentStatusCheckInFlight = null;
+        clearSessionConsentMarkers();
+        clearDisplayedConsentState('unauthenticated');
+    };
 
     // Tone mapping
     const TONE_HUD_MAP = {
@@ -3337,6 +3406,7 @@ STRICT LAWS:
                     if (errJson.code === "CONSENT_REQUIRED" || (errJson.error && errJson.error.toLowerCase().includes("consent"))) {
                         state.isTermsAccepted = false;
                         state.consentStatus = 'consent_required';
+                        clearSessionConsentMarkers();
                         safeStorage.remove('wingman_terms_accepted');
                         safeStorage.remove('wingman_consent_version');
                         if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
@@ -4348,6 +4418,7 @@ STRICT LAWS:
                 if (errJson.code === "CONSENT_REQUIRED" || (errJson.error && errJson.error.toLowerCase().includes("consent"))) {
                     state.isTermsAccepted = false;
                     state.consentStatus = 'consent_required';
+                    clearSessionConsentMarkers();
                     safeStorage.remove('wingman_terms_accepted');
                     safeStorage.remove('wingman_consent_version');
                     if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
@@ -4409,7 +4480,24 @@ STRICT LAWS:
         }
     };
 
-    window.openInterstitialModal = function() {
+    window.openInterstitialModal = function(termsVersionOverride) {
+        if (!(window.currentSupabaseSession && window.currentSupabaseSession.access_token)) {
+            if (typeof window.openAuthRequiredModal === 'function') window.openAuthRequiredModal();
+            return;
+        }
+        const userId = currentConsentUserId();
+        const termsVersion = termsVersionOverride || safeStorage.get('wingman_consent_version', '2026.1') || '2026.1';
+        const promptedMarker = readSessionConsentMarker(CONSENT_PROMPTED_SESSION_KEY);
+        if (userId && state.isTermsAccepted && state.consentStatus === 'active' && hasSessionConsentMarker(userId, termsVersion)) {
+            if (typeof window.closeInterstitialModal === 'function') window.closeInterstitialModal();
+            return;
+        }
+        if (userId && promptedMarker && promptedMarker.userId === String(userId) && promptedMarker.termsVersion === String(termsVersion)) {
+            const existingModal = document.getElementById("interstitialModal");
+            if (!existingModal || existingModal.style.display !== 'flex') return;
+        } else if (userId) {
+            writeSessionConsentMarker(CONSENT_PROMPTED_SESSION_KEY, userId, termsVersion);
+        }
         const m = document.getElementById("interstitialModal");
         const c = document.getElementById("interstitialCard");
         if (!m) return;
@@ -4437,91 +4525,104 @@ STRICT LAWS:
         }
     };
 
-    window.checkServerConsentStatus = async function() {
-        try {
-            const isAuth = !!(window.currentSupabaseSession && window.currentSupabaseSession.access_token);
-            if (!isAuth) {
-                const guestAccepted = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('wingman_guest_terms_accepted') === 'true');
-                if (guestAccepted) {
-                    state.isTermsAccepted = true;
-                    state.consentStatus = 'active_local';
-                    safeStorage.set('wingman_terms_accepted', 'true');
-                    safeStorage.set('wingman_consent_version', '2026.1');
-                    if (typeof window.closeInterstitialModal === 'function') window.closeInterstitialModal();
-                    if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
-                    if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
-                    return true;
+    window.checkServerConsentStatus = function() {
+        const session = window.currentSupabaseSession;
+        const isAuth = !!(session && session.access_token);
+        if (!isAuth) {
+            // Session restoration is asynchronous on first page load. Only an auth-state sign-out
+            // clears session markers, so this early boot check cannot erase a valid acknowledgement.
+            consentStatusRequestGeneration += 1;
+            consentStatusCheckInFlight = null;
+            clearDisplayedConsentState('unauthenticated');
+            return Promise.resolve(false);
+        }
+
+        const userId = currentConsentUserId();
+        if (!userId) {
+            clearDisplayedConsentState('service_unavailable');
+            return Promise.resolve(false);
+        }
+
+        if (consentStatusCheckInFlight && consentStatusCheckInFlight.userId === String(userId)) {
+            return consentStatusCheckInFlight.promise;
+        }
+
+        const requestGeneration = ++consentStatusRequestGeneration;
+        const isCurrentRequest = () => requestGeneration === consentStatusRequestGeneration &&
+            !!(window.currentSupabaseSession && window.currentSupabaseSession.access_token) &&
+            String(currentConsentUserId()) === String(userId);
+
+        const promise = (async function() {
+            try {
+                const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
+                if (!isCurrentRequest()) return false;
+                if (!authHeaders || !authHeaders.Authorization) {
+                    clearDisplayedConsentState('service_unavailable');
+                    return false;
                 }
-                state.isTermsAccepted = false;
-                state.consentStatus = 'unauthenticated';
-                safeStorage.remove('wingman_terms_accepted');
-                if (typeof window.closeInterstitialModal === 'function') window.closeInterstitialModal();
-                if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
-                if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
-                return false;
-            }
-            const authHeaders = (typeof window.getSupabaseAuthHeaders === 'function') ? await window.getSupabaseAuthHeaders() : {};
-            if (!authHeaders || !authHeaders.Authorization) {
-                state.isTermsAccepted = false;
-                state.consentStatus = 'unauthenticated';
-                safeStorage.remove('wingman_terms_accepted');
-                if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
-                if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
-                return false;
-            }
 
-            const res = await fetch((window.getApiBase ? window.getApiBase() : '') + '/api/consent/status', {
-                method: 'GET',
-                headers: { ...authHeaders }
-            });
+                const res = await fetch((window.getApiBase ? window.getApiBase() : '') + '/api/consent/status', {
+                    method: 'GET',
+                    headers: { ...authHeaders }
+                });
+                if (!isCurrentRequest()) return false;
 
-            if (res.status === 503 || res.status === 502 || res.status === 504 || res.status === 404) {
-                state.isTermsAccepted = false;
-                state.consentStatus = 'service_unavailable';
-                safeStorage.remove('wingman_terms_accepted');
-                if (typeof window.closeInterstitialModal === 'function') window.closeInterstitialModal();
-                if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
-                if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
-                if (typeof window.showToast === 'function') {
-                    window.showToast("Consent verification service is temporarily unavailable. AI features remain locked.", "error");
+                if (res.status === 503 || res.status === 502 || res.status === 504 || res.status === 404) {
+                    clearDisplayedConsentState('service_unavailable');
+                    if (typeof window.showToast === 'function') {
+                        window.showToast("Consent verification service is temporarily unavailable. AI features remain locked.", "error");
+                    }
+                    return false;
                 }
-                return false;
-            }
 
-            if (res.ok) {
-                const data = await res.json();
-                if (data && data.hasActiveConsent === true) {
+                const data = res.ok ? await res.json() : {};
+                if (!isCurrentRequest()) return false;
+                const termsVersion = (data && data.termsVersion) || '2026.1';
+                const hasActiveConsent = !!(data && data.hasActiveConsent === true);
+
+                if (hasActiveConsent && hasSessionConsentMarker(userId, termsVersion)) {
                     state.isTermsAccepted = true;
                     state.consentStatus = 'active';
                     safeStorage.set('wingman_terms_accepted', 'true');
-                    safeStorage.set('wingman_consent_version', data.termsVersion || '2026.1');
+                    safeStorage.set('wingman_consent_version', termsVersion);
                     if (typeof window.closeInterstitialModal === 'function') window.closeInterstitialModal();
                     if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
                     if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
                     return true;
                 }
-            }
 
-            // Authenticated with missing or expired consent
-            state.isTermsAccepted = false;
-            state.consentStatus = 'consent_required';
-            safeStorage.remove('wingman_terms_accepted');
-            if (typeof window.openInterstitialModal === 'function') {
-                window.openInterstitialModal();
+                if (!hasActiveConsent) {
+                    try {
+                        if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(CONSENT_SESSION_KEY);
+                    } catch (_) {}
+                }
+
+                // A valid server record is still acknowledged once per signed-in browser session.
+                // Store no bearer token; the marker is scoped to this authenticated user and terms version.
+                state.isTermsAccepted = false;
+                state.consentStatus = 'consent_required';
+                safeStorage.remove('wingman_terms_accepted');
+                safeStorage.remove('wingman_consent_version');
+                // Keep the one prompt already on screen, or leave it dismissed until sign-out.
+                if (!hasPromptedForConsent(userId, termsVersion)) {
+                    if (typeof window.openInterstitialModal === 'function') window.openInterstitialModal(termsVersion);
+                }
+                if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
+                if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
+                return false;
+            } catch (e) {
+                if (!isCurrentRequest()) return false;
+                console.warn("[Consent status check error]:", e.message);
+                clearDisplayedConsentState('service_unavailable');
+                return false;
+            } finally {
+                if (consentStatusCheckInFlight && consentStatusCheckInFlight.promise === promise) {
+                    consentStatusCheckInFlight = null;
+                }
             }
-            if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
-            if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
-            return false;
-        } catch (e) {
-            console.warn("[Consent status check error]:", e.message);
-            state.isTermsAccepted = false;
-            state.consentStatus = 'service_unavailable';
-            safeStorage.remove('wingman_terms_accepted');
-            if (typeof window.closeInterstitialModal === 'function') window.closeInterstitialModal();
-            if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
-            if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
-            return false;
-        }
+        })();
+        consentStatusCheckInFlight = { userId: String(userId), promise: promise };
+        return promise;
     };
 
     window.acceptInterstitialTerms = async function() {
@@ -4530,30 +4631,21 @@ STRICT LAWS:
 
         const isAuth = !!(window.currentSupabaseSession && window.currentSupabaseSession.access_token);
         if (!isAuth) {
-            try {
-                if (typeof sessionStorage !== 'undefined') {
-                    sessionStorage.setItem('wingman_guest_terms_accepted', 'true');
-                }
-            } catch (_) {}
-            safeStorage.set('wingman_terms_accepted', 'true');
-            safeStorage.set('wingman_consent_version', '2026.1');
-            safeStorage.set('wingman_consent_accepted_at', new Date().toISOString());
-            state.isTermsAccepted = true;
-            state.consentStatus = 'active_local';
-
-            const modal = document.getElementById('interstitialModal');
-            if (modal) {
-                modal.classList.add('hidden', 'opacity-0', 'pointer-events-none');
-                modal.classList.remove('opacity-100', 'pointer-events-auto');
-                modal.style.display = 'none';
-            }
-            if (typeof window.updateTermsLockState === 'function') window.updateTermsLockState();
-            if (typeof window.updateButtonStates === 'function') window.updateButtonStates();
+            clearDisplayedConsentState('unauthenticated');
+            if (typeof window.openAuthRequiredModal === 'function') window.openAuthRequiredModal();
             if (typeof window.showToast === 'function') {
-                window.showToast("Adult declaration and AI-processing consent accepted.", "success");
+                window.showToast("Sign in before confirming age and AI-processing consent.", "warning");
             }
             return;
         }
+
+        const acceptedUserId = currentConsentUserId();
+        if (!acceptedUserId) {
+            clearDisplayedConsentState('service_unavailable');
+            if (typeof window.showToast === 'function') window.showToast("Please sign in again before recording consent.", "warning");
+            return;
+        }
+        const acceptedSessionGeneration = consentSessionGeneration;
 
         const acceptBtn = document.getElementById('interstitialAcceptBtn');
         const origText = acceptBtn ? acceptBtn.textContent : "Confirm & Enter";
@@ -4578,8 +4670,20 @@ STRICT LAWS:
                 throw new Error(data.error || "Failed to record persistent legal consent.");
             }
 
+            if (acceptedSessionGeneration !== consentSessionGeneration ||
+                !(window.currentSupabaseSession && window.currentSupabaseSession.access_token) ||
+                String(currentConsentUserId()) !== String(acceptedUserId)) {
+                throw new Error("Your sign-in changed before consent could be confirmed. Please try again.");
+            }
+
+            const termsVersion = data.termsVersion || '2026.1';
+            if (!writeSessionConsentMarker(CONSENT_SESSION_KEY, acceptedUserId, termsVersion) ||
+                !writeSessionConsentMarker(CONSENT_PROMPTED_SESSION_KEY, acceptedUserId, termsVersion)) {
+                throw new Error("This browser could not save the current-session consent state. Please enable session storage and try again.");
+            }
+
             safeStorage.set('wingman_terms_accepted', 'true');
-            safeStorage.set('wingman_consent_version', data.termsVersion || '2026.1');
+            safeStorage.set('wingman_consent_version', termsVersion);
             safeStorage.set('wingman_consent_accepted_at', new Date().toISOString());
             state.isTermsAccepted = true;
             state.consentStatus = 'active';
@@ -4625,6 +4729,7 @@ STRICT LAWS:
             }
             state.isTermsAccepted = false;
             state.consentStatus = 'withdrawn';
+            clearSessionConsentMarkers();
             safeStorage.remove('wingman_terms_accepted');
             safeStorage.remove('wingman_consent_version');
             safeStorage.remove('wingman_consent_accepted_at');

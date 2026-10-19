@@ -104,11 +104,15 @@ function setupDOMEnvironment() {
     const toastContainer = getOrCreate('toastContainer', 'div');
     const privacyConsent = getOrCreate('privacyConsent', 'input');
     privacyConsent.checked = true;
+    const interstitialModal = getOrCreate('interstitialModal', 'div', ['hidden', 'opacity-0', 'pointer-events-none']);
+    interstitialModal.style.display = 'none';
+    getOrCreate('interstitialCard', 'div', ['scale-95']);
+    getOrCreate('interstitialAcceptBtn', 'button');
 
     const toasts = [];
     const windowMock = {
         currentSupabaseUser: { id: 'test-user-id', email: 'test@mywingman.com' },
-        currentSupabaseSession: { access_token: 'test-valid-access-token' },
+        currentSupabaseSession: { access_token: 'test-valid-access-token', user: { id: 'test-user-id' } },
         showToast(msg, type) { toasts.push({ msg, type }); },
         showNotification(title, msg, type) { toasts.push({ title, msg, type }); },
         getSupabaseAuthHeaders: async () => ({ 'Authorization': 'Bearer test-valid-access-token' }),
@@ -188,6 +192,8 @@ function setupDOMEnvironment() {
     };
     mockStorage.setItem('wingman_authenticated', 'true');
     mockStorage.setItem('wingman_terms_accepted', 'true');
+    mockStorage.setItem('wingman_consent_session', JSON.stringify({ userId: 'test-user-id', termsVersion: '2026.1' }));
+    mockStorage.setItem('wingman_consent_prompted', JSON.stringify({ userId: 'test-user-id', termsVersion: '2026.1' }));
 
     let currentFetch = async (url) => {
         if (String(url).includes('/api/consent/status')) {
@@ -261,6 +267,77 @@ function setupDOMEnvironment() {
 
     // Authoritative Server Consent and Credit check on boot
     await env.sandbox.window.checkServerConsentStatus();
+    assert.strictEqual(env.sandbox.window.state.isTermsAccepted, true, 'current-session acknowledgement plus active server consent unlocks the app');
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none', 'same-session app re-entry must keep the consent prompt closed');
+    await env.sandbox.window.checkServerConsentStatus();
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none', 'rechecking consent during app/home navigation must not reopen the dialog');
+
+    // No acknowledgement on a fresh login: ask once, remember the dismissal for this tab session,
+    // and require a server-backed affirmative click before unlocking.
+    env.sandbox.sessionStorage.removeItem('wingman_consent_session');
+    env.sandbox.sessionStorage.removeItem('wingman_consent_prompted');
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), false, 'a stored server consent record alone must not auto-accept a new login session');
+    assert.strictEqual(env.sandbox.window.state.isTermsAccepted, false);
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'flex', 'the consent dialog appears after authenticated login');
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), false);
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'flex', 'a repeated status check leaves the one current prompt open without reopening it');
+
+    let consentPostCount = 0;
+    env.setFetch(async (url, options) => {
+        if (String(url).includes('/api/consent/status')) {
+            return { ok: true, json: async () => ({ success: true, hasActiveConsent: true, termsVersion: '2026.1' }) };
+        }
+        if (String(url).endsWith('/api/consent') && options && options.method === 'POST') {
+            consentPostCount += 1;
+            return { ok: true, json: async () => ({ success: true, consentRecorded: true, termsVersion: '2026.1' }) };
+        }
+        return { ok: true, json: async () => ({ success: true }) };
+    });
+    await env.sandbox.window.acceptInterstitialTerms();
+    assert.strictEqual(consentPostCount, 1, 'acceptance must be recorded by the authenticated server');
+    assert.strictEqual(env.sandbox.window.state.isTermsAccepted, true);
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none');
+    env.sandbox.window.openInterstitialModal();
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none', 'accepted consent cannot be requested again in the same login session');
+    const acknowledgedSession = env.sandbox.window.currentSupabaseSession;
+    env.sandbox.window.currentSupabaseSession = null;
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), false, 'an early page boot check waits for Supabase session restoration');
+    assert.notStrictEqual(env.sandbox.sessionStorage.getItem('wingman_consent_session'), null, 'an early boot check must not erase a valid acknowledgement');
+    env.sandbox.window.currentSupabaseSession = acknowledgedSession;
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), true, 'confirmed session acknowledgement remains accepted on app re-entry');
+
+    env.sandbox.window.currentSupabaseSession = null;
+    env.sandbox.window.resetConsentSessionState();
+    assert.strictEqual(env.sandbox.sessionStorage.getItem('wingman_consent_session'), null, 'sign-out clears the accepted-session marker');
+    assert.strictEqual(env.sandbox.sessionStorage.getItem('wingman_consent_prompted'), null, 'sign-out clears the once-per-session prompt marker');
+    assert.strictEqual(env.sandbox.window.state.isTermsAccepted, false);
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), false, 'a signed-out visitor is never accepted from guest storage');
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none', 'consent is not requested before login');
+    const originalOpenAuthRequiredModal = env.sandbox.window.openAuthRequiredModal;
+    let unauthenticatedAuthRedirects = 0;
+    env.sandbox.window.openAuthRequiredModal = (...args) => {
+        unauthenticatedAuthRedirects += 1;
+        return originalOpenAuthRequiredModal(...args);
+    };
+    env.sandbox.window.openInterstitialModal();
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none', 'unauthenticated users cannot open the age/Terms consent prompt');
+    assert.strictEqual(unauthenticatedAuthRedirects, 1, 'unauthenticated users are directed to sign in first');
+
+    env.sandbox.window.currentSupabaseSession = { access_token: 'test-valid-access-token', user: { id: 'test-user-id' } };
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), false, 'a later login asks again after sign-out');
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'flex');
+    env.sandbox.window.closeInterstitialModal();
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), false, 'a dismissed prompt does not pop up again in the same login session');
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none');
+    env.sandbox.window.openInterstitialModal();
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none', 'the prompt stays dismissed until the user signs out');
+    env.sandbox.window.currentSupabaseSession = null;
+    env.sandbox.window.resetConsentSessionState();
+    env.sandbox.window.currentSupabaseSession = { access_token: 'test-valid-access-token', user: { id: 'test-user-id' } };
+    env.sandbox.sessionStorage.setItem('wingman_consent_session', JSON.stringify({ userId: 'test-user-id', termsVersion: '2026.1' }));
+    env.sandbox.sessionStorage.setItem('wingman_consent_prompted', JSON.stringify({ userId: 'test-user-id', termsVersion: '2026.1' }));
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), true, 'restore accepted test session for existing feature cases');
+
     env.sandbox.window.updateUICredits(50);
     env.sandbox.window.updateButtonStates();
 

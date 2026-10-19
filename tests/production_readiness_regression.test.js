@@ -245,6 +245,11 @@ assert.strictEqual(
     false,
     "app.js handleSupabaseAuthSubmit must NOT grant wingman_terms_accepted merely on auth"
 );
+assert.match(
+    supabaseClientCode,
+    /event === 'SIGNED_IN' \|\| event === 'SIGNED_OUT'[\s\S]{0,500}resetConsentSessionState/,
+    "consent acknowledgement must reset at authenticated sign-in and sign-out boundaries"
+);
 console.log("✔ Test 9 Passed: Zero occurrences of auth-as-consent detected across all clients.");
 
 // -----------------------------------------------------------------------------
