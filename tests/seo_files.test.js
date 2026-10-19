@@ -26,19 +26,27 @@ assert.strictEqual(robotsContent.includes('User-agent: *'), true, 'robots.txt mu
 assert.strictEqual(robotsContent.includes('Allow: /'), true, 'robots.txt must declare Allow: /');
 assert.strictEqual(robotsContent.includes('Disallow: /api/'), true, 'robots.txt must disallow /api/');
 assert.strictEqual(robotsContent.includes('Sitemap: https://mywingmanapp.com/sitemap.xml'), true, 'robots.txt must reference canonical sitemap.xml');
+assert.strictEqual(/^\s*noindex:/im.test(robotsContent), false, 'robots.txt must not use the unsupported noindex directive');
 console.log('✔ Test 1 Passed: robots.txt static content and directives validated');
 
 // Validate sitemap.xml content
 assert.strictEqual(sitemapContent.startsWith('<?xml version="1.0" encoding="UTF-8"?>'), true, 'sitemap.xml must have XML declaration');
 assert.strictEqual(sitemapContent.includes('xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"'), true, 'sitemap.xml must declare sitemap 0.9 schema');
-assert.strictEqual(sitemapContent.includes('<loc>https://mywingmanapp.com/</loc>'), true, 'sitemap.xml must include homepage');
-assert.strictEqual(sitemapContent.includes('<loc>https://mywingmanapp.com/privacy.html</loc>'), true, 'sitemap.xml must include privacy policy');
-assert.strictEqual(sitemapContent.includes('<loc>https://mywingmanapp.com/terms.html</loc>'), true, 'sitemap.xml must include terms of service');
-assert.strictEqual(sitemapContent.includes('<loc>https://mywingmanapp.com/refund.html</loc>'), true, 'sitemap.xml must include refund policy');
+const sitemapUrls = [...sitemapContent.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1]);
+assert.deepStrictEqual(sitemapUrls, [
+    'https://mywingmanapp.com/',
+    'https://mywingmanapp.com/privacy',
+    'https://mywingmanapp.com/terms',
+    'https://mywingmanapp.com/refund',
+    'https://mywingmanapp.com/about',
+    'https://mywingmanapp.com/contact',
+    'https://mywingmanapp.com/service-delivery'
+], 'sitemap.xml must contain only the final canonical homepage and six public information pages');
+assert.strictEqual(sitemapUrls.some(url => /\.html(?:$|[?#])/.test(url)), false, 'sitemap.xml must not include redirecting .html paths');
 
 // Ensure no private or API paths in sitemap
 assert.strictEqual(sitemapContent.includes('/api/'), false, 'sitemap.xml must not include /api/ routes');
-assert.strictEqual(sitemapContent.includes('/app.html'), false, 'sitemap.xml must not include private /app.html');
+assert.strictEqual(sitemapContent.includes('/app'), false, 'sitemap.xml must not include the private application workspace');
 assert.strictEqual(sitemapContent.includes('localhost'), false, 'sitemap.xml must not include localhost');
 console.log('✔ Test 2 Passed: sitemap.xml XML structure, canonical URLs, and private exclusions validated');
 

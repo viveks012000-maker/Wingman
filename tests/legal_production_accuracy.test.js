@@ -80,9 +80,9 @@ assert.ok(!privacy.includes('Meta Pixel'), 'Privacy must not load or claim activ
 assert.ok(privacy.includes('commercial tracking pixels'), 'Privacy must explicitly disclaim third-party tracking pixels');
 
 // Canonical links on all legal documents
-assert.ok(terms.includes('<link rel="canonical" href="https://mywingmanapp.com/terms.html" />'), 'Terms must have canonical link');
-assert.ok(privacy.includes('<link rel="canonical" href="https://mywingmanapp.com/privacy.html" />'), 'Privacy must have canonical link');
-assert.ok(refund.includes('<link rel="canonical" href="https://mywingmanapp.com/refund.html" />'), 'Refund must have canonical link');
+assert.ok(terms.includes('<link rel="canonical" href="https://mywingmanapp.com/terms" />'), 'Terms must use its final clean canonical URL');
+assert.ok(privacy.includes('<link rel="canonical" href="https://mywingmanapp.com/privacy" />'), 'Privacy must use its final clean canonical URL');
+assert.ok(refund.includes('<link rel="canonical" href="https://mywingmanapp.com/refund" />'), 'Refund must use its final clean canonical URL');
 
 // Schema.org JSON-LD on landing page
 assert.ok(index.includes('application/ld+json'), 'Index must have JSON-LD structured data');

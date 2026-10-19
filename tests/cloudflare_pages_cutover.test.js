@@ -21,7 +21,17 @@ try {
 
   const redirects = fs.readFileSync(path.join(OUT, '_redirects'), 'utf8');
   const activeRedirects = redirects.split(/\r?\n/).map(x => x.trim()).filter(x => x && !x.startsWith('#'));
-  assert.deepStrictEqual(activeRedirects, [], 'Pages artifact must not contain unsupported hostname redirects; use Cloudflare Bulk Redirects');
+  assert.deepStrictEqual(activeRedirects, [
+    '/index.html / 301',
+    '/app.html /app 301',
+    '/privacy.html /privacy 301',
+    '/terms.html /terms 301',
+    '/refund.html /refund 301',
+    '/about.html /about 301',
+    '/contact.html /contact 301',
+    '/service-delivery.html /service-delivery 301'
+  ], 'Pages artifact must permanently redirect document aliases to their final clean URLs.');
+  assert.ok(!redirects.includes('mywingmanapp.com'), 'Hostname redirects must remain in Cloudflare Bulk Redirects, not Pages path rules.');
 
   const notFoundPath = path.join(OUT, '404.html');
   assert.ok(fs.existsSync(notFoundPath), 'Top-level 404.html must be emitted for Cloudflare Pages');
