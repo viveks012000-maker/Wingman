@@ -79,37 +79,35 @@ async function main() {
             assert.equal(consentPostCount, 0, 'entering the app while signed out must not record consent');
             assert.equal(await page.evaluate(() => sessionStorage.getItem('wingman_guest_terms_accepted')), null, 'guest navigation must not create consent state');
 
-            // Simulate one signed-in browser session and carry its confirmed acknowledgement
-            // across a real home -> app navigation in this same tab.
+            // A valid persistent server record unlocks after sign-in without any browser marker.
             await page.evaluate(() => {
                 window.currentSupabaseSession = { access_token: 'isolated-navigation-session', user: { id: 'navigation-test-user' } };
                 window.currentSupabaseUser = window.currentSupabaseSession.user;
                 window.getSupabaseAuthHeaders = async () => ({ Authorization: 'Bearer isolated-navigation-session' });
                 window.fetch = async (url, options) => {
                     if (String(url).endsWith('/api/consent/status')) {
-                        return { ok: true, status: 200, json: async () => ({ success: true, hasActiveConsent: true, termsVersion: '2026.1' }) };
+                        return { ok: true, status: 200, json: async () => ({ success: true, hasActiveConsent: true, termsVersion: '2026.1', privacyVersion: '2026.1' }) };
                     }
                     if (String(url).endsWith('/api/consent') && options && options.method === 'POST') {
-                        return { ok: true, status: 200, json: async () => ({ success: true, consentRecorded: true, termsVersion: '2026.1' }) };
+                        return { ok: true, status: 200, json: async () => ({ success: true, consentRecorded: true, termsVersion: '2026.1', privacyVersion: '2026.1' }) };
                     }
                     throw new Error('Unexpected request in isolated consent navigation test');
                 };
             });
-            assert.equal(await page.evaluate(() => window.checkServerConsentStatus()), false, 'a newly authenticated session must be asked once');
-            assert.equal(await page.locator('#interstitialModal').isVisible(), true);
-            await page.locator('#interstitialAcceptBtn').click();
-            assert.equal(await page.evaluate(() => window.state.isTermsAccepted), true);
-            assert.notEqual(await page.evaluate(() => sessionStorage.getItem('wingman_consent_session')), null);
+            assert.equal(await page.evaluate(() => window.checkServerConsentStatus()), true, 'an existing authenticated user with active server consent remains unlocked');
+            assert.equal(await page.locator('#interstitialModal').isVisible(), false, 'valid server consent must not show Unlock Workspace');
+            assert.equal(await page.evaluate(() => sessionStorage.getItem('wingman_consent_session')), null, 'server verification must not need a session marker');
+            assert.equal(consentPostCount, 0, 'existing consent must not be recorded a second time');
             await page.locator('a[href="index.html"]:visible').first().click();
             await page.waitForURL('**/index.html');
             await page.getByRole('link', { name: /Explore the Tools/ }).click();
             await page.waitForURL('**/app.html');
-            assert.equal(await page.locator('#interstitialModal').isVisible(), false, 'same-tab navigation must not repeat the accepted prompt');
+            assert.equal(await page.locator('#interstitialModal').isVisible(), false, 'home-to-app navigation must not repeat a valid consent prompt');
             await page.evaluate(() => {
                 window.currentSupabaseSession = { access_token: 'isolated-navigation-session', user: { id: 'navigation-test-user' } };
                 window.currentSupabaseUser = window.currentSupabaseSession.user;
                 window.getSupabaseAuthHeaders = async () => ({ Authorization: 'Bearer isolated-navigation-session' });
-                window.fetch = async () => ({ ok: true, status: 200, json: async () => ({ success: true, hasActiveConsent: true, termsVersion: '2026.1' }) });
+                window.fetch = async () => ({ ok: true, status: 200, json: async () => ({ success: true, hasActiveConsent: true, termsVersion: '2026.1', privacyVersion: '2026.1' }) });
             });
             assert.equal(await page.evaluate(() => window.checkServerConsentStatus()), true, 'the current session remains unlocked after app re-entry');
             assert.equal(await page.locator('#interstitialModal').isVisible(), false);
@@ -152,6 +150,10 @@ async function main() {
                 window.closePurchaseModal();
                 window.state.isTermsAccepted = false;
                 window.currentSupabaseSession = { access_token: 'isolated-browser-fixture', user: { id: 'isolated-ui-test-user' } };
+                window.state.consentStatus = 'consent_required';
+                window.state.consentUserId = 'isolated-ui-test-user';
+                window.state.consentTermsVersion = '2026.1';
+                window.state.consentPrivacyVersion = '2026.1';
                 window.getSupabaseAuthHeaders = async () => ({ Authorization: 'Bearer isolated-browser-fixture' });
                 window.__consentCalls = [];
                 window.__consentSucceeds = false;
@@ -160,7 +162,9 @@ async function main() {
                     if (String(url).endsWith('/api/consent')) {
                         window.__consentCalls.push(JSON.parse(options.body));
                         return { ok: window.__consentSucceeds, status: window.__consentSucceeds ? 200 : 503,
-                            json: async () => ({ success: window.__consentSucceeds, consentRecorded: window.__consentSucceeds }) };
+                            json: async () => ({ success: window.__consentSucceeds, consentRecorded: window.__consentSucceeds,
+                                termsVersion: window.__consentSucceeds ? '2026.1' : undefined,
+                                privacyVersion: window.__consentSucceeds ? '2026.1' : undefined }) };
                     }
                     return originalFetch(url, options);
                 };

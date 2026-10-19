@@ -130,6 +130,9 @@ async function runTests() {
         let signOutCallCount = 0;
         let signOutScopes = [];
         let navigatedTo = null;
+        let authStateChangeCallback = null;
+        let consentResetCount = 0;
+        let consentStatusCheckCount = 0;
 
         const fakeSupabase = {
             storageKey: 'sb-gstnghuhhrxtwjdafufd-auth-token',
@@ -158,7 +161,8 @@ async function runTests() {
                     storageData['sb-gstnghuhhrxtwjdafufd-auth-token'] = JSON.stringify(session);
                     return { data: { user: session.user, session }, error: null };
                 },
-                onAuthStateChange: () => {
+                onAuthStateChange: (callback) => {
+                    authStateChangeCallback = callback;
                     return { data: { subscription: { unsubscribe: () => {} } } };
                 }
             }
@@ -175,6 +179,22 @@ async function runTests() {
             currentSupabaseUser: null,
             currentSupabaseSession: null,
             supabaseClient: null,
+            state: { isTermsAccepted: true, consentStatus: 'active', consentUserId: 'user-12345' },
+            resetConsentSessionState: () => {
+                consentResetCount += 1;
+                windowMock.state.isTermsAccepted = false;
+                windowMock.state.consentStatus = 'unauthenticated';
+                windowMock.state.consentUserId = null;
+            },
+            checkServerConsentStatus: () => {
+                consentStatusCheckCount += 1;
+                const userId = windowMock.currentSupabaseUser && windowMock.currentSupabaseUser.id;
+                const hasActiveConsent = userId === 'user-12345';
+                windowMock.state.isTermsAccepted = hasActiveConsent;
+                windowMock.state.consentStatus = hasActiveConsent ? 'active' : 'consent_required';
+                windowMock.state.consentUserId = userId || null;
+                return Promise.resolve(hasActiveConsent);
+            },
             __memoryStore: {},
             location: {
                 href: 'app.html',
@@ -214,6 +234,12 @@ async function runTests() {
             storageData,
             getSignOutCount: () => signOutCallCount,
             getSignOutScopes: () => signOutScopes,
+            getConsentResetCount: () => consentResetCount,
+            getConsentStatusCheckCount: () => consentStatusCheckCount,
+            emitAuthEvent: (event, session) => {
+                if (typeof authStateChangeCallback !== 'function') throw new Error('Supabase auth callback was not registered');
+                return authStateChangeCallback(event, session);
+            },
             getNavigatedTo: () => navigatedTo,
             fakeSupabase
         };
@@ -312,6 +338,35 @@ async function runTests() {
         assert.strictEqual(res.success, false, 'Login must report failure');
         assert.strictEqual(res.error, 'Email or password is incorrect. If you originally joined with Google, continue with Google or use Forgot Password to set an email password.', 'Controlled error message returned');
         assert.strictEqual(runtime.window.currentSupabaseSession, null, 'Session must remain null');
+    });
+
+    await test('21. Repeated sign-in and token refresh preserve same-user consent; sign-out and account switch reset it', async () => {
+        const runtime = await createRuntimeSandbox();
+        const originalSession = runtime.window.currentSupabaseSession;
+        assert.strictEqual(originalSession.user.id, 'user-12345');
+
+        await runtime.emitAuthEvent('SIGNED_IN', { ...originalSession, access_token: 'rotated-token' });
+        await runtime.emitAuthEvent('SIGNED_IN', { ...originalSession, access_token: 'another-token' });
+        await runtime.emitAuthEvent('TOKEN_REFRESHED', { ...originalSession, access_token: 'refreshed-token' });
+        assert.strictEqual(runtime.getConsentResetCount(), 0, 'same-user sign-in repeats and token refresh must not clear consent');
+        assert.strictEqual(runtime.getConsentStatusCheckCount(), 3, 'authenticated events still recheck the authoritative server status');
+        assert.strictEqual(runtime.window.state.isTermsAccepted, true, 'same-user authentication events preserve server-confirmed consent');
+
+        const switchedUser = { access_token: 'user-b-token', user: { id: 'user-67890', email: 'other@example.com' } };
+        await runtime.emitAuthEvent('SIGNED_IN', switchedUser);
+        assert.strictEqual(runtime.getConsentResetCount(), 1, 'a different user invalidates the previous local consent state');
+        assert.strictEqual(runtime.window.currentSupabaseUser.id, 'user-67890');
+        assert.strictEqual(runtime.window.state.isTermsAccepted, false, 'the previous account consent is not inherited by the new account');
+        assert.strictEqual(runtime.window.state.consentUserId, 'user-67890');
+
+        await runtime.emitAuthEvent('SIGNED_OUT', null);
+        assert.strictEqual(runtime.getConsentResetCount(), 2, 'genuine sign-out clears the current user consent state');
+        assert.strictEqual(runtime.window.currentSupabaseSession, null);
+
+        await runtime.emitAuthEvent('SIGNED_IN', { ...originalSession, access_token: 'relogin-token' });
+        assert.strictEqual(runtime.getConsentStatusCheckCount(), 5, 'relogin requests the server status instead of asking for acceptance locally');
+        assert.strictEqual(runtime.getConsentResetCount(), 2, 'relogin from signed-out state does not perform an extra stale reset');
+        assert.strictEqual(runtime.window.state.isTermsAccepted, true, 'same-user relogin restores active consent from the server status check');
     });
 
     console.log('\n------------------------------------------------------------------------');

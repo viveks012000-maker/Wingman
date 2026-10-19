@@ -459,8 +459,6 @@ async function assertApp(browser, viewport) {
                     const session = { access_token: 'test-token', user: { id: 'qa-user', email: 'qa@example.com' } };
                     window.currentSupabaseSession = session;
                     window.currentSupabaseUser = session.user;
-                    sessionStorage.setItem('wingman_consent_session', JSON.stringify({ userId: 'qa-user', termsVersion: '2026.1' }));
-                    sessionStorage.setItem('wingman_consent_prompted', JSON.stringify({ userId: 'qa-user', termsVersion: '2026.1' }));
                     window.supabaseClient = { auth: { getSession: async () => ({ data: { session }, error: null }) } };
                     window.getSupabaseAuthHeaders = async () => ({ Authorization: 'Bearer test-token' });
                     window.checkCreditBalance = async () => {
@@ -469,7 +467,7 @@ async function assertApp(browser, viewport) {
                     };
                     window.fetch = async url => {
                         if (String(url).includes('/api/consent/status')) {
-                            return new Response(JSON.stringify({ hasActiveConsent: true, termsVersion: '2026.1' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+                            return new Response(JSON.stringify({ success: true, hasActiveConsent: true, termsVersion: '2026.1', privacyVersion: '2026.1' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
                         }
                         return new Response(JSON.stringify({ reply: 'Keyboard path reply', credits: 48 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
                     };

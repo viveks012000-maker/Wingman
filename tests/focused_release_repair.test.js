@@ -154,10 +154,12 @@ const boundedRuntime = evaluateRuntime({ bubbles: boundedBubbles });
     assert.strictEqual(noFallback.localStorage.reads, 0, 'review must not fall back to localStorage transcript data');
     assert.strictEqual(noFallback.sessionStorage.reads, 0, 'review must not fall back to sessionStorage transcript data');
 
-    // Landing uses config.js resolution, while production build output strips dev-only CSP sources.
+    // Authenticated consent is recorded from the app after sign-in; the landing page only routes users there.
+    // Production build output also strips dev-only CSP sources.
     assert(config.includes('window.getApiBase'), 'config.js must own the API-base resolver used by every page');
-    assert(index.includes("window.getApiBase() + '/api/consent'"), 'landing consent must use the shared API-base resolver');
-    assert(!index.includes('https://wingman-production-c6ce.up.railway.app/api/consent'), 'landing must not hardcode a competing API endpoint');
+    assert(app.includes("(window.getApiBase ? window.getApiBase() : '') + '/api/consent'"), 'authenticated app consent must use the shared API-base resolver');
+    assert(!app.includes('https://wingman-production-c6ce.up.railway.app/api/consent'), 'app consent must not hardcode a competing API endpoint');
+    assert(!index.includes('/api/consent'), 'landing must not submit consent before sign-in');
 assert(index.includes('https://wingman-production-c6ce.up.railway.app'), 'landing CSP must allow only the exact configured Railway origin');
 assert(buildNetlify.includes('http://localhost:*'), 'production build must explicitly remove localhost CSP sources from copied HTML');
 assert(buildNetlify.includes('ws://localhost:*'), 'production build must explicitly remove localhost websocket CSP sources from copied HTML');

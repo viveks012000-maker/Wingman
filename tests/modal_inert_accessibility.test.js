@@ -68,6 +68,10 @@ async function verifyModal(page, id, openFn, closeFn) {
     await page.evaluate(() => {
       window.currentSupabaseSession = { access_token: 'modal-test-session', user: { id: 'modal-test-user' } };
       window.currentSupabaseUser = window.currentSupabaseSession.user;
+      window.state.consentStatus = 'consent_required';
+      window.state.consentUserId = 'modal-test-user';
+      window.state.consentTermsVersion = '2026.1';
+      window.state.consentPrivacyVersion = '2026.1';
     });
     await verifyModal(page, 'interstitialModal', 'openInterstitialModal', 'closeInterstitialModal');
     await verifyModal(page, 'authRequiredModal', 'openAuthRequiredModal', 'closeAuthRequiredModal');

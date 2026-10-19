@@ -157,7 +157,7 @@ windowMock.sessionStorage = storage;
 
 const fetchMock = async (url) => {
     if (String(url).includes('/api/consent/status')) {
-        return { ok: true, status: 200, json: async () => ({ hasActiveConsent: true, termsVersion: '2026.1' }) };
+        return { ok: true, status: 200, json: async () => ({ success: true, hasActiveConsent: true, termsVersion: '2026.1', privacyVersion: '2026.1' }) };
     }
     return { ok: true, status: 200, json: async () => ({ credits: 47 }) };
 };

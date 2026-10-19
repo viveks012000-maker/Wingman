@@ -245,12 +245,20 @@
 
                 // Attach Active Auth State Change Listener
                 window.supabaseClient.auth.onAuthStateChange(function (event, session) {
+                    const previousSession = window.currentSupabaseSession;
+                    const previousUser = (previousSession && previousSession.user) || window.currentSupabaseUser;
+                    const previousStateUserId = window.state && window.state.consentUserId;
+                    const previousUserId = (previousUser && previousUser.id) || previousStateUserId || null;
+                    const nextUserId = session && session.user && session.user.id ? session.user.id : null;
+                    const accountChanged = !!(previousUserId && nextUserId && String(previousUserId) !== String(nextUserId));
+
                     window.currentSupabaseSession = session;
                     window.currentSupabaseUser = session ? session.user : null;
 
-                    // Consent acknowledgement belongs to one authenticated session only.
-                    // Clear it on a fresh sign-in and sign-out so it cannot carry across accounts.
-                    if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+                    // Clear state when the authenticated account changes or genuinely signs out.
+                    // Repeated SIGNED_IN and TOKEN_REFRESHED events for the same account retain
+                    // the server-confirmed consent state while still triggering a status refresh below.
+                    if (event === 'SIGNED_OUT' || accountChanged) {
                         if (typeof window.resetConsentSessionState === 'function') {
                             window.resetConsentSessionState();
                         } else {

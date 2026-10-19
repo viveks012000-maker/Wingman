@@ -247,8 +247,18 @@ assert.strictEqual(
 );
 assert.match(
     supabaseClientCode,
-    /event === 'SIGNED_IN' \|\| event === 'SIGNED_OUT'[\s\S]{0,500}resetConsentSessionState/,
-    "consent acknowledgement must reset at authenticated sign-in and sign-out boundaries"
+    /event === 'SIGNED_OUT'[\s\S]{0,500}resetConsentSessionState/,
+    "genuine sign-out must reset frontend consent state"
+);
+assert.doesNotMatch(
+    supabaseClientCode,
+    /event === 'SIGNED_IN' \|\| event === 'SIGNED_OUT'/,
+    "repeated SIGNED_IN events must not reset consent for the same account"
+);
+assert.match(
+    supabaseClientCode,
+    /const previousUserId = [^;]+;[\s\S]{0,250}const nextUserId = [^;]+;[\s\S]{0,1200}resetConsentSessionState/,
+    "switching authenticated accounts must reset the previous account's consent state"
 );
 console.log("✔ Test 9 Passed: Zero occurrences of auth-as-consent detected across all clients.");
 
