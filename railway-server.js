@@ -64,13 +64,18 @@ function applyAnalyzerAdmissionCors(req, res) {
         (!isProduction && isPrivateDevelopmentOrigin(origin)));
     if (!isAllowedOrigin) return false;
 
-    // Early admission responses must never reflect a request-controlled Origin. The gateway
-    // grants only the fixed production origin, or the exact preview origin inside isolated staging.
-    const approvedOrigin = GATEWAY_PRODUCTION_ALLOWED_ORIGINS.find(value => value === origin) ||
-        (process.env.RAILWAY_ENVIRONMENT_ID === ISOLATED_STAGING_RAILWAY_ENVIRONMENT_ID &&
-            origin === ISOLATED_STAGING_PREVIEW_ORIGIN ? ISOLATED_STAGING_PREVIEW_ORIGIN : null);
-    if (!approvedOrigin) return false;
-    res.setHeader('Access-Control-Allow-Origin', approvedOrigin);
+    // Write only fixed allowlist values. Keeping each credentialed CORS grant explicit
+    // prevents request-controlled Origin data from reaching Access-Control-Allow-Origin.
+    if (origin === GATEWAY_PRODUCTION_ALLOWED_ORIGINS[0]) {
+        res.setHeader('Access-Control-Allow-Origin', GATEWAY_PRODUCTION_ALLOWED_ORIGINS[0]);
+    } else if (
+        process.env.RAILWAY_ENVIRONMENT_ID === ISOLATED_STAGING_RAILWAY_ENVIRONMENT_ID &&
+        origin === ISOLATED_STAGING_PREVIEW_ORIGIN
+    ) {
+        res.setHeader('Access-Control-Allow-Origin', ISOLATED_STAGING_PREVIEW_ORIGIN);
+    } else {
+        return false;
+    }
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     if (typeof res.vary === 'function') res.vary('Origin');
     else res.setHeader('Vary', 'Origin');
