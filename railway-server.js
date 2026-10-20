@@ -6,6 +6,10 @@ const express = require('express');
 const { verifySupabaseToken, requireSupabaseAuth } = require('./middleware/supabaseAuth');
 const { analyzerAdmissionLimiter } = require('./middleware/security');
 const { isPrivateDevelopmentOrigin } = require('./middleware/developmentOrigin');
+const {
+    ISOLATED_STAGING_RAILWAY_ENVIRONMENT_ID,
+    ISOLATED_STAGING_PREVIEW_ORIGIN
+} = require('./middleware/securityBoundaries');
 const { app: wingmanApi } = require('./server');
 
 const app = express();
@@ -37,9 +41,12 @@ const GATEWAY_DEVELOPMENT_ALLOWED_ORIGINS = [
 
 function getGatewayAllowedOrigins() {
     const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
+    const isolatedStagingPreviewOrigins = process.env.RAILWAY_ENVIRONMENT_ID === ISOLATED_STAGING_RAILWAY_ENVIRONMENT_ID
+        ? [ISOLATED_STAGING_PREVIEW_ORIGIN]
+        : [];
     const defaults = isProduction
-        ? GATEWAY_PRODUCTION_ALLOWED_ORIGINS
-        : [...GATEWAY_PRODUCTION_ALLOWED_ORIGINS, ...GATEWAY_DEVELOPMENT_ALLOWED_ORIGINS];
+        ? [...GATEWAY_PRODUCTION_ALLOWED_ORIGINS, ...isolatedStagingPreviewOrigins]
+        : [...GATEWAY_PRODUCTION_ALLOWED_ORIGINS, ...GATEWAY_DEVELOPMENT_ALLOWED_ORIGINS, ...isolatedStagingPreviewOrigins];
     const configured = process.env.ALLOWED_ORIGINS
         ? process.env.ALLOWED_ORIGINS.split(',').map(value => value.trim()).filter(Boolean)
         : [];
@@ -57,10 +64,11 @@ function applyAnalyzerAdmissionCors(req, res) {
         (!isProduction && isPrivateDevelopmentOrigin(origin)));
     if (!isAllowedOrigin) return false;
 
-    // Early admission responses must never reflect a request-controlled Origin. The mounted
-    // inner app handles normal development responses; this gateway path emits CORS only for the
-    // fixed production frontend origin from the explicit allowlist.
-    const approvedOrigin = GATEWAY_PRODUCTION_ALLOWED_ORIGINS.find(value => value === origin);
+    // Early admission responses must never reflect a request-controlled Origin. The gateway
+    // grants only the fixed production origin, or the exact preview origin inside isolated staging.
+    const approvedOrigin = GATEWAY_PRODUCTION_ALLOWED_ORIGINS.find(value => value === origin) ||
+        (process.env.RAILWAY_ENVIRONMENT_ID === ISOLATED_STAGING_RAILWAY_ENVIRONMENT_ID &&
+            origin === ISOLATED_STAGING_PREVIEW_ORIGIN ? ISOLATED_STAGING_PREVIEW_ORIGIN : null);
     if (!approvedOrigin) return false;
     res.setHeader('Access-Control-Allow-Origin', approvedOrigin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');

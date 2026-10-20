@@ -1,219 +1,1 @@
-'use strict';
-
-const assert = require('assert');
-const fs = require('fs');
-const path = require('path');
-const vm = require('vm');
-const { isPrivateDevelopmentOrigin } = require('../middleware/developmentOrigin');
-
-const ROOT = path.resolve(__dirname, '..');
-const read = relative => fs.readFileSync(path.join(ROOT, relative), 'utf8').replace(/\r\n/g, '\n');
-const app = read('app.js');
-const config = read('config.js');
-const index = read('index.html');
-const appHtml = read('app.html');
-const runtime = read('vendor/production-runtime.js');
-const loader = read('vendor/heic2any-loader.js');
-const workflow = read('.github/workflows/generate-heic-runtime.yml');
-const buildNetlify = read('scripts/build-netlify-dist.js');
-const mobileQa = read('tests/mobile_presentation_qa.test.js');
-const serverSource = read('server.js');
-const railwayServerSource = read('railway-server.js');
-const heicRuntime = read('vendor/heic-runtime/heic-to-csp.js');
-
-function assertNamedExport(source, name) {
-    const exportBlock = source.match(/export\s*\{([^}]*)\}/);
-    assert(exportBlock, 'generated HEIC runtime must expose an ES module export block');
-    assert(new RegExp('\\b' + name + '\\b').test(exportBlock[1]), `generated HEIC runtime must export ${name}`);
-}
-
-function makeStorage(initialValue) {
-    const values = new Map([['wingman_session_data', initialValue]]);
-    let reads = 0;
-    return {
-        get length() { return values.size; },
-        key(index) { return Array.from(values.keys())[index] || null; },
-        getItem() {
-            reads += 1;
-            throw new Error('legacy transcript must never be read');
-        },
-        setItem(key, value) { values.set(key, String(value)); },
-        removeItem(key) { values.delete(key); },
-        has(key) { return values.has(key); },
-        get reads() { return reads; }
-    };
-}
-
-function evaluateRuntime({ bubbles = [], storageValue = '{not-json' } = {}) {
-    const localStorage = makeStorage(storageValue);
-    const sessionStorage = makeStorage(storageValue);
-    const button = { disabled: false, textContent: '', style: {} };
-    const container = {
-        querySelectorAll() { return bubbles; }
-    };
-    const elements = new Map([
-        ['chatbox-messages-container', container],
-        ['simulatorReviewBtn', button]
-    ]);
-    const calls = [];
-    const document = {
-        readyState: 'complete',
-        body: {},
-        getElementById(id) { return elements.get(id) || null; },
-        querySelector() { return null; },
-        createElement() { return { style: {}, setAttribute() {}, appendChild() {}, addEventListener() {} }; }
-    };
-    const window = {
-        localStorage,
-        sessionStorage,
-        document,
-        addEventListener() {},
-        getApiBase() { return 'https://wingman-production-c6ce.up.railway.app'; },
-        getSupabaseAuthHeaders: async () => ({ Authorization: 'Bearer test-token' }),
-        showToast() {}
-    };
-    const sandbox = {
-        window,
-        document,
-        localStorage,
-        sessionStorage,
-        console: { error() {}, log() {} },
-        Promise,
-        JSON,
-        Array,
-        Object,
-        String,
-        Number,
-        Math,
-        Date,
-        Error,
-        setTimeout(fn) { fn(); return 1; },
-        clearTimeout() {},
-        fetch: async (url, options) => {
-            calls.push({ url, options });
-            return { ok: false, status: 400, json: async () => ({ success: false, error: 'test stop' }) };
-        }
-    };
-    window.window = window;
-    window.fetch = sandbox.fetch;
-    vm.createContext(sandbox);
-    vm.runInContext(runtime, sandbox, { filename: 'production-runtime.js' });
-    return { window, localStorage, sessionStorage, calls, button };
-}
-
-function bubble(role, content) {
-    return { style: { alignSelf: role === 'user' ? 'flex-end' : 'flex-start' }, textContent: content };
-}
-
-console.log('Running focused release repair regression tests...');
-
-// HEIC export contract and adapter boundary.
-assertNamedExport(heicRuntime, 'heicTo');
-assertNamedExport(heicRuntime, 'isHeic');
-const adapterPath = path.join(ROOT, 'vendor', 'heic2any-adapter.js');
-assert(fs.existsSync(adapterPath), 'lazy HEIC adapter must be checked in beside the generated runtime');
-const adapter = read('vendor/heic2any-adapter.js');
-assert(adapter.includes("import { heicTo } from './heic-runtime/heic-to-csp.js';"), 'adapter must import the named heicTo export from the pinned local runtime');
-assert(/window\.heic2any\s*=\s*async function/.test(adapter), 'adapter must expose the existing lazy window.heic2any contract');
-assert(/heicTo\(\{[\s\S]*blob:\s*options\.blob[\s\S]*type:\s*options\.type[\s\S]*quality:\s*options\.quality/.test(adapter), 'adapter must translate the application HEIC arguments to the real runtime contract');
-assert(loader.includes("var REAL_SRC = './vendor/heic2any-adapter.js';"), 'lazy loader must load only the small local adapter');
-assert(!loader.includes('https://'), 'HEIC loader must not use a remote dependency');
-assert(app.includes('type: "image/jpeg"'), 'application HEIC calls must use the real runtime type argument');
-assert(!app.includes('toType: "image/jpeg"'), 'application HEIC calls must not use the incompatible legacy toType argument');
-assert(/catch \(e\) \{[\s\S]*console\.warn\("HEIC conversion warning:"/.test(app), 'HEIC conversion rejection must remain isolated from the Analyze workflow');
-assert(buildNetlify.includes("'heic2any-adapter.js'"), 'production artifact verification must require the HEIC adapter');
-
-// Persistent transcript data is deleted by key and never read, parsed, or used as review input.
-assert(!runtime.includes("getItem('wingman_session_data')"), 'production runtime must not read the legacy transcript key');
-assert(!runtime.includes('JSON.parse(raw)'), 'production runtime must not parse a legacy transcript');
-const privacyRuntime = evaluateRuntime();
-assert.strictEqual(privacyRuntime.localStorage.has('wingman_session_data'), false, 'legacy localStorage transcript must be purged');
-assert.strictEqual(privacyRuntime.sessionStorage.has('wingman_session_data'), false, 'legacy sessionStorage transcript must be purged');
-assert.strictEqual(privacyRuntime.localStorage.reads, 0, 'legacy localStorage transcript must never be read');
-assert.strictEqual(privacyRuntime.sessionStorage.reads, 0, 'legacy sessionStorage transcript must never be read');
-assert(!app.includes('const legacyRaw'), 'app startup must not read the legacy transcript value');
-assert(!app.includes('JSON.parse(legacyRaw)'), 'app startup must not parse the legacy transcript');
-assert(app.includes('localStorage.removeItem(SESSION_KEY)'), 'app startup must purge the owned localStorage transcript key directly');
-assert(app.includes('sessionStorage.removeItem(SESSION_KEY)'), 'app startup must purge the owned sessionStorage transcript key directly');
-
-// Review payloads use current DOM history only and enforce server-compatible client bounds.
-const boundedBubbles = Array.from({ length: 60 }, (_, index) => bubble(index % 2 ? 'assistant' : 'user', 'x'.repeat(6000)));
-const boundedRuntime = evaluateRuntime({ bubbles: boundedBubbles });
-(async () => {
-    await boundedRuntime.window.triggerFinishAndReview();
-    assert.strictEqual(boundedRuntime.calls.length, 1, 'review must submit current conversation history');
-    const reviewBody = JSON.parse(boundedRuntime.calls[0].options.body);
-    assert(reviewBody.sessionHistory.length <= 50, 'review history must contain at most 50 messages');
-    assert(reviewBody.sessionHistory.every(message => message.content.length <= 5000), 'review messages must respect the server 5,000-character limit');
-    const contentChars = reviewBody.sessionHistory.reduce((total, message) => total + message.content.length, 0);
-    assert(contentChars <= 200000, 'review content must respect the 200,000-character client payload bound');
-
-    const noFallback = evaluateRuntime({ bubbles: [bubble('user', 'current message')] });
-    await noFallback.window.triggerFinishAndReview();
-    assert.strictEqual(noFallback.calls.length, 0, 'one current message must not trigger a review request');
-    assert.strictEqual(noFallback.localStorage.reads, 0, 'review must not fall back to localStorage transcript data');
-    assert.strictEqual(noFallback.sessionStorage.reads, 0, 'review must not fall back to sessionStorage transcript data');
-
-    // Authenticated consent is recorded from the app after sign-in; the landing page only routes users there.
-    // Production build output also strips dev-only CSP sources.
-    assert(config.includes('window.getApiBase'), 'config.js must own the API-base resolver used by every page');
-    assert(app.includes("(window.getApiBase ? window.getApiBase() : '') + '/api/consent'"), 'authenticated app consent must use the shared API-base resolver');
-    assert(!app.includes('https://wingman-production-c6ce.up.railway.app/api/consent'), 'app consent must not hardcode a competing API endpoint');
-    assert(!index.includes('/api/consent'), 'landing must not submit consent before sign-in');
-assert(index.includes('https://wingman-production-c6ce.up.railway.app'), 'landing CSP must allow only the exact configured Railway origin');
-assert(buildNetlify.includes('http://localhost:*'), 'production build must explicitly remove localhost CSP sources from copied HTML');
-assert(buildNetlify.includes('ws://localhost:*'), 'production build must explicitly remove localhost websocket CSP sources from copied HTML');
-
-function resolveConfiguredApiBase(location) {
-    const window = {
-        location,
-        WINGMAN_CONFIG: { API_BASE_URL: 'https://wingman-production-c6ce.up.railway.app' },
-        addEventListener() {}
-    };
-    const document = { readyState: 'loading', addEventListener() {} };
-    const sandbox = { window, document, setTimeout() {}, clearTimeout() {} };
-    vm.createContext(sandbox);
-    vm.runInContext(config, sandbox, { filename: 'config.js' });
-    return window.getApiBase();
-}
-
-assert.strictEqual(resolveConfiguredApiBase({ protocol: 'http:', origin: 'http://localhost:4174', hostname: 'localhost' }), 'http://localhost:3000', 'local development must resolve to the local Railway-compatible backend');
-assert.strictEqual(resolveConfiguredApiBase({ protocol: 'http:', origin: 'http://192.168.1.20:4174', hostname: '192.168.1.20' }), 'http://192.168.1.20:3000', 'LAN development must preserve the host while targeting the local backend');
-assert.strictEqual(resolveConfiguredApiBase({ protocol: 'http:', origin: 'http://172.16.4.20:4174', hostname: '172.16.4.20' }), 'http://172.16.4.20:3000', '172.16/12 development must preserve the host while targeting the local backend');
-assert.strictEqual(resolveConfiguredApiBase({ protocol: 'http:', origin: 'http://10.20.4.20:4174', hostname: '10.20.4.20' }), 'http://10.20.4.20:3000', '10/8 development must preserve the host while targeting the local backend');
-assert.strictEqual(resolveConfiguredApiBase({ protocol: 'http:', origin: 'http://printer.local:4174', hostname: 'printer.local' }), 'http://printer.local:3000', 'mDNS development must preserve the host while targeting the local backend');
-assert.strictEqual(resolveConfiguredApiBase({ protocol: 'http:', origin: 'http://127.0.0.2:4174', hostname: '127.0.0.2' }), 'http://127.0.0.2:3000', 'alternate loopback development must preserve the host while targeting the local backend');
-assert.strictEqual(resolveConfiguredApiBase({ protocol: 'https:', origin: 'https://192.168.1.20:4174', hostname: '192.168.1.20' }), 'https://192.168.1.20:3000', 'HTTPS LAN development must not downgrade the backend URL to HTTP');
-assert.strictEqual(resolveConfiguredApiBase({ protocol: 'http:', origin: 'http://172.15.4.20:4174', hostname: '172.15.4.20' }), 'https://wingman-production-c6ce.up.railway.app', 'non-private 172/12 lookalikes must not be treated as LAN hosts');
-assert.strictEqual(resolveConfiguredApiBase({ protocol: 'http:', origin: 'http://10.example.com:4174', hostname: '10.example.com' }), 'https://wingman-production-c6ce.up.railway.app', 'public hostnames beginning with 10 must not be treated as LAN hosts');
-
-assert(isPrivateDevelopmentOrigin('http://192.168.1.20:4174'), 'private IPv4 origins must be allowed for development CORS');
-assert(isPrivateDevelopmentOrigin('https://172.31.255.254:4174'), 'private HTTPS IPv4 origins must be allowed for development CORS');
-assert(isPrivateDevelopmentOrigin('http://[fd00::1]:4174'), 'IPv6 unique-local origins must be allowed for development CORS');
-assert(!isPrivateDevelopmentOrigin('http://172.15.4.20:4174'), 'non-private 172/12 origins must not be allowed for development CORS');
-assert(!isPrivateDevelopmentOrigin('http://10.example.com:4174'), 'public lookalike hostnames must not be allowed for development CORS');
-assert(serverSource.includes('isPrivateDevelopmentOrigin(origin)'), 'inner API CORS must allow only validated private development origins');
-assert(railwayServerSource.includes('isPrivateDevelopmentOrigin(origin)'), 'gateway admission CORS must allow only validated private development origins');
-assert(!railwayServerSource.includes("res.setHeader('Access-Control-Allow-Origin', origin)"), 'gateway admission CORS must not reflect a request Origin directly');
-assert(railwayServerSource.includes("const approvedOrigin = GATEWAY_PRODUCTION_ALLOWED_ORIGINS.find(value => value === origin);"), 'gateway admission CORS must emit only an allowlisted origin');
-assert(workflow.includes("- 'vendor/heic-runtime/**'"), 'HEIC workflow must rerun when the committed runtime or provenance changes');
-assert(mobileQa.includes("server.listen(0"), 'mobile presentation QA must use an ephemeral local port');
-assert(!mobileQa.includes('const PORT = 3912'), 'mobile presentation QA must not hardcode a shared port');
-assert(index.includes('http://*:*'), 'landing development CSP must permit the local private-network backend');
-assert(appHtml.includes('http://*:*'), 'dashboard development CSP must permit the local private-network backend');
-assert(buildNetlify.includes('http:\\/\\/\\*:\\*'), 'production build must explicitly remove private-network HTTP CSP sources');
-assert(buildNetlify.includes('ws:\\/\\/\\*:\\*'), 'production build must explicitly remove private-network websocket CSP sources');
-assert.strictEqual(resolveConfiguredApiBase({ protocol: 'https:', origin: 'https://mywingman.pages.dev', hostname: 'mywingman.pages.dev' }), 'https://wingman-production-c6ce.up.railway.app', 'production must resolve to the configured exact Railway backend');
-
-    // PR verification may inspect and compare generated bytes, but never mutate the PR branch.
-    assert(/permissions:\n\s+contents:\s+read/.test(workflow), 'HEIC PR workflow contents permission must be read-only');
-    assert(!/contents:\s+write/.test(workflow), 'HEIC PR workflow must not grant contents write permission');
-    assert(!/git\s+push/.test(workflow), 'HEIC PR workflow must not push generated commits');
-    assert(workflow.includes('sha256sum vendor/heic-runtime/heic-to-csp.js'), 'HEIC PR workflow must compare the generated runtime bytes');
-    assert(workflow.includes('git diff --exit-code'), 'HEIC PR workflow must fail when generated output differs from the committed artifact');
-
-    console.log('Focused release repair regression tests passed.');
-})().catch(error => {
-    console.error(error);
-    process.exit(1);
-});
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíço5N‹Z–‹­¦ëeŠw¬ÔÕÍ”ÍÑÉ¥Ðœì4(4)½¹ÍÐ…ÍÍ•ÉÐ€ôÉ•ÅÕ¥É” …ÍÍ•ÉÐœ¤ì4)½¹ÍÐ™Ì€ôÉ•ÅÕ¥É” ™Ìœ¤ì4)½¹ÍÐÁ…Ñ €ôÉ•ÅÕ¥É” Á…Ñ œ¤ì4)½¹ÍÐÙ´€ôÉ•ÅÕ¥É” Ù´œ¤ì4)½¹ÍÐì¥ÍAÉ¥Ù…Ñ••Ù•±½Áµ•¹Ñ=É¥¥¸ô€ôÉ•ÅÕ¥É” œ¸¸½µ¥‘‘±•Ý…É”½‘•Ù•±½Áµ•¹Ñ=É¥¥¸œ¤ì4(4)½¹ÍÐI==P€ôÁ…Ñ ¹É•Í½±Ù”¡}}‘¥É¹…µ”°€œ¸¸œ¤ì4)½¹ÍÐÉ•…€ôÉ•±…Ñ¥Ù”€ôø™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡I==P°É•±…Ñ¥Ù”¤°€ÕÑ˜àœ¤¹É•Á±…” ½qÉq¸½œ°€q¸œ¤ì4)½¹ÍÐ…ÁÀ€ôÉ•… …ÁÀ¹©Ìœ¤ì4)½¹ÍÐ½¹™¥œ€ôÉ•… ½¹™¥œ¹©Ìœ¤ì4)½¹ÍÐ¥¹‘•à€ôÉ•… ¥¹‘•à¹¡Ñµ°œ¤ì4)½¹ÍÐ…ÁÁ!Ñµ°€ôÉ•… …ÁÀ¹¡Ñµ°œ¤ì4)½¹ÍÐÉÕ¹Ñ¥µ”€ôÉ•… Ù•¹‘½È½ÁÉ½‘ÕÑ¥½¸µÉÕ¹Ñ¥µ”¹©Ìœ¤ì4)½¹ÍÐ±½…‘•È€ôÉ•… Ù•¹‘½È½¡•¥ŒÉ…¹äµ±½…‘•È¹©Ìœ¤ì4)½¹ÍÐÝ½É­™±½Ü€ôÉ•… œ¹¥Ñ¡Õˆ½Ý½É­™±½ÝÌ½•¹•É…Ñ”µ¡•¥ŒµÉÕ¹Ñ¥µ”¹åµ°œ¤ì)½¹ÍÐ‰Õ¥±‘9•Ñ±¥™ä€ôÉ•… ÍÉ¥ÁÑÌ½‰Õ¥±µ¹•Ñ±¥™äµ‘¥ÍÐ¹©Ìœ¤ì)½¹ÍÐµ½‰¥±•E„€ôÉ•… Ñ•ÍÑÌ½µ½‰¥±•}ÁÉ•Í•¹Ñ…Ñ¥½¹}Å„¹Ñ•ÍÐ¹©Ìœ¤ì)½¹ÍÐÍ•ÉÙ•ÉM½ÕÉ”€ôÉ•… Í•ÉÙ•È¹©Ìœ¤ì4)½¹ÍÐÉ…¥±Ý…åM•ÉÙ•ÉM½ÕÉ”€ôÉ•… É…¥±Ý…äµÍ•ÉÙ•È¹©Ìœ¤ì4)½¹ÍÐ¡•¥IÕ¹Ñ¥µ”€ôÉ•… Ù•¹‘½È½¡•¥ŒµÉÕ¹Ñ¥µ”½¡•¥ŒµÑ¼µÍÀ¹©Ìœ¤ì4(4)™Õ¹Ñ¥½¸…ÍÍ•ÉÑ9…µ•‘áÁ½ÉÐ¡Í½ÕÉ”°¹…µ”¤ì4(€€€½¹ÍÐ•áÁ½ÉÑ	±½¬€ôÍ½ÕÉ”¹µ…Ñ  ½•áÁ½ÉÑqÌ©qì¡myõt¨¥qô¼¤ì4(€€€…ÍÍ•ÉÐ¡•áÁ½ÉÑ	±½¬°€•¹•É…Ñ•!%ÉÕ¹Ñ¥µ”µÕÍÐ•áÁ½Í”…¸Lµ½‘Õ±”•áÁ½ÉÐ‰±½¬œ¤ì4(€€€…ÍÍ•ÉÐ¡¹•ÜI•áÀ qqˆœ€¬¹…µ”€¬€qqˆœ¤¹Ñ•ÍÐ¡•áÁ½ÉÑ	±½­lÅt¤°•¹•É…Ñ•!%ÉÕ¹Ñ¥µ”µÕÍÐ•áÁ½ÉÐ€‘í¹…µ•õ€¤ì4)ô4(4)™Õ¹Ñ¥½¸µ…­•MÑ½É…”¡¥¹¥Ñ¥…±Y…±Õ”¤ì4(€€€½¹ÍÐÙ…±Õ•Ì€ô¹•Ü5…À¡mlÝ¥¹µ…¹}Í•ÍÍ¥½¹}‘…Ñ„œ°¥¹¥Ñ¥…±Y…±Õ•ut¤ì4(€€€±•ÐÉ•…‘Ì€ô€Àì4(€€€É•ÑÕÉ¸ì4(€€€€€€€•Ð±•¹Ñ  ¤ìÉ•ÑÕÉ¸Ù…±Õ•Ì¹Í¥é”ìô°4(€€€€€€€­•ä¡¥¹‘•à¤ìÉ•ÑÕÉ¸ÉÉ…ä¹™É½´¡Ù…±Õ•Ì¹­•åÌ ¤¥m¥¹‘•átñð¹Õ±°ìô°4(€€€€€€€•Ñ%Ñ•´ ¤ì4(€€€€€€€€€€€É•…‘Ì€¬ô€Äì4(€€€€€€€€€€€Ñ¡É½Ü¹•ÜÉÉ½È ±•…äÑÉ…¹ÍÉ¥ÁÐµÕÍÐ¹•Ù•È‰”É•…œ¤ì4(€€€€€€€ô°4(€€€€€€€Í•Ñ%Ñ•´¡­•ä°Ù…±Õ”¤ìÙ…±Õ•Ì¹Í•Ð¡­•ä°MÑÉ¥¹œ¡Ù…±Õ”¤¤ìô°4(€€€€€€€É•µ½Ù•%Ñ•´¡­•ä¤ìÙ…±Õ•Ì¹‘•±•Ñ”¡­•ä¤ìô°4(€€€€€€€¡…Ì¡­•ä¤ìÉ•ÑÕÉ¸Ù…±Õ•Ì¹¡…Ì¡­•ä¤ìô°4(€€€€€€€•ÐÉ•…‘Ì ¤ìÉ•ÑÕÉ¸É•…‘Ììô4(€€€ôì4)ô4(4)™Õ¹Ñ¥½¸•Ù…±Õ…Ñ•IÕ¹Ñ¥µ”¡ì‰Õ‰‰±•Ì€ômt°ÍÑ½É…•Y…±Õ”€ô€í¹½Ðµ©Í½¸œô€ôíô¤ì4(€€€½¹ÍÐ±½…±MÑ½É…”€ôµ…­•MÑ½É…”¡ÍÑ½É…•Y…±Õ”¤ì4(€€€½¹ÍÐÍ•ÍÍ¥½¹MÑ½É…”€ôµ…­•MÑ½É…”¡ÍÑ½É…•Y…±Õ”¤ì4(€€€½¹ÍÐ‰ÕÑÑ½¸€ôì‘¥Í…‰±•è™…±Í”°Ñ•áÑ½¹Ñ•¹Ðè€œœ°ÍÑå±”èíôôì4(€€€½¹ÍÐ½¹Ñ…¥¹•È€ôì4(€€€€€€€ÅÕ•ÉåM•±•Ñ½É±° ¤ìÉ•ÑÕÉ¸‰Õ‰‰±•Ììô4(€€€ôì4(€€€½¹ÍÐ•±•µ•¹ÑÌ€ô¹•Ü5…À¡l4(€€€€€€€l¡…Ñ‰½àµµ•ÍÍ…•Ìµ½¹Ñ…¥¹•Èœ°½¹Ñ…¥¹•Ét°4(€€€€€€€lÍ¥µÕ±…Ñ½ÉI•Ù¥•Ý	Ñ¸œ°‰ÕÑÑ½¹t4(€€€t¤ì4(€€€½¹ÍÐ…±±Ì€ômtì4(€€€½¹ÍÐ‘½Õµ•¹Ð€ôì4(€€€€€€€É•…‘åMÑ…Ñ”è€½µÁ±•Ñ”œ°4(€€€€€€€‰½‘äèíô°4(€€€€€€€•Ñ±•µ•¹Ñ	å%¡¥¤ìÉ•ÑÕÉ¸•±•µ•¹ÑÌ¹•Ð¡¥¤ñð¹Õ±°ìô°4(€€€€€€€ÅÕ•ÉåM•±•Ñ½È ¤ìÉ•ÑÕÉ¸¹Õ±°ìô°4(€€€€€€€É•…Ñ•±•µ•¹Ð ¤ìÉ•ÑÕÉ¸ìÍÑå±”èíô°Í•ÑÑÑÉ¥‰ÕÑ” ¤íô°…ÁÁ•¹‘¡¥± ¤íô°…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ¤íôôìô4(€€€ôì4(€€€½¹ÍÐÝ¥¹‘½Ü€ôì4(€€€€€€€±½…±MÑ½É…”°4(€€€€€€€Í•ÍÍ¥½¹MÑ½É…”°4(€€€€€€€‘½Õµ•¹Ð°4(€€€€€€€…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ¤íô°4(€€€€€€€•ÑÁ¥	…Í” ¤ìÉ•ÑÕÉ¸€¡ÑÑÁÌè¼½Ý¥¹µ…¸µÁÉ½‘ÕÑ¥½¸µŒÙ”¹ÕÀ¹É…¥±Ý…ä¹…ÁÀœìô°4(€€€€€€€•ÑMÕÁ…‰…Í•ÕÑ¡!•…‘•ÉÌè…Íå¹Œ€ ¤€ôø€¡ìÕÑ¡½É¥é…Ñ¥½¸è€	•…É•ÈÑ•ÍÐµÑ½­•¸œô¤°4(€€€€€€€Í¡½ÝQ½…ÍÐ ¤íô4(€€€ôì4(€€€½¹ÍÐÍ…¹‘‰½à€ôì4(€€€€€€€Ý¥¹‘½Ü°4(€€€€€€€‘½Õµ•¹Ð°4(€€€€€€€±½…±MÑ½É…”°4(€€€€€€€Í•ÍÍ¥½¹MÑ½É…”°4(€€€€€€€½¹Í½±”èì•ÉÉ½È ¤íô°±½œ ¤íôô°4(€€€€€€€AÉ½µ¥Í”°4(€€€€€€€)M=8°4(€€€€€€€ÉÉ…ä°4(€€€€€€€=‰©•Ð°4(€€€€€€€MÑÉ¥¹œ°4(€€€€€€€9Õµ‰•È°4(€€€€€€€5…Ñ °4(€€€€€€€…Ñ”°4(€€€€€€€ÉÉ½È°4(€€€€€€€Í•ÑQ¥µ•½ÕÐ¡™¸¤ì™¸ ¤ìÉ•ÑÕÉ¸€Äìô°4(€€€€€€€±•…ÉQ¥µ•½ÕÐ ¤íô°4(€€€€€€€™•Ñ è…Íå¹Œ€¡ÕÉ°°½ÁÑ¥½¹Ì¤€ôøì4(€€€€€€€€€€€…±±Ì¹ÁÕÍ ¡ìÕÉ°°½ÁÑ¥½¹Ìô¤ì4(€€€€€€€€€€€É•ÑÕÉ¸ì½¬è™…±Í”°ÍÑ…ÑÕÌè€ÐÀÀ°©Í½¸è…Íå¹Œ€ ¤€ôø€¡ìÍÕ•ÍÌè™…±Í”°•ÉÉ½Èè€Ñ•ÍÐÍÑ½Àœô¤ôì4(€€€€€€€ô4(€€€ôì4(€€€Ý¥¹‘½Ü¹Ý¥¹‘½Ü€ôÝ¥¹‘½Üì4(€€€Ý¥¹‘½Ü¹™•Ñ €ôÍ…¹‘‰½à¹™•Ñ ì4(€€€Ù´¹É•…Ñ•½¹Ñ•áÐ¡Í…¹‘‰½à¤ì4(€€€Ù´¹ÉÕ¹%¹½¹Ñ•áÐ¡ÉÕ¹Ñ¥µ”°Í…¹‘‰½à°ì™¥±•¹…µ”è€ÁÉ½‘ÕÑ¥½¸µÉÕ¹Ñ¥µ”¹©Ìœô¤ì4(€€€É•ÑÕÉ¸ìÝ¥¹‘½Ü°±½…±MÑ½É…”°Í•ÍÍ¥½¹MÑ½É…”°…±±Ì°‰ÕÑÑ½¸ôì4)ô4(4)™Õ¹Ñ¥½¸‰Õ‰‰±”¡É½±”°½¹Ñ•¹Ð¤ì4(€€€É•ÑÕÉ¸ìÍÑå±”èì…±¥¹M•±˜èÉ½±”€ôôô€ÕÍ•Èœ€ü€™±•àµ•¹œ€è€™±•àµÍÑ…ÉÐœô°Ñ•áÑ½¹Ñ•¹Ðè½¹Ñ•¹Ðôì4)ô4(4)½¹Í½±”¹±½œ IÕ¹¹¥¹œ™½ÕÍ•É•±•…Í”É•Á…¥ÈÉ•É•ÍÍ¥½¸Ñ•ÍÑÌ¸¸¸œ¤ì4(4(¼¼!%•áÁ½ÉÐ½¹ÑÉ…Ð…¹…‘…ÁÑ•È‰½Õ¹‘…Éä¸4)…ÍÍ•ÉÑ9…µ•‘áÁ½ÉÐ¡¡•¥IÕ¹Ñ¥µ”°€¡•¥Q¼œ¤ì4)…ÍÍ•ÉÑ9…µ•‘áÁ½ÉÐ¡¡•¥IÕ¹Ñ¥µ”°€¥Í!•¥Œœ¤ì4)½¹ÍÐ…‘…ÁÑ•ÉA…Ñ €ôÁ…Ñ ¹©½¥¸¡I==P°€Ù•¹‘½Èœ°€¡•¥ŒÉ…¹äµ…‘…ÁÑ•È¹©Ìœ¤ì4)…ÍÍ•ÉÐ¡™Ì¹•á¥ÍÑÍMå¹Œ¡…‘…ÁÑ•ÉA…Ñ ¤°€±…éä!%…‘…ÁÑ•ÈµÕÍÐ‰”¡•­•¥¸‰•Í¥‘”Ñ¡”•¹•É…Ñ•ÉÕ¹Ñ¥µ”œ¤ì4)½¹ÍÐ…‘…ÁÑ•È€ôÉ•… Ù•¹‘½È½¡•¥ŒÉ…¹äµ…‘…ÁÑ•È¹©Ìœ¤ì4)…ÍÍ•ÉÐ¡…‘…ÁÑ•È¹¥¹±Õ‘•Ì ‰¥µÁ½ÉÐì¡•¥Q¼ô™É½´€œ¸½¡•¥ŒµÉÕ¹Ñ¥µ”½¡•¥ŒµÑ¼µÍÀ¹©Ìœìˆ¤°€…‘…ÁÑ•ÈµÕÍÐ¥µÁ½ÉÐÑ¡”¹…µ•¡•¥Q¼•áÁ½ÉÐ™É½´Ñ¡”Á¥¹¹•±½…°ÉÕ¹Ñ¥µ”œ¤ì4)…ÍÍ•ÉÐ ½Ý¥¹‘½Ýp¹¡•¥ŒÉ…¹åqÌ¨õqÌ©…Íå¹Œ™Õ¹Ñ¥½¸¼¹Ñ•ÍÐ¡…‘…ÁÑ•È¤°€…‘…ÁÑ•ÈµÕÍÐ•áÁ½Í”Ñ¡”•á¥ÍÑ¥¹œ±…éäÝ¥¹‘½Ü¹¡•¥ŒÉ…¹ä½¹ÑÉ…Ðœ¤ì4)…ÍÍ•ÉÐ ½¡•¥Q½p¡qímqÍqMt©‰±½ˆéqÌ©½ÁÑ¥½¹Íp¹‰±½‰mqÍqMt©ÑåÁ”éqÌ©½ÁÑ¥½¹Íp¹ÑåÁ•mqÍqMt©ÅÕ…±¥ÑäéqÌ©½ÁÑ¥½¹Íp¹ÅÕ…±¥Ñä¼¹Ñ•ÍÐ¡…‘…ÁÑ•È¤°€…‘…ÁÑ•ÈµÕÍÐÑÉ…¹Í±…Ñ”Ñ¡”…ÁÁ±¥…Ñ¥½¸!%…ÉÕµ•¹ÑÌÑ¼Ñ¡”É•…°ÉÕ¹Ñ¥µ”½¹ÑÉ…Ðœ¤ì4)…ÍÍ•ÉÐ¡±½…‘•È¹¥¹±Õ‘•Ì ‰Ù…ÈI1}MI€ô€œ¸½Ù•¹‘½È½¡•¥ŒÉ…¹äµ…‘…ÁÑ•È¹©Ìœìˆ¤°€±…éä±½…‘•ÈµÕÍÐ±½…½¹±äÑ¡”Íµ…±°±½…°…‘…ÁÑ•Èœ¤ì4)…ÍÍ•ÉÐ …±½…‘•È¹¥¹±Õ‘•Ì ¡ÑÑÁÌè¼¼œ¤°€!%±½…‘•ÈµÕÍÐ¹½ÐÕÍ”„É•µ½Ñ”‘•Á•¹‘•¹äœ¤ì4)…ÍÍ•ÉÐ¡…ÁÀ¹¥¹±Õ‘•Ì ÑåÁ”è€‰¥µ…”½©Á•œˆœ¤°€…ÁÁ±¥…Ñ¥½¸!%…±±ÌµÕÍÐÕÍ”Ñ¡”É•…°ÉÕ¹Ñ¥µ”ÑåÁ”…ÉÕµ•¹Ðœ¤ì4)…ÍÍ•ÉÐ ……ÁÀ¹¥¹±Õ‘•Ì Ñ½QåÁ”è€‰¥µ…”½©Á•œˆœ¤°€…ÁÁ±¥…Ñ¥½¸!%…±±ÌµÕÍÐ¹½ÐÕÍ”Ñ¡”¥¹½µÁ…Ñ¥‰±”±•…äÑ½QåÁ”…ÉÕµ•¹Ðœ¤ì4)…ÍÍ•ÉÐ ½…Ñ p¡•p¤qímqÍqMt©½¹Í½±•p¹Ý…É¹p ‰!%½¹Ù•ÉÍ¥½¸Ý…É¹¥¹œèˆ¼¹Ñ•ÍÐ¡…ÁÀ¤°€!%½¹Ù•ÉÍ¥½¸É•©•Ñ¥½¸µÕÍÐÉ•µ…¥¸¥Í½±…Ñ•™É½´Ñ¡”¹…±åé”Ý½É­™±½Üœ¤ì4)…ÍÍ•ÉÐ¡‰Õ¥±‘9•Ñ±¥™ä¹¥¹±Õ‘•Ì ˆ¡•¥ŒÉ…¹äµ…‘…ÁÑ•È¹©Ìœˆ¤°€ÁÉ½‘ÕÑ¥½¸…ÉÑ¥™…ÐÙ•É¥™¥…Ñ¥½¸µÕÍÐÉ•ÅÕ¥É”Ñ¡”!%…‘…ÁÑ•Èœ¤ì4(4(¼¼A•ÉÍ¥ÍÑ•¹ÐÑÉ…¹ÍÉ¥ÁÐ‘…Ñ„¥Ì‘•±•Ñ•‰ä­•ä…¹¹•Ù•ÈÉ•…°Á…ÉÍ•°½ÈÕÍ•…ÌÉ•Ù¥•Ü¥¹ÁÕÐ¸4)…ÍÍ•ÉÐ …ÉÕ¹Ñ¥µ”¹¥¹±Õ‘•Ì ‰•Ñ%Ñ•´ Ý¥¹µ…¹}Í•ÍÍ¥½¹}‘…Ñ„œ¤ˆ¤°€ÁÉ½‘ÕÑ¥½¸ÉÕ¹Ñ¥µ”µÕÍÐ¹½ÐÉ•…Ñ¡”±•…äÑÉ…¹ÍÉ¥ÁÐ­•äœ¤ì4)…ÍÍ•ÉÐ …ÉÕ¹Ñ¥µ”¹¥¹±Õ‘•Ì )M=8¹Á…ÉÍ”¡É…Ü¤œ¤°€ÁÉ½‘ÕÑ¥½¸ÉÕ¹Ñ¥µ”µÕÍÐ¹½ÐÁ…ÉÍ”„±•…äÑÉ…¹ÍÉ¥ÁÐœ¤ì4)½¹ÍÐÁÉ¥Ù…åIÕ¹Ñ¥µ”€ô•Ù…±Õ…Ñ•IÕ¹Ñ¥µ” ¤ì4)…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡ÁÉ¥Ù…åIÕ¹Ñ¥µ”¹±½…±MÑ½É…”¹¡…Ì Ý¥¹µ…¹}Í•ÍÍ¥½¹}‘…Ñ„œ¤°™…±Í”°€±•…ä±½…±MÑ½É…”ÑÉ…¹ÍÉ¥ÁÐµÕÍÐ‰”ÁÕÉ•œ¤ì4)…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡ÁÉ¥Ù…åIÕ¹Ñ¥µ”¹Í•ÍÍ¥½¹MÑ½É…”¹¡…Ì Ý¥¹µ…¹}Í•ÍÍ¥½¹}‘…Ñ„œ¤°™…±Í”°€±•…äÍ•ÍÍ¥½¹MÑ½É…”ÑÉ…¹ÍÉ¥ÁÐµÕÍÐ‰”ÁÕÉ•œ¤ì4)…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡ÁÉ¥Ù…åIÕ¹Ñ¥µ”¹±½…±MÑ½É…”¹É•…‘Ì°€À°€±•…ä±½…±MÑ½É…”ÑÉ…¹ÍÉ¥ÁÐµÕÍÐ¹•Ù•È‰”É•…œ¤ì4)…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡ÁÉ¥Ù…åIÕ¹Ñ¥µ”¹Í•ÍÍ¥½¹MÑ½É…”¹É•…‘Ì°€À°€±•…äÍ•ÍÍ¥½¹MÑ½É…”ÑÉ…¹ÍÉ¥ÁÐµÕÍÐ¹•Ù•È‰”É•…œ¤ì4)…ÍÍ•ÉÐ ……ÁÀ¹¥¹±Õ‘•Ì ½¹ÍÐ±•…åI…Üœ¤°€…ÁÀÍÑ…ÉÑÕÀµÕÍÐ¹½ÐÉ•…Ñ¡”±•…äÑÉ…¹ÍÉ¥ÁÐÙ…±Õ”œ¤ì4)…ÍÍ•ÉÐ ……ÁÀ¹¥¹±Õ‘•Ì )M=8¹Á…ÉÍ”¡±•…åI…Ü¤œ¤°€…ÁÀÍÑ…ÉÑÕÀµÕÍÐ¹½ÐÁ…ÉÍ”Ñ¡”±•…äÑÉ…¹ÍÉ¥ÁÐœ¤ì4)…ÍÍ•ÉÐ¡…ÁÀ¹¥¹¿5¶‰žËkºwµçEÁÀ½¹Í•¹ÐµÕÍÐ¹½Ð¡…É‘½‘”„½µÁ•Ñ¥¹œA$•¹‘Á½¥¹Ðœ¤ì4(€€€…ÍÍ•ÉÐ …¥¹‘•à¹¥¹±Õ‘•Ì œ½…Á¤½½¹Í•¹Ðœ¤°€±…¹‘¥¹œµÕÍÐ¹½ÐÍÕ‰µ¥Ð½¹Í•¹Ð‰•™½É”Í¥¸µ¥¸œ¤ì4)…ÍÍ•ÉÐ¡¥¹‘•à¹¥¹±Õ‘•Ì ¡ÑÑÁÌè¼½Ý¥¹µ…¸µÁÉ½‘ÕÑ¥½¸µŒÙ”¹ÕÀ¹É…¥±Ý…ä¹…ÁÀœ¤°€±…¹‘¥¹œM@µÕÍÐ…±±½Ü½¹±äÑ¡”•á…Ð½¹™¥ÕÉ•I…¥±Ý…ä½É¥¥¸œ¤ì4)…ÍÍ•ÉÐ¡‰Õ¥±‘9•Ñ±¥™ä¹¥¹±Õ‘•Ì ¡ÑÑÀè¼½±½…±¡½ÍÐè¨œ¤°€ÁÉ½‘ÕÑ¥½¸‰Õ¥±µÕÍÐ•áÁ±¥¥Ñ±äÉ•µ½Ù”±½…±¡½ÍÐM@Í½ÕÉ•Ì™É½´½Á¥•!Q50œ¤ì4)…ÍÍ•ÉÐ¡‰Õ¥±‘9•Ñ±¥™ä¹¥¹±Õ‘•Ì ÝÌè¼½±½…±¡½ÍÐè¨œ¤°€ÁÉ½‘ÕÑ¥½¸‰Õ¥±µÕÍÐ•áÁ±¥¥Ñ±äÉ•µ½Ù”±½…±¡½ÍÐÝ•‰Í½­•ÐM@Í½ÕÉ•Ì™É½´½Á¥•!Q50œ¤ì4(4)™Õ¹Ñ¥½¸É•Í½±Ù•½¹™¥ÕÉ•‘Á¥	…Í”¡±½…Ñ¥½¸¤ì4(€€€½¹ÍÐÝ¥¹‘½Ü€ôì4(€€€€€€€±½…Ñ¥½¸°4(€€€€€€€]%959}=9%èìA%}	M}UI0è€¡ÑÑÁÌè¼½Ý¥¹µ…¸µÁÉ½‘ÕÑ¥½¸µŒÙ”¹ÕÀ¹É…¥±Ý…ä¹…ÁÀœô°4(€€€€€€€…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ¤íô4(€€€ôì4(€€€½¹ÍÐ‘½Õµ•¹Ð€ôìÉ•…‘åMÑ…Ñ”è€±½…‘¥¹œœ°…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ¤íôôì4(€€€½¹ÍÐÍ…¹‘‰½à€ôìÝ¥¹‘½Ü°‘½Õµ•¹Ð°Í•ÑQ¥µ•½ÕÐ ¤íô°±•…ÉQ¥µ•½ÕÐ ¤íôôì4(€€€Ù´¹É•…Ñ•½¹Ñ•áÐ¡Í…¹‘‰½à¤ì4(€€€Ù´¹ÉÕ¹%¹½¹Ñ•áÐ¡½¹™¥œ°Í…¹‘‰½à°ì™¥±•¹…µ”è€½¹™¥œ¹©Ìœô¤ì4(€€€É•ÑÕÉ¸Ý¥¹‘½Ü¹•ÑÁ¥	…Í” ¤ì4)ô4(4)…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡É•Í½±Ù•½¹™¥ÕÉ•‘Á¥	…Í”¡ìÁÉ½Ñ½½°è€¡ÑÑÀèœ°½É¥¥¸è€¡ÑÑÀè¼½±½…±¡½ÍÐèÐÄÜÐœ°¡½ÍÑ¹…µ”è€±½…±¡½ÍÐœô¤°€¡ÑÑÀè¼½±½…±¡½ÍÐèÌÀÀÀœ°€±½…°‘•Ù•±½Áµ•¹ÐµÕÍÐÉ•Í½±Ù”Ñ¼Ñ¡”±½…°I…¥±Ý…äµ½µÁ…Ñ¥‰±”‰…­•¹œ¤ì4)…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡É•Í½±Ù•½¹™¥ÕÉ•‘Á¥	…Í”¡ìÁÉ½Ñ½½°è€¡ÑÑÀèœ°½É¥¥¸è€¡ÑÑÀè¼¼ÄäÈ¸ÄØà¸Ä¸ÈÀèÐÄÜÐœ°¡½ÍÑ¹…µ”è€œÄäÈ¸ÄØà¸Ä¸ÈÀœô¤°€¡ÑÑÀè¼¼ÄäÈ¸ÄØà¸Ä¸ÈÀèÌÀÀÀœ°€18‘•Ù•±½Áµ•¹ÐµÕÍÐÁÉ•Í•ÉÙ”Ñ¡”¡½ÍÐÝ¡¥±”Ñ…É•Ñ¥¹œÑ¡”±½…°‰…­•¹œ¤ì4)…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡É•Í½±Ù•½¹™¥ÕÉ•‘Á¥	…Í”¡ìÁÉ½Ñ½½°è€¡ÑÑÀèœ°½É¥¥¸è€¡ÑÑÀè¼¼ÄÜÈ¸ÄØ¸Ð¸ÈÀèÐÄÜÐœ°¡½ÍÑ¹…µ”è€œÄÜÈ¸ÄØ¸Ð¸ÈÀœô¤°€¡ÑÑÀè¼¼ÄÜÈ¸ÄØ¸Ð¸ÈÀèÌÀÀÀœ°€œÄÜÈ¸ÄØ¼ÄÈ‘•Ù•±½Áµ•¹ÐµÕÍÐÁÉ•Í•ÉÙ”Ñ¡”¡½ÍÐÝ¡¥±”Ñ…É•Ñ¥¹œÑ¡”±½…°‰…­•¹œ¤ì4)…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡É•Í½±Ù•½¹™¥ÕÉ•‘Á¥	…Í”¡ìÁÉ½Ñ½½°è€¡ÑÑÀèœ°½É¥¥¸è€¡ÑÑÀè¼¼ÄÀ¸ÈÀ¸Ð¸ÈÀèÐÄÜÐœ°¡½ÍÑ¹…µ”è€œÄÀ¸ÈÀ¸Ð¸ÈÀœô¤°€¡ÑÑÀè¼¼ÄÀ¸ÈÀ¸Ð¸ÈÀèÌÀÀÀœ°€œÄÀ¼à‘•Ù•±½Áµ•¹ÐµÕÍÐÁÉ•Í•ÉÙ”Ñ¡”¡½ÍÐÝ¡¥±”Ñ…É•Ñ¥¹œÑ¡”±½…°‰…­•¹œ¤ì4)…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡É•Í½±Ù•½¹™¥ÕÉ•‘Á¥	…Í”¡ìÁÉ½Ñ½½°è€¡ÑÑÀèœ°½É¥¥¸è€¡ÑÑÀè¼½ÁÉ¥¹Ñ•È¹±½…°èÐÄÜÐœ°¡½ÍÑ¹…µ”è€ÁÉ¥¹Ñ•È¹±½…°œô¤°€¡ÑÑÀè¼½ÁÉ¥¹Ñ•È¹±½…°èÌÀÀÀœ°€µ9L‘•Ù•±½Áµ•¹ÐµÕÍÐÁÉ•Í•ÉÙ”Ñ¡”¡½ÍÐÝ¡¥±”Ñ…É•Ñ¥¹œÑ¡”±½…°‰…­•¹œ¤ì4)…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡É•Í½±Ù•½¹™¥ÕÉ•‘Á¥	…Í”¡ìÁÉ½Ñ½½°è€¡ÑÑÀèœ°½É¥¥¸è€¡ÑÑÀè¼¼ÄÈÜ¸À¸À¸ÈèÐÄÜÐœ°¡½ÍÑ¹…µ”è€œÄÈÜ¸À¸À¸Èœô¤°€¡ÑÑÀè¼¼ÄÈÜ¸À¸À¸ÈèÌÀÀÀœ°€…±Ñ•É¹…Ñ”±½½Á‰…¬‘•Ù•±½Áµ•¹ÐµÕÍÐÁÉ•Í•ÉÙ”Ñ¡”¡½ÍÐÝ¡¥±”Ñ…É•Ñ¥¹œÑ¡”±½…°‰…­•¹œ¤ì4)…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡É•Í½±Ù•½¹™¥ÕÉ•‘Á¥	…Í”¡ìÁÉ½Ñ½½°è€¡ÑÑÁÌèœ°½É¥¥¸è€¡ÑÑÁÌè¼¼ÄäÈ¸ÄØà¸Ä¸ÈÀèÐÄÜÐœ°¡½ÍÑ¹…µ”è€œÄäÈ¸ÄØà¸Ä¸ÈÀœô¤°€¡ÑÑÁÌè¼¼ÄäÈ¸ÄØà¸Ä¸ÈÀèÌÀÀÀœ°€!QQAL18‘•Ù•±½Áµ•¹ÐµÕÍÐ¹½Ð‘½Ý¹É…‘”Ñ¡”‰…­•¹UI0Ñ¼!QQ@œ¤ì4)…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡É•Í½±Ù•½¹™¥ÕÉ•‘Á¥	…Í”¡ìÁÉ½Ñ½½°è€¡ÑÑÀèœ°½É¥¥¸è€¡ÑÑÀè¼¼ÄÜÈ¸ÄÔ¸Ð¸ÈÀèÐÄÜÐœ°¡½ÍÑ¹…µ”è€œÄÜÈ¸ÄÔ¸Ð¸ÈÀœô¤°€¡ÑÑÁÌè¼½Ý¥¹µ…¸µÁÉ½‘ÕÑ¥½¸µŒÙ”¹ÕÀ¹É…¥±Ý…ä¹…ÁÀœ°€¹½¸µÁÉ¥Ù…Ñ”€ÄÜÈ¼ÄÈ±½½­…±¥­•ÌµÕÍÐ¹½Ð‰”ÑÉ•…Ñ•…Ì18¡½ÍÑÌœ¤ì4)…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡É•Í½±Ù•½¹™¥ÕÉ•‘Á¥	…Í”¡ìÁÉ½Ñ½½°è€¡ÑÑÀèœ°½É¥¥¸è€¡ÑÑÀè¼¼ÄÀ¹•á…µÁ±”¹½´èÐÄÜÐœ°¡½ÍÑ¹…µ”è€œÄÀ¹•á…µÁ±”¹½´œô¤°€¡ÑÑÁÌè¼½Ý¥¹µ…¸µÁÉ½‘ÕÑ¥½¸µŒÙ”¹ÕÀ¹É…¥±Ý…ä¹…ÁÀœ°€ÁÕ‰±¥Œ¡½ÍÑ¹…µ•Ì‰•¥¹¹¥¹œÝ¥Ñ €ÄÀµÕÍÐ¹½Ð‰”ÑÉ•…Ñ•…Ì18¡½ÍÑÌœ¤ì4(4)…ÍÍ•ÉÐ¡¥ÍAÉ¥Ù…Ñ••Ù•±½Áµ•¹Ñ=É¥¥¸ ¡ÑÑÀè¼¼ÄäÈ¸ÄØà¸Ä¸ÈÀèÐÄÜÐœ¤°€ÁÉ¥Ù…Ñ”%AØÐ½É¥¥¹ÌµÕÍÐ‰”…±±½Ý•™½È‘•Ù•±½Áµ•¹Ð=ILœ¤ì4)…ÍÍ•ÉÐ¡¥ÍAÉ¥Ù…Ñ••Ù•±½Áµ•¹Ñ=É¥¥¸ ¡ÑÑÁÌè¼¼ÄÜÈ¸ÌÄ¸ÈÔÔ¸ÈÔÐèÐÄÜÐœ¤°€ÁÉ¥Ù…Ñ”!QQAL%AØÐ½É¥¥¹ÌµÕÍÐ‰”…±±½Ý•™½È‘•Ù•±½Áµ•¹Ð=ILœ¤ì4)…ÍÍ•ÉÐ¡¥ÍAÉ¥Ù…Ñ••Ù•±½Áµ•¹Ñ=É¥¥¸ ¡ÑÑÀè¼½m™ÀÀèèÅtèÐÄÜÐœ¤°€%AØØÕ¹¥ÅÕ”µ±½…°½É¥¥¹ÌµÕÍÐ‰”…±±½Ý•™½È‘•Ù•±½Áµ•¹Ð=ILœ¤ì4)…ÍÍ•ÉÐ …¥ÍAÉ¥Ù…Ñ••Ù•±½Áµ•¹Ñ=É¥¥¸ ¡ÑÑÀè¼¼ÄÜÈ¸ÄÔ¸Ð¸ÈÀèÐÄÜÐœ¤°€¹½¸µÁÉ¥Ù…Ñ”€ÄÜÈ¼ÄÈ½É¥¥¹ÌµÕÍÐ¹½Ð‰”…±±½Ý•™½È‘•Ù•±½Áµ•¹Ð=ILœ¤ì4)…ÍÍ•ÉÐ …¥ÍAÉ¥Ù…Ñ••Ù•±½Áµ•¹Ñ=É¥¥¸ ¡ÑÑÀè¼¼ÄÀ¹•á…µÁ±”¹½´èÐÄÜÐœ¤°€ÁÕ‰±¥Œ±½½­…±¥­”¡½ÍÑ¹…µ•ÌµÕÍÐ¹½Ð‰”…±±½Ý•™½È‘•Ù•±½Áµ•¹Ð=ILœ¤ì4)…ÍÍ•ÉÐ¡Í•ÉÙ•ÉM½ÕÉ”¹¥¹±Õ‘•Ì ¥ÍAÉ¥Ù…Ñ••Ù•±½Áµ•¹Ñ=É¥¥¸¡½É¥¥¸¤œ¤°€¥¹¹•ÈA$=ILµÕÍÐ…±±½Ü½¹±äÙ…±¥‘…Ñ•ÁÉ¥Ù…Ñ”‘•Ù•±½Áµ•¹Ð½É¥¥¹Ìœ¤ì)…ÍÍ•ÉÐ¡É…¥±Ý…åM•ÉÙ•ÉM½ÕÉ”¹¥¹±Õ‘•Ì ¥ÍAÉ¥Ù…Ñ••Ù•±½Áµ•¹Ñ=É¥¥¸¡½É¥¥¸¤œ¤°€…Ñ•Ý…ä…‘µ¥ÍÍ¥½¸=ILµÕÍÐ…±±½Ü½¹±äÙ…±¥‘…Ñ•ÁÉ¥Ù…Ñ”‘•Ù•±½Áµ•¹Ð½É¥¥¹Ìœ¤ì)…ÍÍ•ÉÐ …É…¥±Ý…åM•ÉÙ•ÉM½ÕÉ”¹¥¹±Õ‘•Ì ‰É•Ì¹Í•Ñ!•…‘•È •ÍÌµ½¹ÑÉ½°µ±±½Üµ=É¥¥¸œ°½É¥¥¸¤ˆ¤°€…Ñ•Ý…ä…‘µ¥ÍÍ¥½¸=ILµÕÍÐ¹½ÐÉ•™±•Ð„É•ÅÕ•ÍÐ=É¥¥¸‘¥É•Ñ±äœ¤ì)…ÍÍ•ÉÐ¡É…¥±Ý…åM•ÉÙ•ÉM½ÕÉ”¹¥¹±Õ‘•Ì ½¹ÍÐ…ÁÁÉ½Ù•‘=É¥¥¸€ôQ]e}AI=UQ%=9}11=]}=I%%9L¹™¥¹¡Ù…±Õ”€ôøÙ…±Õ”€ôôô½É¥¥¸¤ñðœ¤°€…Ñ•Ý…ä…‘µ¥ÍÍ¥½¸=ILµÕÍÐÍÑ…ÉÐ™É½´Ñ¡”™¥á•ÁÉ½‘ÕÑ¥½¸…±±½Ý±¥ÍÐœ¤ì4)…ÍÍ•ÉÐ¡É…¥±Ý…åM•ÉÙ•ÉM½ÕÉ”¹¥¹±Õ‘•Ì ½É¥¥¸€ôôô%M=1Q}MQ%9}AIY%]}=I%%8€ü%M=1Q}MQ%9}AIY%]}=I%%8€è¹Õ±°œ¤°€…Ñ•Ý…ä…‘µ¥ÍÍ¥½¸=ILµ…ä…‘‘¥Ñ¥½¹…±±ä•µ¥Ð½¹±äÑ¡”•á…ÐÁÉ•Ù¥•Ü½É¥¥¸¥¸¥Í½±…Ñ•ÍÑ…¥¹œœ¤ì4)…ÍÍ•ÉÐ¡Ý½É­™±½Ü¹¥¹±Õ‘•Ì ˆ´€Ù•¹‘½È½¡•¥ŒµÉÕ¹Ñ¥µ”¼¨¨œˆ¤°€!%Ý½É­™±½ÜµÕÍÐÉ•ÉÕ¸Ý¡•¸Ñ¡”½µµ¥ÑÑ•ÉÕ¹Ñ¥µ”½ÈÁÉ½Ù•¹…¹”¡…¹•Ìœ¤ì)…ÍÍ•ÉÐ¡µ½‰¥±•E„¹¥¹±Õ‘•Ì ‰Í•ÉÙ•È¹±¥ÍÑ•¸ Àˆ¤°€µ½‰¥±”ÁÉ•Í•¹Ñ…Ñ¥½¸EµÕÍÐÕÍ”…¸•Á¡•µ•É…°±½…°Á½ÉÐœ¤ì)…ÍÍ•ÉÐ …µ½‰¥±•E„¹¥¹±Õ‘•Ì ½¹ÍÐA=IP€ô€ÌäÄÈœ¤°€µ½‰¥±”ÁÉ•Í•¹Ñ…Ñ¥½¸EµÕÍÐ¹½Ð¡…É‘½‘”„Í¡…É•Á½ÉÐœ¤ì)…ÍÍ•ÉÐ¡¥¹‘•à¹¥¹±Õ‘•Ì ¡ÑÑÀè¼¼¨è¨œ¤°€±…¹‘¥¹œ‘•Ù•±½Áµ•¹ÐM@µÕÍÐÁ•Éµ¥ÐÑ¡”±½…°ÁÉ¥Ù…Ñ”µ¹•ÑÝ½É¬‰…­•¹œ¤ì)…ÍÍ•ÉÐ¡…ÁÁ!Ñµ°¹¥¹±Õ‘•Ì ¡ÑÑÀè¼¼¨è¨œ¤°€‘…Í¡‰½…É‘•Ù•±½Áµ•¹ÐM@µÕÍÐÁ•Éµ¥ÐÑ¡”±½…°ÁÉ¥Ù…Ñ”µ¹•ÑÝ½É¬‰…­•¹œ¤ì4)…ÍÍ•ÉÐ¡‰Õ¥±‘9•Ñ±¥™ä¹¥¹±Õ‘•Ì ¡ÑÑÀéqp½qp½qp¨éqp¨œ¤°€ÁÉ½‘ÕÑ¥½¸‰Õ¥±µÕÍÐ•áÁ±¥¥Ñ±äÉ•µ½Ù”ÁÉ¥Ù…Ñ”µ¹•ÑÝ½É¬!QQ@M@Í½ÕÉ•Ìœ¤ì4)…ÍÍ•ÉÐ¡‰Õ¥±‘9•Ñ±¥™ä¹¥¹±Õ‘•Ì ÝÌéqp½qp½qp¨éqp¨œ¤°€ÁÉ½‘ÕÑ¥½¸‰Õ¥±µÕÍÐ•áÁ±¥¥Ñ±äÉ•µ½Ù”ÁÉ¥Ù…Ñ”µ¹•ÑÝ½É¬Ý•‰Í½­•ÐM@Í½ÕÉ•Ìœ¤ì4)…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡É•Í½±Ù•½¹™¥ÕÉ•‘Á¥	…Í”¡ìÁÉ½Ñ½½°è€¡ÑÑÁÌèœ°½É¥¥¸è€¡ÑÑÁÌè¼½µåÝ¥¹µ…¸¹Á…•Ì¹‘•Øœ°¡½ÍÑ¹…µ”è€µåÝ¥¹µ…¸¹Á…•Ì¹‘•Øœô¤°€¡ÑÑÁÌè¼½Ý¥¹µ…¸µÁÉ½‘ÕÑ¥½¸µŒÙ”¹ÕÀ¹É…¥±Ý…ä¹…ÁÀœ°€ÁÉ½‘ÕÑ¥½¸µÕÍÐÉ•Í½±Ù”Ñ¼Ñ¡”½¹™¥ÕÉ••á…ÐI…¥±Ý…ä‰…­•¹œ¤ì4(4(€€€€¼¼AHÙ•É¥™¥…Ñ¥½¸µ…ä¥¹ÍÁ•Ð…¹½µÁ…É”•¹•É…Ñ•‰åÑ•Ì°‰ÕÐ¹•Ù•ÈµÕÑ…Ñ”Ñ¡”AH‰É…¹ ¸4(€€€…ÍÍ•ÉÐ ½Á•Éµ¥ÍÍ¥½¹Ìéq¹qÌ­½¹Ñ•¹ÑÌéqÌ­É•…¼¹Ñ•ÍÐ¡Ý½É­™±½Ü¤°€!%AHÝ½É­™±½Ü½¹Ñ•¹ÑÌÁ•Éµ¥ÍÍ¥½¸µÕÍÐ‰”É•…µ½¹±äœ¤ì4(€€€…ÍÍ•ÉÐ „½½¹Ñ•¹ÑÌéqÌ­ÝÉ¥Ñ”¼¹Ñ•ÍÐ¡Ý½É­™±½Ü¤°€!%AHÝ½É­™±½ÜµÕÍÐ¹½ÐÉ…¹Ð½¹Ñ•¹ÑÌÝÉ¥Ñ”Á•Éµ¥ÍÍ¥½¸œ¤ì4(€€€…ÍÍ•ÉÐ „½¥ÑqÌ­ÁÕÍ ¼¹Ñ•ÍÐ¡Ý½É­™±½Ü¤°€!%AHÝ½É­™±½ÜµÕÍÐ¹½ÐÁÕÍ •¹•É…Ñ•½µµ¥ÑÌœ¤ì4(€€€…ÍÍ•ÉÐ¡Ý½É­™±½Ü¹¥¹±Õ‘•Ì Í¡„ÈÔÙÍÕ´Ù•¹‘½È½¡•¥ŒµÉÕ¹Ñ¥µ”½¡•¥ŒµÑ¼µÍÀ¹©Ìœ¤°€!%AHÝ½É­™±½ÜµÕÍÐ½µÁ…É”Ñ¡”•¹•É…Ñ•ÉÕ¹Ñ¥µ”‰åÑ•Ìœ¤ì4(€€€…ÍÍ•ÉÐ¡Ý½É­™±½Ü¹¥¹±Õ‘•Ì ¥Ð‘¥™˜€´µ•á¥Ðµ½‘”œ¤°€!%AHÝ½É­™±½ÜµÕÍÐ™…¥°Ý¡•¸•¹•É…Ñ•½ÕÑÁÕÐ‘¥™™•ÉÌ™É½´Ñ¡”½µµ¥ÑÑ•…ÉÑ¥™…Ðœ¤ì4(4(€€€½¹Í½±”¹±½œ ½ÕÍ•É•±•…Í”É•Á…¥ÈÉ•É•ÍÍ¥½¸Ñ•ÍÑÌÁ…ÍÍ•¸œ¤ì4)ô¤ ¤¹…Ñ ¡•ÉÉ½È€ôøì4(€€€½¹Í½±”¹•ÉÉ½È¡•ÉÉ½È¤ì4(€€€ÁÉ½•ÍÌ¹•á¥Ð Ä¤ì4)ô¤ì4

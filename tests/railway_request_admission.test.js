@@ -1,309 +1,1 @@
-'use strict';
-
-const assert = require('assert');
-const express = require('express');
-const request = require('supertest');
-
-// Keep production secrets out of this suite. Mock auth is requested per request only.
-delete process.env.RAILWAY_ENVIRONMENT;
-delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-delete process.env.ENABLE_MOCK_AUTH;
-delete process.env.ALLOWED_ORIGINS;
-process.env.NODE_ENV = 'test';
-
-const {
-  globalLimiter,
-  apiLimiter,
-  getRateLimitClientIp,
-  getRateLimitIpKey,
-  getApiRateLimitKey
-} = require('../middleware/security');
-const { verifySupabaseToken } = require('../middleware/supabaseAuth');
-const {
-  app,
-  LARGE_BODY_ANALYZER_PATHS,
-  GATEWAY_PRODUCTION_ALLOWED_ORIGINS,
-  getGatewayAllowedOrigins
-} = require('../railway-server');
-
-function mockReq({ ip = '198.51.100.9', realIp, forwardedFor, remoteAddress = '10.0.0.7', user } = {}) {
-  const headers = {};
-  if (realIp !== undefined) headers['x-real-ip'] = realIp;
-  if (forwardedFor !== undefined) headers['x-forwarded-for'] = forwardedFor;
-  return { ip, headers, socket: { remoteAddress }, user };
-}
-
-async function runVerify(req) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('verifySupabaseToken did not call next()')), 1000);
-    Promise.resolve(verifySupabaseToken(req, {}, () => {
-      clearTimeout(timer);
-      resolve(req);
-    })).catch((error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-  });
-}
-
-(async () => {
-  // Railway's documented X-Real-IP is trusted only inside Railway and only as a literal IP.
-  process.env.RAILWAY_ENVIRONMENT = 'production';
-  assert.strictEqual(
-    getRateLimitClientIp(mockReq({ realIp: '203.0.113.41' })),
-    '203.0.113.41',
-    'Railway must rate-limit by the validated X-Real-IP client address'
-  );
-  assert.strictEqual(
-    getRateLimitClientIp(mockReq({ realIp: '203.0.113.41', forwardedFor: '192.0.2.88' })),
-    '203.0.113.41',
-    'a client-supplied X-Forwarded-For value must not override Railway X-Real-IP'
-  );
-  assert.strictEqual(
-    getRateLimitClientIp(mockReq({ forwardedFor: '192.0.2.88' })),
-    '198.51.100.9',
-    'X-Forwarded-For must not replace the trusted request/socket identity'
-  );
-  assert.strictEqual(
-    getRateLimitClientIp(mockReq({ realIp: '203.0.113.41, 10.0.0.1' })),
-    '198.51.100.9',
-    'non-literal/spoof-like X-Real-IP values must fall back to Express identity'
-  );
-  assert.strictEqual(
-    getRateLimitClientIp(mockReq({ realIp: 'not-an-ip' })),
-    '198.51.100.9',
-    'invalid X-Real-IP must fall back to Express identity'
-  );
-
-  const ipv6A = getRateLimitIpKey(mockReq({ realIp: '2001:db8:abcd:1200::1' }));
-  const ipv6B = getRateLimitIpKey(mockReq({ realIp: '2001:db8:abcd:12ff::2' }));
-  assert.strictEqual(ipv6A, ipv6B, 'IPv6 addresses in the same /56 must share a normalized limiter key');
-  assert.notStrictEqual(ipv6A, '2001:db8:abcd:1200::1', 'IPv6 limiter key must not use the raw rotating address');
-
-  // Production CORS is limited to the canonical custom origin. Stale deployment
-  // configuration must not widen credentialed browser access to arbitrary HTTPS origins.
-  process.env.ALLOWED_ORIGINS = [
-    'https://preview.example.com',
-    'https://soft-sawine-30785c.netlify.app',
-    'http://localhost:9999',
-    '*'
-  ].join(',');
-  let allowed = getGatewayAllowedOrigins();
-  assert.deepStrictEqual(GATEWAY_PRODUCTION_ALLOWED_ORIGINS, ['https://mywingmanapp.com'], 'only the canonical production origin must remain allowed');
-  assert(allowed.has('https://mywingmanapp.com'), 'canonical production origin must remain allowed');
-  assert(!allowed.has('https://mywingman.pages.dev'), 'legacy Cloudflare Pages origin must be revoked after cutover');
-  assert(!allowed.has('https://preview.example.com'), 'configured preview origins must not widen production CORS');
-  assert(!allowed.has('https://soft-sawine-30785c.netlify.app'), 'retired Netlify origins must remain rejected');
-  assert(!allowed.has('http://localhost:9999'), 'localhost configured origin must be rejected in production');
-  assert(!allowed.has('*'), 'wildcard configured origin must be rejected in production');
-
-  process.env.ALLOWED_ORIGINS = 'https://mywingman.com,https://preview.mywingman.com';
-  allowed = getGatewayAllowedOrigins();
-  assert(!allowed.has('https://mywingman.com'), 'stale mywingman.com must remain denied even when configured');
-  assert(!allowed.has('https://preview.mywingman.com'), 'configured custom domains must not widen production CORS');
-
-  delete process.env.RAILWAY_ENVIRONMENT;
-  delete process.env.ALLOWED_ORIGINS;
-  assert.strictEqual(
-    getRateLimitClientIp(mockReq({ realIp: '203.0.113.41' })),
-    '198.51.100.9',
-    'X-Real-IP must be ignored outside Railway'
-  );
-  assert.strictEqual(
-    getApiRateLimitKey(mockReq({ realIp: '203.0.113.41', user: { id: 'user-123' } })),
-    'user-123',
-    'authenticated AI rate limiting must remain user-ID based'
-  );
-  const sharedClientIp = '203.0.113.42';
-  assert.notStrictEqual(
-    getApiRateLimitKey(mockReq({ realIp: sharedClientIp, user: { id: 'user-a' } })),
-    getApiRateLimitKey(mockReq({ realIp: sharedClientIp, user: { id: 'user-b' } })),
-    'two authenticated users sharing one public IP must keep separate per-user API buckets'
-  );
-
-  // Express removes a mounted prefix from req.path. The global limiter must inspect the
-  // original URL so /api/* calls are counted even while it is mounted at /api/.
-  const previousNodeEnv = process.env.NODE_ENV;
-  const previousRailwayEnv = process.env.RAILWAY_ENVIRONMENT;
-  process.env.NODE_ENV = 'production';
-  process.env.RAILWAY_ENVIRONMENT = 'production';
-  const limiterApp = express();
-  limiterApp.use('/api/', globalLimiter);
-  limiterApp.get('/api/limiter-probe', (req, res) => res.status(204).end());
-  const firstLimitedRequest = await request(limiterApp)
-    .get('/api/limiter-probe')
-    .set('X-Real-IP', sharedClientIp)
-    .set('X-Forwarded-For', '192.0.2.1');
-  const secondLimitedRequest = await request(limiterApp)
-    .get('/api/limiter-probe')
-    .set('X-Real-IP', sharedClientIp)
-    .set('X-Forwarded-For', '192.0.2.222');
-  assert.strictEqual(firstLimitedRequest.status, 204);
-  assert.strictEqual(secondLimitedRequest.status, 204);
-  assert(firstLimitedRequest.headers['ratelimit-remaining'], 'mounted API traffic must receive standard rate-limit headers');
-  assert(secondLimitedRequest.headers['ratelimit-remaining'], 'subsequent mounted API traffic must remain rate-limited');
-  const firstRemaining = Number(firstLimitedRequest.headers['ratelimit-remaining']);
-  const secondRemaining = Number(secondLimitedRequest.headers['ratelimit-remaining']);
-  assert.strictEqual(secondRemaining, firstRemaining - 1, 'spoofed X-Forwarded-For values must not create new IP buckets');
-
-  // Authenticated callers sharing a household, office, or mobile-carrier IP must still have
-  // independent AI/API quotas because the per-user limiter key is the verified user ID.
-  const perUserLimiterApp = express();
-  perUserLimiterApp.use((req, res, next) => {
-    req.user = { id: req.get('X-Test-User') };
-    next();
-  });
-  perUserLimiterApp.use('/api/', apiLimiter);
-  perUserLimiterApp.get('/api/per-user-limiter-probe', (req, res) => res.status(204).end());
-  const firstUserA = await request(perUserLimiterApp)
-    .get('/api/per-user-limiter-probe')
-    .set('X-Test-User', 'user-a')
-    .set('X-Real-IP', sharedClientIp);
-  const firstUserB = await request(perUserLimiterApp)
-    .get('/api/per-user-limiter-probe')
-    .set('X-Test-User', 'user-b')
-    .set('X-Real-IP', sharedClientIp);
-  const secondUserA = await request(perUserLimiterApp)
-    .get('/api/per-user-limiter-probe')
-    .set('X-Test-User', 'user-a')
-    .set('X-Real-IP', sharedClientIp);
-  assert.strictEqual(firstUserA.status, 204);
-  assert.strictEqual(firstUserB.status, 204);
-  assert.strictEqual(secondUserA.status, 204);
-  const firstUserARemaining = Number(firstUserA.headers['ratelimit-remaining']);
-  const firstUserBRemaining = Number(firstUserB.headers['ratelimit-remaining']);
-  const secondUserARemaining = Number(secondUserA.headers['ratelimit-remaining']);
-  assert.strictEqual(firstUserARemaining, firstUserBRemaining, 'different users sharing one IP must start in separate per-user API buckets');
-  assert.strictEqual(secondUserARemaining, firstUserARemaining - 1, 'a repeat request must consume only that authenticated userâ€™s API bucket');
-
-  if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
-  else process.env.NODE_ENV = previousNodeEnv;
-  if (previousRailwayEnv === undefined) delete process.env.RAILWAY_ENVIRONMENT;
-  else process.env.RAILWAY_ENVIRONMENT = previousRailwayEnv;
-
-  assert(LARGE_BODY_ANALYZER_PATHS.has('/api/analyze'));
-  assert(LARGE_BODY_ANALYZER_PATHS.has('/api/analyze/'));
-  assert(LARGE_BODY_ANALYZER_PATHS.has('/api/analyze-chat-screenshot'));
-  assert(LARGE_BODY_ANALYZER_PATHS.has('/api/analyze-chat-screenshot/'));
-
-  // A server-preverified identity must be reused by the inner app without a second remote call.
-  let remoteFetchCalls = 0;
-  const originalFetch = global.fetch;
-  global.fetch = async () => {
-    remoteFetchCalls += 1;
-    return { ok: false, status: 401, json: async () => ({}) };
-  };
-  const preverified = {
-    user: { id: '00000000-0000-0000-0000-000000000123', email: 'verified@example.com' },
-    headers: { authorization: 'Bearer header.payload.signature' }
-  };
-  await runVerify(preverified);
-  assert.strictEqual(remoteFetchCalls, 0, 'preverified gateway identity must not be remotely verified twice');
-  assert.strictEqual(preverified.user.id, '00000000-0000-0000-0000-000000000123');
-
-  // Missing/malformed auth must be rejected BEFORE the 38 MB Analyzer JSON parser. Invalid
-  // JSON would be a 400 parser error if parsing happened first; the correct gateway result is 401.
-  // Because this response terminates before the inner CORS middleware, the gateway itself must
-  // grant the canonical production origin permission to read the 401.
-  let response = await request(app)
-    .post('/api/analyze')
-    .set('Origin', 'https://mywingman.pages.dev')
-    .set('Content-Type', 'application/json')
-    .send('{"broken":');
-  assert.strictEqual(response.status, 401, 'unauthenticated Analyzer malformed JSON must be rejected before parsing');
-  assert.strictEqual(response.headers['access-control-allow-origin'], undefined, 'legacy Pages origin must receive no early CORS permission');
-  assert.strictEqual(response.headers['access-control-allow-credentials'], undefined, 'legacy Pages origin must receive no credentialed CORS permission');
-
-  response = await request(app)
-    .post('/api/analyze')
-    .set('Origin', 'https://mywingmanapp.com')
-    .set('Content-Type', 'application/json')
-    .send('{"broken":');
-  assert.strictEqual(response.status, 401, 'custom-domain unauthenticated Analyzer request must be rejected before parsing');
-  assert.strictEqual(response.headers['access-control-allow-origin'], 'https://mywingmanapp.com', 'early 401 must remain readable by the custom production domain');
-  assert.strictEqual(response.headers['access-control-allow-credentials'], 'true', 'custom-domain early 401 must preserve credentialed CORS semantics');
-
-  response = await request(app)
-    .post('/api/ANALYZE')
-    .set('Origin', 'https://mywingmanapp.com')
-    .set('Content-Type', 'application/json')
-    .send('{"broken":');
-  assert.strictEqual(response.status, 401, 'case-insensitive Analyzer paths must be rejected before parsing');
-  assert.strictEqual(response.headers['access-control-allow-origin'], 'https://mywingmanapp.com', 'case-insensitive Analyzer early 401 must preserve canonical CORS');
-
-  response = await request(app)
-    .post('/api/analyze/extra')
-    .set('Origin', 'https://attacker.example')
-    .set('Content-Type', 'application/json')
-    .send('{"broken":');
-  assert.strictEqual(response.status, 401, 'Analyzer parser-prefix subpaths must be rejected before parsing');
-  assert.strictEqual(response.headers['access-control-allow-origin'], undefined, 'hostile-origin Analyzer subpath must receive no CORS grant');
-
-  response = await request(app)
-    .post('/api/analyze-chat-screenshot/extra')
-    .set('Origin', 'https://mywingmanapp.com')
-    .set('Content-Type', 'application/json')
-    .send('{"broken":');
-  assert.strictEqual(response.status, 401, 'chat-screenshot parser-prefix subpaths must be rejected before parsing');
-  assert.strictEqual(response.headers['access-control-allow-origin'], 'https://mywingmanapp.com', 'chat-screenshot subpath early 401 must preserve canonical CORS');
-
-  const beforeMalformedJwt = remoteFetchCalls;
-  response = await request(app)
-    .post('/api/analyze-chat-screenshot/')
-    .set('Origin', 'https://soft-sawine-30785c.netlify.app')
-    .set('Authorization', 'Bearer not-a-jwt')
-    .set('Content-Type', 'application/json')
-    .send('{"broken":');
-  assert.strictEqual(response.status, 401, 'malformed JWT must be rejected before the large parser');
-  assert.strictEqual(remoteFetchCalls, beforeMalformedJwt, 'malformed JWT must not trigger remote Supabase verification');
-  assert.strictEqual(response.headers['access-control-allow-origin'], undefined, 'retired Netlify origin must receive no early CORS permission');
-
-  response = await request(app)
-    .post('/api/analyze')
-    .set('Origin', 'https://attacker.example')
-    .set('Content-Type', 'application/json')
-    .send('{"broken":');
-  assert.strictEqual(response.status, 401, 'hostile-origin unauthenticated Analyzer request must still fail auth');
-  assert.strictEqual(response.headers['access-control-allow-origin'], undefined, 'hostile origin must receive no early CORS permission');
-
-  // Once outer auth succeeds, parsing proceeds normally. This proves the gate protects only
-  // admission and does not bypass the existing body validator/parser for authenticated users.
-  response = await request(app)
-    .post('/api/analyze')
-    .set('Origin', 'https://mywingman.pages.dev')
-    .set('x-mock-auth', 'true')
-    .set('Content-Type', 'application/json')
-    .send('{"broken":');
-  assert.strictEqual(response.status, 400, 'authenticated malformed JSON must reach the normal parser and fail as bad JSON');
-  assert.strictEqual(response.headers['access-control-allow-origin'], undefined, 'legacy Pages origin must receive no parser-error CORS permission');
-
-  // A revoked origin must not receive the unauthenticated preflight shortcut or any CORS grant.
-  response = await request(app)
-    .options('/api/analyze')
-    .set('Origin', 'https://mywingman.pages.dev')
-    .set('Access-Control-Request-Method', 'POST');
-  assert.strictEqual(response.status, 401, 'revoked-origin Analyzer preflight must not bypass admission auth');
-  assert.strictEqual(response.headers['access-control-allow-origin'], undefined, 'revoked-origin preflight must receive no CORS permission');
-
-  // The canonical origin still receives the existing unauthenticated preflight response.
-  response = await request(app)
-    .options('/api/analyze')
-    .set('Origin', 'https://mywingmanapp.com')
-    .set('Access-Control-Request-Method', 'POST');
-  assert.strictEqual(response.status, 204, 'canonical Analyzer CORS preflight must remain unauthenticated');
-  assert.strictEqual(response.headers['access-control-allow-origin'], 'https://mywingmanapp.com');
-
-  // Unrelated small-body APIs keep their prior middleware order/behavior; the outer gateway is
-  // intentionally scoped only to the two 38 MB Analyzer routes.
-  response = await request(app)
-    .post('/api/icebreaker')
-    .set('Content-Type', 'application/json')
-    .send('{"broken":');
-  assert.strictEqual(response.status, 400, 'unrelated API route behavior must remain unchanged');
-
-  global.fetch = originalFetch;
-  console.log('âœ… Railway request admission, early-error CORS, pre-body auth, and real-client IP limiter guard passed.');
-})().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíëM;N‹Z–‹­¦ëeŠw¬ÔÕÍ”ÍÑÉ¥Ðœì4(4)½¹ÍÐ…ÍÍ•ÉÐ€ôÉ•ÅÕ¥É” …ÍÍ•ÉÐœ¤ì4)½¹ÍÐ•áÁÉ•ÍÌ€ôÉ•ÅÕ¥É” •áÁÉ•ÍÌœ¤ì4)½¹ÍÐÉ•ÅÕ•ÍÐ€ôÉ•ÅÕ¥É” ÍÕÁ•ÉÑ•ÍÐœ¤ì4(4(¼¼-••ÀÁÉ½‘ÕÑ¥½¸Í•É•ÑÌ½ÕÐ½˜Ñ¡¥ÌÍÕ¥Ñ”¸5½¬…ÕÑ ¥ÌÉ•ÅÕ•ÍÑ•Á•ÈÉ•ÅÕ•ÍÐ½¹±ä¸4)‘•±•Ñ”ÁÉ½•ÍÌ¹•¹Ø¹I%1]e}9Y%I=959Pì4)‘•±•Ñ”ÁÉ½•ÍÌ¹•¹Ø¹MUA	M}MIY%}I=1}-dì4)‘•±•Ñ”ÁÉ½•ÍÌ¹•¹Ø¹9	1}5=-}UQ ì4)‘•±•Ñ”ÁÉ½•ÍÌ¹•¹Ø¹11=]}=I%%9Lì4)ÁÉ½•ÍÌ¹•¹Ø¹9=}9X€ô€Ñ•ÍÐœì4(4)½¹ÍÐì4(€±½‰…±1¥µ¥Ñ•È°4(€…Á¥1¥µ¥Ñ•È°4(€•ÑI…Ñ•1¥µ¥Ñ±¥•¹Ñ%À°4(€•ÑI…Ñ•1¥µ¥Ñ%Á-•ä°4(€•ÑÁ¥I…Ñ•1¥µ¥Ñ-•ä4)ô€ôÉ•ÅÕ¥É” œ¸¸½µ¥‘‘±•Ý…É”½Í•ÕÉ¥Ñäœ¤ì4)½¹ÍÐìÙ•É¥™åMÕÁ…‰…Í•Q½­•¸ô€ôÉ•ÅÕ¥É” œ¸¸½µ¥‘‘±•Ý…É”½ÍÕÁ…‰…Í•ÕÑ œ¤ì4)½¹ÍÐì4(€…ÁÀ°4(€1I}	=e}91eiI}AQ!L°4(€Q]e}AI=UQ%=9}11=]}=I%%9L°4(€•Ñ…Ñ•Ý…å±±½Ý•‘=É¥¥¹Ì°4(€…ÁÁ±å¹…±åé•É‘µ¥ÍÍ¥½¹½ÉÌ4)ô€ôÉ•ÅÕ¥É” œ¸¸½É…¥±Ý…äµÍ•ÉÙ•Èœ¤ì4(4)™Õ¹Ñ¥½¸µ½­I•Ä¡ì¥À€ô€œÄäà¸ÔÄ¸ÄÀÀ¸äœ°É•…±%À°™½ÉÝ…É‘•‘½È°É•µ½Ñ•‘‘É•ÍÌ€ô€œÄÀ¸À¸À¸Üœ°ÕÍ•Èô€ôíô¤ì4(€½¹ÍÐ¡•…‘•ÉÌ€ôíôì4(€¥˜€¡É•…±%À€„ôôÕ¹‘•™¥¹•¤¡•…‘•ÉÍlàµÉ•…°µ¥Àt€ôÉ•…±%Àì4(€¥˜€¡™½ÉÝ…É‘•‘½È€„ôôÕ¹‘•™¥¹•¤¡•…‘•ÉÍlàµ™½ÉÝ…É‘•µ™½Èt€ô™½ÉÝ…É‘•‘½Èì4(€É•ÑÕÉ¸ì¥À°¡•…‘•ÉÌ°Í½­•ÐèìÉ•µ½Ñ•‘‘É•ÍÌô°ÕÍ•Èôì4)ô4(4)…Íå¹Œ™Õ¹Ñ¥½¸ÉÕ¹Y•É¥™ä¡É•Ä¤ì4(€É•ÑÕÉ¸¹•ÜAÉ½µ¥Í” ¡É•Í½±Ù”°É•©•Ð¤€ôøì4(€€€½¹ÍÐÑ¥µ•È€ôÍ•ÑQ¥µ•½ÕÐ  ¤€ôøÉ•©•Ð¡¹•ÜÉÉ½È Ù•É¥™åMÕÁ…‰…Í•Q½­•¸‘¥¹½Ð…±°¹•áÐ ¤œ¤¤°€ÄÀÀÀ¤ì4(€€€AÉ½µ¥Í”¹É•Í½±Ù”¡Ù•É¥™åMÕÁ…‰…Í•Q½­•¸¡É•Ä°íô°€ ¤€ôøì4(€€€€€±•…ÉQ¥µ•½ÕÐ¡Ñ¥µ•È¤ì4(€€€€€É•Í½±Ù”¡É•Ä¤ì4(€€€ô¤¤¹…Ñ  ¡•ÉÉ½È¤€ôøì4(€€€€€±•…ÉQ¥µ•½ÕÐ¡Ñ¥µ•È¤ì4(€€€€€É•©•Ð¡•ÉÉ½È¤ì4(€€€ô¤ì4(€ô¤ì4)ô4(4(¡…Íå¹Œ€ ¤€ôøì4(€€¼¼I…¥±Ý…äÌ‘½Õµ•¹Ñ•`µI•…°µ%@¥ÌÑÉÕÍÑ•½¹±ä¥¹Í¥‘”I…¥±Ý…ä…¹½¹±ä…Ì„±¥Ñ•É…°%@¸4(€ÁÉ½•ÍÌ¹•¹Ø¹I%1]e}9Y%I=959P€ô€ÁÉ½‘ÕÑ¥½¸œì4(€…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…° 4(€€€•ÑI…Ñ•1¥µ¥Ñ±¥•¹Ñ%À¡µ½­I•Ä¡ìÉ•…±%Àè€œÈÀÌ¸À¸ÄÄÌ¸ÐÄœô¤¤°4(€€€€œÈÀÌ¸À¸ÄÄÌ¸ÐÄœ°4(€€€€I…¥±Ý…äµÕÍÐÉ…Ñ”µ±¥µ¥Ð‰äÑ¡”Ù…±¥‘…Ñ•`µI•…°µ%@±¥•¹Ð…‘‘É•ÍÌœ4(€€¤ì4(€…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…° 4(€€€•ÑI…Ñ•1¥µ¥Ñ±¥•¹Ñ%À¡µ½­I•Ä¡ìÉ•…±%Àè€œÈÀÌ¸À¸ÄÄÌ¸ÐÄœ°™½ÉÝ…É‘•‘½Èè€œÄäÈ¸À¸È¸ààœô¤¤°4(€€€€œÈÀÌ¸À¸ÄÄÌ¸ÐÄœ°4(€€€€„±¥•¹ÐµÍÕÁÁ±¥•`µ½ÉÝ…É‘•µ½ÈÙ…±Õ”µÕÍÐ¹½Ð½Ù•ÉÉ¥‘”I…¥±Ý…ä`µI•…°µ%@œ4(€€¤ì4(€…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…° 4(€€€•ÑI…Ñ•1¥µ¥Ñ±¥•¹Ñ%À¡µ½­I•Ä¡ì™½ÉÝ…É‘•‘½Èè€œÄäÈ¸À¸È¸ààœô¤¤°4(€€€€œÄäà¸ÔÄ¸ÄÀÀ¸äœ°4(€€€€`µ½ÉÝ…É‘•µ½ÈµÕÍÐ¹½ÐÉ•Á±…”Ñ¡”ÑÉÕÍÑ•É•ÅÕ•ÍÐ½Í½­•Ð¥‘•¹Ñ¥Ñäœ4(€€¤ì4(€…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…° 4(€€€•ÑI…Ñ•1¥µ¥Ñ±¥•¹Ñ%À¡µ½­I•Ä¡ìÉ•…±%Àè€œÈÀÌ¸À¸ÄÄÌ¸ÐÄ°€ÄÀ¸À¸À¸Äœô¤¤°4(€€€€œÄäà¸ÔÄ¸ÄÀÀ¸äœ°4(€€€€¹½¸µ±¥Ñ•É…°½ÍÁ½½˜µ±¥­”`µI•…°µ%@Ù…±Õ•ÌµÕÍÐ™…±°‰…¬Ñ¼áÁÉ•ÍÌ¥‘•¹Ñ¥Ñäœ4(€€¤ì4(€…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…° 4(€€€•ÑI…Ñ•1¥µ¥Ñ±¥•¹Ñ%À¡µ½­I•Ä¡ìÉ•…±%Àè€¹½Ðµ…¸µ¥Àœô¤¤°4(€€€€œÄäà¸ÔÄ¸ÄÀÀ¸äœ°4(€€€€¥¹Ù…±¥`µI•…°µ%@µÕÍÐ™…±°‰…¬Ñ¼áÁÉ•ÍÌ¥‘•¹Ñ¥Ñäœ4(€€¤ì4(4(€½¹ÍÐ¥ÁØÙ€ô•ÑI…Ñ•1¥µ¥Ñ%Á-•ä¡µ½­I•Ä¡ìÉ•…±%Àè€œÈÀÀÄé‘ˆàé…‰èÄÈÀÀèèÄœô¤¤ì4(€½¹ÍÐ¥ÁØÙ€ô•ÑI…Ñ•1¥µ¥Ñ%Á-•ä¡µ½­I•Ä¡ìÉ•…±%Àè€œÈÀÀÄé‘ˆàé…‰èÄÉ™˜èèÈœô¤¤ì4(€…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡¥ÁØÙ°¥ÁØÙ°€%AØØ…‘‘É•ÍÍ•Ì¥¸Ñ¡”Í…µ”€¼ÔØµÕÍÐÍ¡…É”„¹½Éµ…±¥é•±¥µ¥Ñ•È­•äœ¤ì4(€…ÍÍ•ÉÐ¹¹½ÑMÑÉ¥ÑÅÕ…°¡¥ÁØÙ°€œÈÀÀÄé‘ˆàé…‰èÄÈÀÀèèÄœ°€%AØØ±¥µ¥Ñ•È­•äµÕÍÐ¹½ÐÕÍ”Ñ¡”É…ÜÉ½Ñ…Ñ¥¹œ…‘‘É•ÍÌœ¤ì4(4(€€¼¼AÉ½‘ÕÑ¥½¸=IL¥Ì±¥µ¥Ñ•Ñ¼Ñ¡”…¹½¹¥…°ÕÍÑ½´½É¥¥¸¸MÑ…±”‘•Á±½åµ•¹Ð(€€¼¼½¹™¥ÕÉ…Ñ¥½¸µÕÍÐ¹½ÐÝ¥‘•¸É•‘•¹Ñ¥…±•‰É½ÝÍ•È…•ÍÌÑ¼…É‰¥ÑÉ…Éä!QQAL½É¥¥¹Ì¸4(€ÁÉ½•ÍÌ¹•¹Ø¹11=]}=I%%9L€ôl4(€€€€¡ÑÑÁÌè¼½ÁÉ•Ù¥•Ü¹•á…µÁ±”¹½´œ°4(€€€€¡ÑÑÁÌè¼½Í½™ÐµÍ…Ý¥¹”´ÌÀÜàÕŒ¹¹•Ñ±¥™ä¹…ÁÀœ°4(€€€€¡ÑÑÀè¼½±½…±¡½ÍÐèääääœ°4(€€€€œ¨œ4(€t¹©½¥¸ œ°œ¤ì4(€±•Ð…±±½Ý•€ô•Ñ…Ñ•Ý…å±±½Ý•‘=É¥¥¹Ì ¤ì4(€…ÍÍ•ÉÐ¹‘••ÁMÑÉ¥ÑÅÕ…°¡Q]e}AI=UQ%=9}11=]}=I%%9L°l¡ÑÑÁÌè¼½µåÝ¥¹µ…¹…ÁÀ¹½´t°€½¹±äÑ¡”…¹½¹¥…°ÁÉ½‘ÕÑ¥½¸½É¥¥¸µÕÍÐÉ•µ…¥¸…±±½Ý•œ¤ì(€…ÍÍ•ÉÐ¡…±±½Ý•¹¡…Ì ¡ÑÑÁÌè¼½µåÝ¥¹µ…¹…ÁÀ¹½´œ¤°€…¹½¹¥…°ÁÉ½‘ÕÑ¥½¸½É¥¥¸µÕÍÐÉ•µ…¥¸…±±½Ý•œ¤ì(€…ÍÍ•ÉÐ ……±±½Ý•¹¡…Ì ¡ÑÑÁÌè¼½µåÝ¥¹µ…¸¹Á…•Ì¹‘•Øœ¤°€±•…ä±½Õ‘™±…É”A…•Ì½É¥¥¸µÕÍÐ‰”É•Ù½­•…™Ñ•ÈÕÑ½Ù•Èœ¤ì(€…ÍÍ•ÉÐ ……±±½Ý•¹¡…Ì ¡ÑÑÁÌè¼½ÁÉ•Ù¥•Ü¹•á…µÁ±”¹½´œ¤°€½¹™¥ÕÉ•ÁÉ•Ù¥•Ü½É¥¥¹ÌµÕÍÐ¹½ÐÝ¥‘•¸ÁÉ½‘ÕÑ¥½¸=ILœ¤ì4(€…ÍÍ•ÉÐ ……±±½Ý•¹¡…Ì ¡ÑÑÁÌè¼½Í½™ÐµÍ…Ý¥¹”´ÌÀÜàÕŒ¹¹•Ñ±¥™ä¹…ÁÀœ¤°€É•Ñ¥É•9•Ñ±¥™ä½É¥¥¹ÌµÕÍÐÉ•µ…¥¸É•©•Ñ•œ¤ì4(€…ÍÍ•ÉÐ ……±±½Ý•¹¡…Ì ¡ÑÑÀè¼½±½…±¡½ÍÐèääääœ¤°€±½…±¡½ÍÐ½¹™¥ÕÉ•½É¥¥¸µÕÍÐ‰”É•©•Ñ•¥¸ÁÉ½‘ÕÑ¥½¸œ¤ì4(€…ÍÍ•ÉÐ ……±±½Ý•¹¡…Ì œ¨œ¤°€Ý¥±‘…É½¹™¥ÕÉ•½É¥¥¸µÕÍÐ‰”É•©•Ñ•¥¸ÁÉ½‘ÕÑ¥½¸œ¤ì4(4(€½¹ÍÐÁÉ•Ù¥½ÕÍ¹Ù¥É½¹µ•¹Ñ%€ôÁÉ½•ÍÌ¹•¹Ø¹I%1]e}9Y%I=959Q}%ì4(€½¹ÍÐÁÉ•Ù¥•Ý=É¥¥¸€ô€¡ÑÑÁÌè¼½½‘•àµµ…•Ù”µÉ•ÅÕ•ÍÐµ‘•…‘±¥¹”¹µåÝ¥¹µ…¸¹Á…•Ì¹‘•Øœì4(€ÁÉ½•ÍÌ¹•¹Ø¹I%1]e}9Y%I=959P€ô€É…é½ÉÁ…äµÍÑ…¥¹œœì4(€ÁÉ½•ÍÌ¹•¹Ø¹I%1]e}9Y%I=959Q}%€ô€œÐÌáäàÙŒµÜää´ÐÉ„À´äÄÐäµ•˜Á••˜àÀäÐàØœì4(€…±±½Ý•€ô•Ñ…Ñ•Ý…å±±½Ý•‘=É¥¥¹Ì ¤ì4(€…ÍÍ•ÉÐ¡…±±½Ý•¹¡…Ì¡ÁÉ•Ù¥•Ý=É¥¥¸¤°€Ñ¡”¥Í½±…Ñ•ÍÑ…¥¹œ•¹Ù¥É½¹µ•¹ÐµÕÍÐ…±±½Ü¥ÑÌ•á…Ð±½Õ‘™±…É”‰É…¹ ÁÉ•Ù¥•Üœ¤ì4(€…ÍÍ•ÉÐ ……±±½Ý•¹¡…Ì ¡ÑÑÁÌè¼½½Ñ¡•È¹µåÝ¥¹µ…¸¹Á…•Ì¹‘•Øœ¤°€ÍÑ…¥¹œµÕÍÐ¹½Ð…±±½Ü…É‰¥ÑÉ…ÉäA…•Ì½É¥¥¹Ìœ¤ì4(€½¹ÍÐÁÉ•Ù¥•Ý!•…‘•ÉÌ€ôíôì4(€½¹ÍÐÁÉ•Ù¥•ÝI•Ì€ôì4(€€€Í•Ñ!•…‘•È¡¹…µ”°Ù…±Õ”¤ìÁÉ•Ù¥•Ý!•…‘•ÉÍm¹…µ”¹Ñ½1½Ý•É…Í” ¥t€ôÙ…±Õ”ìô°4(€€€Ù…Éä¡Ù…±Õ”¤ìÁÉ•Ù¥•Ý!•…‘•ÉÌ¹Ù…Éä€ôÙ…±Õ”ìô4(€ôì4(€…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡…ÁÁ±å¹…±åé•É‘µ¥ÍÍ¥½¹½ÉÌ¡ì¡•…‘•ÉÌèì½É¥¥¸èÁÉ•Ù¥•Ý=É¥¥¸ôô°ÁÉ•Ù¥•ÝI•Ì¤°ÑÉÕ”°€…Ñ•Ý…ä…‘µ¥ÍÍ¥½¸µÕÍÐ…•ÁÐ½¹±äÑ¡”…±±½Ý±¥ÍÑ•ÍÑ…¥¹œÁÉ•Ù¥•Üœ¤ì4(€…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡ÁÉ•Ù¥•Ý!•…‘•ÉÍl…•ÍÌµ½¹ÑÉ½°µ…±±½Üµ½É¥¥¸t°ÁÉ•Ù¥•Ý=É¥¥¸°€…Ñ•Ý…ä•…É±ä•ÉÉ½ÉÌµÕÍÐ‰”É•…‘…‰±”‰äÑ¡”ÍÑ…¥¹œÁÉ•Ù¥•Üœ¤ì4(4(€ÁÉ½•ÍÌ¹•¹Ø¹I%1]e}9Y%I=959P€ô€ÁÉ½‘ÕÑ¥½¸œì4(€ÁÉ½•ÍÌ¹•¹Ø¹I%1]e}9Y%I=959Q}%€ô€œÌÁ”äàØØÜµ„á„Ä´ÐÄÕ´á˜Ä´ÔÕ”ØÜÁ˜ÐÕ‰Àœì4(€…±±½Ý•€ô•Ñ…Ñ•Ý…å±±½Ý•‘=É¥¥¹Ì ¤ì4(€…ÍÍ•ÉÐ ……±±½Ý•¹¡…Ì¡ÁÉ•Ù¥•Ý=É¥¥¸¤°€ÁÉ½‘ÕÑ¥½¸…Ñ•Ý…äµÕÍÐÉ•©•ÐÑ¡”ÍÑ…¥¹œÁÉ•Ù¥•Ü½É¥¥¸œ¤ì4(€…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…°¡…ÁÁ±å¹…±åé•É‘µ¥ÍÍ¥½¹½ÉÌ¡ì¡•…‘•ÉÌèì½É¥¥¸èÁÉ•Ù¥•Ý=É¥¥¸ôô°ÁÉ•Ù¥•ÝI•Ì¤°™…±Í”°€ÁÉ½‘ÕÑ¥½¸•…É±ä•ÉÉ½ÉÌµÕÍÐ¹½ÐÉ…¹ÐÑ¡”ÍÑ…¥¹œÁÉ•Ù¥•Ü=IL…•ÍÌœ¤ì4(€¥˜€¡ÁÉ•Ù¥½ÕÍ¹Ù¥É½¹µ•¹Ñ%€ôôôÕ¹‘•™¥¹•¤‘•±•Ñ”ÁÉ½•ÍÌ¹•¹Ø¹I%1]e}9Y%I=959Q}%ì4(€•±Í”ÁÉ½•ÍÌ¹•¹Ø¹I%1]e}9Y%I=959Q}%€ôÁÉ•Ù¥½ÕÍ¹Ù¥É½¹µ•¹Ñ%ì4(€ÁÉ½•ÍÌ¹•¹Ø¹I%1]e}9Y%I=959P€ô€ÁÉ½‘ÕÑ¥½¸œì4(4(€ÁÉ½•ÍÌ¹•¹Ø¹11=]}=I%%9L€ô€¡ÑÑÁÌè¼½µåÝ¥¹µ…¸¹½´±¡ÑÑÁÌè¼½ÁÉ•Ù¥•Ü¹µåÝ¥¹µ…¸¹½´œì4(€…±±½Ý•€ô•Ñ…Ñ•Ý…å±±½Ý•‘=É¥¥¹Ì ¤ì4(€…ÍÍ•ÉÐ ……±±½Ý•¹¡…Ì ¡ÑÑÁÌè¼½µåÝ¥¹µ…¸¹½´œ¤°€ÍÑ…±”µåÝ¥¹µ…¸¹½´µÕÍÐÉ•µ…¥¸‘•¹¥••Ù•¸Ý¡•¸½¹™¥ÕÉ•œ¤ì4(€…ÍÍ•ÉÐ ……±±½Ý•¹¡…Ì ¡ÑÑÁÌè¼½ÁÉ•Ù¥•Ü¹µåÝ¥¹µ…¸¹½´œ¤°€½¹™¥ÕÉ•ÕÍÑ½´‘½µ…¥¹ÌµÕÍÐ¹½ÐÝ¥‘•¸ÁÉ½‘ÕÑ¥½¸=ILœ¤ì4(4(€‘•±•Ñ”ÁÉ½•ÍÌ¹•¹Ø¹I%1]e}9Y%I=959Pì4(€‘•±•Ñ”ÁÉ½•ÍÌ¹•¹Ø¹11=]}=I%%9Lì4(€…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…° 4(€€€•ÑI…Ñ•1¥µ¥Ñ±¥•¹Ñ%À¡µ½­I•Ä¡ìÉ•…±%Àè€œÈÀÌ¸À¸ÄÄÌ¸ÐÄœô¤¤°4(€€€€œÄäà¸ÔÄ¸ÄÀÀ¸äœ°4(€€€€`µI•…°µ%@µÕÍÐ‰”¥¹½É•½ÕÑÍ¥‘”I…¥±Ý…äœ4(€€¤ì4(€…ÍÍ•ÉÐ¹ÍÑÉ¥ÑÅÕ…° 4(€€€•ÑÁ¥I…Ñ•1¥µ¥Ñ-•ä¡µ½­I•Ä¡ìÉ•…±%Àè€œÈÀÌ¸À¸ÄÄÌ¸ÐÄœ°ÕÍ•Èèì¥è€ÕÍ•È´ÄÈÌœôô¤¤°4(€€€€ÕÍ—^tîÚ$z{-®éÜj×Ó#2rÂVÖ–Ã¢wfW&–f–VDW†×ÆRæ6öÒrÒÀÐ¢†VFW'3¢²WF†÷&—¦F–öã¢t&V&W"†VFW"ç–ÆöBç6–væGW&RrÐÐ¢Ó°Ð¢v—B'VåfW&–g’‡&WfW&–f–VB“°Ð¢76W'Bç7G&–7DWVÂ‡&VÖ÷FTfWF6„6ÆÇ2ÂÂw&WfW&–f–VBvFWv’–FVçF—G’×W7Bæ÷B&R&VÖ÷FVÇ’fW&–f–VBGv–6Rr“°Ð¢76W'Bç7G&–7DWVÂ‡&WfW&–f–VBçW6W"æ–BÂsÓÓÓÓ#2r“°Ð Ð¢òòÖ—76–æröÖÆf÷&ÖVBWF‚×W7B&R&V¦V7FVB$Tdõ$RF†R3‚Ô"æÇ—¦W"¥4ôâ'6W"â–çfÆ–@Ð¢òò¥4ôâv÷VÆB&RC'6W"W'&÷"–b'6–ær†VæVBf—'7C²F†R6÷'&V7BvFWv’&W7VÇB—2CàÐ¢òò&V6W6RF†—2&W7öç6RFW&Ö–æFW2&Vf÷&RF†R–ææW"4õ%2Ö–FFÆWv&RÂF†RvFWv’—G6VÆb×W7@¢òòw&çBF†R6æöæ–6Â&öGV7F–öâ÷&–v–âW&Ö—76–öâFò&VBF†RCà¢ÆWB&W7öç6RÒv—B&WVW7B†Ð¢ç÷7B‚rö’öæÇ—¦RrÐ¢ç6WB‚t÷&–v–ârÂv‡GG3¢òö×—v–ævÖâçvW2æFWbr¢ç6WB‚t6öçFVçBÕG—RrÂvÆ–6F–öâö§6öârÐ¢ç6VæB‚w²&'&ö¶Vâ#¢r“°Ð¢76W'Bç7G&–7DWVÂ‡&W7öç6Rç7FGW2ÂCÂwVæWF†VçF–6FVBæÇ—¦W"ÖÆf÷&ÖVB¥4ôâ×W7B&R&V¦V7FVB&Vf÷&R'6–ærr“°Ð¢76W'Bç7G&–7DWVÂ‡&W7öç6Ræ†VFW'5²v66W72Ö6öçG&öÂÖÆÆ÷rÖ÷&–v–âuÒÂVæFVf–æVBÂvÆVv7’vW2÷&–v–â×W7B&V6V—fRæòV&Ç’4õ%2W&Ö—76–öâr“°¢76W'Bç7G&–7DWVÂ‡&W7öç6Ræ†VFW'5²v66W72Ö6öçG&öÂÖÆÆ÷rÖ7&VFVçF–Ç2uÒÂVæFVf–æVBÂvÆVv7’vW2÷&–v–â×W7B&V6V—fRæò7&VFVçF–ÆVB4õ%2W&Ö—76–öâr“° ¢&W7öç6RÒv—B&WVW7B†¢ç÷7B‚rö’öæÇ—¦Rr¢ç6WB‚t÷&–v–ârÂv‡GG3¢òö×—v–ævÖææ6öÒr¢ç6WB‚t6öçFVçBÕG—RrÂvÆ–6F–öâö§6öâr¢ç6VæB‚w²&'&ö¶Vâ#¢r“°¢76W'Bç7G&–7DWVÂ‡&W7öç6Rç7FGW2ÂCÂv7W7FöÒÖFöÖ–âVæWF†VçF–6FVBæÇ—¦W"&WVW7B×W7B&R&V¦V7FVB&Vf÷&R'6–ærr“°¢76W'Bç7G&–7DWVÂ‡&W7öç6Ræ†VFW'5²v66W72Ö6öçG&öÂÖÆÆ÷rÖ÷&–v–âuÒÂv‡GG3¢òö×—v–ævÖææ6öÒrÂvV&Ç’C×W7B&VÖ–â&VF&ÆR'’F†R7W7FöÒ&öGV7F–öâFöÖ–âr“°¢76W'Bç7G&–7DWVÂ‡&W7öç6Ræ†VFW'5²v66W72Ö6öçG&öÂÖÆÆ÷rÖ7&VFVçF–Ç2uÒÂwG'VRrÂv7W7FöÒÖFöÖ–âV&Ç’C×W7B&W6W'fR7&VFVçF–ÆVB4õ%26VÖçF–72r“° Ð¢&W7öç6RÒv—B&WVW7B†Ð¢ç÷7B‚rö’ôäÅ•¤RrÐ¢ç6WB‚t÷&–v–ârÂv‡GG3¢òö×—v–ævÖææ6öÒrÐ¢ç6WB‚t6öçFVçBÕG—RrÂvÆ–6F–öâö§6öârÐ¢ç6VæB‚w²&'&ö¶Vâ#¢r“°Ð¢76W'Bç7G&–7DWVÂ‡&W7öç6Rç7FGW2ÂCÂv66RÖ–ç6Vç6—F—fRæÇ—¦W"F‡2×W7B&R&V¦V7FVB&Vf÷&R'6–ærr“°Ð¢76W'Bç7G&–7DWVÂ‡&W7öç6Ræ†VFW'5²v66W72Ö6öçG&öÂÖÆÆ÷rÖ÷&–v–âuÒÂv‡GG3¢òö×—v–ævÖææ6öÒrÂv66RÖ–ç6Vç6—F—fRæÇ—¦W"V&Ç’C×W7B&W6W'fR6æöæ–6Â4õ%2r“°Ð Ð¢&W7öç6RÒv—B&WVW7B†Ð¢ç÷7B‚rö’öæÇ—¦RöW‡G&rÐ¢ç6WB‚t÷&–v–ârÂv‡GG3¢òöGF6¶W"æW†×ÆRrÐ¢ç6WB‚t6öçFVçBÕG—RrÂvÆ–6F–öâö§6öârÐ¢ç6VæB‚w²&'&ö¶Vâ#¢r“°Ð¢76W'Bç7G&–7DWVÂ‡&W7öç6Rç7FGW2ÂCÂtæÇ—¦W"'6W"×&Vf—‚7V'F‡2×W7B&R&V¦V7FVB&Vf÷&R'6–ærr“°Ð¢76W'Bç7G&–7DWVÂ‡&W7öç6Ræ†VFW'5²v66W72Ö6öçG&öÂÖÆÆ÷rÖ÷&–v–âuÒÂVæFVf–æVBÂv†÷7F–ÆRÖ÷&–v–âæÇ—¦W"7V'F‚×W7B&V6V—fRæò4õ%2w&çBr“°Ð Ð¢&W7öç6RÒv—B&WVW7B†Ð¢ç÷7B‚rö’öæÇ—¦RÖ6†B×67&VVç6†÷BöW‡G&rÐ¢ç6WB‚t÷&–v–ârÂv‡GG3¢òö×—v–ævÖææ6öÒrÐ¢ç6WB‚t6öçFVçBÕG—RrÂvÆ–6F–öâö§6öârÐ¢ç6VæB‚w²&'&ö¶Vâ#¢r“°Ð¢76W'Bç7G&–7DWVÂ‡&W7öç6Rç7FGW2ÂCÂv6†B×67&VVç6†÷B'6W"×&Vf—‚7V'F‡2×W7B&R&V¦V7FVB&Vf÷&R'6–ærr“°Ð¢76W'Bç7G&–7DWVÂ‡&W7öç6Ræ†VFW'5²v66W72Ö6öçG&öÂÖÆÆ÷rÖ÷&–v–âuÒÂv‡GG3¢òö×—v–ævÖææ6öÒrÂv6†B×67&VVç6†÷B7V'F‚V&Ç’C×W7B&W6W'fR6æöæ–6Â4õ%2r“°Ð Ð¢6öç7B&Vf÷&TÖÆf÷&ÖVD§wBÒ&VÖ÷FTfWF6„6ÆÇ3°Ð¢&W7öç6RÒv—B&WVW7B†Ð¢ç÷7B‚rö’öæÇ—¦RÖ6†B×67&VVç6†÷BòrÐ¢ç6WB‚t÷&–v–ârÂv‡GG3¢ò÷6ögB×6v–æRÓ3sƒV2ææWFÆ–g’ærÐ¢ç6WB‚tWF†÷&—¦F–öârÂt&V&W"æ÷BÖÖ§wBrÐ¢ç6WB‚t6öçFVçBÕG—RrÂvÆ–6F–öâö§6öârÐ¢ç6VæB‚w²&'&ö¶Vâ#¢r“°Ð¢76W'Bç7G&–7DWVÂ‡&W7öç6Rç7FGW2ÂCÂvÖÆf÷&ÖVB¥uB×W7B&R&V¦V7FVB&Vf÷&RF†RÆ&vR'6W"r“°Ð¢76W'Bç7G&–7DWVÂ‡&VÖ÷FTfWF6„6ÆÇ2Â&Vf÷&TÖÆf÷&ÖVD§wBÂvÖÆf÷&ÖVB¥uB×W7Bæ÷BG&–vvW"&VÖ÷FR7W&6RfW&–f–6F–öâr“°Ð¢76W'Bç7G&–7DWVÂ‡&W7öç6Ræ†VFW'5²v66W72Ö6öçG&öÂÖÆÆ÷rÖ÷&–v–âuÒÂVæFVf–æVBÂw&WF—&VBæWFÆ–g’÷&–v–â×W7B&V6V—fRæòV&Ç’4õ%2W&Ö—76–öâr“°Ð Ð¢&W7öç6RÒv—B&WVW7B†Ð¢ç÷7B‚rö’öæÇ—¦RrÐ¢ç6WB‚t÷&–v–ârÂv‡GG3¢òöGF6¶W"æW†×ÆRrÐ¢ç6WB‚t6öçFVçBÕG—RrÂvÆ–6F–öâö§6öârÐ¢ç6VæB‚w²&'&ö¶Vâ#¢r“°Ð¢76W'Bç7G&–7DWVÂ‡&W7öç6Rç7FGW2ÂCÂv†÷7F–ÆRÖ÷&–v–âVæWF†VçF–6FVBæÇ—¦W"&WVW7B×W7B7F–ÆÂf–ÂWF‚r“°Ð¢76W'Bç7G&–7DWVÂ‡&W7öç6Ræ†VFW'5²v66W72Ö6öçG&öÂÖÆÆ÷rÖ÷&–v–âuÒÂVæFVf–æVBÂv†÷7F–ÆR÷&–v–â×W7B&V6V—fRæòV&Ç’4õ%2W&Ö—76–öâr“°Ð Ð¢òòöæ6R÷WFW"WF‚7V66VVG2Â'6–ær&ö6VVG2æ÷&ÖÆÇ’âF†—2&÷fW2F†RvFR&÷FV7G2öæÇÐ¢òòFÖ—76–öâæBFöW2æ÷B'—72F†RW†—7F–ær&öG’fÆ–FF÷"÷'6W"f÷"WF†VçF–6FVBW6W'2àÐ¢&W7öç6RÒv—B&WVW7B†Ð¢ç÷7B‚rö’öæÇ—¦RrÐ¢ç6WB‚t÷&–v–ârÂv‡GG3¢òö×—v–ævÖâçvW2æFWbr¢ç6WB‚w‚ÖÖö6²ÖWF‚rÂwG'VRrÐ¢ç6WB‚t6öçFVçBÕG—RrÂvÆ–6F–öâö§6öârÐ¢ç6VæB‚w²&'&ö¶Vâ#¢r“°Ð¢76W'Bç7G&–7DWVÂ‡&W7öç6Rç7FGW2ÂCÂvWF†VçF–6FVBÖÆf÷&ÖVB¥4ôâ×W7B&V6‚F†Ræ÷&ÖÂ'6W"æBf–Â2&B¥4ôâr“°Ð¢76W'Bç7G&–7DWVÂ‡&W7öç6Ræ†VFW'5²v66W72Ö6öçG&öÂÖÆÆ÷rÖ÷&–v–âuÒÂVæFVf–æVBÂvÆVv7’vW2÷&–v–â×W7B&V6V—fRæò'6W"ÖW'&÷"4õ%2W&Ö—76–öâr“° Ð¢òò&Wfö¶VB÷&–v–â×W7Bæ÷B&V6V—fRF†RVæWF†VçF–6FVB&VfÆ–v‡B6†÷'F7WB÷"ç’4õ%2w&çBà¢&W7öç6RÒv—B&WVW7B†¢æ÷F–öç2‚rö’öæÇ—¦Rr¢ç6WB‚t÷&–v–ârÂv‡GG3¢òö×—v–ævÖâçvW2æFWbr¢ç6WB‚t66W72Ô6öçG&öÂÕ&WVW7BÔÖWF†öBrÂuõ5Br“°¢76W'Bç7G&–7DWVÂ‡&W7öç6Rç7FGW2ÂCÂw&Wfö¶VBÖ÷&–v–âæÇ—¦W"&VfÆ–v‡B×W7Bæ÷B'—72FÖ—76–öâWF‚r“°¢76W'Bç7G&–7DWVÂ‡&W7öç6Ræ†VFW'5²v66W72Ö6öçG&öÂÖÆÆ÷rÖ÷&–v–âuÒÂVæFVf–æVBÂw&Wfö¶VBÖ÷&–v–â&VfÆ–v‡B×W7B&V6V—fRæò4õ%2W&Ö—76–öâr“° ¢òòF†R6æöæ–6Â÷&–v–â7F–ÆÂ&V6V—fW2F†RW†—7F–ærVæWF†VçF–6FVB&VfÆ–v‡B&W7öç6Rà¢&W7öç6RÒv—B&WVW7B†¢æ÷F–öç2‚rö’öæÇ—¦Rr¢ç6WB‚t÷&–v–ârÂv‡GG3¢òö×—v–ævÖææ6öÒr¢ç6WB‚t66W72Ô6öçG&öÂÕ&WVW7BÔÖWF†öBrÂuõ5Br“°¢76W'Bç7G&–7DWVÂ‡&W7öç6Rç7FGW2Â#BÂv6æöæ–6ÂæÇ—¦W"4õ%2&VfÆ–v‡B×W7B&VÖ–âVæWF†VçF–6FVBr“°¢76W'Bç7G&–7DWVÂ‡&W7öç6Ræ†VFW'5²v66W72Ö6öçG&öÂÖÆÆ÷rÖ÷&–v–âuÒÂv‡GG3¢òö×—v–ævÖææ6öÒr“° Ð¢òòVç&VÆFVB6ÖÆÂÖ&öG’—2¶VWF†V—"&–÷"Ö–FFÆWv&R÷&FW"ö&V†f–÷#²F†R÷WFW"vFWv’—0Ð¢òò–çFVçF–öæÆÇ’66÷VBöæÇ’FòF†RGvò3‚Ô"æÇ—¦W"&÷WFW2àÐ¢&W7öç6RÒv—B&WVW7B†Ð¢ç÷7B‚rö’ö–6V'&V¶W"rÐ¢ç6WB‚t6öçFVçBÕG—RrÂvÆ–6F–öâö§6öârÐ¢ç6VæB‚w²&'&ö¶Vâ#¢r“°Ð¢76W'Bç7G&–7DWVÂ‡&W7öç6Rç7FGW2ÂCÂwVç&VÆFVB’&÷WFR&V†f–÷"×W7B&VÖ–âVæ6†ævVBr“°Ð Ð¢vÆö&ÂæfWF6‚Ò÷&–v–æÄfWF6ƒ°Ð¢6öç6öÆRæÆör‚~)ÈR&–Çv’&WVW7BFÖ—76–öâÂV&Ç’ÖW'&÷"4õ%2Â&RÖ&öG’WF‚ÂæB&VÂÖ6Æ–VçB•Æ–Ö—FW"wV&B76VBâr“°Ð§Ò’‚’æ6F6‚‚†W'&÷"’Óâ°Ð¢6öç6öÆRæW'&÷"†W'&÷"“°Ð¢&ö6W72æW†—Bƒ“°Ð§Ò“°Ð

@@ -34,6 +34,11 @@ const runtimeProbe = `
       .set('Origin', 'https://mywingman.pages.dev')
       .set('Access-Control-Request-Method', 'GET');
     assert.strictEqual(pages.headers['access-control-allow-origin'], undefined);
+    const branchPreview = await request(app)
+      .options('/api/csrf-token')
+      .set('Origin', 'https://codex-maeve-request-deadline.mywingman.pages.dev')
+      .set('Access-Control-Request-Method', 'GET');
+    assert.strictEqual(branchPreview.headers['access-control-allow-origin'], undefined, 'production must not allow the staging preview origin');
     const custom = await request(app)
       .options('/api/csrf-token')
       .set('Origin', 'https://mywingmanapp.com')
@@ -48,6 +53,8 @@ const runtimeOutput = execFileSync(process.execPath, ['-e', runtimeProbe], {
   env: {
     ...process.env,
     NODE_ENV: 'production',
+    RAILWAY_ENVIRONMENT: 'production',
+    RAILWAY_ENVIRONMENT_ID: '30e98667-a8a1-415d-8cf1-55e670f45bd0',
     ALLOWED_ORIGINS: 'https://attacker.example',
     AICREDITS_API_KEY: 'test_key',
     AICREDITS_API_KEY_VISION: 'test_vision_key',
@@ -57,5 +64,41 @@ const runtimeOutput = execFileSync(process.execPath, ['-e', runtimeProbe], {
   }
 });
 assert.ok(runtimeOutput.endsWith('RUNTIME_CORS_OK'), 'runtime production CORS must ignore arbitrary configured origins');
+
+const stagingRuntimeProbe = `
+  const assert = require('assert');
+  const request = require('supertest');
+  const { app } = require('./server');
+  (async () => {
+    const preview = await request(app)
+      .options('/api/csrf-token')
+      .set('Origin', 'https://codex-maeve-request-deadline.mywingman.pages.dev')
+      .set('Access-Control-Request-Method', 'GET');
+    assert.strictEqual(preview.headers['access-control-allow-origin'], 'https://codex-maeve-request-deadline.mywingman.pages.dev');
+    const attacker = await request(app)
+      .options('/api/csrf-token')
+      .set('Origin', 'https://attacker.example')
+      .set('Access-Control-Request-Method', 'GET');
+    assert.strictEqual(attacker.headers['access-control-allow-origin'], undefined);
+    process.stdout.write('STAGING_PREVIEW_CORS_OK');
+  })().catch(error => { console.error(error); process.exit(1); });
+`;
+const stagingRuntimeOutput = execFileSync(process.execPath, ['-e', stagingRuntimeProbe], {
+  cwd: path.join(__dirname, '..'),
+  encoding: 'utf8',
+  env: {
+    ...process.env,
+    NODE_ENV: 'production',
+    RAILWAY_ENVIRONMENT: 'razorpay-staging',
+    RAILWAY_ENVIRONMENT_ID: '438d986c-d799-42a0-9149-ef0eef809486',
+    ALLOWED_ORIGINS: 'https://attacker.example',
+    AICREDITS_API_KEY: 'test_key',
+    AICREDITS_API_KEY_VISION: 'test_vision_key',
+    SUPABASE_URL: 'https://mshlbvbbbzlykfpavekh.supabase.co',
+    SUPABASE_ANON_KEY: 'test_anon',
+    SUPABASE_SERVICE_ROLE_KEY: 'test_service_role'
+  }
+});
+assert.ok(stagingRuntimeOutput.endsWith('STAGING_PREVIEW_CORS_OK'), 'staging must allow only its exact Cloudflare branch preview origin');
 
 console.log('✔ Production CORS least-privilege policy regression guard passed.');
