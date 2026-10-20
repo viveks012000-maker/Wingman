@@ -11,90 +11,113 @@
  * =========================================================================================
  */
 
-function validateImagePayload(req, res, next) {
-    const isAnalyzeRoute = req.path === '/api/analyze' || 
-                           req.path === '/api/analyze-chat-screenshot' || 
-                           req.originalUrl.startsWith('/api/analyze');
-                           
-    if (!isAnalyzeRoute || req.method !== 'POST') {
-        return next();
+function normalizeAnalyzerImages(body = {}) {
+    const { images, image, imageBase64 } = body || {};
+    const hadImageArray = Array.isArray(images);
+    let rawImages = [];
+    if (hadImageArray) {
+        rawImages = images.length > 0 ? images : ((image || imageBase64) ? [image || imageBase64] : []);
+    } else if (images) {
+        return { valid: false, error: 'Invalid payload format: images must be an array.' };
+    } else if (image || imageBase64) {
+        rawImages = [image || imageBase64];
     }
 
-    const { images } = req.body || {};
-    if (!images) {
-        return next(); // Let endpoint handle missing image validation
+    if (rawImages.length > 5) {
+        return { valid: false, error: 'You can analyze a maximum of 5 images at a time.' };
     }
 
-    if (!Array.isArray(images)) {
-        return res.status(400).json({ success: false, error: 'Invalid payload format: images must be an array.' });
-    }
-
-    if (images.length > 5) {
-        return res.status(400).json({ success: false, error: 'You can analyze a maximum of 5 images at a time.' });
-    }
-
-    const ALLOWED_MIME_REGEX = /^data:image\/(jpeg|jpg|png|webp|gif|heic|heif|bmp);base64,/i;
-    const MAX_PER_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB per image
-    const MAX_TOTAL_BYTES = 25 * 1024 * 1024; // 25 MB total for up to 5 images
-
+    const maxSingleImageBytes = 5 * 1024 * 1024;
+    const maxTotalImageBytes = 25 * 1024 * 1024;
+    const allowedMimes = new Set([
+        'image/jpeg', 'image/jpg', 'image/png', 'image/webp',
+        'image/gif', 'image/heic', 'image/heif', 'image/bmp'
+    ]);
+    const imageList = [];
     let totalDecodedBytes = 0;
 
-    for (let i = 0; i < images.length; i++) {
-        const imgStr = images[i];
-        if (typeof imgStr !== 'string' || !imgStr.trim()) {
-            return res.status(400).json({ success: false, error: `Invalid image string at index ${i}.` });
+    for (let i = 0; i < rawImages.length; i++) {
+        const item = rawImages[i];
+        if (typeof item !== 'string' || !item.trim()) {
+            return { valid: false, error: `Invalid image string at index ${i}.` };
         }
 
-        const trimmed = imgStr.trim();
-
-        // Reject arbitrary remote HTTP/HTTPS URLs to prevent SSRF and MIME bypass
-        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-            return res.status(400).json({
-                success: false,
-                error: 'Remote image URLs are not supported. Please upload chat screenshots directly as image files.'
-            });
+        const trimmed = item.trim();
+        if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('//')) {
+            return { valid: false, error: 'Remote image URLs are not supported. Please upload screenshot files directly.' };
         }
 
-        // Validate MIME type prefix if data URI present
+        let mime = 'image/jpeg';
+        let base64Data = '';
         if (trimmed.startsWith('data:')) {
-            if (!ALLOWED_MIME_REGEX.test(trimmed)) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'This image format is not supported.'
-                });
+            const allowedDataUrl = /^data:image\/(jpeg|jpg|png|webp|gif|heic|heif|bmp);base64,/i;
+            if (!allowedDataUrl.test(trimmed)) {
+                return { valid: false, error: 'This image format is not supported.' };
             }
+            const match = trimmed.match(/^data:([^;]+);base64,(.+)$/s);
+            if (!match) {
+                return { valid: false, error: 'This image format is not supported.' };
+            }
+            mime = match[1].toLowerCase();
+            base64Data = match[2].replace(/[\r\n\s]+/g, '');
+        } else {
+            base64Data = trimmed.replace(/[\r\n\s]+/g, '');
         }
 
-        // Estimate decoded base64 byte size
-        const base64Data = trimmed.includes(',') ? trimmed.split(',')[1].trim() : trimmed;
-        const base64Clean = base64Data.replace(/[\r\n\s]+/g, '');
-        if (!/^[A-Za-z0-9+/=]+$/.test(base64Clean)) {
-            return res.status(400).json({
-                success: false,
-                error: `Invalid or malformed base64 image data at index ${i}.`
-            });
+        if (!allowedMimes.has(mime)) {
+            return { valid: false, error: `Screenshot #${i + 1} has an unsupported format (${mime}). Supported: JPG, PNG, WEBP, HEIC, BMP.` };
+        }
+        const paddingIndex = base64Data.indexOf('=');
+        const paddingCount = paddingIndex < 0 ? 0 : base64Data.length - paddingIndex;
+        const base64ContentLength = paddingIndex < 0 ? base64Data.length : paddingIndex;
+        const malformedBase64 = !/^[A-Za-z0-9+/]*={0,2}$/.test(base64Data)
+            || base64Data.length % 4 === 1
+            || (paddingCount > 0 && base64Data.length % 4 !== 0)
+            || (paddingCount === 1 && base64ContentLength % 4 !== 3)
+            || (paddingCount === 2 && base64ContentLength % 4 !== 2);
+        if (malformedBase64) {
+            return { valid: false, error: `Invalid or malformed base64 image data at index ${i}.` };
         }
 
-        const estimatedBytes = Math.ceil((base64Clean.length * 3) / 4);
-
-        if (estimatedBytes > MAX_PER_IMAGE_BYTES) {
-            return res.status(400).json({
-                success: false,
-                error: 'Image is too large. Maximum size is 5 MB per image.'
-            });
+        const decodedBytes = Math.floor((base64Data.length * 3) / 4)
+            - (base64Data.endsWith('==') ? 2 : (base64Data.endsWith('=') ? 1 : 0));
+        if (decodedBytes <= 0) {
+            return { valid: false, error: `Screenshot #${i + 1} is empty or unreadable.` };
+        }
+        if (decodedBytes > maxSingleImageBytes) {
+            return {
+                valid: false,
+                error: hadImageArray
+                    ? 'Image is too large. Maximum size is 5 MB per image.'
+                    : `Screenshot #${i + 1} exceeds the 5 MB per-image limit.`
+            };
         }
 
-        totalDecodedBytes += estimatedBytes;
+        totalDecodedBytes += decodedBytes;
+        if (totalDecodedBytes > maxTotalImageBytes) {
+            return { valid: false, error: 'These images are too large. Maximum total upload size: 25 MB.' };
+        }
+
+        imageList.push(`data:${mime};base64,${base64Data}`);
     }
 
-    if (totalDecodedBytes > MAX_TOTAL_BYTES) {
-        return res.status(400).json({
-            success: false,
-            error: 'These images are too large. Maximum total upload size: 25 MB.'
-        });
-    }
-
-    next();
+    return { valid: true, imageList };
 }
 
-module.exports = { validateImagePayload };
+function validateImagePayload(req, res, next) {
+    const originalUrl = String(req.originalUrl || '');
+    const isAnalyzeRoute = req.path === '/api/analyze'
+        || req.path === '/api/analyze-chat-screenshot'
+        || originalUrl.startsWith('/api/analyze');
+
+    if (!isAnalyzeRoute || req.method !== 'POST') return next();
+
+    const validation = normalizeAnalyzerImages(req.body || {});
+    if (!validation.valid) {
+        return res.status(400).json({ success: false, error: validation.error });
+    }
+    req.validatedAnalyzerImages = validation.imageList;
+    return next();
+}
+
+module.exports = { validateImagePayload, normalizeAnalyzerImages };

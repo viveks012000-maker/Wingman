@@ -2901,14 +2901,26 @@ STRICT LAWS:
         let cssHeight = window.innerHeight || document.documentElement.clientHeight;
 
         function resizeCanvas() {
-            dpr = Math.min(isMobile ? 2 : Infinity, Math.max(1, window.devicePixelRatio || 1));
-            cssWidth = window.innerWidth || document.documentElement.clientWidth;
-            cssHeight = window.innerHeight || document.documentElement.clientHeight;
+            const nextDpr = Math.min(isMobile ? 2 : Infinity, Math.max(1, window.devicePixelRatio || 1));
+            const nextCssWidth = window.innerWidth || document.documentElement.clientWidth;
+            const nextCssHeight = window.innerHeight || document.documentElement.clientHeight;
+            const nextCanvasWidth = Math.floor(nextCssWidth * nextDpr);
+            const nextCanvasHeight = Math.floor(nextCssHeight * nextDpr);
+            const dimensionsChanged = nextCssWidth !== cssWidth
+                || nextCssHeight !== cssHeight
+                || nextDpr !== dpr
+                || nextCanvasWidth !== canvas.width
+                || nextCanvasHeight !== canvas.height;
+            if (!dimensionsChanged) return;
 
-            canvas.width = Math.floor(cssWidth * dpr);
-            canvas.height = Math.floor(cssHeight * dpr);
-            canvas.style.width = cssWidth + "px";
-            canvas.style.height = cssHeight + "px";
+            dpr = nextDpr;
+            cssWidth = nextCssWidth;
+            cssHeight = nextCssHeight;
+
+            if (canvas.width !== nextCanvasWidth) canvas.width = nextCanvasWidth;
+            if (canvas.height !== nextCanvasHeight) canvas.height = nextCanvasHeight;
+            if (canvas.style.width !== cssWidth + "px") canvas.style.width = cssWidth + "px";
+            if (canvas.style.height !== cssHeight + "px") canvas.style.height = cssHeight + "px";
 
             for (let i = 0; i < numParticles; i++) {
                 const p = particles[i];
@@ -2962,7 +2974,6 @@ STRICT LAWS:
                 return;
             }
 
-            canvas.style.display = 'block';
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             ctx.save();

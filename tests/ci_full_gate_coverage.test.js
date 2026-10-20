@@ -21,10 +21,12 @@ assert(!/^\s*paths(?:-ignore)?:/m.test(onBlock), 'production gate must not use p
 
 assert(/permissions:\n\s+contents:\s+read/m.test(workflow), 'workflow token must remain read-only for repository contents');
 assert(/group:\s*production-gate-\$\{\{ github\.ref \}\}/.test(workflow), 'concurrency group must use the production-gate namespace');
-assert(/test \"\$actual\" = \"\$GITHUB_SHA\"/.test(workflow), 'workflow must verify checkout equals the triggering SHA');
+assert(workflow.includes('EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}'), 'workflow must select the exact pull request head SHA instead of a potentially stale merge ref');
+assert(workflow.includes('ref: ${{ github.event.pull_request.head.sha || github.sha }}'), 'checkout must use the exact expected source SHA');
+assert(workflow.includes('test "$actual" = "$EXPECTED_SOURCE_SHA"'), 'workflow must verify checkout equals the exact expected source SHA');
 assert(/npm test/.test(workflow), 'full regression suite must remain mandatory');
 assert(/npm audit --omit=dev --audit-level=high/.test(workflow), 'production dependency audit must remain mandatory');
 assert(/npm run build:production/.test(workflow), 'authoritative strict public artifact build must remain mandatory');
-assert(/test \"\$\(jq -r \.sourceCommit netlify-dist\/release\.json\)\" = \"\$GITHUB_SHA\"/.test(workflow), 'artifact source-commit truth must remain enforced');
+assert(workflow.includes('test "$(jq -r .sourceCommit netlify-dist/release.json)" = "$EXPECTED_SOURCE_SHA"'), 'artifact source-commit truth must remain enforced for the exact source SHA');
 
 console.log('✅ Production verification workflow covers every main PR/push with no path-filter bypass.');

@@ -6,6 +6,10 @@ const express = require('express');
 const { verifySupabaseToken, requireSupabaseAuth } = require('./middleware/supabaseAuth');
 const { analyzerAdmissionLimiter } = require('./middleware/security');
 const { isPrivateDevelopmentOrigin } = require('./middleware/developmentOrigin');
+const {
+    ISOLATED_STAGING_RAILWAY_ENVIRONMENT_ID,
+    ISOLATED_STAGING_PREVIEW_ORIGIN
+} = require('./middleware/securityBoundaries');
 const { app: wingmanApi } = require('./server');
 
 const app = express();
@@ -37,9 +41,12 @@ const GATEWAY_DEVELOPMENT_ALLOWED_ORIGINS = [
 
 function getGatewayAllowedOrigins() {
     const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
+    const isolatedStagingPreviewOrigins = process.env.RAILWAY_ENVIRONMENT_ID === ISOLATED_STAGING_RAILWAY_ENVIRONMENT_ID
+        ? [ISOLATED_STAGING_PREVIEW_ORIGIN]
+        : [];
     const defaults = isProduction
-        ? GATEWAY_PRODUCTION_ALLOWED_ORIGINS
-        : [...GATEWAY_PRODUCTION_ALLOWED_ORIGINS, ...GATEWAY_DEVELOPMENT_ALLOWED_ORIGINS];
+        ? [...GATEWAY_PRODUCTION_ALLOWED_ORIGINS, ...isolatedStagingPreviewOrigins]
+        : [...GATEWAY_PRODUCTION_ALLOWED_ORIGINS, ...GATEWAY_DEVELOPMENT_ALLOWED_ORIGINS, ...isolatedStagingPreviewOrigins];
     const configured = process.env.ALLOWED_ORIGINS
         ? process.env.ALLOWED_ORIGINS.split(',').map(value => value.trim()).filter(Boolean)
         : [];
@@ -57,12 +64,18 @@ function applyAnalyzerAdmissionCors(req, res) {
         (!isProduction && isPrivateDevelopmentOrigin(origin)));
     if (!isAllowedOrigin) return false;
 
-    // Early admission responses must never reflect a request-controlled Origin. The mounted
-    // inner app handles normal development responses; this gateway path emits CORS only for the
-    // fixed production frontend origin from the explicit allowlist.
-    const approvedOrigin = GATEWAY_PRODUCTION_ALLOWED_ORIGINS.find(value => value === origin);
-    if (!approvedOrigin) return false;
-    res.setHeader('Access-Control-Allow-Origin', approvedOrigin);
+    // Write only fixed allowlist values. Keeping each credentialed CORS grant explicit
+    // prevents request-controlled Origin data from reaching Access-Control-Allow-Origin.
+    if (origin === GATEWAY_PRODUCTION_ALLOWED_ORIGINS[0]) {
+        res.setHeader('Access-Control-Allow-Origin', GATEWAY_PRODUCTION_ALLOWED_ORIGINS[0]);
+    } else if (
+        process.env.RAILWAY_ENVIRONMENT_ID === ISOLATED_STAGING_RAILWAY_ENVIRONMENT_ID &&
+        origin === ISOLATED_STAGING_PREVIEW_ORIGIN
+    ) {
+        res.setHeader('Access-Control-Allow-Origin', ISOLATED_STAGING_PREVIEW_ORIGIN);
+    } else {
+        return false;
+    }
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     if (typeof res.vary === 'function') res.vary('Origin');
     else res.setHeader('Vary', 'Origin');
@@ -101,7 +114,18 @@ app.use((req, res, next) => {
 // into an unbounded Supabase token-verification amplifier.
 app.use((req, res, next) => {
     const pathname = typeof req.path === 'string' ? req.path : '';
-    if (req.method === 'OPTIONS' || !isLargeBodyAnalyzerPath(pathname)) {
+    if (!isLargeBodyAnalyzerPath(pathname)) {
+        return next();
+    }
+
+    if (req.method === 'OPTIONS') {
+        const origin = req.headers && req.headers.origin;
+        const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
+        const isAllowedOrigin = origin && (getGatewayAllowedOrigins().has(origin) ||
+            (!isProduction && isPrivateDevelopmentOrigin(origin)));
+        if (origin && !isAllowedOrigin) {
+            return res.status(401).json({ success: false, error: 'Unauthorized origin.' });
+        }
         return next();
     }
 

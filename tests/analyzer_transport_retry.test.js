@@ -1,147 +1,118 @@
 'use strict';
 
-const assert = require('assert');
-const {
-    ANALYZER_ENDPOINT,
-    ANALYZER_VISION_MODEL,
-    createAnalyzerRetryFetch,
-    isAnalyzerVisionRequest
-} = require('../middleware/analyzerTransportRetry');
+const assert = require('node:assert/strict');
 
-function makeResponse(status, body = '') {
-    let drained = false;
-    return {
+process.env.NODE_ENV = 'test';
+process.env.AICREDITS_API_KEY = 'analyzer-main-test-key';
+process.env.AICREDITS_API_KEY_VISION = 'analyzer-vision-test-key';
+process.env.AICREDITS_API_KEY_GENERAL = 'general-test-key';
+delete process.env.OPENROUTER_API_KEY;
+
+const { queryAnalyzerProvider, queryOpenRouter } = require('../server');
+
+const originalFetch = global.fetch;
+const originalLog = console.log;
+const originalWarn = console.warn;
+const logs = [];
+console.log = (...args) => logs.push(args.join(' '));
+console.warn = (...args) => logs.push(args.join(' '));
+
+function response(status, body, headers = {}) {
+    return new Response(typeof body === 'string' ? body : JSON.stringify(body), {
         status,
-        ok: status >= 200 && status < 300,
-        async arrayBuffer() {
-            drained = true;
-            return Buffer.from(body);
+        headers: { 'content-type': 'application/json', ...headers }
+    });
+}
+
+async function runAnalyzerCases() {
+    const messages = [{ role: 'user', content: 'synthetic test input' }];
+    let calls = 0;
+
+    global.fetch = async () => {
+        calls += 1;
+        return calls === 1
+            ? response(429, { error: { status: 429 } }, { 'retry-after': '0' })
+            : response(200, { choices: [{ message: { content: 'synthetic response' } }] });
+    };
+    assert.equal(await queryAnalyzerProvider('vision', messages, 0.2, 10, 1000), 'synthetic response');
+    assert.equal(calls, 2, 'Analyzer may retry an explicit provider rate-limit rejection once it is safe to do so');
+    const analyzerAttempts = logs
+        .filter(line => line.startsWith('[PERF_TELEMETRY]'))
+        .map(line => JSON.parse(line.slice('[PERF_TELEMETRY] '.length)))
+        .filter(item => item.stage === 'vision_provider_attempt');
+    assert.equal(analyzerAttempts.length, 2, 'each actual Analyzer provider request must get its own timing sample');
+    assert(analyzerAttempts.every(item => item.attemptCount >= 1));
+    assert(!logs.some(line => line.includes('synthetic test input') || line.includes('analyzer-vision-test-key')),
+        'provider timing logs must not include prompts or credentials');
+
+    for (const scenario of [
+        {
+            name: '5xx response',
+            fetch: async () => response(503, { error: { status: 503 } }),
+            check: error => error && error.statusCode === 503
         },
-        async text() {
-            drained = true;
-            return body;
+        {
+            name: 'ambiguous network failure',
+            fetch: async () => { throw new TypeError('synthetic connection reset'); },
+            check: error => error instanceof TypeError
         },
-        get drained() {
-            return drained;
+        {
+            name: 'provider timeout',
+            fetch: async () => { throw Object.assign(new Error('synthetic timeout'), { name: 'AbortError' }); },
+            check: error => error && error.isTimeout === true
+        },
+        {
+            name: 'empty successful response',
+            fetch: async () => response(200, { choices: [] }),
+            check: error => error && error.code === 'AI_PROVIDER_EMPTY_RESPONSE'
         }
+    ]) {
+        calls = 0;
+        global.fetch = async (...args) => { calls += 1; return scenario.fetch(...args); };
+        await assert.rejects(queryAnalyzerProvider('main', messages, 0.2, 10, 1000), scenario.check, scenario.name);
+        assert.equal(calls, 1, `${scenario.name} must not replay potentially completed inference`);
+    }
+}
+
+async function runGeneralProviderCases() {
+    const messages = [{ role: 'user', content: 'synthetic test input' }];
+    let calls = 0;
+
+    global.fetch = async () => {
+        calls += 1;
+        return calls === 1
+            ? response(429, 'rate limited', { 'retry-after': '0' })
+            : response(200, { choices: [{ message: { content: 'synthetic response' } }] });
     };
-}
+    assert.equal(await queryOpenRouter('qwen/qwen3-235b-a22b-2507', messages, 0.2, 10, 1000), 'synthetic response');
+    assert.equal(calls, 2, 'general AI requests may retry an explicit 429 rejection');
 
-function visionInit(extra = {}) {
-    return {
-        method: 'POST',
-        headers: {
-            Authorization: 'Bearer test-vision-key',
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ model: ANALYZER_VISION_MODEL, messages: [{ role: 'user', content: 'x' }] }),
-        ...extra
-    };
-}
-
-async function run() {
-    assert.strictEqual(isAnalyzerVisionRequest(ANALYZER_ENDPOINT, visionInit()), true, 'exact Analyzer vision request must be recognized');
-    assert.strictEqual(isAnalyzerVisionRequest(ANALYZER_ENDPOINT, { ...visionInit(), body: JSON.stringify({ model: 'qwen/qwen3-235b-a22b-2507' }) }), false, 'text model must not be intercepted');
-    assert.strictEqual(isAnalyzerVisionRequest('https://example.com/chat/completions', visionInit()), false, 'other endpoints must not be intercepted');
-
-    {
-        let calls = 0;
-        let seenAuth = null;
-        const delays = [];
-        const wrapped = createAnalyzerRetryFetch(async (_url, init) => {
-            calls += 1;
-            seenAuth = init.headers.Authorization;
-            if (calls === 1) throw new TypeError('fetch failed');
-            return makeResponse(200, 'ok');
-        }, { sleep: async ms => { delays.push(ms); } });
-        const response = await wrapped(ANALYZER_ENDPOINT, visionInit());
-        assert.strictEqual(response.status, 200);
-        assert.strictEqual(calls, 2, 'one transient network failure must retry once');
-        assert.strictEqual(seenAuth, 'Bearer test-vision-key', 'retry must preserve the exact Authorization header');
-        assert.deepStrictEqual(delays, [250], 'first retry backoff must be bounded and deterministic');
-    }
-
-    {
-        let calls = 0;
-        const first = makeResponse(502, 'upstream');
-        const wrapped = createAnalyzerRetryFetch(async () => {
-            calls += 1;
-            return calls === 1 ? first : makeResponse(200, 'ok');
-        }, { sleep: async () => {} });
-        const response = await wrapped(ANALYZER_ENDPOINT, visionInit());
-        assert.strictEqual(response.status, 200);
-        assert.strictEqual(calls, 2, 'HTTP 502 must retry');
-        assert.strictEqual(first.drained, true, 'intermediate retry response must be drained');
-    }
-
-    for (const status of [429, 500, 504]) {
-        let calls = 0;
-        const wrapped = createAnalyzerRetryFetch(async () => {
-            calls += 1;
-            return calls < 3 ? makeResponse(status, 'transient') : makeResponse(200, 'ok');
-        }, { sleep: async () => {} });
-        const response = await wrapped(ANALYZER_ENDPOINT, visionInit());
-        assert.strictEqual(response.status, 200);
-        assert.strictEqual(calls, 3, `HTTP ${status} must use at most three total attempts`);
-    }
-
-    for (const status of [400, 401, 402, 403, 413, 503]) {
-        let calls = 0;
-        const wrapped = createAnalyzerRetryFetch(async () => {
-            calls += 1;
-            return makeResponse(status, 'non-retryable');
-        }, { sleep: async () => {} });
-        const response = await wrapped(ANALYZER_ENDPOINT, visionInit());
-        assert.strictEqual(response.status, status);
-        assert.strictEqual(calls, 1, `HTTP ${status} must not retry`);
-    }
-
-    {
-        let calls = 0;
-        const wrapped = createAnalyzerRetryFetch(async () => {
-            calls += 1;
-            return makeResponse(500, 'text-model failure');
-        }, { sleep: async () => {} });
-        const textInit = visionInit({ body: JSON.stringify({ model: 'qwen/qwen3-235b-a22b-2507', messages: [] }) });
-        const response = await wrapped(ANALYZER_ENDPOINT, textInit);
-        assert.strictEqual(response.status, 500);
-        assert.strictEqual(calls, 1, 'Analyzer text stage must remain untouched by the vision transport wrapper');
-    }
-
-    {
-        let calls = 0;
-        const controller = new AbortController();
-        controller.abort();
-        const wrapped = createAnalyzerRetryFetch(async () => {
-            calls += 1;
-            return makeResponse(200, 'should-not-run');
-        }, { sleep: async () => {} });
+    for (const scenario of [
+        { name: '5xx response', fetch: async () => response(503, 'upstream failure') },
+        { name: 'ambiguous network failure', fetch: async () => { throw new TypeError('synthetic connection reset'); } },
+        { name: 'empty successful response', fetch: async () => response(200, { choices: [] }) }
+    ]) {
+        calls = 0;
+        global.fetch = async (...args) => { calls += 1; return scenario.fetch(...args); };
         await assert.rejects(
-            () => wrapped(ANALYZER_ENDPOINT, visionInit({ signal: controller.signal })),
-            err => err && err.name === 'AbortError'
+            queryOpenRouter('qwen/qwen3-235b-a22b-2507', messages, 0.2, 10, 1000),
+            scenario.name
         );
-        assert.strictEqual(calls, 0, 'pre-aborted requests must not be sent or retried');
+        assert.equal(calls, 1, `${scenario.name} must not trigger key/model failover retries`);
     }
-
-    {
-        let calls = 0;
-        const wrapped = createAnalyzerRetryFetch(async () => {
-            calls += 1;
-            const err = new Error('deadline');
-            err.name = 'AbortError';
-            throw err;
-        }, { sleep: async () => {} });
-        await assert.rejects(
-            () => wrapped(ANALYZER_ENDPOINT, visionInit()),
-            err => err && err.name === 'AbortError'
-        );
-        assert.strictEqual(calls, 1, 'AbortError must never retry');
-    }
-
-    console.log('✅ Analyzer transient transport retry regression guard passed.');
 }
 
-run().catch(err => {
-    console.error(err);
-    process.exit(1);
+(async () => {
+    try {
+        await runAnalyzerCases();
+        await runGeneralProviderCases();
+        console.log('✅ AI provider retry safety and per-request telemetry checks passed.');
+    } finally {
+        global.fetch = originalFetch;
+        console.log = originalLog;
+        console.warn = originalWarn;
+    }
+})().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
 });

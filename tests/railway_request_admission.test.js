@@ -23,7 +23,8 @@ const {
   app,
   LARGE_BODY_ANALYZER_PATHS,
   GATEWAY_PRODUCTION_ALLOWED_ORIGINS,
-  getGatewayAllowedOrigins
+  getGatewayAllowedOrigins,
+  applyAnalyzerAdmissionCors
 } = require('../railway-server');
 
 function mockReq({ ip = '198.51.100.9', realIp, forwardedFor, remoteAddress = '10.0.0.7', user } = {}) {
@@ -31,6 +32,15 @@ function mockReq({ ip = '198.51.100.9', realIp, forwardedFor, remoteAddress = '1
   if (realIp !== undefined) headers['x-real-ip'] = realIp;
   if (forwardedFor !== undefined) headers['x-forwarded-for'] = forwardedFor;
   return { ip, headers, socket: { remoteAddress }, user };
+}
+
+function mockCorsResponse() {
+  const headers = {};
+  return {
+    headers,
+    setHeader(name, value) { headers[name.toLowerCase()] = value; },
+    vary(value) { headers.vary = value; }
+  };
 }
 
 async function runVerify(req) {
@@ -96,6 +106,63 @@ async function runVerify(req) {
   assert(!allowed.has('https://soft-sawine-30785c.netlify.app'), 'retired Netlify origins must remain rejected');
   assert(!allowed.has('http://localhost:9999'), 'localhost configured origin must be rejected in production');
   assert(!allowed.has('*'), 'wildcard configured origin must be rejected in production');
+
+  const productionCorsResponse = mockCorsResponse();
+  assert.strictEqual(
+    applyAnalyzerAdmissionCors({ headers: { origin: 'https://mywingmanapp.com' } }, productionCorsResponse),
+    true,
+    'the canonical production origin must receive gateway admission CORS'
+  );
+  assert.strictEqual(productionCorsResponse.headers['access-control-allow-origin'], 'https://mywingmanapp.com');
+  assert.strictEqual(productionCorsResponse.headers['access-control-allow-credentials'], 'true');
+  assert.strictEqual(productionCorsResponse.headers.vary, 'Origin');
+
+  for (const hostileOrigin of [
+    'null',
+    'https://mywingmanapp.com.attacker.test',
+    'https://attacker.test/mywingmanapp.com',
+    'https://attacker.example'
+  ]) {
+    const deniedResponse = mockCorsResponse();
+    assert.strictEqual(
+      applyAnalyzerAdmissionCors({ headers: { origin: hostileOrigin } }, deniedResponse),
+      false,
+      `untrusted origin ${hostileOrigin} must not receive gateway admission CORS`
+    );
+    assert.strictEqual(deniedResponse.headers['access-control-allow-origin'], undefined);
+    assert.strictEqual(deniedResponse.headers['access-control-allow-credentials'], undefined);
+  }
+
+  const previousEnvironmentId = process.env.RAILWAY_ENVIRONMENT_ID;
+  const previewOrigin = 'https://codex-maeve-request-deadline.mywingman.pages.dev';
+  process.env.RAILWAY_ENVIRONMENT = 'razorpay-staging';
+  process.env.RAILWAY_ENVIRONMENT_ID = '438d986c-d799-42a0-9149-ef0eef809486';
+  allowed = getGatewayAllowedOrigins();
+  assert(allowed.has(previewOrigin), 'the isolated staging environment must allow its exact Cloudflare branch preview');
+  assert(!allowed.has('https://other.mywingman.pages.dev'), 'staging must not allow arbitrary Pages origins');
+  const previewRes = mockCorsResponse();
+  assert.strictEqual(applyAnalyzerAdmissionCors({ headers: { origin: previewOrigin } }, previewRes), true, 'gateway admission must accept only the allowlisted staging preview');
+  assert.strictEqual(previewRes.headers['access-control-allow-origin'], previewOrigin, 'gateway early errors must be readable by the staging preview');
+  assert.strictEqual(previewRes.headers['access-control-allow-credentials'], 'true');
+  assert.strictEqual(previewRes.headers.vary, 'Origin');
+
+  process.env.RAILWAY_ENVIRONMENT_ID = 'different-staging-environment';
+  const wrongEnvironmentRes = mockCorsResponse();
+  assert.strictEqual(applyAnalyzerAdmissionCors({ headers: { origin: previewOrigin } }, wrongEnvironmentRes), false, 'the staging preview must be rejected outside its exact Railway environment');
+  assert.strictEqual(wrongEnvironmentRes.headers['access-control-allow-origin'], undefined);
+  assert.strictEqual(wrongEnvironmentRes.headers['access-control-allow-credentials'], undefined);
+
+  process.env.RAILWAY_ENVIRONMENT = 'production';
+  process.env.RAILWAY_ENVIRONMENT_ID = '30e98667-a8a1-415d-8cf1-55e670f45bd0';
+  allowed = getGatewayAllowedOrigins();
+  assert(!allowed.has(previewOrigin), 'production gateway must reject the staging preview origin');
+  const productionPreviewRes = mockCorsResponse();
+  assert.strictEqual(applyAnalyzerAdmissionCors({ headers: { origin: previewOrigin } }, productionPreviewRes), false, 'production early errors must not grant the staging preview CORS access');
+  assert.strictEqual(productionPreviewRes.headers['access-control-allow-origin'], undefined);
+  assert.strictEqual(productionPreviewRes.headers['access-control-allow-credentials'], undefined);
+  if (previousEnvironmentId === undefined) delete process.env.RAILWAY_ENVIRONMENT_ID;
+  else process.env.RAILWAY_ENVIRONMENT_ID = previousEnvironmentId;
+  process.env.RAILWAY_ENVIRONMENT = 'production';
 
   process.env.ALLOWED_ORIGINS = 'https://mywingman.com,https://preview.mywingman.com';
   allowed = getGatewayAllowedOrigins();

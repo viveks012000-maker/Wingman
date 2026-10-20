@@ -39,30 +39,24 @@ assert.ok(
 console.log('✔ Test 1 Passed: Client timeout strictly exceeds server total operation deadline.\n');
 
 // -----------------------------------------------------------------------------
-// 2. PROVIDER TRANSIENT RETRY RESILIENCE (Mock 503 upstream)
+// 2. PROVIDER RETRY SAFETY (Only explicit rate-limit rejections are replayed)
 // -----------------------------------------------------------------------------
-console.log('▶ [TEST 2] Verifying Provider Transient Retry Contract (429, 500, 502, 503, 504)');
+console.log('▶ [TEST 2] Verifying Provider Retry Safety for Analyzer and Other AI Routes');
 
-// Verify server.js contains retry loop in executeSingleOpenRouterCall and queryAnalyzerProvider
-assert.ok(
-    serverJsCode.includes('retryableStatuses.has(response.status) && attempt < 3') ||
-    serverJsCode.includes('retryableStatuses.has(response.status)'),
-    'server.js must check retryableStatuses on HTTP response failure'
+const analyzerProviderSource = serverJsCode.slice(
+    serverJsCode.indexOf('async function queryAnalyzerProvider'),
+    serverJsCode.indexOf('function getProviderRetryAfterMs')
 );
+const generalProviderSource = serverJsCode.slice(
+    serverJsCode.indexOf('async function executeSingleOpenRouterCall'),
+    serverJsCode.indexOf('async function queryOpenRouter')
+);
+assert(analyzerProviderSource.includes('new Set([429])'), 'Analyzer must retry only explicit HTTP 429 rejections');
+assert(generalProviderSource.includes('new Set([429])'), 'General AI routes must retry only explicit HTTP 429 rejections');
+assert(generalProviderSource.includes('providerOutcomeUnknown'), 'Ambiguous provider outcomes must prevent key/model failover');
+assert(!serverJsCode.includes('installAnalyzerTransportRetry'), 'Analyzer must use a single instrumented provider retry layer');
 
-// Verify 503 is in retryableStatuses
-const retryableSets = serverJsCode.match(/new Set\(\[([\d,\s]+)\]\)/g);
-assert.ok(retryableSets && retryableSets.length >= 2, 'server.js must define retryable HTTP status sets');
-for (const setStr of retryableSets) {
-    if (setStr.includes('429')) {
-        assert.ok(setStr.includes('503'), `Retryable set must include 503: ${setStr}`);
-        assert.ok(setStr.includes('500'), `Retryable set must include 500: ${setStr}`);
-        assert.ok(setStr.includes('502'), `Retryable set must include 502: ${setStr}`);
-        assert.ok(setStr.includes('504'), `Retryable set must include 504: ${setStr}`);
-    }
-}
-
-console.log('✔ Test 2 Passed: 503 and transient 5xx/429 statuses are defined in retryable sets.\n');
+console.log('✔ Test 2 Passed: Only explicit 429 rejections retry; ambiguous outcomes do not replay provider work.\n');
 
 // -----------------------------------------------------------------------------
 // 3. AUTHENTIC HINGLISH 10/10 VALIDATION LAW

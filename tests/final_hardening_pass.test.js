@@ -89,11 +89,16 @@ console.log('✔ Passed: Bio Optimizer 500-word boundary enforced on frontend & 
 console.log('\n--- 6. SCREENSHOT ANALYZER BOUNDS & VALIDATION ---');
 const imgValidator = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'imageValidator.js'), 'utf8');
 
-assert.strictEqual(imgValidator.includes('if (images.length > 5) {'), true, 'imageValidator must reject > 5 images');
-assert.strictEqual(imgValidator.includes('MAX_PER_IMAGE_BYTES = 5 * 1024 * 1024;'), true, 'imageValidator must enforce 5MB per-image limit');
-assert.strictEqual(imgValidator.includes('MAX_TOTAL_BYTES = 25 * 1024 * 1024;'), true, 'imageValidator must enforce 25MB total limit');
+assert.strictEqual(imgValidator.includes('function normalizeAnalyzerImages(body = {})'), true, 'imageValidator must normalize legacy and array payloads before validation');
+assert.strictEqual(imgValidator.includes('if (rawImages.length > 5) {'), true, 'imageValidator must reject > 5 normalized images');
+assert.strictEqual(imgValidator.includes('const maxSingleImageBytes = 5 * 1024 * 1024;'), true, 'imageValidator must enforce 5MB per-image limit');
+assert.strictEqual(imgValidator.includes('const maxTotalImageBytes = 25 * 1024 * 1024;'), true, 'imageValidator must enforce 25MB total limit');
+assert.strictEqual(imgValidator.includes('if (decodedBytes > maxSingleImageBytes)'), true, 'imageValidator must enforce the decoded per-image limit');
+assert.strictEqual(imgValidator.includes('if (totalDecodedBytes > maxTotalImageBytes)'), true, 'imageValidator must enforce the decoded combined-image limit');
 assert.strictEqual(imgValidator.includes('Remote image URLs are not supported'), true, 'imageValidator rejects remote image URLs');
-assert.strictEqual(serverFile.includes('if (Array.isArray(images) && images.length > 5) {'), true, 'server.js must reject > 5 images before deduction');
+const imageValidationIndex = serverFile.indexOf("withPerfMiddleware('image_validation', validateImagePayload)");
+const analyzerReserveIndex = serverFile.indexOf("deduction = await verifyAndDeductCreditsDB(req, 10, 'analyze', reqId)");
+assert(imageValidationIndex >= 0 && analyzerReserveIndex > imageValidationIndex, 'server.js must validate analyzer images before reserving credits');
 assert.strictEqual(serverFile.includes("app.use('/api/analyze', express.json({ limit: '38mb' }));"), true, 'server.js allocates 38mb for /api/analyze');
 assert.strictEqual(serverFile.includes("app.use(express.json({\n    limit: '1mb',"), true, 'server.js global JSON limit is 1mb');
 console.log('✔ Passed: Screenshot analyzer strictly rejects 6th image, remote URLs, and enforces 5MB / 25MB decoded bounds.');
@@ -111,7 +116,7 @@ console.log('✔ Passed: Screenshot base64 data and raw HTML strings are never p
 
 // 8. COST ABUSE FIXES: SIMULATOR REVIEW AUTH & DISABLED PURCHASE ENDPOINT
 console.log('\n--- 8. COST ABUSE HARDENING ---');
-assert.strictEqual(serverFile.includes("app.post('/api/simulator/review', requireSupabaseAuth,"), true, '/api/simulator/review requires Supabase auth');
+assert.strictEqual(serverFile.includes("app.post('/api/simulator/review',\n    withPerfMiddleware('authentication', requireSupabaseAuth),"), true, '/api/simulator/review requires Supabase auth before its handler');
 assert.strictEqual(serverFile.includes("verifyAndDeductCreditsDB(req, 2, 'simulator_review'"), true, '/api/simulator/review is metered at 2 credits');
 assert.strictEqual(serverFile.includes("res.status(503).json({\n        success: false,\n        error: \"Direct credit purchasing is currently unavailable."), true, '/api/credits/purchase is safely disabled with 503');
 console.log('✔ Passed: Simulator review is authenticated & metered; unverified credit purchase endpoint is disabled.');

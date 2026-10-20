@@ -20,6 +20,7 @@ console.log("============================================================\n");
 
 (async function runAll() {
     const serverCode = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+    const imageValidatorCode = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'imageValidator.js'), 'utf8');
     const appJsCode = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
     const supabaseClientCode = fs.readFileSync(path.join(__dirname, '..', 'supabaseClient.js'), 'utf8');
     const appHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'app.html'), 'utf8');
@@ -125,7 +126,8 @@ assert.strictEqual(serverCode.includes("wordCount > 500"), true, "server.js must
 assert.strictEqual(appJsCode.includes("bioWords > 500"), true, "app.js must reject bio word count > 500");
 
 // Screenshot 5/6 boundary
-assert.strictEqual(serverCode.includes("images.length > 5"), true, "server.js must reject > 5 images");
+assert.strictEqual(imageValidatorCode.includes("rawImages.length > 5"), true, "Analyzer image validator must reject > 5 images");
+assert.strictEqual(serverCode.includes("withPerfMiddleware('image_validation', validateImagePayload)"), true, "Analyzer image validation must be timed after route admission");
 assert.strictEqual(appJsCode.includes("state.uploadedFiles.length + validFiles.length > 5"), true, "app.js must reject > 5 images before upload");
 console.log("✔ Test 4 Passed: Credit-aware CTA dynamic states and credit invariants verified.");
 
@@ -208,7 +210,7 @@ const aiRoutesToVerify = [
 
 for (const route of aiRoutesToVerify) {
     const escapedRoute = route.replace(/\//g, '\\/');
-    const pattern = new RegExp(`app\\.post\\(\\s*(\\[[^\\]]*['"]${escapedRoute}['"][^\\]]*\\]|['"]${escapedRoute}['"])\\s*,\\s*requireSupabaseAuth\\s*,\\s*requireActiveConsent\\s*,`);
+    const pattern = new RegExp(`app\\.post\\(\\s*(\\[[^\\]]*['"]${escapedRoute}['"][^\\]]*\\]|['"]${escapedRoute}['"])\\s*,\\s*withPerfMiddleware\\('authentication',\\s*requireSupabaseAuth\\)\\s*,\\s*withPerfMiddleware\\('consent',\\s*requireActiveConsent\\)\\s*,`);
     assert.strictEqual(
         pattern.test(serverCode),
         true,

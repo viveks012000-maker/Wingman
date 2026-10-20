@@ -195,7 +195,11 @@ assert(!isPrivateDevelopmentOrigin('http://10.example.com:4174'), 'public lookal
 assert(serverSource.includes('isPrivateDevelopmentOrigin(origin)'), 'inner API CORS must allow only validated private development origins');
 assert(railwayServerSource.includes('isPrivateDevelopmentOrigin(origin)'), 'gateway admission CORS must allow only validated private development origins');
 assert(!railwayServerSource.includes("res.setHeader('Access-Control-Allow-Origin', origin)"), 'gateway admission CORS must not reflect a request Origin directly');
-assert(railwayServerSource.includes("const approvedOrigin = GATEWAY_PRODUCTION_ALLOWED_ORIGINS.find(value => value === origin);"), 'gateway admission CORS must emit only an allowlisted origin');
+assert(railwayServerSource.includes('if (origin === GATEWAY_PRODUCTION_ALLOWED_ORIGINS[0])'), 'gateway admission CORS must grant the fixed production origin explicitly');
+assert(railwayServerSource.includes("res.setHeader('Access-Control-Allow-Origin', GATEWAY_PRODUCTION_ALLOWED_ORIGINS[0]);"), 'gateway admission CORS must write the fixed production allowlist value');
+assert(railwayServerSource.includes('origin === ISOLATED_STAGING_PREVIEW_ORIGIN'), 'gateway admission CORS may additionally accept only the exact preview origin in isolated staging');
+assert(railwayServerSource.includes("res.setHeader('Access-Control-Allow-Origin', ISOLATED_STAGING_PREVIEW_ORIGIN);"), 'gateway admission CORS must write the fixed staging preview value');
+assert(!railwayServerSource.includes('const approvedOrigin ='), 'gateway admission CORS must not pass a request-derived approval value to the credentialed header');
 assert(workflow.includes("- 'vendor/heic-runtime/**'"), 'HEIC workflow must rerun when the committed runtime or provenance changes');
 assert(mobileQa.includes("server.listen(0"), 'mobile presentation QA must use an ephemeral local port');
 assert(!mobileQa.includes('const PORT = 3912'), 'mobile presentation QA must not hardcode a shared port');

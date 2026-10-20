@@ -570,7 +570,7 @@
                     </div>
                     <div class="mt-auto pt-4 flex items-center gap-2 text-xs text-emerald-400 font-label">
                         <span class="material-symbols-outlined text-[16px]">lock</span>
-                        <span>Temporary Browser Image Processing</span>
+                        <span>Browser-Side Image Resizing</span>
                     </div>
                 </div>
 
@@ -1453,7 +1453,7 @@
                     <span>PROMISE OF PRIVACY & SECURITY</span>
                 </div>
                 <p class="text-[11px] text-slate-300 leading-normal font-body">
-                    🔒 <strong class="text-white font-semibold">Temporary browser image processing</strong> •
+                    🔒 <strong class="text-white font-semibold">Images are resized in your browser before analysis</strong> •
                     HTTPS/TLS processing via Third-Party AI providers; their retention rules apply • 🚫 No data sold to advertisers.
                 </p>
             </div>
@@ -2016,14 +2016,26 @@
                 let cssHeight = window.innerHeight || document.documentElement.clientHeight;
 
                 function resizeCanvas() {
-                    dpr = Math.min(isMobile ? 2 : Infinity, Math.max(1, window.devicePixelRatio || 1));
-                    cssWidth = window.innerWidth || document.documentElement.clientWidth;
-                    cssHeight = window.innerHeight || document.documentElement.clientHeight;
+                    const nextDpr = Math.min(isMobile ? 2 : Infinity, Math.max(1, window.devicePixelRatio || 1));
+                    const nextCssWidth = window.innerWidth || document.documentElement.clientWidth;
+                    const nextCssHeight = window.innerHeight || document.documentElement.clientHeight;
+                    const nextCanvasWidth = Math.floor(nextCssWidth * nextDpr);
+                    const nextCanvasHeight = Math.floor(nextCssHeight * nextDpr);
+                    const dimensionsChanged = nextCssWidth !== cssWidth
+                        || nextCssHeight !== cssHeight
+                        || nextDpr !== dpr
+                        || nextCanvasWidth !== canvas.width
+                        || nextCanvasHeight !== canvas.height;
+                    if (!dimensionsChanged) return;
 
-                    canvas.width = Math.floor(cssWidth * dpr);
-                    canvas.height = Math.floor(cssHeight * dpr);
-                    canvas.style.width = cssWidth + "px";
-                    canvas.style.height = cssHeight + "px";
+                    dpr = nextDpr;
+                    cssWidth = nextCssWidth;
+                    cssHeight = nextCssHeight;
+
+                    if (canvas.width !== nextCanvasWidth) canvas.width = nextCanvasWidth;
+                    if (canvas.height !== nextCanvasHeight) canvas.height = nextCanvasHeight;
+                    if (canvas.style.width !== cssWidth + "px") canvas.style.width = cssWidth + "px";
+                    if (canvas.style.height !== cssHeight + "px") canvas.style.height = cssHeight + "px";
 
                     for (let i = 0; i < numParticles; i++) {
                         const p = particles[i];

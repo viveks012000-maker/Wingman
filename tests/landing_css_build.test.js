@@ -164,11 +164,16 @@ async function main() {
           await surface.waitForFunction(element => element.classList.contains('reveal-active'), await section.elementHandle(), { timeout: 5000 });
         }
         await surface.evaluate(() => window.scrollTo(0, 0));
-        await surface.evaluate(() => {
+        await surface.evaluate(async () => {
           for (const animation of document.getAnimations()) {
-            animation.pause();
-            animation.currentTime = 0;
+            const iterations = animation.effect?.getComputedTiming().iterations;
+            if (!Number.isFinite(iterations)) {
+              animation.cancel();
+              continue;
+            }
+            try { animation.finish(); } catch (_) { animation.cancel(); }
           }
+          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         });
       }
       const styleProperties = ['display', 'position', 'width', 'height', 'minHeight', 'maxHeight', 'margin', 'padding', 'gap', 'gridTemplateColumns', 'flexDirection', 'alignItems', 'justifyContent', 'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'color', 'backgroundColor', 'borderColor', 'borderRadius', 'boxShadow', 'opacity', 'transform', 'visibility', 'overflow', 'textAlign'];

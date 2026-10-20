@@ -4,9 +4,11 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { currentGitSha } = require('./process-tools');
+const { resolvePagesBuildTarget, rewriteBackendOrigin } = require('./pages-build-target');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'netlify-dist');
+const BUILD_TARGET = resolvePagesBuildTarget();
 
 // Browser/runtime assets only. Backend, migrations, tests, docs and project internals are
 // deliberately excluded from the public Netlify artifact.
@@ -115,8 +117,8 @@ function sha256(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
-function writeSecurityFiles() {
-  const railway = 'https://wingman-production-c6ce.up.railway.app';
+function writeSecurityFiles(target = BUILD_TARGET) {
+  const railway = target.apiOrigin;
   // The new HEIC runtime (heic-to-csp.js) is built with USE_UNSAFE_EVAL=0 and contains no eval/new Function.
   // No unsafe-eval is needed in the CSP.
   function cspFor(allowEval = false) {
@@ -302,13 +304,25 @@ function verifyNoForbiddenFiles() {
   return files;
 }
 
-function verifyCriticalRuntimeContent() {
+function applyPagesBuildTarget(target = BUILD_TARGET) {
+  for (const rel of ['config.js', 'index.html', 'app.html']) {
+    const outputPath = path.join(OUT, rel);
+    const source = fs.readFileSync(outputPath, 'utf8');
+    const configured = rewriteBackendOrigin(source, target);
+    if (target.isPreview && configured === source) {
+      fail(`${rel} did not contain the production API origin expected for preview routing`);
+    }
+    fs.writeFileSync(outputPath, configured, 'utf8');
+  }
+}
+
+function verifyCriticalRuntimeContent(target = BUILD_TARGET) {
   const appHtml = fs.readFileSync(path.join(OUT, 'app.html'), 'utf8');
   const appJs = fs.readFileSync(path.join(OUT, 'app.js'), 'utf8');
   const config = fs.readFileSync(path.join(OUT, 'config.js'), 'utf8');
   const headers = fs.readFileSync(path.join(OUT, '_headers'), 'utf8');
 
-  const railway = 'https://wingman-production-c6ce.up.railway.app';
+  const railway = target.apiOrigin;
   const containsRailwayOrigin = (text) => text.includes(' ' + railway + ' ') || text.includes(railway + ';');
   if (!containsRailwayOrigin(appHtml)) fail('app.html CSP does not include Railway backend');
   if (!config.includes(`API_BASE_URL: "${railway}"`)) fail('config.js does not point to Railway backend');
@@ -380,6 +394,7 @@ fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
 for (const rel of PUBLIC_FILES) copyFile(rel);
 for (const rel of PUBLIC_DIRS) copyDir(rel);
+applyPagesBuildTarget();
 writeSecurityFiles();
 stripDevelopmentCspSources();
 const files = verifyNoForbiddenFiles();

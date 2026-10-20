@@ -1,6 +1,14 @@
 'use strict';
 
 const DEFAULT_SUPABASE_HOST = 'gstnghuhhrxtwjdafufd.supabase.co';
+// Railway staging uses production-grade auth settings, so permit its test database only
+// when Railway identifies the exact isolated staging environment at runtime.
+const ISOLATED_STAGING_RAILWAY_ENVIRONMENT_ID = '438d986c-d799-42a0-9149-ef0eef809486';
+const ISOLATED_STAGING_SUPABASE_HOST = 'mshlbvbbbzlykfpavekh.supabase.co';
+const ISOLATED_STAGING_PREVIEW_ORIGIN = 'https://codex-maeve-request-deadline.mywingman.pages.dev';
+const PRODUCTION_API_ORIGIN = 'https://wingman-production-c6ce.up.railway.app';
+const STAGING_API_ORIGIN = 'https://wingman-razorpay-staging-razorpay-staging.up.railway.app';
+const ISOLATED_STAGING_PREVIEW_BRANCH = 'codex/maeve-request-deadline';
 const AICREDITS_HOST = 'api.aicredits.in';
 
 function isPrivateDevelopmentHost(hostname) {
@@ -36,6 +44,9 @@ function parseConfiguredOrigin(name, rawValue, options = {}) {
         (production
             ? parsed.hostname.toLowerCase() === DEFAULT_SUPABASE_HOST
             : (parsed.hostname.toLowerCase() === DEFAULT_SUPABASE_HOST || parsed.hostname.toLowerCase().endsWith('.supabase.co')));
+    const isolatedStagingSupabaseHostMatches = options.supabase === true &&
+        process.env.RAILWAY_ENVIRONMENT_ID === ISOLATED_STAGING_RAILWAY_ENVIRONMENT_ID &&
+        parsed.hostname.toLowerCase() === ISOLATED_STAGING_SUPABASE_HOST;
     const privateDev = !production && isPrivateDevelopmentHost(parsed.hostname);
     const authorityWithoutCredentials = authority.replace(/^.*@/, '');
     // WHATWG URL normalizes an explicit default port (for example :443) to an empty
@@ -49,7 +60,7 @@ function parseConfiguredOrigin(name, rawValue, options = {}) {
     if (parsed.username || parsed.password || (explicitPort && !privateDev) || parsed.hash || parsed.search) {
         throw new Error(`${name} must not contain credentials, a port, query, or fragment.`);
     }
-    if (!hostMatches && !supabaseHostMatches && !privateDev) {
+    if (!hostMatches && !supabaseHostMatches && !isolatedStagingSupabaseHostMatches && !privateDev) {
         throw new Error(`${name} points to an unapproved host.`);
     }
     if (allowedPath && parsed.pathname.replace(/\/+$/, '') !== allowedPath) {
@@ -88,6 +99,12 @@ function logRef(value) {
 
 module.exports = {
     DEFAULT_SUPABASE_HOST,
+    ISOLATED_STAGING_RAILWAY_ENVIRONMENT_ID,
+    ISOLATED_STAGING_SUPABASE_HOST,
+    ISOLATED_STAGING_PREVIEW_ORIGIN,
+    ISOLATED_STAGING_PREVIEW_BRANCH,
+    PRODUCTION_API_ORIGIN,
+    STAGING_API_ORIGIN,
     AICREDITS_HOST,
     isPrivateDevelopmentHost,
     parseConfiguredOrigin,
