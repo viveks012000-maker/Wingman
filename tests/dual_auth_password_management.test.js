@@ -168,9 +168,9 @@ async function runTests() {
         assert.ok(exported, 'window.updateUserPassword must be defined as an async function');
     });
 
-    await test('5. index.html: OR EMAIL divider includes explanatory guidance text for Google users', () => {
-        const expected = 'If you created your account with Google, continue with Google above. You can add an email password later in your account settings.';
-        assert.ok(indexHtml.includes(expected), 'index.html must display Google account guidance text');
+    await test('5. index.html: Google-only signup guidance preserves email/password login for existing users', () => {
+        const expected = 'New accounts use Google. Existing accounts can still sign in with email and password below.';
+        assert.ok(indexHtml.includes(expected), 'index.html must state that new accounts use Google and existing users may use email/password');
     });
 
     await test('6. index.html: handleSupabaseAuthSubmit lowercases email input', () => {
@@ -187,9 +187,9 @@ async function runTests() {
         assert.ok(indexHtml.includes('Creating Account...') || indexHtml.includes('Signing In...'), 'index.html must provide button loading states');
     });
 
-    await test('9. app.html: OR EMAIL divider includes explanatory guidance text for Google users', () => {
-        const expected = 'If you created your account with Google, continue with Google above. You can add an email password later in your account settings.';
-        assert.ok(appHtml.includes(expected), 'app.html must display Google account guidance text');
+    await test('9. app.html: Google-only signup guidance preserves email/password login for existing users', () => {
+        const expected = 'New accounts use Google. Existing accounts can still sign in with email and password below.';
+        assert.ok(appHtml.includes(expected), 'app.html must state that new accounts use Google and existing users may use email/password');
     });
 
     await test('10. app.html: sidebar includes Set or Change Password button', () => {

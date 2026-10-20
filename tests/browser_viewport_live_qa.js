@@ -172,21 +172,8 @@ async function runBrowserQA() {
                         throw new Error(`Mobile menu did not return to a correct closed state: ${JSON.stringify(menuState)}`);
                     }
 
-                    await page.evaluate(() => window.openInterstitialModal());
-                    await page.waitForTimeout(20);
-                    const interstitialSemantics = await page.evaluate(() => {
-                        const m = document.getElementById('interstitialModal');
-                        return { role: m.getAttribute('role'), modal: m.getAttribute('aria-modal'), labelledby: m.getAttribute('aria-labelledby'), focused: m.contains(document.activeElement) };
-                    });
-                    if (interstitialSemantics.role !== 'dialog' || interstitialSemantics.modal !== 'true' || !interstitialSemantics.labelledby || !interstitialSemantics.focused) throw new Error(`Interstitial dialog semantics/focus invalid: ${JSON.stringify(interstitialSemantics)}`);
-                    const interstitialClose = await page.$eval('#interstitialModal button[aria-label="Close age and consent dialog"]', el => {
-                        const r = el.getBoundingClientRect();
-                        return { width: r.width, height: r.height };
-                    });
-                    if (interstitialClose.width < 40 || interstitialClose.height < 40) {
-                        throw new Error(`Interstitial close touch target too small: ${interstitialClose.width}x${interstitialClose.height}`);
-                    }
-                    await page.evaluate(() => window.closeInterstitialModal());
+                    const landingConsentHidden = await page.locator('#interstitialModal').evaluate(modal => modal.classList.contains('hidden'));
+                    if (!landingConsentHidden) throw new Error('The public home page must not ask for age/Terms consent before sign-in.');
 
                     await page.evaluate(() => window.openAuthRequiredModal());
                     await page.waitForTimeout(20);

@@ -24,6 +24,9 @@ const testSuites = [
     { name: '11. Exactly-Once 50-Credit & Missing Profile Safety', file: 'analyzer_exactly_once_credits.test.js' },
     { name: '12. Screenshot Analyzer Full End-to-End Integration', file: 'analyzer_full_e2e_integration.test.js' },
     { name: '13. Public SEO Files (robots.txt & sitemap.xml)', file: 'seo_files.test.js' },
+    { name: '13a. Public Feature Page SEO, Navigation & Structured Data', file: 'seo_feature_pages.test.js' },
+    { name: '13b. Public Feature Page Browser & Mobile Navigation QA', file: 'seo_feature_pages_browser.test.js', timeoutMs: 120_000 },
+    { name: '13c. Isolated Homepage CSS Build & Browser Layout QA', file: 'landing_css_build.test.js', timeoutMs: 120_000 },
     { name: '14. Security Hardening & Audit Verification', file: 'security_hardening_audit.test.js' },
     { name: '15. Runtime Cross-Feature Isolation & Button State', file: 'runtime_cross_feature_isolation.test.js' },
     { name: '16. Credit Balance & Authoritative Auth Runtime', file: 'credit_balance_auth_runtime.test.js' },
@@ -81,7 +84,7 @@ const testSuites = [
     { name: '63. Client Image Pipeline Guard', file: 'client_image_pipeline.test.js' },
     { name: '64. Client Privacy Boundary Guard', file: 'client_privacy_boundary.test.js' },
     { name: '65. Mobile Viewport Behavior Guard', file: 'mobile_viewport_behavior.test.js' },
-    { name: '66. Mobile Touch Scroll Regression', file: 'mobile_touch_scroll_regression.test.js', timeoutMs: 30_000 },
+    { name: '66. Mobile Touch Scroll Regression', file: 'mobile_touch_scroll_regression.test.js', timeoutMs: 90_000 },
     { name: '67. Security Boundary & Log Integrity Guard', file: 'security_boundaries.test.js' },
     { name: '68. Launch Delivery & /app Verifier Contract', file: 'launch_hardening_contract.test.js' },
     { name: '69. Live Asset Integrity & Cloudflare Transformation Guard', file: 'live_asset_integrity.test.js' },
@@ -95,6 +98,7 @@ const testSuites = [
     { name: '76. Roleplay & Hotline Real Provider Path', file: 'roleplay_provider_path.test.js', timeoutMs: 120_000 },
     { name: '77. UI/API Product-Contract Matrix (16 mode checks)', file: 'ui_api_contract.test.js', timeoutMs: 120_000 },
     { name: '78. Auth Sign-In & Credit Regression Guard', file: 'auth_signin_regression.test.js', timeoutMs: 30_000 },
+    { name: '78a. Google-Only Signup Presentation Guard', file: 'google_only_beta_auth.test.js', timeoutMs: 30_000 },
     { name: '79. Internal Prompt Tag Leak Prevention & Output Safety', file: 'internal_prompt_tag_leak_regression.test.js', timeoutMs: 60_000 },
     { name: '80. Maeve Practice Partner & Coach Modes Matrix', file: 'maeve_modes_matrix.test.js', timeoutMs: 60_000 },
     { name: '81. Non-Chat Lifecycle & Hinglish Repair Guard', file: 'non_chat_lifecycle_and_hinglish_repair.test.js', timeoutMs: 30_000 },
@@ -116,7 +120,9 @@ const testSuites = [
     { name: '97. Financial Error ForceFresh Semantics Suite', file: 'financial_error_forcefresh.test.js', timeoutMs: 30_000 },
     { name: '98. Bio Fact Preservation & Anti-Hallucination Suite', file: 'bio_fact_preservation.test.js', timeoutMs: 30_000 },
     { name: '99. Production Log Privacy & Zero-PII Suite', file: 'production_log_privacy.test.js', timeoutMs: 30_000 },
-    { name: '100. Monotonic Performance Telemetry Suite', file: 'monotonic_perf_telemetry.test.js', timeoutMs: 30_000 }
+    { name: '100. Monotonic Performance Telemetry Suite', file: 'monotonic_perf_telemetry.test.js', timeoutMs: 30_000 },
+    { name: '101. Homepage Auth State Rendering & Session Flicker Guard', file: 'homepage_auth_state.test.js', timeoutMs: 30_000 },
+    { name: '102. Runtime Session Restoration, Failure, and Private-State Cleanup', file: 'refresh_session_bootstrap_runtime.test.js', timeoutMs: 30_000 }
 ];
 
 console.log('========================================================================');

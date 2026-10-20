@@ -19,6 +19,10 @@ const PUBLIC_FILES = [
   'about.html',
   'contact.html',
   'service-delivery.html',
+  'screenshot-reply.html',
+  'icebreaker-generator.html',
+  'dating-bio-optimizer.html',
+  'ai-conversation-coach.html',
   '404.html',
   'app.js',
   'payments-client.js',
@@ -27,8 +31,14 @@ const PUBLIC_FILES = [
   'supabaseClient.js',
   'output.css',
   'style.css',
+  'feature-pages.css',
   'robots.txt',
   'sitemap.xml',
+  'favicon-48x48.png',
+  'favicon-96x96.png',
+  'favicon-192x192.png',
+  'favicon.ico',
+  'apple-touch-icon.png',
   'logo.png',
   'logo-384.webp',
   'maeve.jpg'
@@ -191,48 +201,88 @@ function writeSecurityFiles() {
     '/service-delivery',
     `  Content-Security-Policy: ${strictCsp}`,
     '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/screenshot-reply',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/icebreaker-generator',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/dating-bio-optimizer',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/ai-conversation-coach',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
     '/404.html',
     `  Content-Security-Policy: ${strictCsp}`,
     '  X-Robots-Tag: noindex, nofollow',
     '  Cache-Control: no-cache, no-store, must-revalidate',
     '/app.js',
-    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '  Cache-Control: public, max-age=0, must-revalidate',
     '/payments-client.js',
-    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '  Cache-Control: public, max-age=0, must-revalidate',
     '/config.js',
-    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '  Cache-Control: public, max-age=0, must-revalidate',
     '/accessibility.js',
-    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '  Cache-Control: public, max-age=0, must-revalidate',
     '/supabaseClient.js',
-    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '  Cache-Control: public, max-age=0, must-revalidate',
     '/output.css',
-    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '  Cache-Control: public, max-age=0, must-revalidate',
     '/style.css',
-    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/landing-output.css',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/feature-pages.css',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/robots.txt',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/sitemap.xml',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/release.json',
+    '  Cache-Control: public, max-age=0, must-revalidate',
     '/fonts/*',
-    '  Cache-Control: public, max-age=31536000, immutable',
+    '  Cache-Control: public, max-age=0, must-revalidate',
     '/vendor/*',
-    '  Cache-Control: public, max-age=31536000, immutable',
+    '  Cache-Control: public, max-age=0, must-revalidate',
     '/logo-384.webp',
-    '  Cache-Control: public, max-age=31536000, immutable',
+    '  Cache-Control: public, max-age=0, must-revalidate',
     '/logo.png',
-    '  Cache-Control: public, max-age=31536000, immutable',
+    '  Cache-Control: public, max-age=0, must-revalidate',
     '/maeve.jpg',
-    '  Cache-Control: public, max-age=31536000, immutable',
-    '/favicon.ico',
-    '  Cache-Control: public, max-age=31536000, immutable',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/favicon*',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/apple-touch-icon.png',
+    '  Cache-Control: public, max-age=0, must-revalidate',
     ''
   ].join('\n');
   fs.writeFileSync(path.join(OUT, '_headers'), security, 'utf8');
 
-  fs.writeFileSync(path.join(OUT, '_redirects'), '# Cloudflare Bulk Redirects handle hostname cutovers; no /app rewrite is required.\n', 'utf8');
+  const redirects = [
+    '# Use the final clean URLs as permanent canonical paths.',
+    '/index.html / 301',
+    '/app.html /app 301',
+    '/privacy.html /privacy 301',
+    '/terms.html /terms 301',
+    '/refund.html /refund 301',
+    '/about.html /about 301',
+    '/contact.html /contact 301',
+    '/service-delivery.html /service-delivery 301',
+    '/screenshot-reply.html /screenshot-reply 301',
+    '/icebreaker-generator.html /icebreaker-generator 301',
+    '/dating-bio-optimizer.html /dating-bio-optimizer 301',
+    '/ai-conversation-coach.html /ai-conversation-coach 301',
+    ''
+  ].join('\n');
+  fs.writeFileSync(path.join(OUT, '_redirects'), redirects, 'utf8');
 }
 
 function stripDevelopmentCspSources() {
   for (const rel of PUBLIC_FILES.filter(file => file.endsWith('.html'))) {
     const target = path.join(OUT, rel);
     const source = fs.readFileSync(target, 'utf8');
-    const production = source.replace(/\s+http:\/\/localhost:\*/g, '')
+    const production = source.replace(/<!-- Local File Protocol Warning Banner[\s\S]*?<\/script>/, '').replace(/\s+http:\/\/localhost:\*/g, '')
       .replace(/\s+ws:\/\/localhost:\*/g, '')
       .replace(/\s+http:\/\/\*:\*/g, '')
       .replace(/\s+ws:\/\/\*:\*/g, '')
@@ -301,10 +351,16 @@ function verifyLocalHtmlReferences() {
       let ref = m[1].trim();
       if (!ref || /^(?:https?:|mailto:|tel:|data:|blob:|javascript:)/i.test(ref)) continue;
       if (ref.startsWith('//')) continue;
-      ref = ref.replace(/^\//, '');
+      ref = ref.split(/[?#]/, 1)[0].replace(/^\//, '');
       if (!ref || ref.endsWith('/')) continue;
-      const target = path.join(OUT, ref);
-      if (!fs.existsSync(target)) missing.push(`${rel} -> ${m[1]}`);
+      const candidates = [ref];
+      if (!path.extname(ref)) {
+        if (ref === 'app') candidates.push('app.html');
+        candidates.push(ref + '.html');
+      }
+      if (!candidates.some(candidate => fs.existsSync(path.join(OUT, candidate)))) {
+        missing.push(`${rel} -> ${m[1]}`);
+      }
     }
   }
   if (missing.length) fail(`Missing local browser assets:\n${missing.join('\n')}`);

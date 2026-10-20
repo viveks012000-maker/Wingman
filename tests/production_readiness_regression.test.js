@@ -245,6 +245,21 @@ assert.strictEqual(
     false,
     "app.js handleSupabaseAuthSubmit must NOT grant wingman_terms_accepted merely on auth"
 );
+assert.match(
+    supabaseClientCode,
+    /event === 'SIGNED_OUT'[\s\S]{0,500}resetConsentSessionState/,
+    "genuine sign-out must reset frontend consent state"
+);
+assert.doesNotMatch(
+    supabaseClientCode,
+    /event === 'SIGNED_IN' \|\| event === 'SIGNED_OUT'/,
+    "repeated SIGNED_IN events must not reset consent for the same account"
+);
+assert.match(
+    supabaseClientCode,
+    /const previousUserId = [^;]+;[\s\S]{0,250}const nextUserId = [^;]+;[\s\S]{0,1200}resetConsentSessionState/,
+    "switching authenticated accounts must reset the previous account's consent state"
+);
 console.log("✔ Test 9 Passed: Zero occurrences of auth-as-consent detected across all clients.");
 
 // -----------------------------------------------------------------------------
@@ -730,9 +745,9 @@ console.log("✔ Test 20 Passed: Chat 503 consent service failure locks controls
 console.log("▶ [TEST 21] Privacy Affirmative Consent Copy Audit");
 
 assert.strictEqual(
-    privacyHtmlCode.includes("By explicitly completing the consent and 18+ verification flow, you consent to this processing."),
+    privacyHtmlCode.includes("By clicking the existing Unlock Workspace action after reviewing the visible 18+ adult declaration and AI-processing consent notice, you explicitly consent to this processing."),
     true,
-    "privacy.html must state consent is granted by completing verification flow"
+    "privacy.html must tie affirmative adult declaration and processing consent to the existing Unlock Workspace action"
 );
 assert.strictEqual(
     privacyHtmlCode.includes("By accessing these tools"),

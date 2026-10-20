@@ -7,6 +7,7 @@ const { resolveGitExecutable } = require('../scripts/process-tools');
 const root = path.join(__dirname, '..');
 const buildSource = fs.readFileSync(path.join(root, 'scripts', 'build-netlify-dist.js'), 'utf8');
 const processToolsSource = fs.readFileSync(path.join(root, 'scripts', 'process-tools.js'), 'utf8');
+const packageJson = require(path.join(root, 'package.json'));
 assert(buildSource.includes("require('./process-tools')"), 'artifact builder must use the portable process resolver');
 assert(buildSource.includes('currentGitSha(ROOT)'), 'artifact builder must prefer the checked-out Git HEAD through the resolver');
 assert.ok(processToolsSource.includes('env.SOURCE_COMMIT'), 'process resolver must retain an explicit source fallback when Git metadata is unavailable');
@@ -40,5 +41,28 @@ execFileSync(process.execPath, ['scripts/build-netlify-dist.js'], {
 });
 const secondManifest = fs.readFileSync(path.join(root, 'netlify-dist', 'release.json'), 'utf8');
 assert.strictEqual(secondManifest, firstManifest, 'identical source builds must produce identical release manifests');
+
+const buildCommand = packageJson.scripts['build:netlify'];
+assert.match(buildCommand, /&& node scripts\/finalize-release-manifest\.js\s*$/, 'full Pages build must finalize hashes after every asset postprocessor');
+const finalizerPath = path.join(root, 'scripts', 'finalize-release-manifest.js');
+assert.ok(fs.existsSync(finalizerPath), 'final release manifest hash finalizer must exist');
+execFileSync(process.execPath, ['scripts/finalize-release-manifest.js'], { cwd: root, stdio: 'pipe' });
+const finalizedManifest = JSON.parse(fs.readFileSync(path.join(root, 'netlify-dist', 'release.json'), 'utf8'));
+const finalAssetPaths = [];
+function collectFiles(directory, prefix = '') {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) collectFiles(absolute, relative);
+    else if (relative !== 'release.json') finalAssetPaths.push(relative);
+  }
+}
+collectFiles(path.join(root, 'netlify-dist'));
+assert.deepStrictEqual(Object.keys(finalizedManifest.files).sort(), finalAssetPaths.sort(),
+  'final manifest must enumerate every published asset and control file, but not itself');
+for (const [relative, expected] of Object.entries(finalizedManifest.files)) {
+  const actual = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(root, 'netlify-dist', relative))).digest('hex');
+  assert.strictEqual(actual, expected, `final manifest must hash the final published bytes for ${relative}`);
+}
 
 console.log(`✔ Netlify release manifest source-commit truth guard passed (${actualHead ? 'Git HEAD' : 'SOURCE_COMMIT fallback'}).`);

@@ -61,7 +61,7 @@
     function enhanceCloseControls(modal, config) {
         modal.querySelectorAll('button').forEach(function (button) {
             var onclick = button.getAttribute('onclick') || '';
-            var text = (button.innerText || button.textContent || '').trim().replace(/\s+/g, ' ').toLowerCase();
+            var text = (button.textContent || '').trim().replace(/\s+/g, ' ').toLowerCase();
             if (onclick.indexOf(config.close) !== -1 && (text === 'close' || text === '×' || text === '')) {
                 if (!button.getAttribute('aria-label')) button.setAttribute('aria-label', 'Close ' + config.label.toLowerCase() + ' dialog');
                 button.classList.add('a11y-icon-touch-target');

@@ -62,16 +62,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 (function () {
     'use strict';
 
-    var MOBILE_QUERY = '(max-width: 767px)';
     var patched = false;
-
-    function isMobile() {
-        try {
-            return window.matchMedia && window.matchMedia(MOBILE_QUERY).matches;
-        } catch (_) {
-            return window.innerWidth < 768;
-        }
-    }
 
     function refreshUnknownCreditLabels() {
         var state = window.state;
@@ -79,15 +70,22 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         var hasAuthoritativeNumber = state.creditsStatus === 'loaded' && typeof state.credits === 'number';
         if (hasAuthoritativeNumber) return;
 
-        // Only show "0 Credits" for signed-out state.
-        // If authenticated, leave display so the loading/unknown state
-        // resolves once the authoritative balance is restored.
+        if (window.__wingmanAuthStateResolved !== true) {
+            ['desktopCreditCount', 'mobileCreditCount'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) el.textContent = 'Syncing…';
+            });
+            return;
+        }
+
+        // A signed-out visitor has no authoritative account balance. Do not present the
+        // absence of an account as a zero-credit balance.
         if (window.currentSupabaseSession && window.currentSupabaseSession.access_token) return;
 
-        ['desktopCreditCount', 'mobileCreditCount'].forEach(function (id) {
-            var el = document.getElementById(id);
-            if (el) el.textContent = '0 Credits';
-        });
+        var desktop = document.getElementById('desktopCreditCount');
+        var mobile = document.getElementById('mobileCreditCount');
+        if (desktop) desktop.textContent = 'Sign in for credits';
+        if (mobile) mobile.textContent = 'Sign in';
     }
 
     function patchRuntime() {
@@ -122,23 +120,6 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
                 }
 
                 refreshUnknownCreditLabels();
-                return result;
-            };
-        }
-
-        if (typeof window.switchTab === 'function') {
-            var originalSwitchTab = window.switchTab;
-            window.switchTab = function (tabId) {
-                var result = originalSwitchTab.apply(this, arguments);
-                if (isMobile()) {
-                    requestAnimationFrame(function () {
-                        var main = document.getElementById('mainContentCanvas') || document.querySelector('main');
-                        try {
-                            if (main && typeof main.scrollTo === 'function') main.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-                        } catch (_) {}
-                        try { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); } catch (_) { window.scrollTo(0, 0); }
-                    });
-                }
                 return result;
             };
         }
@@ -318,6 +299,25 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             return Promise.resolve(window.currentSupabaseSession);
         }
 
+        if (window.__wingmanAuthStateResolved === true) {
+            return Promise.resolve(null);
+        }
+
+        if (window.wingmanAuthStateReady && typeof window.wingmanAuthStateReady.then === 'function') {
+            if (sessionHydrationInFlight) return sessionHydrationInFlight;
+
+            var authReadyPromise;
+            authReadyPromise = Promise.resolve(window.wingmanAuthStateReady).then(function () {
+                return hasRestoredDashboardSession() ? window.currentSupabaseSession : null;
+            }).finally(function () {
+                if (sessionHydrationInFlight === authReadyPromise) {
+                    sessionHydrationInFlight = null;
+                }
+            });
+            sessionHydrationInFlight = authReadyPromise;
+            return authReadyPromise;
+        }
+
         if (!window.supabaseClient || !window.supabaseClient.auth || typeof window.supabaseClient.auth.getSession !== 'function') {
             return Promise.resolve(null);
         }
@@ -326,13 +326,14 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 
         var hydrationPromise;
         hydrationPromise = (async function () {
+            var hydrationRevision = Number(window.__wingmanAuthStateRevision) || 0;
             try {
                 var result = await window.supabaseClient.auth.getSession();
                 if (result && result.error) throw result.error;
 
-                // Do not replace a newer authenticated session that may have arrived while the
-                // canonical getSession() call was pending.
-                if (hasRestoredDashboardSession()) {
+                // Do not replace a newer auth event that may have arrived while getSession()
+                // was pending, including a sign-out or switch to another account.
+                if ((Number(window.__wingmanAuthStateRevision) || 0) !== hydrationRevision) {
                     return window.currentSupabaseSession;
                 }
 
@@ -340,10 +341,34 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
                 if (session && session.access_token && session.user && session.user.id) {
                     window.currentSupabaseSession = session;
                     window.currentSupabaseUser = session.user;
-                    return session;
+                } else {
+                    window.currentSupabaseSession = null;
+                    window.currentSupabaseUser = null;
                 }
 
-                return null;
+                window.__wingmanAuthStateResolved = true;
+                if (typeof window.renderHomepageAuthState === 'function') {
+                    window.renderHomepageAuthState();
+                }
+                if (typeof window.checkDashboardAuth === 'function') {
+                    window.checkDashboardAuth();
+                }
+                return window.currentSupabaseSession;
+            } catch (err) {
+                if ((Number(window.__wingmanAuthStateRevision) || 0) === hydrationRevision) {
+                    // A failed canonical check must settle the UI into a recoverable signed-out
+                    // state instead of leaving authentication controls in a loading state.
+                    window.currentSupabaseSession = null;
+                    window.currentSupabaseUser = null;
+                    window.__wingmanAuthStateResolved = true;
+                    if (typeof window.renderHomepageAuthState === 'function') {
+                        window.renderHomepageAuthState();
+                    }
+                    if (typeof window.checkDashboardAuth === 'function') {
+                        window.checkDashboardAuth();
+                    }
+                }
+                throw err;
             } finally {
                 if (sessionHydrationInFlight === hydrationPromise) {
                     sessionHydrationInFlight = null;
@@ -358,6 +383,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
     function refreshAuthoritativeCredits() {
         if (!hasRestoredDashboardSession() || typeof window.checkCreditBalance !== 'function') return;
         if (reconcileInFlight) return;
+        if (window.state && ['loading', 'loaded', 'missing_profile'].indexOf(window.state.creditsStatus) !== -1) return;
 
         reconcileInFlight = true;
         try {
@@ -512,11 +538,11 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             nav_faq: "FAQ",
             nav_sign_in: "Sign In",
             nav_launch_app: "Launch App",
-            hero_badge: "AI Dating Conversation & Profile Coaching",
-            hero_title_1: "Dating Chat &",
-            hero_title_2: "Profile AI.",
-            hero_title_3: "Messaging Suggestions.",
-            hero_subtitle: "Analyze chats, draft replies, improve a profile bio, and practice conversations. Coaching only; no user matching or date booking.",
+            hero_badge: "MYWINGMAN · THE AI TEXTING ASSISTANT",
+            hero_title_1: "The AI",
+            hero_title_2: "Texting Assistant",
+            hero_title_3: "Stop staring at the typing box. Find a better starting point.",
+            hero_subtitle: "Not sure what to reply? Worried your message sounds off? MyWingman helps you explore AI-written replies from your own chats, improve profile bios, generate icebreakers, and practise conversations. Pick what fits, edit it your way, and send it yourself.",
             hero_cta: "Explore the Tools",
             tab_screenshot: "Screenshot Analyzer",
             tab_icebreakers: "Icebreakers",
@@ -524,9 +550,9 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             tab_practice: "Practice Partner",
             tab_saved: "Saved Items",
             screenshot_desc: "Upload a chat screenshot to get 10 strategic reply options.",
-            icebreakers_desc: "Drop her bio or profile details to generate 10 charismatic openers.",
+            icebreakers_desc: "Use profile details to explore 10 conversation starters. Review and edit them before use.",
             bio_desc: "Generate 10 AI-written profile bio drafts to review and edit.",
-            coach_desc: "Real-time communication drills and unfiltered dating advice with Maeve.",
+            coach_desc: "Practise social and romantic conversation wording with optional AI-generated feedback from Maeve.",
             btn_generate_replies: "Generate Replies",
             btn_generate_openers: "Generate Openers",
             btn_optimize_bio: "Optimize My Bio",
@@ -551,11 +577,11 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             nav_faq: "FAQ",
             nav_sign_in: "Sign In",
             nav_launch_app: "Launch App",
-            hero_badge: "AI Dating Chat aur Profile Coaching",
-            hero_title_1: "Dating Chat aur",
-            hero_title_2: "Profile AI.",
-            hero_title_3: "Messaging Suggestions.",
-            hero_subtitle: "Chats analyze karo, replies draft karo, profile bio improve karo aur practice conversations karo. Coaching only; matching ya date booking nahi.",
+            hero_badge: "MYWINGMAN · THE AI TEXTING ASSISTANT",
+            hero_title_1: "The AI",
+            hero_title_2: "Texting Assistant",
+            hero_title_3: "Stop staring at the typing box. Find a better starting point.",
+            hero_subtitle: "Apne chats se reply options dekho, profile bio improve karo, icebreakers banao aur conversations practise karo. Jo fit lage use edit karo aur khud send karo. Social aur romantic communication ke liye; matching ya date booking nahi.",
             hero_cta: "Tools Dekho",
             tab_screenshot: "Screenshot Analyzer",
             tab_icebreakers: "Icebreakers",
@@ -563,9 +589,9 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             tab_practice: "Practice Partner",
             tab_saved: "Saved Items",
             screenshot_desc: "Chat screenshot upload karo aur 10 strategic reply options pao.",
-            icebreakers_desc: "Uski bio ya profile details daalo aur 10 witty openers generate karo.",
+            icebreakers_desc: "Profile details se 10 conversation starters explore karo. Use karne se pehle review aur edit karo.",
             bio_desc: "Apni profile ke liye 10 AI-written bio drafts banao, phir unhe review aur edit karo.",
-            coach_desc: "Maeve ke saath real-time chat drills aur dating strategy advice.",
+            coach_desc: "Maeve ke optional AI feedback ke saath social aur romantic conversation wording practise karo.",
             btn_generate_replies: "Replies Generate Karo",
             btn_generate_openers: "Openers Generate Karo",
             btn_optimize_bio: "Bio Optimize Karo",
@@ -901,14 +927,14 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             var selectedPricing = getPlanPricing(selectedTierValue, currentCurrency);
             if (selectedPlan && selectedPricing) {
                 var bundleLabel = selectedPlan.modalBundleName || 'Bundle';
-                purchaseBtnTextEl.textContent = 'Paid checkout unavailable';
+                purchaseBtnTextEl.textContent = 'Purchasing not yet enabled';
                 if (window.wingmanPayments) window.wingmanPayments.sync();
             }
         }
     }
 
     function setCurrency(newCurrency) {
-        var valid = canonicalize(newCurrency);
+        var valid = document.body && document.body.getAttribute('data-purchase-currency') === 'INR' ? 'INR' : canonicalize(newCurrency);
         currentCurrency = valid;
         safeSetStorage(STORAGE_KEY, valid);
 
@@ -959,7 +985,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 
     function init() {
         var saved = safeGetStorage(STORAGE_KEY);
-        var initial = canonicalize(saved || DEFAULT_CURRENCY);
+        var initial = document.body && document.body.getAttribute('data-purchase-currency') === 'INR' ? 'INR' : canonicalize(saved || DEFAULT_CURRENCY);
         currentCurrency = initial;
         bindCurrencyButtons();
         updatePricingDisplay();

@@ -47,11 +47,11 @@ function getRefreshBody() {
 // Credit display state tests (requirement 5A–F)
 // ============================================================
 
-// A. signed out: desktop = "0 Credits", mobile = "0 Credits"
-test('A. signed out: desktop CreditCount = "0 Credits"', () => {
+// A. Signed-out visitors have no authoritative balance; do not fabricate a zero.
+test('A. signed out: desktop CreditCount uses a neutral no-account label', () => {
     const deskMatch = app.match(/if \(desk\) desk\.textContent = "([^"]+)"/);
-    if (!deskMatch || deskMatch[1] !== '0 Credits') {
-        throw new Error('expected desktop CreditCount = "0 Credits" when signed out');
+    if (!deskMatch || deskMatch[1] !== 'Credits —' || !config.includes("if (desktop) desktop.textContent = 'Sign in for credits'")) {
+        throw new Error('expected a neutral signed-out balance label and a Sign in for credits prompt');
     }
 });
 

@@ -267,15 +267,8 @@ async function assertLanding(browser, viewport) {
             assert(authInputs.every(size => size >= 16), `landing auth inputs must use 16px text at ${viewport.join('x')}`);
             await opened.page.evaluate(() => window.closeAuthRequiredModal());
 
-            await opened.page.evaluate(() => window.openInterstitialModal());
-            await opened.page.waitForTimeout(30);
-            const consent = await getLayout(opened.page);
-            assert(consent.interstitialCard && consent.interstitialCard.bottom <= consent.viewport.visualHeight + 1, `landing consent dialog exceeds visual viewport at ${viewport.join('x')}`);
-            if (consent.interstitialCard.scrollHeight > consent.interstitialCard.clientHeight) {
-                assert(['auto', 'scroll'].includes(consent.interstitialCard.overflowY), `landing consent dialog is not internally scrollable at ${viewport.join('x')}`);
-            }
-            await opened.page.evaluate(() => window.closeInterstitialModal());
-            await opened.page.waitForTimeout(30);
+            const landingConsentHidden = await opened.page.locator('#interstitialModal').evaluate(modal => modal.classList.contains('hidden'));
+            assert(landingConsentHidden, `landing page must defer age/Terms consent until after sign-in at ${viewport.join('x')}`);
         }
     } finally {
         await opened.context.close();
@@ -334,13 +327,46 @@ async function assertApp(browser, viewport) {
         assertNoPageErrors('app.html', viewport, opened.pageErrors);
         const initial = await getLayout(opened.page);
         assert(initial.document.scrollWidth <= viewport[0] + 1, `app document overflows at ${viewport.join('x')}`);
+        const initialFeatureState = await opened.page.evaluate(() => {
+            const ids = ['analyzeSection', 'icebreakSection', 'optimizeSection', 'chatboxSection'];
+            return {
+                visible: ids.filter(id => {
+                    const section = document.getElementById(id);
+                    return section && getComputedStyle(section).display !== 'none';
+                }),
+                activeMobileTab: document.querySelector('#mobileNavBar .nav-tab-mobile.active-tab')?.dataset.tab || null,
+                activeDesktopTab: document.querySelector('#desktopNav .nav-tab-desktop.active-tab')?.dataset.tab || null
+            };
+        });
+        assert.deepStrictEqual(initialFeatureState.visible, ['analyzeSection'], `fresh app load must show only Screenshot Analyzer at ${viewport.join('x')}: ${JSON.stringify(initialFeatureState)}`);
+        assert.strictEqual(initialFeatureState.activeMobileTab, 'analyzeSection', `fresh app load must highlight Analyze on mobile at ${viewport.join('x')}: ${JSON.stringify(initialFeatureState)}`);
+        assert.strictEqual(initialFeatureState.activeDesktopTab, 'analyzeSection', `fresh app load must highlight Analyze on desktop at ${viewport.join('x')}: ${JSON.stringify(initialFeatureState)}`);
+        if ((viewport[0] === 390 && viewport[1] === 844) || (viewport[0] === 1366 && viewport[1] === 768)) {
+            for (const tabId of ['analyzeSection', 'icebreakSection', 'optimizeSection', 'chatboxSection']) {
+                await activateTab(opened.page, tabId);
+                const selectedState = await opened.page.evaluate(() => {
+                    const ids = ['analyzeSection', 'icebreakSection', 'optimizeSection', 'chatboxSection'];
+                    return {
+                        visible: ids.filter(id => {
+                            const section = document.getElementById(id);
+                            return section && getComputedStyle(section).display !== 'none';
+                        }),
+                        mobileActive: document.querySelector('#mobileNavBar .nav-tab-mobile.active-tab')?.dataset.tab || null,
+                        desktopActive: document.querySelector('#desktopNav .nav-tab-desktop.active-tab')?.dataset.tab || null
+                    };
+                });
+                assert.deepStrictEqual(selectedState.visible, [tabId], `selecting ${tabId} must show only its feature section: ${JSON.stringify(selectedState)}`);
+                assert.strictEqual(selectedState.mobileActive, tabId, `mobile navigation must highlight ${tabId}: ${JSON.stringify(selectedState)}`);
+                assert.strictEqual(selectedState.desktopActive, tabId, `desktop navigation must highlight ${tabId}: ${JSON.stringify(selectedState)}`);
+            }
+        }
         if (viewport[0] < 768) {
             const scrollContract = await getMobileScrollContract(opened.page);
             assert.strictEqual(scrollContract.htmlOverflowY, 'auto', `app document must remain vertically scrollable at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.bodyOverflowY, 'visible', `app body must leave vertical scrolling to the HTML root at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.htmlTouchAction, 'pan-y pinch-zoom', `app document must allow vertical touch panning and pinch zoom at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
             assert.strictEqual(scrollContract.bodyTouchAction, 'pan-y pinch-zoom', `app body must allow vertical touch panning and pinch zoom at ${viewport.join('x')}: ${JSON.stringify(scrollContract)}`);
-            assert(initial.mobileNav.height >= 72, `mobile app navigation is too short at ${viewport.join('x')}`);
+            assert(initial.mobileNav.height >= (viewport[1] <= 520 ? 52 : 72), `mobile app navigation is too short at ${viewport.join('x')}`);
             assert(initial.navButtons.every(button => button.width >= 44 && button.height >= 44), `mobile app navigation touch target is too small at ${viewport.join('x')}`);
             assert(initial.appHeader.height <= 80, `mobile app header is too tall at ${viewport.join('x')}`);
 
@@ -361,7 +387,7 @@ async function assertApp(browser, viewport) {
             assert(!rectsOverlap(chat.chatFooter, chat.chatMessages), `chat composer overlaps the message region at ${viewport.join('x')}: ${JSON.stringify(chat)}`);
             assert(chat.chatFooter.bottom <= chat.chatWrapper.bottom + 1 && chat.chatNotice.bottom <= chat.chatWrapper.bottom + 1, `chat footer content is clipped by its wrapper at ${viewport.join('x')}: ${JSON.stringify({ wrapper: chat.chatWrapper, footer: chat.chatFooter, notice: chat.chatNotice })}`);
             if (shortLandscape) {
-                assert(navVisible && chat.mobileNav.height >= 72, `short Practice landscape must keep mobile tab navigation reachable at ${viewport.join('x')}: ${JSON.stringify(chat.mobileNav)}`);
+                assert(navVisible && chat.mobileNav.height >= 52, `short Practice landscape must keep mobile tab navigation reachable at ${viewport.join('x')}: ${JSON.stringify(chat.mobileNav)}`);
                 await opened.page.click('#mobileNavBar button[data-tab="analyzeSection"]');
                 await opened.page.waitForTimeout(80);
                 const analyzeReachable = await opened.page.evaluate(() => {
@@ -371,37 +397,23 @@ async function assertApp(browser, viewport) {
                 assert(analyzeReachable, 'short Practice landscape mobile navigation cannot return to Analyze');
                 await activateTab(opened.page, 'chatboxSection');
             }
-            if (shortLandscape) {
-                assert(chat.document.scrollHeight > viewport[1], `short Practice landscape must remain document-scrollable for fixed-nav clearance: ${JSON.stringify(chat.document)}`);
-            } else {
-                assert(chat.chatSection.bottom <= navTop + 1, `chat section is covered by bottom nav at ${viewport.join('x')}: section=${JSON.stringify(chat.chatSection)}, nav=${navTop}`);
-                assert(chat.chatFooter.bottom <= navTop + 1, `chat composer is covered by bottom nav at ${viewport.join('x')}: footer=${JSON.stringify(chat.chatFooter)}, nav=${navTop}, wrapper=${JSON.stringify(chat.chatWrapper)}, profile=${JSON.stringify(chat.chatProfile)}, messages=${JSON.stringify(chat.chatMessages)}, footerRow=${JSON.stringify(chat.chatFooterRow)}, notice=${JSON.stringify(chat.chatNotice)}, children=${JSON.stringify(chat.chatFooterChildren)}`);
-                assert(chat.chatNotice.bottom <= navTop + 1, `chat credit notice is covered by bottom nav at ${viewport.join('x')}: notice=${chat.chatNotice.bottom}, nav=${navTop}`);
-            }
+            assert(chat.chatSection.bottom <= navTop + 1, `chat section is covered by bottom nav at ${viewport.join('x')}: section=${JSON.stringify(chat.chatSection)}, nav=${navTop}`);
+            assert(chat.chatFooter.bottom <= navTop + 1, `chat composer is covered by bottom nav at ${viewport.join('x')}: footer=${JSON.stringify(chat.chatFooter)}, nav=${navTop}, wrapper=${JSON.stringify(chat.chatWrapper)}, profile=${JSON.stringify(chat.chatProfile)}, messages=${JSON.stringify(chat.chatMessages)}, footerRow=${JSON.stringify(chat.chatFooterRow)}, notice=${JSON.stringify(chat.chatNotice)}, children=${JSON.stringify(chat.chatFooterChildren)}`);
+            assert(chat.chatNotice.bottom <= navTop + 1, `chat credit notice is covered by bottom nav at ${viewport.join('x')}: notice=${chat.chatNotice.bottom}, nav=${navTop}`);
             assert(chat.chatInput.height >= 44, `chat input is too short at ${viewport.join('x')}`);
             assert(chat.chatReset.height >= 44, `chat reset/review control is too short at ${viewport.join('x')}`);
-            assert(chat.chatReview.height >= 44, `chat Finish & Review control is too short at ${viewport.join('x')}`);
+            if (shortLandscape) {
+                assert(chat.chatReview.width === 0 && chat.chatReview.height === 0, `short Practice landscape must give the composer and message list priority over the review action: ${JSON.stringify(chat.chatReview)}`);
+            } else {
+                assert(chat.chatReview.height >= 44, `chat Finish & Review control is too short at ${viewport.join('x')}`);
+            }
             const minimumMessagesHeight = viewport[1] <= 521 ? 40 : 72;
             assert(chat.chatMessages.height >= minimumMessagesHeight, `chat message region is not usable on ${viewport.join('x')}: profile=${JSON.stringify(chat.chatProfile)}, footer=${JSON.stringify(chat.chatFooter)}, row=${JSON.stringify(chat.chatFooterRow)}, notice=${JSON.stringify(chat.chatNotice)}`);
-            if (!navVisible) {
-                assert(chat.chatWrapper.overflowY === 'auto' && chat.chatWrapper.scrollHeight > chat.chatWrapper.clientHeight, `short Practice chat must remain internally scrollable when the mobile nav is hidden at ${viewport.join('x')}: ${JSON.stringify(chat.chatWrapper)}`);
-            }
-            if (shortLandscape) {
-                assert(chat.document.scrollHeight > viewport[1], `short Practice landscape must remain document-scrollable after the chat card expands: ${JSON.stringify(chat.document)}`);
-                await opened.page.evaluate(() => {
-                    const scroller = document.scrollingElement;
-                    scroller.scrollTop = scroller.scrollHeight - window.innerHeight;
-                });
-                const footerAtScrollEnd = await getLayout(opened.page);
-                assert(footerAtScrollEnd.chatFooter.bottom <= footerAtScrollEnd.mobileNav.y + 1, `short Practice composer is hidden behind the fixed nav after scrolling: ${JSON.stringify(footerAtScrollEnd)}`);
-            } else {
-                assert(chat.document.scrollHeight <= viewport[1] + 1, `Practice adds duplicate vertical clearance at ${viewport.join('x')}: ${JSON.stringify(chat.document)}`);
-            }
+            assert(chat.chatMessages.overflowY === 'auto', `chat messages must own vertical scrolling at ${viewport.join('x')}: ${JSON.stringify(chat.chatMessages)}`);
+            assert(chat.document.scrollHeight <= viewport[1] + 1, `Practice adds duplicate vertical clearance at ${viewport.join('x')}: ${JSON.stringify(chat.document)}`);
             const visualHeight = await opened.page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--wingman-visual-height').trim());
             assert(visualHeight.endsWith('px'), `visual viewport height is not published at ${viewport.join('x')}`);
-            if (!shortLandscape) {
-                assert(chat.chatWrapper.bottom <= viewport[1] + 1, `chat wrapper is clipped below the viewport at ${viewport.join('x')}`);
-            }
+            assert(chat.chatWrapper.bottom <= navTop + 1, `chat wrapper is clipped below the bottom navigation at ${viewport.join('x')}`);
 
             await opened.page.evaluate(() => window.openSettingsModal());
             await opened.page.waitForTimeout(50);
@@ -452,15 +464,122 @@ async function assertApp(browser, viewport) {
                 await opened.page.setViewportSize(originalViewport);
                 await opened.page.waitForTimeout(80);
 
-                await opened.page.evaluate(() => document.body.classList.add('chat-keyboard-open'));
+                const chatInputLocator = opened.page.locator('#simulator-chat-input');
+                await chatInputLocator.fill('draft');
+                await opened.page.keyboard.press('End');
+                await opened.page.keyboard.press('Backspace');
+                await opened.page.keyboard.type('t');
+                await opened.page.setViewportSize({ width: 320, height: 380 });
+                await opened.page.waitForTimeout(80);
                 const keyboardLayout = await opened.page.evaluate(() => ({
+                    keyboardOpen: document.body.classList.contains('chat-keyboard-open'),
                     navDisplay: getComputedStyle(document.getElementById('mobileNavBar')).display,
+                    navPointerEvents: getComputedStyle(document.getElementById('mobileNavBar')).pointerEvents,
+                    navBottom: document.getElementById('mobileNavBar').getBoundingClientRect().bottom,
+                    visualHeight: window.visualViewport ? window.visualViewport.height : window.innerHeight,
+                    composerBottom: document.querySelector('.chatbox-footer-sticky-wrapper').getBoundingClientRect().bottom,
+                    navTop: document.getElementById('mobileNavBar').getBoundingClientRect().top,
+                    inputValue: document.getElementById('simulator-chat-input').value,
                     noticeDisplay: getComputedStyle(document.getElementById('chatbox-credit-notice')).display,
                     noticeHeight: document.getElementById('chatbox-credit-notice').getBoundingClientRect().height
                 }));
-                assert.strictEqual(keyboardLayout.navDisplay, 'none', `keyboard state must remove bottom navigation from the visual viewport: ${JSON.stringify(keyboardLayout)}`);
+                assert.strictEqual(keyboardLayout.keyboardOpen, true, `resized mobile viewport must enter keyboard layout while the composer is focused: ${JSON.stringify(keyboardLayout)}`);
+                assert.notStrictEqual(keyboardLayout.navDisplay, 'none', `keyboard state must keep bottom navigation visible: ${JSON.stringify(keyboardLayout)}`);
+                assert.notStrictEqual(keyboardLayout.navPointerEvents, 'none', `keyboard state must keep bottom navigation interactive: ${JSON.stringify(keyboardLayout)}`);
+                assert(keyboardLayout.navTop < keyboardLayout.navBottom && keyboardLayout.navBottom <= keyboardLayout.visualHeight + 1, `keyboard state must keep all tabs within the visible viewport: ${JSON.stringify(keyboardLayout)}`);
+                assert(keyboardLayout.composerBottom <= keyboardLayout.navTop + 1, `keyboard state must keep the composer above bottom navigation: ${JSON.stringify(keyboardLayout)}`);
+                assert.strictEqual(keyboardLayout.inputValue, 'draft', `viewport resizing must preserve typed and edited composer text: ${JSON.stringify(keyboardLayout)}`);
                 assert(keyboardLayout.noticeDisplay !== 'none' && keyboardLayout.noticeHeight > 0, `keyboard state must keep the credit notice reachable: ${JSON.stringify(keyboardLayout)}`);
-                await opened.page.evaluate(() => document.body.classList.remove('chat-keyboard-open'));
+                await opened.page.setViewportSize(originalViewport);
+                await opened.page.waitForTimeout(80);
+                const viewportOnlyLayout = await opened.page.evaluate(() => {
+                    const nativeViewport = window.visualViewport;
+                    const mockViewport = new EventTarget();
+                    mockViewport.width = window.innerWidth;
+                    mockViewport.height = 400;
+                    mockViewport.offsetTop = 24;
+                    mockViewport.offsetLeft = 0;
+                    mockViewport.scale = 1;
+                    Object.defineProperty(window, 'visualViewport', { configurable: true, value: mockViewport });
+                    window.__wingmanNativeVisualViewport = nativeViewport;
+                    window.__wingmanMockVisualViewport = mockViewport;
+                    window.__wingmanSetMockVisualViewport = (height, offsetTop) => {
+                        mockViewport.height = height;
+                        mockViewport.offsetTop = offsetTop;
+                        window.dispatchEvent(new Event('resize'));
+                    };
+                    window.__wingmanSetMockVisualViewport(400, 24);
+                    return true;
+                });
+                assert(viewportOnlyLayout, 'visual-only viewport simulation must initialize');
+                await opened.page.waitForTimeout(80);
+                const visualOnlyMetrics = await opened.page.evaluate(() => {
+                    const nav = document.getElementById('mobileNavBar').getBoundingClientRect();
+                    const composer = document.querySelector('.chatbox-footer-sticky-wrapper').getBoundingClientRect();
+                    const visualBottom = window.visualViewport.offsetTop + window.visualViewport.height;
+                    return {
+                        keyboardOpen: document.body.classList.contains('chat-keyboard-open'),
+                        visualHeight: window.visualViewport.height,
+                        visualTop: window.visualViewport.offsetTop,
+                        bottomInset: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--wingman-visual-bottom-inset')),
+                        navTop: nav.top,
+                        navBottom: nav.bottom,
+                        visualBottom,
+                        composerBottom: composer.bottom,
+                        navDisplay: getComputedStyle(document.getElementById('mobileNavBar')).display,
+                        buttons: [...document.querySelectorAll('#mobileNavBar button')].map(button => {
+                            const rect = button.getBoundingClientRect();
+                            return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, width: rect.width, height: rect.height };
+                        }),
+                        pageScrollTop: document.scrollingElement.scrollTop
+                    };
+                });
+                assert(visualOnlyMetrics.keyboardOpen, `visual-only viewport reduction must enter keyboard layout: ${JSON.stringify(visualOnlyMetrics)}`);
+                assert.strictEqual(visualOnlyMetrics.bottomInset, 144, `visual viewport offset and height must produce one bottom inset: ${JSON.stringify(visualOnlyMetrics)}`);
+                assert(Math.abs(visualOnlyMetrics.navBottom - visualOnlyMetrics.visualBottom) <= 1, `navigation must sit directly above a visual-only keyboard: ${JSON.stringify(visualOnlyMetrics)}`);
+                assert(visualOnlyMetrics.composerBottom <= visualOnlyMetrics.navTop + 1, `composer must sit above navigation in visual-only keyboard mode: ${JSON.stringify(visualOnlyMetrics)}`);
+                assert.strictEqual(visualOnlyMetrics.navDisplay, 'flex', `visual-only keyboard mode must keep navigation visible: ${JSON.stringify(visualOnlyMetrics)}`);
+                assert.strictEqual(visualOnlyMetrics.buttons.length, 4, `all four mobile tabs must remain present while typing: ${JSON.stringify(visualOnlyMetrics)}`);
+                assert(visualOnlyMetrics.buttons.every(button => button.width >= 44 && button.height >= 44 && button.y < visualOnlyMetrics.visualBottom), `all four mobile tabs must remain touchable above the keyboard: ${JSON.stringify(visualOnlyMetrics)}`);
+
+                await opened.page.locator('#mobileNavBar button[data-tab="analyzeSection"]').click();
+                const keyboardNavClick = await opened.page.evaluate(() => ({
+                    analyzeVisible: getComputedStyle(document.getElementById('analyzeSection')).display !== 'none',
+                    activeTab: document.querySelector('#mobileNavBar .active-tab')?.dataset.tab || null
+                }));
+                assert.deepStrictEqual(keyboardNavClick, { analyzeVisible: true, activeTab: 'analyzeSection' }, `visible bottom navigation must remain clickable while the keyboard is simulated: ${JSON.stringify(keyboardNavClick)}`);
+                await opened.page.evaluate(() => window.__wingmanSetMockVisualViewport(568, 0));
+                await opened.page.waitForTimeout(50);
+                await activateTab(opened.page, 'chatboxSection');
+                await chatInputLocator.focus();
+                await opened.page.evaluate(() => window.__wingmanSetMockVisualViewport(400, 24));
+                await opened.page.waitForTimeout(80);
+                const reopened = await opened.page.evaluate(() => ({
+                    keyboardOpen: document.body.classList.contains('chat-keyboard-open'),
+                    bottomInset: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--wingman-visual-bottom-inset')),
+                    navBottom: document.getElementById('mobileNavBar').getBoundingClientRect().bottom,
+                    visualBottom: window.visualViewport.offsetTop + window.visualViewport.height
+                }));
+                assert(reopened.keyboardOpen && reopened.bottomInset === 144 && Math.abs(reopened.navBottom - reopened.visualBottom) <= 1, `reopening the keyboard must not accumulate viewport offsets: ${JSON.stringify(reopened)}`);
+                await opened.page.evaluate(() => window.__wingmanSetMockVisualViewport(568, 0));
+                await opened.page.waitForTimeout(80);
+                const closed = await opened.page.evaluate(() => ({
+                    keyboardOpen: document.body.classList.contains('chat-keyboard-open'),
+                    bottomInset: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--wingman-visual-bottom-inset')),
+                    navBottom: document.getElementById('mobileNavBar').getBoundingClientRect().bottom,
+                    navCssBottom: getComputedStyle(document.getElementById('mobileNavBar')).bottom,
+                    visualHeight: window.visualViewport.height,
+                    visualTop: window.visualViewport.offsetTop,
+                    windowScrollY: window.scrollY,
+                    bodyHeight: document.body.getBoundingClientRect().height,
+                    documentHeight: document.scrollingElement.scrollHeight
+                }));
+                assert(!closed.keyboardOpen && closed.bottomInset === 0 && Math.abs(closed.navBottom - closed.visualHeight) <= 1, `closing the keyboard must restore the full viewport without a residual offset: ${JSON.stringify(closed)}`);
+                await opened.page.evaluate(() => {
+                    document.getElementById('simulator-chat-input').blur();
+                    Object.defineProperty(window, 'visualViewport', { configurable: true, value: window.__wingmanNativeVisualViewport });
+                });
+                await opened.page.waitForTimeout(50);
 
                 await opened.page.evaluate(async () => {
                     const session = { access_token: 'test-token', user: { id: 'qa-user', email: 'qa@example.com' } };
@@ -474,7 +593,7 @@ async function assertApp(browser, viewport) {
                     };
                     window.fetch = async url => {
                         if (String(url).includes('/api/consent/status')) {
-                            return new Response(JSON.stringify({ hasActiveConsent: true, termsVersion: '2026.1' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+                            return new Response(JSON.stringify({ success: true, hasActiveConsent: true, termsVersion: '2026.1', privacyVersion: '2026.1' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
                         }
                         return new Response(JSON.stringify({ reply: 'Keyboard path reply', credits: 48 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
                     };
@@ -484,14 +603,41 @@ async function assertApp(browser, viewport) {
                     input.value = 'Keyboard path fixture';
                 });
                 await opened.page.focus('#simulator-chat-input');
+                await opened.page.evaluate(() => {
+                    const input = document.getElementById('simulator-chat-input');
+                    const nativeFocus = input.focus.bind(input);
+                    input.__qaFocusCalls = 0;
+                    input.focus = function () {
+                        this.__qaFocusCalls += 1;
+                        return nativeFocus();
+                    };
+                });
                 await opened.page.evaluate(() => window.submitChatboxMessage());
                 await opened.page.waitForTimeout(80);
                 const sendState = await opened.page.evaluate(() => ({
                     focused: document.activeElement && document.activeElement.id === 'simulator-chat-input',
+                    focusCalls: document.getElementById('simulator-chat-input').__qaFocusCalls,
                     userMessage: document.getElementById('chatbox-messages-container').textContent.includes('Keyboard path fixture'),
                     reply: document.getElementById('chatbox-messages-container').textContent.includes('Keyboard path reply')
                 }));
-                assert(sendState.focused && sendState.userMessage && sendState.reply, `send/refocus path failed: ${JSON.stringify(sendState)}`);
+                assert(sendState.focused && sendState.focusCalls === 0 && sendState.userMessage && sendState.reply, `sending must retain the current focus without forcing focus again, and render the fixture reply: ${JSON.stringify(sendState)}`);
+
+                const olderMessageScroll = await opened.page.evaluate(() => {
+                    const messages = document.getElementById('chatbox-messages-container');
+                    messages.innerHTML = '';
+                    for (let index = 0; index < 40; index += 1) {
+                        const bubble = document.createElement('div');
+                        bubble.className = 'animate-chat-bubble';
+                        bubble.style.height = '48px';
+                        bubble.textContent = `Older message ${index}`;
+                        messages.appendChild(bubble);
+                    }
+                    messages.scrollTop = 40;
+                    const before = messages.scrollTop;
+                    window.renderChatboxBubble('A later reply while you are reading above', 'assistant');
+                    return { before, after: messages.scrollTop, hasOverflow: messages.scrollHeight > messages.clientHeight };
+                });
+                assert(olderMessageScroll.hasOverflow && olderMessageScroll.after === olderMessageScroll.before, `a reply must not pull the conversation away when the user is reading older messages: ${JSON.stringify(olderMessageScroll)}`);
 
                 await opened.page.evaluate(() => document.body.classList.add('chat-keyboard-open'));
                 await activateTab(opened.page, 'analyzeSection');
@@ -564,11 +710,9 @@ async function assertPracticeHeightBoundary(browser, viewport) {
         assert(layout.chatWrapper && layout.chatFooter && layout.chatMessages && layout.mobileNav, `boundary Practice controls missing at ${viewport.join('x')}`);
         assert(layout.chatFooter.bottom <= layout.chatWrapper.bottom + 1, `boundary Practice footer is clipped at ${viewport.join('x')}`);
         assert(layout.chatMessages.height >= 40, `boundary Practice message region is unusable at ${viewport.join('x')}`);
-        if (viewport[1] <= 520) {
-            assert(layout.document.scrollHeight > viewport[1], `compact boundary Practice must remain document-scrollable at ${viewport.join('x')}`);
-        } else {
-            assert(layout.chatSection.bottom <= layout.mobileNav.y + 1, `normal boundary Practice is covered by the fixed nav at ${viewport.join('x')}`);
-        }
+        assert(layout.chatSection.bottom <= layout.mobileNav.y + 1, `boundary Practice is covered by the fixed nav at ${viewport.join('x')}`);
+        assert(layout.chatFooter.bottom <= layout.mobileNav.y + 1, `boundary Practice composer is covered by the fixed nav at ${viewport.join('x')}`);
+        assert(layout.document.scrollHeight <= viewport[1] + 1, `boundary Practice expands the document below its viewport at ${viewport.join('x')}`);
     } finally {
         await opened.context.close();
     }

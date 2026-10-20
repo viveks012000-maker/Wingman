@@ -7,9 +7,13 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
     <meta name="theme-color" content="#000000"/>
     <meta name="mobile-web-app-capable" content="yes"/>
-    <title>MyWingman - Dashboard Workspace</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦅</text></svg>"/>
-    <meta name="description" content="MyWingman Dashboard Tool: Upload chat screenshots for instant reply breakdown, icebreaker generation, and conversation optimization."/>
+    <title>MyWingman — AI Texting Assistant Workspace</title>
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192x192.png" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <meta name="description" content="MyWingman AI texting tools: explore replies from your own chats, dating-profile bio drafts, icebreakers and AI conversation practice for social and romantic communication."/>
     <meta name="robots" content="noindex, nofollow, noarchive"/>
     <!-- Content Security Policy Meta Tag -->
         <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.supabase.co http://localhost:* ws://localhost:*; script-src 'self' 'unsafe-inline' https://*.supabase.co https://static.cloudflareinsights.com https://checkout.razorpay.com; script-src-elem 'self' 'unsafe-inline' https://*.supabase.co https://static.cloudflareinsights.com https://checkout.razorpay.com; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src https://api.razorpay.com https://checkout.razorpay.com 'self' https://*.supabase.co wss://*.supabase.co http://localhost:* ws://localhost:* http://*:* ws://*:* https://*:* wss://*:* https://aicredits.in https://wingman-production-c6ce.up.railway.app https://cloudflareinsights.com; frame-src https://api.razorpay.com https://checkout.razorpay.com; worker-src 'self' blob:;"/>
@@ -853,7 +857,7 @@
     </style>
     <link rel="stylesheet" href="style.css"/>
 </head>
-<body class="app-page bg-[#090d16] text-on-surface font-sans min-h-screen md:h-screen flex flex-col md:flex-row antialiased selection:bg-primary-container selection:text-white relative overflow-x-hidden md:overflow-hidden">
+<body data-purchase-currency="INR" class="app-page bg-[#090d16] text-on-surface font-sans min-h-screen md:h-screen flex flex-col md:flex-row antialiased selection:bg-primary-container selection:text-white relative overflow-x-hidden md:overflow-hidden">
 
     <!-- Local File Protocol Warning Banner (Only visible when opened directly as file:// from Downloads) -->
     <div id="fileProtocolWarningBanner" class="hidden fixed top-0 left-0 right-0 z-[100] w-full bg-amber-950/90 backdrop-blur-md border-b border-amber-500/40 px-4 py-2.5 text-center text-xs text-amber-200 font-medium shadow-lg">
@@ -952,15 +956,16 @@
                 </button>
                 <button id="signOutBtn" type="button" onclick="window.handleSignOut(event)" class="w-full py-1.5 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium transition flex items-center justify-center gap-2 border border-red-500/20 cursor-pointer">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-                    Sign Out
+                    Log Out
                 </button>
             </div>
 
-            <button type="button" id="desktopAuthBtn" class="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-label text-xs py-2.5 px-3 rounded-xl font-bold shadow-lg shadow-violet-600/30 transition-all transform active:scale-95 cursor-pointer border border-violet-400/30" onclick="window.handleAuthBtnClick(event)">
+            <span id="desktopAuthLoading" role="status" aria-live="polite" class="text-slate-300 text-xs text-center py-2.5">Restoring session…</span>
+            <button type="button" id="desktopAuthBtn" aria-hidden="true" tabindex="-1" class="auth-state-hidden w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-label text-xs py-2.5 px-3 rounded-xl font-bold shadow-lg shadow-violet-600/30 transition-all transform active:scale-95 cursor-pointer border border-violet-400/30" onclick="window.handleAuthBtnClick(event)">
                 <svg class="w-4 h-4 text-white shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
                 </svg>
-                <span id="desktopAuthBtnLabel">Sign In / Account</span>
+                <span id="desktopAuthBtnLabel">Sign In</span>
             </button>
 
 
@@ -987,8 +992,9 @@
         </a>
         
         <div class="flex items-center gap-1.5 shrink-0">
-            <!-- Mobile Sign In / Sign Out Button -->
-            <button type="button" id="mobileAuthBtn" class="h-8 px-2.5 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 border border-violet-400/40 text-white flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shrink-0 font-label text-xs font-bold" title="Sign In" onclick="window.handleAuthBtnClick(event)">
+            <!-- Mobile Sign In / Log Out Button -->
+            <span id="mobileAuthLoading" role="status" aria-live="polite" class="text-slate-300 text-[10px] px-1 whitespace-nowrap">Restoring…</span>
+            <button type="button" id="mobileAuthBtn" aria-hidden="true" tabindex="-1" class="auth-state-hidden h-8 px-2.5 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 border border-violet-400/40 text-white flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shrink-0 font-label text-xs font-bold" title="Sign In" onclick="window.handleAuthBtnClick(event)">
                 <span id="mobileAuthBtnIcon" class="flex items-center">
                     <svg class="w-3.5 h-3.5 text-white shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
@@ -1054,7 +1060,7 @@
                             </div>
 
                             <p class="font-label text-base sm:text-lg text-white font-bold tracking-wide">Upload Chat Screenshots (Up to 5)</p>
-                            <span class="font-body text-slate-300 text-xs sm:text-sm mt-1 font-medium">Supports Tinder, Bumble, Hinge, Instagram DMs</span>
+                            <span class="font-body text-slate-300 text-xs sm:text-sm mt-1 font-medium">For your own social and romantic conversation screenshots</span>
                         </div>
 
                         <!-- Horizontal Thumbnail Ribbon Preview Grid -->
@@ -1462,7 +1468,7 @@
             <div id="chatbox-simulator-panel" class="tab-content-panel w-full relative z-10">
               <div style="margin-bottom: 16px;">
                 <h2 class="font-headline text-white" style="margin-bottom: 6px;">Practice Partner & Conversation Coach</h2>
-                <p style="color: #94a3b8; font-size: 14px;">Practice real-world flirting, teasing, and dating scenarios with real-time feedback to build natural confidence.</p>
+                <p style="color: #94a3b8; font-size: 14px;">Practise conversation wording with AI-generated feedback. Explore social and romantic scenarios, review suggestions, and choose what fits your own voice.</p>
               </div>
 
               <!-- Practice Scenario Selector Bar Header & Horizontal Touch Ribbon -->
@@ -1484,7 +1490,7 @@
                 <div class="gf-profile-header">
                     <div class="gf-header-banner"></div>
                     <div class="gf-profile-info-block">
-                        <div class="gf-avatar-container">
+                        <div class="gf-avatar-container" style="display:none">
                             <img src="maeve.jpg" onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2250%22 fill=%22%237c3aed%22/%3E%3Ctext x=%2250%22 y=%2255%22 text-anchor=%22middle%22 font-size=%2236%22 font-family=%22sans-serif%22 fill=%22white%22%3EM%3C/text%3E%3C/svg%3E'" class="gf-profile-pic" alt="Maeve">
                             <span class="gf-online-dot"></span>
                         </div>
@@ -1792,8 +1798,13 @@
                 </div>
                 <h3 class="font-headline text-lg font-bold text-white tracking-tight" id="authModalTitle">Sign In to MyWingman</h3>
                 <p class="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto" id="authModalDesc">
-                    Sync your credit wallet balance and secure your workspace sessions.
+                    Sync your AI usage credits and secure your workspace sessions.
                 </p>
+            </div>
+
+            <div class="w-full rounded-xl border border-violet-500/30 bg-violet-950/60 px-4 py-3 text-center">
+                <p class="text-sm font-bold text-white">Get 50 Free AI Credits</p>
+                <p class="mt-1 text-xs text-slate-300 leading-relaxed">Sign up with Google and receive 50 free AI credits. No purchase required. Available once to eligible new users.</p>
             </div>
 
             <!-- Google Sign-In Button inside Modal Container -->
@@ -1807,12 +1818,7 @@
                 <span>Continue with Google</span>
             </button>
 
-            <div class="flex items-center gap-2 my-1">
-                <div class="h-px bg-white/10 flex-1"></div>
-                <span class="text-[11px] font-mono text-slate-400 uppercase">OR EMAIL</span>
-                <div class="h-px bg-white/10 flex-1"></div>
-            </div>
-            <p class="text-[11px] text-slate-400 text-center leading-normal px-2">If you created your account with Google, continue with Google above. You can add an email password later in your account settings.</p>
+            <p class="text-[11px] text-slate-400 text-center leading-normal px-2">New accounts use Google. Existing accounts can still sign in with email and password below.</p>
             <form id="supabaseAuthForm" onsubmit="window.handleSupabaseAuthSubmit(event); return false;" novalidate class="space-y-3">
                 <!-- Domain 5: Bot Defense Honeypot Input Field -->
                 <input type="text" id="website_hp" name="website_hp" tabindex="-1" autocomplete="off" style="display:none !important;" aria-hidden="true" />
@@ -1853,12 +1859,6 @@
                 </button>
                 <button type="button" class="w-full text-xs text-slate-400 hover:text-white font-medium cursor-pointer transition-colors py-1" onclick="window.hideForgotPasswordView()">
                     ← Back to Sign In
-                </button>
-            </div>
-
-            <div class="text-center pt-1" id="authToggleContainer">
-                <button type="button" id="authToggleModeBtn" class="text-xs text-violet-400 hover:underline font-medium" onclick="window.toggleAuthMode()">
-                    Need an account? Sign Up
                 </button>
             </div>
 
@@ -1929,13 +1929,13 @@
                     <span>Pay-Per-Use Access</span>
                 </div>
                 <h2 class="font-headline text-2xl font-extrabold text-white tracking-tight">Flexible Credit Pricing</h2>
-                <p class="font-body text-xs text-slate-300 mt-1 max-w-sm leading-relaxed">Premium credit access only. Purchase a credit tier below to unlock instant AI analysis. No subscriptions, pay only for what you use.</p>
+                <p class="font-body text-xs text-slate-300 mt-1 max-w-sm leading-relaxed">Explore one-time AI usage credit packs for the existing tools. Secure purchasing will be enabled after payment activation. No recurring subscriptions.</p>
                 <p id="purchaseCreditContext" class="hidden mt-2 max-w-sm rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 font-body text-[11px] font-semibold leading-relaxed text-amber-200" role="status" aria-live="polite"></p>
                 <!-- Domestic INR pricing -->
                 <div class="flex items-center justify-center mt-3" id="appPricingCurrencySelectorWrapper">
                     <div class="inline-flex items-center rounded-full bg-slate-900/80 p-0.5 border border-violet-500/30 shadow-[0_0_15px_rgba(124,58,237,0.15)]" role="group" aria-label="Display currency">
 
-                        <button type="button" class="currency-toggle-btn px-3 py-1 text-xs font-semibold rounded-full transition-all cursor-pointer text-slate-300 hover:text-white" data-currency="USD" aria-label="USD — US Dollar" aria-pressed="false">USD</button>
+                        <button type="button" hidden style="display:none" class="currency-toggle-btn px-3 py-1 text-xs font-semibold rounded-full transition-all cursor-pointer text-slate-300 hover:text-white" data-currency="USD" aria-label="USD — US Dollar" aria-pressed="false">USD</button>
                         <button type="button" class="currency-toggle-btn px-3 py-1 text-xs font-semibold rounded-full transition-all cursor-pointer bg-violet-600 text-white shadow-sm" data-currency="INR" aria-label="INR — Indian Rupee" aria-pressed="true">INR</button>
                     </div>
                 </div>
@@ -2173,14 +2173,22 @@
                 </div>
             </div>
 
+            <!-- Itemized summary uses the existing catalog and selected package. -->
+            <div id="purchaseOrderSummary" class="p-4 border-t border-white/10 text-xs text-slate-200" aria-live="polite">
+                <p class="font-bold text-white">Order summary: <span id="summaryPlanName">Elite Pack</span></p>
+                <p><span id="summaryCredits">3,000</span> credits • One-time bundle</p>
+                <p>Package total (INR): <strong id="summaryAmount">₹1,799</strong></p>
+                <p>No additional tax or checkout fees are added to this displayed final total.</p>
+                <p><a href="terms.html" target="_blank" rel="noopener noreferrer" class="underline">Terms</a> • <a href="refund.html" target="_blank" rel="noopener noreferrer" class="underline">Cancellation &amp; Refund Policy</a></p>
+            </div>
             <!-- Compact Bottom Action Bar -->
             <div class="p-4 border-t border-white/10 bg-[#06040d]/95 backdrop-blur-md mt-auto shrink-0 z-10 flex flex-col items-center justify-between gap-2.5 text-center">
                 <p class="font-mono text-[10px] text-slate-400 flex items-center justify-center gap-1.5" aria-live="polite">
                     <span class="material-symbols-outlined text-[14px] text-violet-400">info</span>
-                    <span id="paymentAvailabilityNotice">Paid checkout is unavailable in production. Displayed INR prices are final customer totals with no extra checkout fees. USD display is available; USD/international payment collection is not enabled.</span>
+                    <span id="paymentAvailabilityNotice">Paid checkout is unavailable in production. Secure purchasing may be enabled after payment activation. Displayed INR prices are final customer totals with no extra checkout fees. This purchase experience displays INR only. International payment collection is not enabled.</span>
                 </p>
                 <button type="button" id="confirmPurchaseBtn" class="w-full primary-btn bg-violet-600 hover:bg-violet-500 text-white font-label text-sm py-3 px-6 rounded-full border border-violet-400/40 transition-all flex items-center justify-center gap-2 font-bold cursor-not-allowed shrink-0 shadow-none" aria-disabled="true" disabled>
-                    <span id="purchaseBtnText">Paid checkout unavailable</span>
+                    <span id="purchaseBtnText">Purchasing not yet enabled</span>
                 </button>
             </div>
         </div>
@@ -2220,19 +2228,13 @@
                 </div>
             </div>
 
-            <!-- Single Master Checkbox -->
-            <div class="bg-black/40 rounded-2xl border border-white/10 p-3.5 transition-all hover:border-violet-500/40" id="termsCheckboxContainer">
-                <label class="flex items-start gap-3 cursor-pointer group">
-                    <input type="checkbox" id="interstitialAgreementCheck" class="mt-1 w-4 h-4 rounded border-violet-500/50 bg-black/60 text-violet-600 focus:ring-violet-500 focus:ring-offset-0 cursor-pointer transition-all" onchange="window.toggleInterstitialAcceptButton()"/>
-                    <span class="text-[11px] text-slate-300 leading-snug font-body group-hover:text-white transition-colors">
-                        I confirm I am <strong>18 years or older</strong> and agree to the <a href="terms.html" target="_blank" class="text-violet-400 underline hover:text-violet-300 font-semibold" onclick="event.stopPropagation()">Terms of Service</a> &amp; <a href="privacy.html" target="_blank" class="text-violet-400 underline hover:text-violet-300 font-semibold" onclick="event.stopPropagation()">Privacy Policy</a>.
-                    </span>
-                </label>
-            </div>
+            <p id="workspaceConsentNotice" class="text-xs text-slate-200 leading-relaxed">
+                By clicking <strong>Unlock Workspace</strong>, I confirm I am <strong>18 or older</strong>, agree to the <a href="terms.html" target="_blank" rel="noopener noreferrer" class="underline text-violet-400">Terms</a>, <a href="privacy.html" target="_blank" rel="noopener noreferrer" class="underline text-violet-400">Privacy Policy</a> and <a href="refund.html" target="_blank" rel="noopener noreferrer" class="underline text-violet-400">Refund Policy</a>, and consent to sending my submitted screenshots and messages to AICREDITS and its underlying third-party AI providers for processing. Their retention rules apply.
+            </p>
 
             <!-- Single High-Contrast CTA Button -->
-            <button type="button" id="interstitialAcceptBtn" class="w-full primary-btn bg-violet-600 hover:bg-violet-500 text-white font-label text-sm py-3.5 rounded-2xl border border-violet-400/40 transition-all font-bold text-center flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(124,58,237,0.4)] active:scale-95 cursor-pointer opacity-50 pointer-events-none" onclick="window.acceptInterstitialTerms()">
-                <span>Accept &amp; Enter Workspace</span>
+            <button type="button" id="interstitialAcceptBtn" class="w-full primary-btn bg-violet-600 hover:bg-violet-500 text-white font-label text-sm py-3.5 rounded-2xl border border-violet-400/40 transition-all font-bold text-center flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(124,58,237,0.4)] active:scale-95 cursor-pointer" onclick="window.acceptInterstitialTerms()">
+                <span>Unlock Workspace</span>
                 <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
             </button>
         </div>

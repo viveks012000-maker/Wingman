@@ -104,11 +104,15 @@ function setupDOMEnvironment() {
     const toastContainer = getOrCreate('toastContainer', 'div');
     const privacyConsent = getOrCreate('privacyConsent', 'input');
     privacyConsent.checked = true;
+    const interstitialModal = getOrCreate('interstitialModal', 'div', ['hidden', 'opacity-0', 'pointer-events-none']);
+    interstitialModal.style.display = 'none';
+    getOrCreate('interstitialCard', 'div', ['scale-95']);
+    getOrCreate('interstitialAcceptBtn', 'button');
 
     const toasts = [];
     const windowMock = {
         currentSupabaseUser: { id: 'test-user-id', email: 'test@mywingman.com' },
-        currentSupabaseSession: { access_token: 'test-valid-access-token' },
+        currentSupabaseSession: { access_token: 'test-valid-access-token', user: { id: 'test-user-id' } },
         showToast(msg, type) { toasts.push({ msg, type }); },
         showNotification(title, msg, type) { toasts.push({ title, msg, type }); },
         getSupabaseAuthHeaders: async () => ({ 'Authorization': 'Bearer test-valid-access-token' }),
@@ -191,7 +195,7 @@ function setupDOMEnvironment() {
 
     let currentFetch = async (url) => {
         if (String(url).includes('/api/consent/status')) {
-            return { ok: true, json: async () => ({ success: true, hasActiveConsent: true, termsVersion: '2026.1' }) };
+            return { ok: true, status: 200, json: async () => ({ success: true, hasActiveConsent: true, termsVersion: '2026.1', privacyVersion: '2026.1' }) };
         }
         if (String(url).includes('/api/credits')) {
             return { ok: true, json: async () => ({ success: true, credits: 50, status: 'ready' }) };
@@ -259,8 +263,176 @@ function setupDOMEnvironment() {
     const bioInput = env.elements.get('bioInput');
     const auditBioInput = env.elements.get('auditBioInput');
 
-    // Authoritative Server Consent and Credit check on boot
+    // A server-confirmed active record is authoritative after login, refresh, and navigation;
+    // browser session markers are not a second consent requirement.
     await env.sandbox.window.checkServerConsentStatus();
+    assert.strictEqual(env.sandbox.window.state.isTermsAccepted, true, 'active server consent unlocks the app without a browser-session marker');
+    assert.strictEqual(env.sandbox.window.state.consentStatus, 'active');
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none', 'server-confirmed consent keeps Unlock Workspace closed');
+    assert.strictEqual(env.sandbox.sessionStorage.getItem('wingman_consent_session'), null, 'server verification does not require or create a session consent marker');
+    await env.sandbox.window.checkServerConsentStatus();
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none', 'refresh and home/app re-entry must not reopen the dialog');
+
+    // A different tab or a fresh page session independently loads consent from the server.
+    const otherTab = setupDOMEnvironment();
+    otherTab.sandbox.sessionStorage.removeItem('wingman_consent_session');
+    otherTab.sandbox.sessionStorage.removeItem('wingman_consent_prompted');
+    assert.strictEqual(await otherTab.sandbox.window.checkServerConsentStatus(), true, 'another tab loads the same user’s active server consent');
+    assert.strictEqual(otherTab.sandbox.window.state.isTermsAccepted, true);
+    assert.strictEqual(otherTab.elements.get('interstitialModal').style.display, 'none');
+
+    assert.strictEqual(await env.sandbox.window.ensureActiveConsent(), true, 'all AI feature entry points can await the authoritative active status');
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none');
+
+    const appSource = fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8');
+    for (const featureName of ['runAnalysis', 'generateIcebreaker', 'runAudit', 'submitChatboxMessage']) {
+        const start = appSource.indexOf(`window.${featureName} = async function`);
+        assert.notStrictEqual(start, -1, `${featureName} handler exists`);
+        const nextHandler = appSource.indexOf('\n    window.', start + 1);
+        const featureSource = appSource.slice(start, nextHandler === -1 ? appSource.length : nextHandler);
+        assert(featureSource.includes('await window.ensureActiveConsent()'), `${featureName} waits for server-confirmed consent before AI work`);
+    }
+    assert(appSource.includes('await window.refreshConsentAfterRejection()'), 'a backend CONSENT_REQUIRED response refreshes authoritative status');
+
+    const pendingTab = setupDOMEnvironment();
+    let resolvePendingStatus;
+    pendingTab.setFetch(() => new Promise(resolve => { resolvePendingStatus = resolve; }));
+    const pendingStatus = pendingTab.sandbox.window.checkServerConsentStatus();
+    const pendingFeatureGate = pendingTab.sandbox.window.ensureActiveConsent();
+    assert.strictEqual(pendingTab.elements.get('interstitialModal').style.display, 'none', 'a pending status request cannot open Unlock Workspace early');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.strictEqual(typeof resolvePendingStatus, 'function', 'the authoritative status request reached the mocked server');
+    resolvePendingStatus({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, hasActiveConsent: true, termsVersion: '2026.1', privacyVersion: '2026.1' })
+    });
+    assert.strictEqual(await pendingStatus, true);
+    assert.strictEqual(await pendingFeatureGate, true, 'feature submission waits for active server consent');
+    assert.strictEqual(pendingTab.elements.get('interstitialModal').style.display, 'none');
+
+    let consentPostCount = 0;
+    let consentStatus = { success: true, hasActiveConsent: false, termsVersion: '2026.2', privacyVersion: '2026.2' };
+    let acceptResponseResolver = null;
+    const consentFetch = async (url, options) => {
+        if (String(url).includes('/api/consent/status')) {
+            return { ok: true, status: 200, json: async () => consentStatus };
+        }
+        if (String(url).endsWith('/api/consent') && options && options.method === 'POST') {
+            consentPostCount += 1;
+            return new Promise(resolve => { acceptResponseResolver = resolve; });
+        }
+        return { ok: true, status: 200, json: async () => ({ success: true }) };
+    };
+    env.setFetch(consentFetch);
+
+    // Switching accounts cannot carry the previous user's active state.
+    env.sandbox.window.currentSupabaseSession = { access_token: 'user-b-token', user: { id: 'user-b' } };
+    env.sandbox.window.currentSupabaseUser = env.sandbox.window.currentSupabaseSession.user;
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), false, 'a different user without a current consent record remains locked');
+    assert.strictEqual(env.sandbox.window.state.isTermsAccepted, false);
+    assert.strictEqual(env.sandbox.window.state.consentUserId, 'user-b', 'the new status result is scoped to the new user');
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'flex', 'missing or outdated consent requests a genuine acceptance');
+    assert.strictEqual(env.sandbox.window.state.consentTermsVersion, '2026.2', 'the new policy version is shown to the user');
+    assert.strictEqual(consentPostCount, 0, 'missing consent is never recorded before an explicit user click');
+
+    // A browser-storage failure must not undo a successful persistent server recording.
+    const originalSessionStorageSet = env.sandbox.sessionStorage.setItem;
+    env.sandbox.sessionStorage.setItem = () => { throw new Error('session storage blocked'); };
+    const accepting = env.sandbox.window.acceptInterstitialTerms();
+    const duplicateAccept = env.sandbox.window.acceptInterstitialTerms();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.strictEqual(consentPostCount, 1, 'duplicate acceptance clicks submit only one in-flight request');
+    assert.strictEqual(typeof acceptResponseResolver, 'function', 'the acceptance request reached the mocked server');
+    acceptResponseResolver({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, consentRecorded: true, termsVersion: '2026.2', privacyVersion: '2026.2' })
+    });
+    await Promise.all([accepting, duplicateAccept]);
+    env.sandbox.sessionStorage.setItem = originalSessionStorageSet;
+    assert.strictEqual(consentPostCount, 1, 'acceptance is recorded once by the authenticated server');
+    assert.strictEqual(env.sandbox.window.state.isTermsAccepted, true, 'persistent server acceptance unlocks despite blocked sessionStorage');
+    assert.strictEqual(env.sandbox.window.state.consentStatus, 'active');
+    assert.strictEqual(env.sandbox.sessionStorage.getItem('wingman_consent_session'), null, 'successful acceptance does not depend on a browser session marker');
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none');
+
+    // A newer policy pair requires fresh consent even if the previous pair was accepted.
+    consentStatus = { success: true, hasActiveConsent: false, termsVersion: '2026.3', privacyVersion: '2026.3' };
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), false, 'updated Terms or Privacy versions require renewed consent');
+    assert.strictEqual(env.sandbox.window.state.consentTermsVersion, '2026.3');
+    assert.strictEqual(env.sandbox.window.state.consentPrivacyVersion, '2026.3');
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'flex');
+
+    // Refresh and a later login reload the same server record without requiring acceptance again.
+    consentStatus = { success: true, hasActiveConsent: true, termsVersion: '2026.3', privacyVersion: '2026.3' };
+    env.sandbox.window.resetConsentSessionState();
+    assert.strictEqual(env.sandbox.sessionStorage.getItem('wingman_consent_session'), null, 'resetting ephemeral UI state clears only the optional session marker');
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), true, 'refresh or relogin reloads valid persistent server consent');
+    assert.strictEqual(env.sandbox.window.state.isTermsAccepted, true);
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none');
+
+    // Withdrawn/current-policy-missing consent stays locked; status failures do not invent consent or prompt.
+    consentStatus = { success: true, hasActiveConsent: false, termsVersion: '2026.3', privacyVersion: '2026.3' };
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), false, 'withdrawn or missing consent remains locked');
+    assert.strictEqual(env.sandbox.window.state.isTermsAccepted, false);
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'flex');
+    env.setFetch(async () => ({ ok: false, status: 503, json: async () => ({ success: false, hasActiveConsent: false }) }));
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), false, 'failed status checks remain locked');
+    assert.strictEqual(env.sandbox.window.state.consentStatus, 'service_unavailable');
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none', 'network failure does not show an acceptance prompt');
+    env.setFetch(async () => ({ ok: true, status: 200, json: async () => ({ success: false, hasActiveConsent: true, termsVersion: '2026.3', privacyVersion: '2026.3' }) }));
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), false, 'malformed status responses cannot grant consent');
+    assert.strictEqual(env.sandbox.window.state.consentStatus, 'service_unavailable');
+    assert.strictEqual(env.sandbox.window.state.isTermsAccepted, false);
+
+    env.setFetch(consentFetch);
+    env.sandbox.window.currentSupabaseSession = null;
+    env.sandbox.window.currentSupabaseUser = null;
+    env.sandbox.window.resetConsentSessionState();
+    assert.strictEqual(env.sandbox.window.state.isTermsAccepted, false);
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), false, 'a signed-out visitor is never accepted from browser storage');
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none', 'consent is not requested before login');
+    const originalOpenAuthRequiredModal = env.sandbox.window.openAuthRequiredModal;
+    let unauthenticatedAuthRedirects = 0;
+    env.sandbox.window.openAuthRequiredModal = (...args) => {
+        unauthenticatedAuthRedirects += 1;
+        return originalOpenAuthRequiredModal(...args);
+    };
+    env.sandbox.window.openInterstitialModal();
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none', 'unauthenticated users cannot open the age/Terms consent prompt');
+    assert.strictEqual(unauthenticatedAuthRedirects, 1, 'unauthenticated users are directed to sign in first');
+
+    env.sandbox.window.currentSupabaseSession = { access_token: 'test-valid-access-token', user: { id: 'test-user-id' } };
+    env.sandbox.window.currentSupabaseUser = env.sandbox.window.currentSupabaseSession.user;
+    consentStatus = { success: true, hasActiveConsent: false, termsVersion: '2026.3', privacyVersion: '2026.3' };
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), false, 'a later login prompts only when the server has no valid consent');
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'flex');
+    env.sandbox.window.closeInterstitialModal();
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), false, 'a dismissed prompt does not pop up again in the same login session');
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none');
+    env.sandbox.window.openInterstitialModal();
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none', 'the prompt stays dismissed until the user signs out');
+    consentStatus = { success: true, hasActiveConsent: true, termsVersion: '2026.3', privacyVersion: '2026.3' };
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), true, 'restored server consent unlocks the existing feature cases');
+
+    // A backend rejection triggers a fresh status query and trusts that response before prompting.
+    env.setFetch(async url => {
+        if (String(url).includes('/api/consent/status')) {
+            return { ok: true, status: 200, json: async () => consentStatus };
+        }
+        return { ok: false, status: 403, json: async () => ({ success: false, code: 'CONSENT_REQUIRED' }) };
+    });
+    assert.strictEqual(await env.sandbox.window.generateWingmanResponse('/api/test-consent', { text: 'no generation is performed' }), null);
+    assert.strictEqual(env.sandbox.window.state.isTermsAccepted, true, 'a stale 403 cannot override an active server record');
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'none');
+    consentStatus = { success: true, hasActiveConsent: false, termsVersion: '2026.4', privacyVersion: '2026.4' };
+    assert.strictEqual(await env.sandbox.window.generateWingmanResponse('/api/test-consent', { text: 'no generation is performed' }), null);
+    assert.strictEqual(env.sandbox.window.state.isTermsAccepted, false, 'a 403 followed by missing server consent keeps the workspace locked');
+    assert.strictEqual(env.elements.get('interstitialModal').style.display, 'flex', 'confirmed missing consent reopens the acceptance prompt');
+    consentStatus = { success: true, hasActiveConsent: true, termsVersion: '2026.4', privacyVersion: '2026.4' };
+    assert.strictEqual(await env.sandbox.window.checkServerConsentStatus(), true, 'server-confirmed consent restores feature availability');
+
     env.sandbox.window.updateUICredits(50);
     env.sandbox.window.updateButtonStates();
 
@@ -368,9 +540,33 @@ function setupDOMEnvironment() {
     assert.strictEqual(lastToast.msg.includes('Insufficient credits'), false, '503 MUST NOT show Insufficient credits');
     console.log('✔ Test 10 Passed: HTTP 503 Credit Service Unavailable handled cleanly (No purchase modal, no insufficient credit message)');
 
-    // 11. TEST SINGLE CLICK SINGLE REQUEST
+    // 11. A late feature response must not restore the previous account's balance or output.
+    let resolveLateFeatureResponse = null;
+    env.setFetch((url) => {
+        if (String(url).includes('/api/late-account-response')) {
+            return new Promise(resolve => { resolveLateFeatureResponse = resolve; });
+        }
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ success: true }) });
+    });
+    const lateFeatureResponse = env.sandbox.window.generateWingmanResponse('/api/late-account-response', {});
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.strictEqual(typeof resolveLateFeatureResponse, 'function', 'the previous account request is pending');
+    env.sandbox.window.clearAppState();
+    env.sandbox.window.currentSupabaseSession = { access_token: 'user-b-token', user: { id: 'user-b' } };
+    env.sandbox.window.currentSupabaseUser = env.sandbox.window.currentSupabaseSession.user;
+    resolveLateFeatureResponse({
+        ok: true,
+        status: 200,
+        json: async () => ({ creditsVerified: true, credits: 42, text: 'private response from user A' })
+    });
+    assert.strictEqual(await lateFeatureResponse, null, 'a response from the cleared account is discarded');
+    assert.strictEqual(env.sandbox.window.state.credits, null, 'the old response cannot restore a previous account balance');
+    assert.strictEqual(env.sandbox.window.state.lastResults, null, 'private prior-account output stays cleared');
+    console.log('✔ Test 11 Passed: Late feature response cannot restore previous-account credits or output');
+
+    // 12. TEST SINGLE CLICK SINGLE REQUEST
     assert.strictEqual(analyzeCalls, 1, 'Single generation trigger must produce exactly 1 network request to /api/analyze');
-    console.log('✔ Test 11 Passed: Single click produces exactly 1 generation request (zero duplicate dispatch)');
+    console.log('✔ Test 12 Passed: Single click produces exactly 1 generation request (zero duplicate dispatch)');
 
     console.log('\n🎉 ALL RUNTIME CROSS-FEATURE ISOLATION & BUTTON STATE TESTS PASSED!\n');
 })();

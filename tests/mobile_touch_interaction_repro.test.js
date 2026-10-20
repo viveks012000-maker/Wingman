@@ -437,9 +437,7 @@ const MODAL_FLOWS_APP = [
     { id: 'interstitialModal', open: 'window.openInterstitialModal && window.openInterstitialModal()' }
 ];
 
-const MODAL_FLOWS_LANDING = [
-    { id: 'interstitialModal', open: 'window.openInterstitialModal && window.openInterstitialModal()' }
-];
+const MODAL_FLOWS_LANDING = [];
 
 async function assertModalReachability(browser, options) {
     const { viewport, deviceScaleFactor, userAgent, label, port, flows, route, expectScrollable } = options;
@@ -452,6 +450,16 @@ async function assertModalReachability(browser, options) {
     try {
         await page.goto(`http://127.0.0.1:${port}${route}`, { waitUntil: 'domcontentloaded' });
         await page.waitForTimeout(250);
+        if (route === '/app' || route === '/app.html') {
+            await page.evaluate(() => {
+                window.currentSupabaseSession = { access_token: 'touch-test-session', user: { id: 'touch-test-user' } };
+                window.currentSupabaseUser = window.currentSupabaseSession.user;
+            });
+        }
+        if (route === '/' || route === '/index.html') {
+            const homeConsentHidden = await page.locator('#interstitialModal').evaluate(modal => modal.classList.contains('hidden'));
+            record(`${label}: home does not show pre-login consent`, homeConsentHidden, `hidden=${homeConsentHidden}`);
+        }
         for (const flow of flows) {
             await page.evaluate(flow.open);
             await page.waitForTimeout(120);

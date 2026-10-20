@@ -9,7 +9,7 @@
     "backend": "node --watch server.js",
     "build:css": "node scripts/verify-production-css.js",
     "build:css:candidate": "node scripts/build-css-candidate.js",
-    "build:netlify": "node scripts/verify-production-css.js && node scripts/build-netlify-dist.js && node scripts/postprocess-lazy-heic.js && node scripts/postprocess-deferred-media.js && node scripts/postprocess-vendor-allowlist.js && node scripts/postprocess-deferred-runtime.js && node scripts/postprocess-material-symbols-subset.js && node scripts/postprocess-logo-delivery.js && node scripts/postprocess-inline-critical-css.js && node scripts/postprocess-inline-cropper-css.js && node scripts/postprocess-self-host-main-fonts.js && node scripts/postprocess-self-host-material-symbols.js",
+    "build:netlify": "node scripts/verify-production-css.js && node scripts/build-netlify-dist.js && node scripts/postprocess-lazy-heic.js && node scripts/postprocess-deferred-media.js && node scripts/postprocess-vendor-allowlist.js && node scripts/postprocess-deferred-runtime.js && node scripts/postprocess-material-symbols-subset.js && node scripts/postprocess-logo-delivery.js && node scripts/postprocess-inline-critical-css.js && node scripts/postprocess-inline-cropper-css.js && node scripts/postprocess-self-host-main-fonts.js && node scripts/postprocess-self-host-material-symbols.js && node scripts/postprocess-landing-css.js && node scripts/postprocess-inline-app-output-css.js && node scripts/finalize-release-manifest.js",
     "build:production": "npm run build:netlify",
     "verify:migrations": "node tests/migration_replay.test.js",
     "watch:css": "node scripts/build-css-candidate.js --watch",
