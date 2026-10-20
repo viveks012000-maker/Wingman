@@ -1,1 +1,169 @@
-Yªηx-®ιάjΧΆλiΊΪ+§j[h‘ιάΆινηo9N‹Z–‹­¦λew¬Υ½ΉΝΠμ•α•MεΉτ€τΙ•ΕΥ¥Ι” ΅¥±‘}ΑΙ½•ΝΜ¤μ4)½ΉΝΠΑ…Ρ €τΙ•ΕΥ¥Ι” Α…Ρ ¤μ4(4)½ΉΝΠQMQ}Q%5=UQ}5L€τ€ΨΑ|ΐΐΐμ4(4)½ΉΝΠΡ•ΝΡMΥ¥Ρ•Μ€τl4(€€€μΉ…µ”θ€UQ<1…ΉΥ…”M•±•Ρ¥½Έ…ΉU$½ΉΡΙ…Π°™¥±”θ€‰¥±¥ΉΥ…±}±…ΉΥ…•}ΝΥΑΑ½ΙΠΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€UQ<1…ΉΥ…”I•…°I½ΥΡ”5…ΡΙ¥ΰ°™¥±”θ€…ΥΡ½}±…ΉΥ…•}ΙΥΉΡ¥µ”ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€UΉ¥Ω•ΙΝ…°ΥΡΌΉ±¥Ν €¬!¥Ή±¥Ν 5…ΡΙ¥ΰ°™¥±”θ€ΥΉ¥Ω•ΙΝ…±}…ΥΡ½}±…ΉΥ…”ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€I•ΕΥ•ΝΠ1¥™•ε±”€%‘•µΑ½Ρ•ΉδI•Α±…δΥ…Ι°™¥±”θ€Ι•ΕΥ•ΝΡ}±¥™•ε±•}…Ή‘}¥‘•µΑ½Ρ•Ήε}Ι•Α±…δΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€I…ι½ΙΑ…δQΙΥΝΠ	½ΥΉ‘…Ιδ…ΉΥ±™¥±±µ•ΉΠ°™¥±”θ€Ι…ι½ΙΑ…ε}Α…εµ•ΉΡΜΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€I…ι½ΙΑ…δ΅•­½ΥΠ±¥•ΉΠ…Ή…Ρ…±½½ΉΝ¥ΝΡ•Ήδ°™¥±”θ€Ι…ι½ΙΑ…ε}΅•­½ΥΡ}±¥•ΉΠΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΐΈ½ΥΝ•I•±•…Ν”I•Α…¥ΘI•Ι•ΝΝ¥½ΈΥ…Ι°™¥±”θ€™½ΥΝ•‘}Ι•±•…Ν•}Ι•Α…¥ΘΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΔΈ¥Ή…°Q•΅Ή¥…°!…Ι‘•Ή¥ΉA…ΝΜY•Ι¥™¥…Ρ¥½Έ°™¥±”θ€™¥Ή…±}΅…Ι‘•Ή¥Ή}Α…ΝΜΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΘΈ½‘•ΰ½µΑΙ•΅•ΉΝ¥Ω”Υ‘¥ΠY•Ι¥™¥…Ρ¥½Έ°™¥±”θ€½‘•α}…Υ‘¥Ρ}Ω•Ι¥™¥…Ρ¥½ΈΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΜΈ½Ι”!…Ι‘•Ή¥ΉY•Ι¥™¥…Ρ¥½ΈMΥ¥Ρ”°™¥±”θ€΅…Ι‘•Ή¥Ή}Ω•Ι¥™¥…Ρ¥½ΈΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΠΈM•½ΉA…ΝΜ‘Ω•ΙΝ…Ι¥…°Y•Ι¥™¥…Ρ¥½Έ°™¥±”θ€Ν•½Ή‘}Α…ΝΝ}Ω•Ι¥™¥…Ρ¥½ΈΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΤΈ9½‘”M•ΥΙ¥Ρδ€I½ΥΡ”	½ΥΉ‘ΜQ•ΝΡΜ°™¥±”θ€Ν•ΥΙ¥Ρε}Ή½‘”ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΨΈΙ•‘¥ΠΥΡΌµAΙ½Ω¥Ν¥½Ή¥ΉMΥ¥Ρ”°™¥±”θ€Ι•‘¥ΡΜΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€άΈMΙ••ΉΝ΅½ΠΉ…±ει•Θ	ΥΡΡ½ΈMΡ…Ρ”5…΅¥Ή”°™¥±”θ€…Ή…±ει•Ι}‰ΥΡΡ½Ή}ΝΡ…Ρ”ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΰΈMΙ••ΉΝ΅½ΠΉ…±ει•Θ%µ…”Y…±¥‘…Ρ¥½Έ€	½ΥΉ‘Μ°™¥±”θ€…Ή…±ει•Ι}¥µ…•}Ω…±¥‘…Ρ¥½ΈΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€δΈMΙ••ΉΝ΅½ΠΉ…±ει•Θ$A¥Α•±¥Ή”€5½‘•°1½¬°™¥±”θ€…Ή…±ει•Ι}…¥}Α¥Α•±¥Ή”ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΔΐΈMΙ••ΉΝ΅½ΠΉ…±ει•ΘMΡ…Ρ”5…΅¥Ή”€%‘•µΑ½Ρ•Ήδ°™¥±”θ€…Ή…±ει•Ι}Ι•‘¥Ρ}™…¥±ΥΙ•}ι•Ι½}΅…Ι”ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΔΔΈα…Ρ±δµ=Ή”€ΤΐµΙ•‘¥Π€5¥ΝΝ¥ΉAΙ½™¥±”M…™•Ρδ°™¥±”θ€…Ή…±ει•Ι}•α…Ρ±ε}½Ή•}Ι•‘¥ΡΜΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΔΘΈMΙ••ΉΝ΅½ΠΉ…±ει•ΘΥ±°ΉµΡΌµΉ%ΉΡ•Ι…Ρ¥½Έ°™¥±”θ€…Ή…±ει•Ι}™Υ±±}”Ι•}¥ΉΡ•Ι…Ρ¥½ΈΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΔΜΈAΥ‰±¥M<¥±•Μ€΅Ι½‰½ΡΜΉΡαΠ€Ν¥Ρ•µ…ΐΉαµ°¤°™¥±”θ€Ν•½}™¥±•ΜΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΔΝ„ΈAΥ‰±¥•…ΡΥΙ”A…”M<°9…Ω¥…Ρ¥½Έ€MΡΙΥΡΥΙ•…Ρ„°™¥±”θ€Ν•½}™•…ΡΥΙ•}Α…•ΜΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΔΝΈAΥ‰±¥•…ΡΥΙ”A…”	Ι½έΝ•Θ€5½‰¥±”9…Ω¥…Ρ¥½ΈE°™¥±”θ€Ν•½}™•…ΡΥΙ•}Α…•Ν}‰Ι½έΝ•ΘΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΔΘΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΔΝΈ%Ν½±…Ρ•!½µ•Α…”ML	Υ¥±€	Ι½έΝ•Θ1…ε½ΥΠE°™¥±”θ€±…Ή‘¥Ή}ΝΝ}‰Υ¥±ΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΔΘΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΔΠΈM•ΥΙ¥Ρδ!…Ι‘•Ή¥Ή€Υ‘¥ΠY•Ι¥™¥…Ρ¥½Έ°™¥±”θ€Ν•ΥΙ¥Ρε}΅…Ι‘•Ή¥Ή}…Υ‘¥ΠΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΔΤΈIΥΉΡ¥µ”Ι½ΝΜµ•…ΡΥΙ”%Ν½±…Ρ¥½Έ€	ΥΡΡ½ΈMΡ…Ρ”°™¥±”θ€ΙΥΉΡ¥µ•}Ι½ΝΝ}™•…ΡΥΙ•}¥Ν½±…Ρ¥½ΈΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΔΨΈΙ•‘¥Π	…±…Ή”€ΥΡ΅½Ι¥Ρ…Ρ¥Ω”ΥΡ IΥΉΡ¥µ”°™¥±”θ€Ι•‘¥Ρ}‰…±…Ή•}…ΥΡ΅}ΙΥΉΡ¥µ”ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΔΩ„Έ¥ΝΑ½Ν…‰±”5¥Ι…Ρ¥½ΈI•Α±…δ€I•½Ω•ΙδMµ½­”°™¥±”θ€µ¥Ι…Ρ¥½Ή}Ι•Α±…δΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΔΰΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΔΩΈ•Ρ•Ιµ¥Ή¥ΝΡ¥Ι•‘¥Π½…±•Ν¥Ή€1…Ρ•ΉδAΙ½™¥±•Θ°™¥±”θ€Ι•‘¥Ρ}½…±•Ν¥Ή}‰•Ή΅µ…Ι¬ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΔάΈ5¥Ι…Ρ¥½Έ€ΐΐΘM…™•Ρδ€M•ΥΙ¥ΡδΥ‘¥Π°™¥±”θ€µ¥Ι…Ρ¥½Ή|ΐΐΙ}Ν…™•Ρε}…Υ‘¥ΠΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΔΰΈ5¥Ι…Ρ¥½Έ€ΐΐΜ=1MMεΉΡ…ΰΥ‘¥Π°™¥±”θ€µ¥Ι…Ρ¥½Ή|ΐΐΝ}½…±•Ν•}…Υ‘¥ΠΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΔδΈMεΝΡ•΄M•ΡΡ¥ΉΜ€½Ιµ…ΡΡ¥ΉY•Ι¥™¥…Ρ¥½Έ°™¥±”θ€ΝεΝΡ•µ}Ν•ΡΡ¥ΉΝ}™½Ιµ…ΡΡ¥ΉΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΘΐΈAΙ½‘ΥΡ¥½ΈI•…‘¥Ή•ΝΜ€EI•Ι•ΝΝ¥½ΈMΥ¥Ρ”°™¥±”θ€ΑΙ½‘ΥΡ¥½Ή}Ι•…‘¥Ή•ΝΝ}Ι•Ι•ΝΝ¥½ΈΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΘΔΈΙ•‘¥Π½AΥΙ΅…Ν”5½‘…°I•Ι•ΝΝ¥½ΈΥ…Ι°™¥±”θ€Ι•‘¥Ρ}ΑΥΙ΅…Ν•}µ½‘…±}Ι•Ι•ΝΝ¥½ΈΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΘΘΈ9•Ρ±¥™δΙ½ΉΡ•Ήµ=Ή±δ•Α±½δM…™•Ρδ°™¥±”θ€Ή•Ρ±¥™ε}‘•Α±½ε}Ν…™•ΡδΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΘΜΈI…¥±έ…δMΡ…Ρ¥%ΉΡ•ΙΉ…°µ¥±”•Ήε±¥ΝΠ°™¥±”θ€ΝΡ…Ρ¥}¥ΉΡ•ΙΉ…±}•αΑ½ΝΥΙ”ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΘΠΈ5½‰¥±”I•ΝΑ½ΉΝ¥Ω•Ή•ΝΜ€Y¥•έΑ½ΙΠΥ‘¥Π°™¥±”θ€Ω¥•έΑ½ΙΡ}½Ω•Ι™±½έ}Ε„ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΘΤΈ!•…‘±•ΝΜ	Ι½έΝ•Θ1¥Ω”Y¥•έΑ½ΙΠ=Ω•Ι™±½άE°™¥±”θ€‰Ι½έΝ•Ι}Ω¥•έΑ½ΙΡ}±¥Ω•}Ε„Ή©Μτ°4(€€€μΉ…µ”θ€ΘΨΈA½ΝΠµΥ‘¥Π½ΙΙ•ΡΉ•ΝΜ€=4M¥Ή¬Υ…Ι°™¥±”θ€Α½ΝΡ}…Υ‘¥Ρ}½ΙΙ•ΡΉ•ΝΜΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΘάΈAΙ½‘ΥΡ¥½Έ=IL1•…ΝΠµAΙ¥Ω¥±•”Υ…Ι°™¥±”θ€½ΙΝ}ΑΙ½‘ΥΡ¥½Ή}Α½±¥δΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΘΰΈ½ΥΉΠ•±•Ρ¥½ΈΡ½µ¥¥Ρδ€…Ν…‘”Υ…Ι°™¥±”θ€…½ΥΉΡ}‘•±•Ρ¥½Ή}…Ρ½µ¥¥ΡδΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΘδΈIΥΉΡ¥µ”MΡ…ΙΡΥΐ°M@€AΙ½‘ΥΡ¥½Έµ=Ι¥¥Έα…µΑ±”Υ…Ι°™¥±”θ€ΙΥΉΡ¥µ•}ΝΡ…ΙΡΥΑ}ΝΑ}΅…Ι‘•Ή¥ΉΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΜΐΈAΙ¥Ω¥±••‘µΙ•‘¥ΡΜ5¥ΝΝ¥ΉµAΙ½™¥±”Υ…Ι°™¥±”θ€…‘‘}Ι•‘¥ΡΝ}ΑΙ½™¥±•}µ¥ΝΝ¥ΉΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΜΔΈAΙ½‘ΥΡ¥½Έ1•…°€AΙ¥Ω…δΥΙ…δΥ…Ι°™¥±”θ€±•…±}ΑΙ½‘ΥΡ¥½Ή}…ΥΙ…δΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΜΘΈAΥ‰±¥!•…±Ρ Ή‘Α½¥ΉΠ5¥Ή¥µ…°µ¥Ν±½ΝΥΙ”Υ…Ι°™¥±”θ€΅•…±Ρ΅}•Ή‘Α½¥ΉΡ}µ¥Ή¥µ…°ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΜΜΈ9•Ρ±¥™δI•±•…Ν”5…Ή¥™•ΝΠM½ΥΙ”µ½µµ¥ΠQΙΥΡ Υ…Ι°™¥±”θ€Ι•±•…Ν•}µ…Ή¥™•ΝΡ}Ν½ΥΙ”ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΜΝ„Έ΅•­•µ%Έ	Υ¥±MΙ¥ΑΠ•Α•Ή‘•ΉδΥ…Ι°™¥±”θ€‰Υ¥±‘}ΝΙ¥ΑΡ}‘•Α•Ή‘•Ή¥•ΜΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΜΝΈAΙ½•ΝΜI•Ν½±ΥΡ¥½Έ€•Ρ•Ιµ¥Ή¥ΝΡ¥Q•αΠΙΡ¥™…ΠΥ…Ι°™¥±”θ€ΑΙ½•ΝΝ}Ρ½½±ΜΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΜΝΈ1½­•Q•αΠΙΡ¥™…Π	εΡ”Υ…Ι°™¥±”θ€±½­•‘}Ρ•αΡ}…ΙΡ¥™…ΡΜΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΜΠΈ5…•Ω”AΙ½Ω¥‘•ΘIΥΉΡ¥µ”€I•ΡΙδΥ…Ι°™¥±”θ€µ…•Ω•}ΙΥΉΡ¥µ•}Ι•Α…¥ΘΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΜΤΈ•…ΡΥΙ”•ΝΜAΙ•™±¥΅ΠU`Υ…Ι°™¥±”θ€™•…ΡΥΙ•}…•ΝΝ}ΑΙ•™±¥΅ΠΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΜΨΈΥΑ±¥…Ρ”I•ΕΥ•ΝΠ½ΉΥΙΙ•Ήδ1½¬I…”Υ…Ι°™¥±”θ€‘ΥΑ±¥…Ρ•}Ι•ΕΥ•ΝΡ}±½­}Ι…”ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΜάΈΉ…±ει•ΘAΙ½Ω¥‘•Θ¥…Ή½ΝΡ¥	½ΥΉ‘…ΙδΥ…Ι°™¥±”θ€…Ή…±ει•Ι}ΑΙ½Ω¥‘•Ι}‘¥…Ή½ΝΡ¥ΜΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΜΰΈ±½Ν•¥…±½%Ή•ΙΠ•ΝΝ¥‰¥±¥ΡδΥ…Ι°™¥±”θ€µ½‘…±}¥Ή•ΙΡ}…•ΝΝ¥‰¥±¥ΡδΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΜδΈ	ΥδΙ•‘¥ΡΜ9•ΝΡ•µ%ΉΡ•Ι…Ρ¥Ω”•ΝΝ¥‰¥±¥ΡδΥ…Ι°™¥±”θ€‰Υε}Ι•‘¥ΡΝ}Ή•ΝΡ•‘}¥ΉΡ•Ι…Ρ¥Ω”ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΠΐΈ5½‰¥±”µΑΡδµMΡ…Ρ”]½ΉΡΙ…ΝΠΥ…Ι°™¥±”θ€•µΑΡε}ΝΡ…Ρ•}µ½‰¥±•}½ΉΡΙ…ΝΠΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΠΔΈ±½Υ‘™±…Ι”A…•ΜI½ΥΡ¥Ή°€ΠΐΠ€=ILΥΡ½Ω•ΘΥ…Ι°™¥±”θ€±½Υ‘™±…Ι•}Α…•Ν}ΥΡ½Ω•ΘΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΠΘΈ±½Υ‘™±…Ι”¥Ή…°•ΝΝ¥‰¥±¥ΡδΥ…Ι°™¥±”θ€±½Υ‘™±…Ι•}™¥Ή…±}…•ΝΝ¥‰¥±¥ΡδΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΠΜΈ5…±™½Ιµ•)]P…ΝΠµI•©•Π€I•µ½Ρ”ΥΡ Υ…Ι°™¥±”θ€µ…±™½Ιµ•‘}©έΡ}™…ΝΡ}Ι•©•ΠΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΠΠΈ½ΉΝ•ΉΠQ…‰±”1•…ΝΠµAΙ¥Ω¥±•”Υ…Ι°™¥±”θ€ΥΝ•Ι}½ΉΝ•ΉΡΝ}±•…ΝΡ}ΑΙ¥Ω¥±•”ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΠΤΈI…¥±έ…δI•ΕΥ•ΝΠ‘µ¥ΝΝ¥½Έ€±¥•ΉΠµ%@Υ…Ι°™¥±”θ€Ι…¥±έ…ε}Ι•ΕΥ•ΝΡ}…‘µ¥ΝΝ¥½ΈΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΠΨΈΥ±°AΙ½‘ΥΡ¥½Έ$½Ω•Ι…”Υ…Ι°™¥±”θ€¥}™Υ±±}…Ρ•}½Ω•Ι…”ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€ΠάΈ½ΉΝ•ΉΠ	Ι½έΝ•Θi•ΙΌµ•ΝΜΥ…Ι°™¥±”θ€ΥΝ•Ι}½ΉΝ•ΉΡΝ}‰Ι½έΝ•Ι}ι•Ι½}…•ΝΜ»Ώ9¶‰ΛkΊwµηP%ΉΡ•Ι¥Ρδ€±½Υ‘™±…Ι”QΙ…ΉΝ™½Ιµ…Ρ¥½ΈΥ…Ι°™¥±”θ€±¥Ω•}…ΝΝ•Ρ}¥ΉΡ•Ι¥ΡδΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€άΐΈ5½‰¥±”Q½Υ %ΉΡ•Ι…Ρ¥½Έ€5½‘…°I•…΅…‰¥±¥ΡδI•ΑΙΌ°™¥±”θ€µ½‰¥±•}Ρ½Υ΅}¥ΉΡ•Ι…Ρ¥½Ή}Ι•ΑΙΌΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΘΠΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€άΔΈI1L=έΉ•ΙΝ΅¥ΐ	¥Ή‘¥Ή€ΙΙ½ΘAΙ½Α……Ρ¥½Έ!…Ι‘•Ή¥Ή°™¥±”θ€Ι±Ν}΅…Ι‘•Ή¥ΉΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€άΘΈΙ•‘¥ΠI•±•…Ν”QΙ…ΉΝΑ½ΙΠI•Ν¥±¥•Ή”°™¥±”θ€Ι•‘¥Ρ}Ι•±•…Ν•}Ι•Ν¥±¥•Ή”ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€άΜΈAΙ½µΑΠµ%Ή©•Ρ¥½Έ	½ΥΉ‘…ΙδI•Ν¥±¥•Ή”°™¥±”θ€ΑΙ½µΑΡ}¥Ή©•Ρ¥½Ή}Ι•Ν¥±¥•Ή”ΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€άΠΈQΙΥΝΠ	½ΥΉ‘…Ιδ€ΙΙ½Θµ¥Ν±½ΝΥΙ”!…Ι‘•Ή¥Ή°™¥±”θ€ΡΙΥΝΡ}‰½ΥΉ‘…Ιε}΅…Ι‘•Ή¥ΉΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€άΤΈI…άAΙ½Ω¥‘•ΘΙΙ½Θ¥Ν±½ΝΥΙ”€΅‘•±•Ρ”µ…½ΥΉΠ€Ό½ΉΝ•ΉΠ¤°™¥±”θ€•ΙΙ½Ι}‘¥Ν±½ΝΥΙ”ΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΔΘΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€άΥ„ΈAΙ½Ω¥‘•ΘΙΙ½Θ1½M…™•Ρδ°™¥±”θ€ΑΙ½Ω¥‘•Ι}•ΙΙ½Ι}±½}Ν…™•ΡδΉΡ•ΝΠΉ©Μτ°4(€€€μΉ…µ”θ€άΨΈI½±•Α±…δ€!½Ρ±¥Ή”I•…°AΙ½Ω¥‘•ΘA…Ρ °™¥±”θ€Ι½±•Α±…ε}ΑΙ½Ω¥‘•Ι}Α…Ρ ΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΔΘΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€άάΈU$½A$AΙ½‘ΥΠµ½ΉΡΙ…Π5…ΡΙ¥ΰ€ ΔΨµ½‘”΅•­Μ¤°™¥±”θ€Υ¥}…Α¥}½ΉΡΙ…ΠΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΔΘΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€άΰΈΥΡ M¥Έµ%Έ€Ι•‘¥ΠI•Ι•ΝΝ¥½ΈΥ…Ι°™¥±”θ€…ΥΡ΅}Ν¥Ή¥Ή}Ι•Ι•ΝΝ¥½ΈΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€άα„Έ½½±”µ=Ή±δM¥ΉΥΐAΙ•Ν•ΉΡ…Ρ¥½ΈΥ…Ι°™¥±”θ€½½±•}½Ή±ε}‰•Ρ…}…ΥΡ ΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€άδΈ%ΉΡ•ΙΉ…°AΙ½µΑΠQ…1•…¬AΙ•Ω•ΉΡ¥½Έ€=ΥΡΑΥΠM…™•Ρδ°™¥±”θ€¥ΉΡ•ΙΉ…±}ΑΙ½µΑΡ}Ρ…}±•…­}Ι•Ι•ΝΝ¥½ΈΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΨΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΰΐΈ5…•Ω”AΙ…Ρ¥”A…ΙΡΉ•Θ€½… 5½‘•Μ5…ΡΙ¥ΰ°™¥±”θ€µ…•Ω•}µ½‘•Ν}µ…ΡΙ¥ΰΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΨΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΰΔΈ9½Έµ΅…Π1¥™•ε±”€!¥Ή±¥Ν I•Α…¥ΘΥ…Ι°™¥±”θ€Ή½Ή}΅…Ρ}±¥™•ε±•}…Ή‘}΅¥Ή±¥Ν΅}Ι•Α…¥ΘΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΰΘΈ9½Έµ΅…ΠI•±¥…‰¥±¥Ρδ€Ι΅¥Ρ•ΡΥΙ…°%ΉΡ•Ι…Ρ¥½Έ°™¥±”θ€±½…±}”Ι•}Ή½Ή΅…Ρ}¥ΉΡ•Ι…Ρ¥½ΈΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΰΜΈQΙΥ”	Ι½έΝ•ΘΙ9½Έµ΅…ΠMΥ¥Ρ”€΅A±…εέΙ¥΅Π΅Ι½µ¥Υ΄¤°™¥±”θ€ΡΙΥ•}‰Ι½έΝ•Ι}”Ι•}Ή½Ή΅…ΠΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΨΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΰΠΈEΥ…±¥ΡδA¥Α•±¥Ή”M•±•Ρ¥Ω”I•Α…¥Θ€AΙ½™¥±”…Ρ”°™¥±”θ€ΕΥ…±¥Ρε}Α¥Α•±¥Ή•}Ν•±•Ρ¥Ω•}Ι•Α…¥ΘΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΰΤΈ½ΉΥΙΙ•Ήδ1½¬QQ0€M•±µέ…¥Π•…‘±½¬Υ…Ι°™¥±”θ€½ΉΥΙΙ•Ήε}…Ή‘}Ν•±™}…έ…¥ΠΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΰΨΈΙ•‘¥ΠΥΡ΅½Ι¥Ρ…Ρ¥Ω”I•½Ή¥±¥…Ρ¥½Έ€5½Ή½Ρ½Ή¥M•ΕΥ•Ή”°™¥±”θ€Ι•‘¥Ρ}…ΥΡ΅½Ι¥Ρ…Ρ¥Ω•}Ι•½Ή¥±¥…Ρ¥½ΈΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΰάΈEΥ…±¥Ρδ€5¥α•1…ΉΥ…”I•ΑΙΌMΥ¥Ρ”°™¥±”θ€ΕΥ…±¥Ρε}…Ή‘}µ¥α•‘}±…ΉΥ…•}Ι•ΑΙΌΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΰΰΈΙ•‘¥ΠM•ΝΝ¥½ΈM…™•Ρδ€	Ι½έΝ•Θ5½Ή½Ρ½Ή¥Υ…Ι°™¥±”θ€Ι•‘¥Ρ}Ν•ΝΝ¥½Ή}Ν…™•Ρε}½Ω•ΙΙ¥‘”ΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΰδΈΙ•‘¥ΠΥΡ΅½Ι¥Ρ…Ρ¥Ω”α•ΥΡ¥½ΈMΥ¥Ρ”°™¥±”θ€Ι•‘¥Ρ}…ΥΡ΅½Ι¥Ρ…Ρ¥Ω•}•α•ΥΡ¥½ΈΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€δΐΈ1•‘•Θµ‰¥Υ½ΥΜQΙ…ΉΝΑ½ΙΠI•½Ω•Ιδ€¥ΝΡ¥ΉΡ¥½ΈMΥ¥Ρ”°™¥±”θ€±•‘•Ι}…µ‰¥Υ½ΥΝ}ΡΙ…ΉΝΑ½ΙΡ}Ι•½Ω•ΙδΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€δΔΈ1…ΉΥ…”Q½­•ΈM½Ι•Θ€9…ΡΥΙ…°Ι…µµ…ΘMΥ¥Ρ”°™¥±”θ€Ν½Ι•}±…ΉΥ…•}Ρ½­•ΉΜΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€δΘΈAΙ½™¥±”Y…±¥‘…Ρ¥½Έ5…ΡΙ¥ΰ€½ΉΡΙ…ΠMΥ¥Ρ”°™¥±”θ€ΑΙ½™¥±•}Ω…±¥‘…Ρ¥½Ή}µ…ΡΙ¥ΰΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€δΜΈ±¥•ΉΠΙ•‘¥ΠI…”€½Ι•Ι•Ν M•µ…ΉΡ¥ΜMΥ¥Ρ”°™¥±”θ€±¥•ΉΡ}Ι•‘¥Ρ}Ι…•}…Ή‘}™½Ι•™Ι•Ν ΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€δΠΈI•…°1…Ρ•ΉδQ•±•µ•ΡΙδ€i•ΙΌµA%$%ΉΝΡΙΥµ•ΉΡ…Ρ¥½ΈMΥ¥Ρ”°™¥±”θ€Α•Ι™}Ρ•±•µ•ΡΙε}¥ΉΝΡΙΥµ•ΉΡ…Ρ¥½ΈΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€δΤΈΙ•‘¥ΠY•Ι¥™¥•I•ΝΑ½ΉΝ”½ΉΡΙ…ΠMΥ¥Ρ”°™¥±”θ€Ι•‘¥Ρ}Ω•Ι¥™¥•‘}Ι•ΝΑ½ΉΝ•}½ΉΡΙ…ΠΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€δΨΈ…΅•I•Α±…δΙ•‘¥ΠΙ•Ν΅Ή•ΝΜMΥ¥Ρ”°™¥±”θ€…΅•‘}Ι•Α±…ε}Ι•‘¥Ρ}™Ι•Ν΅Ή•ΝΜΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€δάΈ¥Ή…Ή¥…°ΙΙ½Θ½Ι•Ι•Ν M•µ…ΉΡ¥ΜMΥ¥Ρ”°™¥±”θ€™¥Ή…Ή¥…±}•ΙΙ½Ι}™½Ι•™Ι•Ν ΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€δΰΈ	¥Ό…ΠAΙ•Ν•ΙΩ…Ρ¥½Έ€ΉΡ¤µ!…±±Υ¥Ή…Ρ¥½ΈMΥ¥Ρ”°™¥±”θ€‰¥½}™…Ρ}ΑΙ•Ν•ΙΩ…Ρ¥½ΈΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€δδΈAΙ½‘ΥΡ¥½Έ1½AΙ¥Ω…δ€i•ΙΌµA%$MΥ¥Ρ”°™¥±”θ€ΑΙ½‘ΥΡ¥½Ή}±½}ΑΙ¥Ω…δΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΔΐΐΈ5½Ή½Ρ½Ή¥A•Ι™½Ιµ…Ή”Q•±•µ•ΡΙδMΥ¥Ρ”°™¥±”θ€µ½Ή½Ρ½Ή¥}Α•Ι™}Ρ•±•µ•ΡΙδΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΔΐΔΈ!½µ•Α…”ΥΡ MΡ…Ρ”I•Ή‘•Ι¥Ή€M•ΝΝ¥½Έ±¥­•ΘΥ…Ι°™¥±”θ€΅½µ•Α…•}…ΥΡ΅}ΝΡ…Ρ”ΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΔΐΘΈIΥΉΡ¥µ”M•ΝΝ¥½ΈI•ΝΡ½Ι…Ρ¥½Έ°…¥±ΥΙ”°…ΉAΙ¥Ω…Ρ”µMΡ…Ρ”±•…ΉΥΐ°™¥±”θ€Ι•™Ι•Ν΅}Ν•ΝΝ¥½Ή}‰½½ΡΝΡΙ…Α}ΙΥΉΡ¥µ”ΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΔΐΜΈAΙ¥Ω…δµM…™”$5¥‘‘±•έ…Ι”Q¥µ¥Ή°™¥±”θ€Α•Ι™}µ¥‘‘±•έ…Ι•}Ρ¥µ¥ΉΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΔΐΠΈΉ…±ει•ΘAΙ½Ω¥‘•ΘΡΡ•µΑΠQ•±•µ•ΡΙδ°™¥±”θ€…Ή…±ει•Ι}ΑΙ½Ω¥‘•Ι}Ρ•±•µ•ΡΙδΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΔΐΤΈ5…•Ω”=Α•Ι…Ρ¥½Έµ]¥‘”•…‘±¥Ή”°™¥±”θ€µ…•Ω•}½Α•Ι…Ρ¥½Ή}‘•…‘±¥Ή”ΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΔΐΨΈ5…•Ω”I•ΡΙδM…™•Ρδ…Ήµ‰¥Υ¥Ρδ°™¥±”θ€µ…•Ω•}ΑΙ½Ω¥‘•Ι}Ι•ΡΙε}Ν…™•ΡδΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ°4(€€€μΉ…µ”θ€ΔΐάΈΉ…±ει•Θ%µ…”9½Ιµ…±¥ι…Ρ¥½Έ…Ή	½ΥΉ‘Μ°™¥±”θ€…Ή…±ει•Ι}Α…ε±½…‘}Ή½Ιµ…±¥ι…Ρ¥½ΈΉΡ•ΝΠΉ©Μ°Ρ¥µ•½ΥΡ5Μθ€ΜΑ|ΐΐΐτ4)tμ4(4)½ΉΝ½±”Ή±½ ττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττ¤μ4)½ΉΝ½±”Ή±½ Β~j IU99%9105e]%958=5AI!9M%Y!I9%9€U%PQMPMU%QL¤μ4)½ΉΝ½±”Ή±½ τττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττυqΈ¤μ4(4)±•ΠΡ½Ρ…±A…ΝΝ•€τ€ΐμ4)±•ΠΡ½Ρ…±…¥±•€τ€ΐμ4(4)™½Θ€΅½ΉΝΠΝΥ¥Ρ”½Ρ•ΝΡMΥ¥Ρ•Μ¤μ4(€€€½ΉΝΠ™¥±•A…Ρ €τΑ…Ρ Ή©½¥Έ΅}}‘¥ΙΉ…µ”°ΝΥ¥Ρ”Ή™¥±”¤μ4(€€€½ΉΝΠΡ¥µ•½ΥΡ5Μ€τΝΥ¥Ρ”ΉΡ¥µ•½ΥΡ5ΜρπQMQ}Q%5=UQ}5Lμ4(€€€½ΉΝ½±”Ή±½΅q»ZΨmMU%Qt€‘νΝΥ¥Ρ”ΉΉ…µ•τ€ ‘νΝΥ¥Ρ”Ή™¥±•τ¥€¤μ4(€€€ΡΙδμ4(€€€€€€€½ΉΝΠ½ΥΡΑΥΠ€τ•α•MεΉ΅Ή½‘”€‘ν™¥±•A…Ρ΅τ‰€°μ4(€€€€€€€€€€€ΝΡ‘¥Όθ€Α¥Α”°4(€€€€€€€€€€€•Ή½‘¥Ήθ€ΥΡΰ°4(€€€€€€€€€€€Ρ¥µ•½ΥΠθΡ¥µ•½ΥΡ5Μ°4(€€€€€€€€€€€­¥±±M¥Ή…°θ€M%QI44(€€€€€€€τ¤μ4(€€€€€€€½ΉΝ½±”Ή±½΅½ΥΡΑΥΠΉΡΙ¥΄ ¤¤μ4(€€€€€€€Ρ½Ρ…±A…ΝΝ•¬¬μ4(€€€τ…Ρ €΅•ΙΘ¤μ4(€€€€€€€½ΉΝ½±”Ή•ΙΙ½Θ΅ƒv0%1θ€‘νΝΥ¥Ρ”ΉΉ…µ•υ€¤μ4(€€€€€€€¥€΅•ΙΘΉ­¥±±•ρπ•ΙΘΉΝ¥Ή…°€τττ€M%QI4ρπ•ΙΘΉ½‘”€τττ€Q%5=UP¤μ4(€€€€€€€€€€€½ΉΝ½±”Ή•ΙΙ½Θ΅Q•ΝΠΝΥ¥Ρ”•α••‘•€‘νΡ¥µ•½ΥΡ5Μ€Ό€ΔΐΐΑτΝ•½Ή‘Μ…Ήέ…ΜΡ•Ιµ¥Ή…Ρ•ΡΌΑΙ•Ω•ΉΠ$™Ι½΄΅…Ή¥ΉΉ€¤μ4(€€€€€€€τ4(€€€€€€€¥€΅•ΙΘΉΝΡ‘½ΥΠ¤½ΉΝ½±”Ή±½΅•ΙΘΉΝΡ‘½ΥΠ¤μ4(€€€€€€€¥€΅•ΙΘΉΝΡ‘•ΙΘ¤½ΉΝ½±”Ή•ΙΙ½Θ΅•ΙΘΉΝΡ‘•ΙΘ¤μ4(€€€€€€€Ρ½Ρ…±…¥±•¬¬μ4(€€€τ4)τ4(4)½ΉΝ½±”Ή±½ qΈττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττ¤μ4)½ΉΝ½±”Ή±½΅ƒΒ~>QMPMU%QL=5A1Qθ€‘νΡ½Ρ…±A…ΝΝ•‘τA…ΝΝ•°€‘νΡ½Ρ…±…¥±•‘τ…¥±•‘€¤μ4)½ΉΝ½±”Ή±½ τττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττττυqΈ¤μ4(4)ΑΙ½•ΝΜΉ•α¥Π΅Ρ½Ρ…±…¥±•€ψ€ΐ€ό€Δ€θ€ΐ¤μ4(
+const { execSync } = require('child_process');
+const path = require('path');
+
+const TEST_TIMEOUT_MS = 60_000;
+
+const testSuites = [
+    { name: 'AUTO Language Selection and UI Contract', file: 'bilingual_language_support.test.js' },
+    { name: 'AUTO Language Real Route Matrix', file: 'auto_language_runtime.test.js' },
+    { name: 'Universal Auto English + Hinglish Matrix', file: 'universal_auto_language.test.js' },
+    { name: 'Request Lifecycle & Idempotency Replay Guard', file: 'request_lifecycle_and_idempotency_replay.test.js' },
+    { name: 'Razorpay Trust Boundary and Fulfillment', file: 'razorpay_payments.test.js' },
+    { name: 'Razorpay Checkout Client and Catalog Consistency', file: 'razorpay_checkout_client.test.js' },
+    { name: '0. Focused Release Repair Regression Guard', file: 'focused_release_repair.test.js' },
+    { name: '1. Final Technical Hardening Pass Verification', file: 'final_hardening_pass.test.js' },
+    { name: '2. Codex Comprehensive Audit Verification', file: 'codex_audit_verification.test.js' },
+    { name: '3. Core Hardening Verification Suite', file: 'hardening_verification.test.js' },
+    { name: '4. Second Pass Adversarial Verification', file: 'second_pass_verification.test.js' },
+    { name: '5. Node Security & Route Bounds Tests', file: 'security_node.test.js' },
+    { name: '6. Credit Auto-Provisioning Suite', file: 'credits.test.js' },
+    { name: '7. Screenshot Analyzer Button State Machine', file: 'analyzer_button_state.test.js' },
+    { name: '8. Screenshot Analyzer Image Validation & Bounds', file: 'analyzer_image_validation.test.js' },
+    { name: '9. Screenshot Analyzer AI Pipeline & Model Lock', file: 'analyzer_ai_pipeline.test.js' },
+    { name: '10. Screenshot Analyzer State Machine & Idempotency', file: 'analyzer_credit_failure_zero_charge.test.js' },
+    { name: '11. Exactly-Once 50-Credit & Missing Profile Safety', file: 'analyzer_exactly_once_credits.test.js' },
+    { name: '12. Screenshot Analyzer Full End-to-End Integration', file: 'analyzer_full_e2e_integration.test.js' },
+    { name: '13. Public SEO Files (robots.txt & sitemap.xml)', file: 'seo_files.test.js' },
+    { name: '13a. Public Feature Page SEO, Navigation & Structured Data', file: 'seo_feature_pages.test.js' },
+    { name: '13b. Public Feature Page Browser & Mobile Navigation QA', file: 'seo_feature_pages_browser.test.js', timeoutMs: 120_000 },
+    { name: '13c. Isolated Homepage CSS Build & Browser Layout QA', file: 'landing_css_build.test.js', timeoutMs: 120_000 },
+    { name: '14. Security Hardening & Audit Verification', file: 'security_hardening_audit.test.js' },
+    { name: '15. Runtime Cross-Feature Isolation & Button State', file: 'runtime_cross_feature_isolation.test.js' },
+    { name: '16. Credit Balance & Authoritative Auth Runtime', file: 'credit_balance_auth_runtime.test.js' },
+    { name: '16a. Disposable Migration Replay & Recovery Smoke', file: 'migration_replay.test.js', timeoutMs: 180_000 },
+    { name: '16b. Deterministic Credit Coalescing & Latency Profiler', file: 'credit_coalescing_benchmark.test.js' },
+    { name: '17. Migration 002 Safety & Security Audit', file: 'migration_002_safety_audit.test.js' },
+    { name: '18. Migration 003 COALESCE Syntax Audit', file: 'migration_003_coalesce_audit.test.js' },
+    { name: '19. System Settings & Formatting Verification', file: 'system_settings_formatting.test.js' },
+    { name: '20. Production Readiness & QA Regression Suite', file: 'production_readiness_regression.test.js' },
+    { name: '21. Credit/Purchase Modal Regression Guard', file: 'credit_purchase_modal_regression.test.js' },
+    { name: '22. Netlify Frontend-Only Deploy Safety', file: 'netlify_deploy_safety.test.js' },
+    { name: '23. Railway Static Internal-File Denylist', file: 'static_internal_exposure.test.js' },
+    { name: '24. Mobile Responsiveness & Viewport Audit', file: 'viewport_overflow_qa.test.js' },
+    { name: '25. Headless Browser Live Viewport Overflow QA', file: 'browser_viewport_live_qa.js' },
+    { name: '26. Post-Audit Correctness & DOM Sink Guard', file: 'post_audit_correctness.test.js' },
+    { name: '27. Production CORS Least-Privilege Guard', file: 'cors_production_policy.test.js' },
+    { name: '28. Account Deletion Atomicity & Cascade Guard', file: 'account_deletion_atomicity.test.js' },
+    { name: '29. Runtime Startup, CSP & Production-Origin Example Guard', file: 'runtime_startup_csp_hardening.test.js' },
+    { name: '30. Privileged Add-Credits Missing-Profile Guard', file: 'add_credits_profile_missing.test.js' },
+    { name: '31. Production Legal & Privacy Accuracy Guard', file: 'legal_production_accuracy.test.js' },
+    { name: '32. Public Health Endpoint Minimal-Disclosure Guard', file: 'health_endpoint_minimal.test.js' },
+    { name: '33. Netlify Release Manifest Source-Commit Truth Guard', file: 'release_manifest_source.test.js' },
+    { name: '33a. Checked-In Build Script Dependency Guard', file: 'build_script_dependencies.test.js' },
+    { name: '33b. Process Resolution & Deterministic Text Artifact Guard', file: 'process_tools.test.js' },
+    { name: '33c. Locked Text Artifact Byte Guard', file: 'locked_text_artifacts.test.js' },
+    { name: '34. Maeve Provider Runtime & Retry Guard', file: 'maeve_runtime_repair.test.js' },
+    { name: '35. Feature Access Preflight UX Guard', file: 'feature_access_preflight.test.js' },
+    { name: '36. Duplicate Request Concurrency Lock Race Guard', file: 'duplicate_request_lock_race.test.js' },
+    { name: '37. Analyzer Provider Diagnostic Boundary Guard', file: 'analyzer_provider_diagnostics.test.js' },
+    { name: '38. Closed Dialog Inert Accessibility Guard', file: 'modal_inert_accessibility.test.js' },
+    { name: '39. Buy Credits Nested-Interactive Accessibility Guard', file: 'buy_credits_nested_interactive.test.js' },
+    { name: '40. Mobile Empty-State WCAG Contrast Guard', file: 'empty_state_mobile_contrast.test.js' },
+    { name: '41. Cloudflare Pages Routing, 404 & CORS Cutover Guard', file: 'cloudflare_pages_cutover.test.js' },
+    { name: '42. Cloudflare Final Accessibility Guard', file: 'cloudflare_final_accessibility.test.js' },
+    { name: '43. Malformed JWT Fast-Reject & Remote Auth Guard', file: 'malformed_jwt_fast_reject.test.js' },
+    { name: '44. Consent Table Least-Privilege Guard', file: 'user_consents_least_privilege.test.js' },
+    { name: '45. Railway Request Admission & Client-IP Guard', file: 'railway_request_admission.test.js' },
+    { name: '46. Full Production CI Coverage Guard', file: 'ci_full_gate_coverage.test.js' },
+    { name: '47. Consent Browser Zero-Access Guard', file: 'user_consents_browser_zero_access.test.js' },
+    { name: '48. Optimized Responsive Logo Delivery Guard', file: 'logo_delivery_optimization.test.js' },
+    { name: '49. Inlined Critical Custom Stylesheet Guard', file: 'inline_critical_css.test.js' },
+    { name: '50. Exact Self-Hosted Main Font Delivery Guard', file: 'self_host_main_fonts.test.js' },
+    { name: '51. Inlined Cropper CSS Delivery Guard', file: 'inline_cropper_css.test.js' },
+    { name: '52. Exact Self-Hosted Material Symbols Delivery Guard', file: 'self_host_material_symbols.test.js' },
+    { name: '53. Landing Explicit Favicon Delivery Guard', file: 'landing_favicon_delivery.test.js' },
+    { name: '54. Password Recovery Completion & Strengthened-Password Guard', file: 'password_recovery_compat.test.js' },
+    { name: '55. Persisted Paid Plan State & O(1) Lookup Guard', file: 'paid_plan_state.test.js' },
+    { name: '56. SEO Indexing, Canonical Metadata & 404 Hardening', file: 'seo_indexing_metadata.test.js' },
+    { name: '57. Misdirected Custom-Domain CORS Revocation Guard', file: 'misdirected_domain_cors.test.js' },
+    { name: '57a. Cloudflare Preview API Target Isolation', file: 'pages_build_target.test.js' },
+    { name: '58. Production CSS Compatibility Artifact Lock', file: 'production_css_compat_lock.test.js' },
+    { name: '59. Browser Vendor Provenance & Dependency Monitoring', file: 'browser_vendor_provenance.test.js' },
+    { name: '60. All Dialog Accessibility Coverage', file: 'all_dialog_accessibility.test.js' },
+    { name: '61. Chat Routing, Idempotency & Stale Response Contract', file: 'chat_contract.test.js' },
+    { name: '62. Mobile Presentation Layer Browser QA', file: 'mobile_presentation_qa.test.js', timeoutMs: 90_000 },
+    { name: '63. Client Image Pipeline Guard', file: 'client_image_pipeline.test.js' },
+    { name: '64. Client Privacy Boundary Guard', file: 'client_privacy_boundary.test.js' },
+    { name: '65. Mobile Viewport Behavior Guard', file: 'mobile_viewport_behavior.test.js' },
+    { name: '66. Mobile Touch Scroll Regression', file: 'mobile_touch_scroll_regression.test.js', timeoutMs: 90_000 },
+    { name: '67. Security Boundary & Log Integrity Guard', file: 'security_boundaries.test.js' },
+    { name: '68. Launch Delivery & /app Verifier Contract', file: 'launch_hardening_contract.test.js' },
+    { name: '69. Live Asset Integrity & Cloudflare Transformation Guard', file: 'live_asset_integrity.test.js' },
+    { name: '70. Mobile Touch Interaction & Modal Reachability Repro', file: 'mobile_touch_interaction_repro.test.js', timeoutMs: 240_000 },
+    { name: '71. RLS Ownership Binding & Error Propagation Hardening', file: 'rls_hardening.test.js' },
+    { name: '72. Credit Release Transport Resilience', file: 'credit_release_resilience.test.js' },
+    { name: '73. Prompt-Injection Boundary Resilience', file: 'prompt_injection_resilience.test.js' },
+    { name: '74. Trust Boundary & Error-Disclosure Hardening', file: 'trust_boundary_hardening.test.js' },
+    { name: '75. Raw Provider Error Disclosure (delete-account / consent)', file: 'error_disclosure.test.js', timeoutMs: 120_000 },
+    { name: '75a. Provider Error Log Safety', file: 'provider_error_log_safety.test.js' },
+    { name: '76. Roleplay & Hotline Real Provider Path', file: 'roleplay_provider_path.test.js', timeoutMs: 120_000 },
+    { name: '77. UI/API Product-Contract Matrix (16 mode checks)', file: 'ui_api_contract.test.js', timeoutMs: 120_000 },
+    { name: '78. Auth Sign-In & Credit Regression Guard', file: 'auth_signin_regression.test.js', timeoutMs: 30_000 },
+    { name: '78a. Google-Only Signup Presentation Guard', file: 'google_only_beta_auth.test.js', timeoutMs: 30_000 },
+    { name: '79. Internal Prompt Tag Leak Prevention & Output Safety', file: 'internal_prompt_tag_leak_regression.test.js', timeoutMs: 60_000 },
+    { name: '80. Maeve Practice Partner & Coach Modes Matrix', file: 'maeve_modes_matrix.test.js', timeoutMs: 60_000 },
+    { name: '81. Non-Chat Lifecycle & Hinglish Repair Guard', file: 'non_chat_lifecycle_and_hinglish_repair.test.js', timeoutMs: 30_000 },
+    { name: '82. Non-Chat Reliability & Architectural Integration', file: 'local_e2e_nonchat_integration.test.js', timeoutMs: 30_000 },
+    { name: '83. True Browser E2E Non-Chat Suite (Playwright Chromium)', file: 'true_browser_e2e_nonchat.test.js', timeoutMs: 60_000 },
+    { name: '84. Quality Pipeline Selective Repair & Profile Gate', file: 'quality_pipeline_selective_repair.test.js', timeoutMs: 30_000 },
+    { name: '85. Concurrency Lock TTL & Self-Await Deadlock Guard', file: 'concurrency_and_self_await.test.js', timeoutMs: 30_000 },
+    { name: '86. Credit Authoritative Reconciliation & Monotonic Sequence', file: 'credit_authoritative_reconciliation.test.js', timeoutMs: 30_000 },
+    { name: '87. Quality & Mixed Language Repro Suite', file: 'quality_and_mixed_language_repro.test.js', timeoutMs: 30_000 },
+    { name: '88. Credit Session Safety & Browser Monotonic Guard', file: 'credit_session_safety_override.test.js', timeoutMs: 30_000 },
+    { name: '89. Credit Authoritative Execution Suite', file: 'credit_authoritative_execution.test.js', timeoutMs: 30_000 },
+    { name: '90. Ledger Ambiguous Transport Recovery & Distinction Suite', file: 'ledger_ambiguous_transport_recovery.test.js', timeoutMs: 30_000 },
+    { name: '91. Language Token Scorer & Natural Grammar Suite', file: 'score_language_tokens.test.js', timeoutMs: 30_000 },
+    { name: '92. Profile Validation Matrix & Contract Suite', file: 'profile_validation_matrix.test.js', timeoutMs: 30_000 },
+    { name: '93. Client Credit Race & ForceFresh Semantics Suite', file: 'client_credit_race_and_forcefresh.test.js', timeoutMs: 30_000 },
+    { name: '94. Real Latency Telemetry & Zero-PII Instrumentation Suite', file: 'perf_telemetry_instrumentation.test.js', timeoutMs: 30_000 },
+    { name: '95. Credit Verified Response Contract Suite', file: 'credit_verified_response_contract.test.js', timeoutMs: 30_000 },
+    { name: '96. Cached Replay Credit Freshness Suite', file: 'cached_replay_credit_freshness.test.js', timeoutMs: 30_000 },
+    { name: '97. Financial Error ForceFresh Semantics Suite', file: 'financial_error_forcefresh.test.js', timeoutMs: 30_000 },
+    { name: '98. Bio Fact Preservation & Anti-Hallucination Suite', file: 'bio_fact_preservation.test.js', timeoutMs: 30_000 },
+    { name: '99. Production Log Privacy & Zero-PII Suite', file: 'production_log_privacy.test.js', timeoutMs: 30_000 },
+    { name: '100. Monotonic Performance Telemetry Suite', file: 'monotonic_perf_telemetry.test.js', timeoutMs: 30_000 },
+    { name: '101. Homepage Auth State Rendering & Session Flicker Guard', file: 'homepage_auth_state.test.js', timeoutMs: 30_000 },
+    { name: '102. Runtime Session Restoration, Failure, and Private-State Cleanup', file: 'refresh_session_bootstrap_runtime.test.js', timeoutMs: 30_000 },
+    { name: '103. Privacy-Safe AI Middleware Timing', file: 'perf_middleware_timing.test.js', timeoutMs: 30_000 },
+    { name: '104. Analyzer Provider Attempt Telemetry', file: 'analyzer_provider_telemetry.test.js', timeoutMs: 30_000 },
+    { name: '105. Maeve Operation-Wide Deadline', file: 'maeve_operation_deadline.test.js', timeoutMs: 30_000 },
+    { name: '106. Maeve Retry Safety and Ambiguity', file: 'maeve_provider_retry_safety.test.js', timeoutMs: 30_000 },
+    { name: '107. Analyzer Image Normalization and Bounds', file: 'analyzer_payload_normalization.test.js', timeoutMs: 30_000 }
+];
+
+console.log('========================================================================');
+console.log('π€ RUNNING ALL MYWINGMAN COMPREHENSIVE HARDENING & AUDIT TEST SUITES');
+console.log('========================================================================\n');
+
+let totalPassed = 0;
+let totalFailed = 0;
+
+for (const suite of testSuites) {
+    const filePath = path.join(__dirname, suite.file);
+    const timeoutMs = suite.timeoutMs || TEST_TIMEOUT_MS;
+    console.log(`\nβ–¶ [SUITE] ${suite.name} (${suite.file})`);
+    try {
+        const output = execSync(`node "${filePath}"`, {
+            stdio: 'pipe',
+            encoding: 'utf8',
+            timeout: timeoutMs,
+            killSignal: 'SIGTERM'
+        });
+        console.log(output.trim());
+        totalPassed++;
+    } catch (err) {
+        console.error(`β FAILED: ${suite.name}`);
+        if (err.killed || err.signal === 'SIGTERM' || err.code === 'ETIMEDOUT') {
+            console.error(`Test suite exceeded ${timeoutMs / 1000} seconds and was terminated to prevent CI from hanging.`);
+        }
+        if (err.stdout) console.log(err.stdout);
+        if (err.stderr) console.error(err.stderr);
+        totalFailed++;
+    }
+}
+
+console.log('\n========================================================================');
+console.log(`π TEST SUITES COMPLETED: ${totalPassed} Passed, ${totalFailed} Failed`);
+console.log('========================================================================\n');
+
+process.exit(totalFailed > 0 ? 1 : 0);

@@ -1,1 +1,409 @@
-YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíçŸ7N‹Z–‹­¦ëeŠw¬ÔÕÍ”ÍÑÉ¥Ðœì4(4)½¹ÍÐ™Ì€ôÉ•ÅÕ¥É” ™Ìœ¤ì4)½¹ÍÐÁ…Ñ €ôÉ•ÅÕ¥É” Á…Ñ œ¤ì4)½¹ÍÐÉåÁÑ¼€ôÉ•ÅÕ¥É” ÉåÁÑ¼œ¤ì4)½¹ÍÐìÕÉÉ•¹Ñ¥ÑM¡„ô€ôÉ•ÅÕ¥É” œ¸½ÁÉ½•ÍÌµÑ½½±Ìœ¤ì4)½¹ÍÐìÉ•Í½±Ù•A…•Í	Õ¥±‘Q…É•Ð°É•ÝÉ¥Ñ•	…­•¹‘=É¥¥¸ô€ôÉ•ÅÕ¥É” œ¸½Á…•Ìµ‰Õ¥±µÑ…É•Ðœ¤ì4(4)½¹ÍÐI==P€ôÁ…Ñ ¹É•Í½±Ù”¡}}‘¥É¹…µ”°€œ¸¸œ¤ì4)½¹ÍÐ=UP€ôÁ…Ñ ¹©½¥¸¡I==P°€¹•Ñ±¥™äµ‘¥ÍÐœ¤ì4)½¹ÍÐ	U%1}QIP€ôÉ•Í½±Ù•A…•Í	Õ¥±‘Q…É•Ð ¤ì4(4(¼¼	É½ÝÍ•È½ÉÕ¹Ñ¥µ”…ÍÍ•ÑÌ½¹±ä¸	…­•¹°µ¥É…Ñ¥½¹Ì°Ñ•ÍÑÌ°‘½Ì…¹ÁÉ½©•Ð¥¹Ñ•É¹…±Ì…É”4(¼¼‘•±¥‰•É…Ñ•±ä•á±Õ‘•™É½´Ñ¡”ÁÕ‰±¥Œ9•Ñ±¥™ä…ÉÑ¥™…Ð¸4)½¹ÍÐAU	1%}%1L€ôl4(€€¥¹‘•à¹¡Ñµ°œ°4(€€…ÁÀ¹¡Ñµ°œ°4(€€Ñ•ÉµÌ¹¡Ñµ°œ°4(€€ÁÉ¥Ù…ä¹¡Ñµ°œ°4(€€É•™Õ¹¹¡Ñµ°œ°(€€…‰½ÕÐ¹¡Ñµ°œ°(€€½¹Ñ…Ð¹¡Ñµ°œ°(€€Í•ÉÙ¥”µ‘•±¥Ù•Éä¹¡Ñµ°œ°4(€€ÍÉ••¹Í¡½ÐµÉ•Á±ä¹¡Ñµ°œ°4(€€¥•‰É•…­•Èµ•¹•É…Ñ½È¹¡Ñµ°œ°4(€€‘…Ñ¥¹œµ‰¥¼µ½ÁÑ¥µ¥é•È¹¡Ñµ°œ°4(€€…¤µ½¹Ù•ÉÍ…Ñ¥½¸µ½… ¹¡Ñµ°œ°4(€€œÐÀÐ¹¡Ñµ°œ°4(€€…ÁÀ¹©Ìœ°(€€Á…åµ•¹ÑÌµ±¥•¹Ð¹©Ìœ°4(€€½¹™¥œ¹©Ìœ°4(€€…•ÍÍ¥‰¥±¥Ñä¹©Ìœ°4(€€ÍÕÁ…‰…Í•±¥•¹Ð¹©Ìœ°4(€€½ÕÑÁÕÐ¹ÍÌœ°4(€€ÍÑå±”¹ÍÌœ°4(€€™•…ÑÕÉ”µÁ…•Ì¹ÍÌœ°4(€€É½‰½ÑÌ¹ÑáÐœ°4(€€Í¥Ñ•µ…À¹áµ°œ°4(€€™…Ù¥½¸´ÐáàÐà¹Á¹œœ°4(€€™…Ù¥½¸´äÙàäØ¹Á¹œœ°4(€€™…Ù¥½¸´ÄäÉàÄäÈ¹Á¹œœ°4(€€™…Ù¥½¸¹¥¼œ°4(€€…ÁÁ±”µÑ½Õ µ¥½¸¹Á¹œœ°4(€€±½¼¹Á¹œœ°4(€€±½¼´ÌàÐ¹Ý•‰Àœ°4(€€µ…•Ù”¹©Áœœ4)tì4)½¹ÍÐAU	1%}%IL€ôlÙ•¹‘½Ètì4(4)½¹ÍÐ=I	%9}Q=A}1Y0€ô¹•ÜM•Ð¡l4(€€Í•ÉÙ•È¹©Ìœ°4(€€‘…Ñ…‰…Í”¹©Ìœ°4(€€Á…­…”¹©Í½¸œ°4(€€Á…­…”µ±½¬¹©Í½¸œ°4(€€¥¹ÁÕÐ¹ÍÌœ°4(€€AI=5AQ}MeMQ5}55=Id¹©Í½¸œ°4(€€AI=)Q}5MQI}MA%%Q%=8¹µœ°4(€€A%}=U59QQ%=8¹µœ°4(€€A18¹µœ°4(€€œ¹•¹Øœ°4(€€œ¹•¹Ø¹•á…µÁ±”œ°4(€€œ¹¥Ñ¥¹½É”œ°4(€€œ¹±¥¹•¥¹½É”œ4)t¤ì4)½¹ÍÐ=I	%9}AI%aL€ôl4(€€œ¹¥Ð¼œ°4(€€œ¹¥Ñ¡Õˆ¼œ°4(€€µ¥‘‘±•Ý…É”¼œ°4(€€µ¥É…Ñ¥½¹Ì¼œ°4(€€Ñ•ÍÑÌ¼œ°4(€€½¹™¥œ¼œ°4(€€ÕÑ¥±¥Ñ¥•Ì¼œ°4(€€ÍÉ¥ÁÑÌ¼œ°4(€€¹½‘•}µ½‘Õ±•Ì¼œ4)tì4(4)™Õ¹Ñ¥½¸™…¥°¡µ•ÍÍ…”¤ì4(€Ñ¡É½Ü¹•ÜÉÉ½È¡m¹•Ñ±¥™äµ‰Õ¥±‘t€‘íµ•ÍÍ…•õ€¤ì4)ô4(4)™Õ¹Ñ¥½¸•¹ÍÕÉ•%¹Í¥‘•=ÕÑÁÕÐ¡Ñ…É•Ð¤ì4(€½¹ÍÐÉ•Í½±Ù•€ôÁ…Ñ ¹É•Í½±Ù”¡Ñ…É•Ð¤ì4(€¥˜€¡É•Í½±Ù•€„ôô=UP€˜˜€…É•Í½±Ù•¹ÍÑ…ÉÑÍ]¥Ñ ¡=UP€¬Á…Ñ ¹Í•À¤¤ì4(€€€™…¥°¡I•™ÕÍ¥¹œÑ¼ÝÉ¥Ñ”½ÕÑÍ¥‘”½ÕÑÁÕÐ‘¥É•Ñ½Éäè€‘íÑ…É•Ñõ€¤ì4(€ô4)ô4(4)™Õ¹Ñ¥½¸½Áå¥±”¡É•°¤ì4(€½¹ÍÐÍÉŒ€ôÁ…Ñ ¹©½¥¸¡I==P°É•°¤ì4(€½¹ÍÐ‘ÍÐ€ôÁ…Ñ ¹©½¥¸¡=UP°É•°¤ì4(€¥˜€ …™Ì¹•á¥ÍÑÍMå¹Œ¡ÍÉŒ¤ñð€…™Ì¹ÍÑ…ÑMå¹Œ¡ÍÉŒ¤¹¥Í¥±” ¤¤™…¥°¡I•ÅÕ¥É•ÁÕ‰±¥Œ™¥±”¥Ìµ¥ÍÍ¥¹œè€‘íÉ•±õ€¤ì4(€•¹ÍÕÉ•%¹Í¥‘•=ÕÑÁÕÐ¡‘ÍÐ¤ì4(€™Ì¹µ­‘¥ÉMå¹Œ¡Á…Ñ ¹‘¥É¹…µ”¡‘ÍÐ¤°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”ô¤ì4(€™Ì¹½Áå¥±•Må¹Œ¡ÍÉŒ°‘ÍÐ¤ì4)ô4(4)™Õ¹Ñ¥½¸½Áå¥È¡É•°¤ì4(€½¹ÍÐÍÉŒ€ôÁ…Ñ ¹©½¥¸¡I==P°É•°¤ì4(€½¹ÍÐ‘ÍÐ€ôÁ…Ñ ¹©½¥¸¡=UP°É•°¤ì4(€¥˜€ …™Ì¹•á¥ÍÑÍMå¹Œ¡ÍÉŒ¤ñð€…™Ì¹ÍÑ…ÑMå¹Œ¡ÍÉŒ¤¹¥Í¥É•Ñ½Éä ¤¤™…¥°¡I•ÅÕ¥É•ÁÕ‰±¥Œ‘¥É•Ñ½Éä¥Ìµ¥ÍÍ¥¹œè€‘íÉ•±õ€¤ì4(€•¹ÍÕÉ•%¹Í¥‘•=ÕÑÁÕÐ¡‘ÍÐ¤ì4(€™Ì¹ÁMå¹Œ¡ÍÉŒ°‘ÍÐ°ìÉ•ÕÉÍ¥Ù”èÑÉÕ”°‘•É•™•É•¹”è™…±Í”ô¤ì4)ô4(4)™Õ¹Ñ¥½¸Ý…±¬¡‘¥È°‰…Í”€ô‘¥È¤ì4(€½¹ÍÐÉ•ÍÕ±Ð€ômtì4(€™½È€¡½¹ÍÐ•¹ÑÉä½˜™Ì¹É•…‘‘¥ÉMå¹Œ¡‘¥È°ìÝ¥Ñ¡¥±•QåÁ•ÌèÑÉÕ”ô¤¤ì4(€€€½¹ÍÐ™Õ±°€ôÁ…Ñ ¹©½¥¸¡‘¥È°•¹ÑÉä¹¹…µ”¤ì4(€€€¥˜€¡•¹ÑÉä¹¥ÍMåµ‰½±¥1¥¹¬ ¤¤™…¥°¡Måµ±¥¹­Ì…É”™½É‰¥‘‘•¸¥¸9•Ñ±¥™ä…ÉÑ¥™…Ðè€‘íÁ…Ñ ¹É•±…Ñ¥Ù”¡‰…Í”°™Õ±°¥õ€¤ì4(€€€¥˜€¡•¹ÑÉä¹¥Í¥É•Ñ½Éä ¤¤É•ÍÕ±Ð¹ÁÕÍ  ¸¸¹Ý…±¬¡™Õ±°°‰…Í”¤¤ì4(€€€•±Í”¥˜€¡•¹ÑÉä¹¥Í¥±” ¤¤É•ÍÕ±Ð¹ÁÕÍ ¡Á…Ñ ¹É•±…Ñ¥Ù”¡‰…Í”°™Õ±°¤¹É•Á±…” ½qp½œ°€œ¼œ¤¤ì4(€ô4(€É•ÑÕÉ¸É•ÍÕ±Ð¹Í½ÉÐ ¤ì4)ô4(4)™Õ¹Ñ¥½¸Í¡„ÈÔØ¡™¥±”¤ì4(€É•ÑÕÉ¸ÉåÁÑ¼¹É•…Ñ•!…Í  Í¡„ÈÔØœ¤¹ÕÁ‘…Ñ”¡™Ì¹É•…‘¥±•Må¹Œ¡™¥±”¤¤¹‘¥•ÍÐ ¡•àœ¤ì4)ô4(4)™Õ¹Ñ¥½¸ÝÉ¥Ñ•M•ÕÉ¥Ñå¥±•Ì¡Ñ…É•Ð€ô	U%1}QIP¤ì4(€½¹ÍÐÉ…¥±Ý…ä€ôÑ…É•Ð¹…Á¥=É¥¥¸ì4(€€¼¼Q¡”¹•Ü!%ÉÕ¹Ñ¥µ”€¡¡•¥ŒµÑ¼µÍÀ¹©Ì¤¥Ì‰Õ¥±ÐÝ¥Ñ UM}U9M}Y0ôÀ…¹½¹Ñ…¥¹Ì¹¼•Ù…°½¹•ÜÕ¹Ñ¥½¸¸4(€€¼¼9¼Õ¹Í…™”µ•Ù…°¥Ì¹••‘•¥¸Ñ¡”M@¸4(€™Õ¹Ñ¥½¸ÍÁ½È¡…±±½ÝÙ…°€ô™…±Í”¤ì4(€€€½¹ÍÐ•Ù…±M½ÕÉ”€ô…±±½ÝÙ…°€ü€ˆ€Õ¹Í…™”µ•Ù…°œˆ€è€œœì4(€€€É•ÑÕÉ¸l4(€€€€‰‘•™…Õ±ÐµÍÉŒ€Í•±˜œ¡ÑÑÁÌè¼¼¨¹ÍÕÁ…‰…Í”¹¼ˆ°4(€€€€€ÍÉ¥ÁÐµÍÉŒ€Í•±˜œ€Õ¹Í…™”µ¥¹±¥¹”œ‘í•Ù…±M½ÕÉ•ô¡ÑÑÁÌè¼½‘¸¹©Í‘•±¥ÙÈ¹¹•Ð¡ÑÑÁÌè¼½‘¹©Ì¹±½Õ‘™±…É”¹½´¡ÑÑÁÌè¼¼¨¹ÍÕÁ…‰…Í”¹¼¡ÑÑÁÌè¼½ÍÑ…Ñ¥Œ¹±½Õ‘™±…É•¥¹Í¥¡ÑÌ¹½µ€°4(€€€€‰ÍÉ¥ÁÐµÍÉŒµ•±•´€Í•±˜œ€Õ¹Í…™”µ¥¹±¥¹”œ¡ÑÑÁÌè¼½‘¸¹©Í‘•±¥ÙÈ¹¹•Ð¡ÑÑÁÌè¼½‘¹©Ì¹±½Õ‘™±…É”¹½´¡ÑÑÁÌè¼¼¨¹ÍÕÁ…‰…Í”¹¼¡ÑÑÁÌè¼½ÍÑ…Ñ¥Œ¹±½Õ‘™±…É•¥¹Í¥¡ÑÌ¹½´ˆ°4(€€€€‰ÍÉ¥ÁÐµÍÉŒµ…ÑÑÈ€Õ¹Í…™”µ¥¹±¥¹”œˆ°4(€€€€‰ÍÑå±”µÍÉŒ€Í•±˜œ€Õ¹Í…™”µ¥¹±¥¹”œ¡ÑÑÁÌè¼½™½¹ÑÌ¹½½±•…Á¥Ì¹½´¡ÑÑÁÌè¼½‘¹©Ì¹±½Õ‘™±…É”¹½´ˆ°4(€€€€‰™½¹ÐµÍÉŒ€Í•±˜œ¡ÑÑÁÌè¼½™½¹ÑÌ¹ÍÑ…Ñ¥Œ¹½´‘…Ñ„èˆ°4(€€€€‰¥µœµÍÉŒ€Í•±˜œ‘…Ñ„è‰±½ˆè¡ÑÑÁÌèˆ°4(€€€½¹¹•ÐµÍÉŒ€Í•±˜œ¡ÑÑÁÌè¼¼¨¹ÍÕÁ…‰…Í”¹¼ÝÍÌè¼¼¨¹ÍÕÁ…‰…Í”¹¼€‘íÉ…¥±Ý…åô¡ÑÑÁÌè¼½…¥É•‘¥ÑÌ¹¥¸¡ÑÑÁÌè¼½±½Õ‘™±…É•¥¹Í¥¡ÑÌ¹½µ€°4(€€€€‰Ý½É­•ÈµÍÉŒ€Í•±˜œ‰±½ˆèˆ°4(€€€€‰™É…µ”µ…¹•ÍÑ½ÉÌ€¹½¹”œˆ°4(€€€€‰½‰©•ÐµÍÉŒ€¹½¹”œˆ°4(€€€€‰‰…Í”µÕÉ¤€Í•±˜œˆ°4(€€€€‰™½É´µ…Ñ¥½¸€Í•±˜œˆ4(€€€t¹©½¥¸ œì€œ¤€¬€œìœì4(€ô4(4(€½¹ÍÐÍÑÉ¥ÑÍÀ€ôÍÁ½È¡™…±Í”¤ì4(€½¹ÍÐ…ÁÁÍÀ€ôÍÁ½È¡™…±Í”¤¹É•Á±…” ‰¡ÑÑÁÌè¼½ÍÑ…Ñ¥Œ¹±½Õ‘™±…É•¥¹Í¥¡ÑÌ¹½´ˆ°€‰¡ÑÑÁÌè¼½ÍÑ…Ñ¥Œ¹±½Õ‘™±…É•¥¹Í¥¡ÑÌ¹½´¡ÑÑÁÌè¼½¡•­½ÕÐ¹É…é½ÉÁ…ä¹½´ˆ¤4(€€€€¹É•Á±…” ‰ÍÉ¥ÁÐµÍÉŒµ•±•´€Í•±˜œˆ°€‰ÍÉ¥ÁÐµÍÉŒµ•±•´¡ÑÑÁÌè¼½¡•­½ÕÐ¹É…é½ÉÁ…ä¹½´€Í•±˜œˆ¤4(€€€€¹É•Á±…” ‰½¹¹•ÐµÍÉŒ€Í•±˜œˆ°€‰½¹¹•ÐµÍÉŒ¡ÑÑÁÌè¼½…Á¤¹É…é½ÉÁ…ä¹½´¡ÑÑÁÌè¼½¡•­½ÕÐ¹É…é½ÉÁ…ä¹½´€Í•±˜œˆ¤4(€€€€¬€œ™É…µ”µÍÉŒ¡ÑÑÁÌè¼½…Á¤¹É…é½ÉÁ…ä¹½´¡ÑÑÁÌè¼½¡•­½ÕÐ¹É…é½ÉÁ…ä¹½´ìœì€¼¼9¼Õ¹Í…™”µ•Ù…°4(€½¹ÍÐÍ•ÕÉ¥Ñä€ôl4(€€€€œ¼¨œ°4(€€€€œ€MÑÉ¥ÐµQÉ…¹ÍÁ½ÉÐµM•ÕÉ¥Ñäèµ…àµ…”ôÌÄÔÌØÀÀÀœ°4(€€€€œ€`µÉ…µ”µ=ÁÑ¥½¹Ìè9dœ°4(€€€€œ€`µ½¹Ñ•¹ÐµQåÁ”µ=ÁÑ¥½¹Ìè¹½Í¹¥™˜œ°4(€€€€œ€I•™•ÉÉ•ÈµA½±¥äèÍÑÉ¥Ðµ½É¥¥¸µÝ¡•¸µÉ½ÍÌµ½É¥¥¸œ°4(€€€€œ€A•Éµ¥ÍÍ¥½¹ÌµA½±¥äè…µ•É„ô ¤°µ¥É½Á¡½¹”ô ¤°•½±½…Ñ¥½¸ô ¤œ°4(€€€€œœ°4(€€€€œ¼œ°4(€€€€€½¹Ñ•¹ÐµM•ÕÉ¥ÑäµA½±¥äè€‘íÍÑÉ¥ÑÍÁõ€°4(€€€€œ€…¡”µ½¹ÑÉ½°è¹¼µ…¡”°¹¼µÍÑ½É”°µÕÍÐµÉ•Ù…±¥‘…Ñ”œ°4(€€€€œ½¥¹‘•à¹¡Ñµ°œ°4(€€€€€½¹Ñ•¹ÐµM•ÕÉ¥ÑäµA½±¥äè€‘íÍÑÉ¥ÑÍÁõ€°4(€€€€œ€…¡”µ½¹ÑÉ½°è¹¼µ…¡”°¹¼µÍÑ½É”°µÕÍÐµÉ•Ù…±¥‘…Ñ”œ°4(€€€€œ½…ÁÀœ°4(€€€€€½¹Ñ•¹ÐµM•ÕÉ¥ÑäµA½±¥äè€‘í…ÁÁÍÁõ€°4(€€€€œ€`µI½‰½ÑÌµQ…œè¹½¥¹‘•à°¹½™½±±½Ü°¹½…É¡¥Ù”œ°4(€€€€œ€…¡”µ½¹ÑÉ½°è¹¼µ…¡”°¹¼µÍÑ½É”°µÕÍÐµÉ•Ù…±¥‘…Ñ”œ°4(€€€€œ½…ÁÀ¹¡Ñµ°œ°4(€€€€€½¹Ñ•¹ÐµM•ÕÉ¥ÑäµA½±¥äè€‘í…ÁÁÍÁõ€°4(€€€€œ€`µI½‰½ÑÌµQ…œè¹½¥¹‘•à°¹½™½±±½Ü°¹½…É¡¥Ù”œ°4(€€€€œ€…¡”µ½¹ÑÉ½°è¹¼µ…¡”°¹¼µÍÑ½É”°µÕÍÐµÉ•Ù…±¥‘…Ñ”œ°4(€€€€œ½Ñ•ÉµÌœ°4(€€€€€½¹Ñ•¹ÐµM•ÕÉ¥ÑäµA½±¥äè€‘íÍÑÉ¥ÑÍÁõ€°4(€€€€œ€…¡”µ½¹ÑÉ½°è¹¼µ…¡”°¹¼µÍÑ½É”°µÕÍÐµÉ•Ù…±¥‘…Ñ”œ°4(€€€€œ½ÁÉ¥Ù…äœ°4(€€€€€½¹Ñ•¹ÐµM•ÕÉ¥ÑäµA½±¥äè€‘íÍÑÉ¥ÑÍÁõ€°4(€€€€œ€…¡”µ½¹ÑÉ½°è¹¼µ…¡”°¹¼µÍÑ½É”°µÕÍÐµÉ•Ù…±¥‘…Ñ”œ°4(€€€€œ½É•™Õ¹œ°4(€€€€€½¹Ñ•¹ÐµM•ÕÉ¥ÑäµA½±¥äè€‘íÍÑÉ¥ÑÍÁõ€°4(€€€€œ€…¡”µ½¹ÑÉ½°è¹¼µ…¡”°¹¼µÍÑ½É”°µÕÍÐµÉ•Ù…±¥‘…Ñ”œ°4(€€€€œ½Ñ•ÉµÌ¹¡Ñµ°œ°4(€€€€€½¹Ñ•¹ÐµM•ÕÉ¥ÑäµA½±¥äè€‘íÍÑÉ¥ÑÍÁõ€°4(€€€€œ€…¡”µ½¹ÑÉ½°è¹¼µ…¡”°¹¼µÍÑ½É”°µÕÍÐµÉ•Ù…±¥‘…Ñ”œ°4(€€€€œ½ÁÉ¥Ù…ä¹¡Ñµ°œ°4(€€€€€½¹Ñ•¹ÐµM•ÕÉ¥ÑäµA½±¥äè€‘íÍÑÉ¥ÑÍÁõ€°4(€€€€œ€…¡”µ½¹ÑÉ½°è¹¼µ…¡”°¹¼µÍÑ½É”°µÕÍÐµÉ•Ù…±¥‘…Ñ”œ°4(€€€€œ½É•™Õ¹¹¡Ñµ°œ°4(€€€€€½¹Ñ•¹ÐµM•ÕÉ¥ÑäµA½±¥äè€‘íÍÑÉ¥ÑÍÁõ€°4(€€€€œ€…¡”µ½¹ÑÉ½°è¹¼µ…¡”°¹¼µÍÑ½É”°µÕÍÐµÉ•Ù…±¥‘…Ñ”œ°4(€€€€œ½…‰½ÕÐ¹¡Ñµ°œ°(€€€€€]<ÞÚ$z{-®éÜj×rÀÐ¢r÷&—f7’æ‡FÖÂ÷&—f7’3rÀÐ¢r÷FW&×2æ‡FÖÂ÷FW&×23rÀÐ¢r÷&VgVæBæ‡FÖÂ÷&VgVæB3rÀÐ¢rö&÷WBæ‡FÖÂö&÷WB3rÀÐ¢rö6öçF7Bæ‡FÖÂö6öçF7B3rÀÐ¢r÷6W'f–6RÖFVÆ—fW'’æ‡FÖÂ÷6W'f–6RÖFVÆ—fW'’3rÀÐ¢r÷67&VVç6†÷B×&WÇ’æ‡FÖÂ÷67&VVç6†÷B×&WÇ’3rÀÐ¢rö–6V'&V¶W"ÖvVæW&F÷"æ‡FÖÂö–6V'&V¶W"ÖvVæW&F÷"3rÀÐ¢röFF–ærÖ&–òÖ÷F–Ö—¦W"æ‡FÖÂöFF–ærÖ&–òÖ÷F–Ö—¦W"3rÀÐ¢rö’Ö6öçfW'6F–öâÖ6ö6‚æ‡FÖÂö’Ö6öçfW'6F–öâÖ6ö6‚3rÀÐ¢rpÐ¢Òæ¦ö–â‚uÆâr“°Ð¢g2çw&—FTf–ÆU7–æ2‡F‚æ¦ö–â„õUBÂu÷&VF—&V7G2r’Â&VF—&V7G2ÂwWFc‚r“°Ð§Ð Ð¦gVæ7F–öâ7G&—FWfVÆ÷ÖVçD776÷W&6W2‚’°Ð¢f÷"†6öç7B&VÂöbT$Ä”5ôd”ÄU2æf–ÇFW"†f–ÆRÓâf–ÆRæVæG5v—F‚‚ræ‡FÖÂr’’’°Ð¢6öç7BF&vWBÒF‚æ¦ö–â„õUBÂ&VÂ“°Ð¢6öç7B6÷W&6RÒg2ç&VDf–ÆU7–æ2‡F&vWBÂwWFc‚r“°Ð¢6öç7B&öGV7F–öâÒ6÷W&6Rç&WÆ6R‚óÂÒÒÆö6Âf–ÆR&÷Fö6öÂv&æ–ær&ææW%µÇ5Å5Ò£óÅÂ÷67&—CâòÂrr’ç&WÆ6R‚õÇ2¶‡GG¥ÂõÂöÆö6Æ†÷7C¥Â¢örÂrrÐ¢ç&WÆ6R‚õÇ2·w3¥ÂõÂöÆö6Æ†÷7C¥Â¢örÂrrÐ¢ç&WÆ6R‚õÇ2¶‡GG¥ÂõÂõÂ£¥Â¢örÂrrÐ¢ç&WÆ6R‚õÇ2·w3¥ÂõÂõÂ£¥Â¢örÂrrÐ¢ç&WÆ6R‚õÇ2¶‡GG3¥ÂõÂõÂ£¥Â¢örÂrrÐ¢ç&WÆ6R‚õÇ2·w73¥ÂõÂõÂ£¥Â¢örÂrr“°Ð¢g2çw&—FTf–ÆU7–æ2‡F&vWBÂ&öGV7F–öâÂwWFc‚r“°Ð¢ÐÐ§ÐÐ Ð¦gVæ7F–öâfW&–g”æôf÷&&–FFVäf–ÆW2‚’°Ð¢6öç7Bf–ÆW2ÒvÆ²„õUB“°Ð¢f÷"†6öç7B&VÂöbf–ÆW2’°Ð¢–b„dõ$$”DDTåõDõôÄUdTÂæ†2‡&VÂ’’f–Â†f÷&&–FFVâf–ÆRVçFW&VBV&Æ–2'F–f7C¢G·&VÇÖ“°Ð¢–b„dõ$$”DDTåõ$Td•„U2ç6öÖR‡&Vf—‚Óâ&VÂç7F'G5v—F‚‡&Vf—‚’’’f–Â†f÷&&–FFVâF‚VçFW&VBV&Æ–2'F–f7C¢G·&VÇÖ“°Ð¢–b‚õÂâ‡7ÇÆÖGÇ7Æ—FWÆF'Ç3Æ&GÇf'2’Bö’çFW7B‡&VÂ’’f–Â†–çFW&æÂf–ÆRG—RVçFW&VBV&Æ–2'F–f7C¢G·&VÇÖ“°Ð¢ÐÐ¢&WGW&âf–ÆW3°Ð§ÐÐ Ð¦gVæ7F–öâÇ•vW4'V–ÆEF&vWB‡F&vWBÒ%T”ÄEõD$tUB’°Ð¢f÷"†6öç7B&VÂöb²v6öæf–ræ§2rÂv–æFW‚æ‡FÖÂrÂvæ‡FÖÂuÒ’°Ð¢6öç7B÷WGWEF‚ÒF‚æ¦ö–â„õUBÂ&VÂ“°Ð¢6öç7B6÷W&6RÒg2ç&VDf–ÆU7–æ2†÷WGWEF‚ÂwWFc‚r“°Ð¢6öç7B6öæf–wW&VBÒ&Ww&—FT&6¶VæD÷&–v–â‡6÷W&6RÂF&vWB“°Ð¢–b‡F&vWBæ—5&Wf–Wrbb6öæf–wW&VBÓÓÒ6÷W&6R’°Ð¢f–Â†G·&VÇÒF–Bæ÷B6öçF–âF†R&öGV7F–öâ’÷&–v–âW‡V7FVBf÷"&Wf–Wr&÷WF–æv“°Ð¢ÐÐ¢g2çw&—FTf–ÆU7–æ2†÷WGWEF‚Â6öæf–wW&VBÂwWFc‚r“°Ð¢ÐÐ§ÐÐ Ð¦gVæ7F–öâfW&–g”7&—F–6Å'VçF–ÖT6öçFVçB‡F&vWBÒ%T”ÄEõD$tUB’°Ð¢6öç7B‡FÖÂÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â„õUBÂvæ‡FÖÂr’ÂwWFc‚r“°Ð¢6öç7B§2Òg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â„õUBÂvæ§2r’ÂwWFc‚r“°Ð¢6öç7B6öæf–rÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â„õUBÂv6öæf–ræ§2r’ÂwWFc‚r“°Ð¢6öç7B†VFW'2Òg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â„õUBÂuö†VFW'2r’ÂwWFc‚r“°Ð Ð¢6öç7B&–Çv’ÒF&vWBæ”÷&–v–ã°Ð¢6öç7B6öçF–ç5&–Çv”÷&–v–âÒ‡FW‡B’ÓâFW‡Bæ–æ6ÇVFW2‚rr²&–Çv’²rr’ÇÂFW‡Bæ–æ6ÇVFW2‡&–Çv’²s²r“°Ð¢–b‚6öçF–ç5&–Çv”÷&–v–â†‡FÖÂ’’f–Â‚væ‡FÖÂ55FöW2æ÷B–æ6ÇVFR&–Çv’&6¶VæBr“°Ð¢–b‚6öæf–ræ–æ6ÇVFW2†•ô$4UõU$Ã¢"G·&–Çv—Ò&’’f–Â‚v6öæf–ræ§2FöW2æ÷Bö–çBFò&–Çv’&6¶VæBr“°Ð¢–b‚6öçF–ç5&–Çv”÷&–v–â††VFW'2’’f–Â‚uö†VFW'255FöW2æ÷B–æ6ÇVFR&–Çv’&6¶VæBr“°Ð¢–b‚†VFW'2æ–æ6ÇVFW2‚u7G&–7BÕG&ç7÷'BÕ6V7W&—G“¢Ö‚ÖvSÓ3S3cr’’f–Â‚uö†VFW'2FöW2æ÷BVæf÷&6R…5E2r“°Ð¢6öç7BVç6fTWfÄ†VFW$6÷VçBÒ††VFW'2æÖF6‚‚òwVç6fRÖWfÂrör’ÇÂµÒ’æÆVæwFƒ°Ð¢–b‡Vç6fTWfÄ†VFW$6÷VçBÓÒ’f–Â†Vç6fRÖWfÂ×W7Bæ÷BV"–âç’55&Æö6²v—F‚F†RæWr„T”2'VçF–ÖS²f÷VæBG·Vç6fTWfÄ†VFW$6÷VçGÖ“°Ð¢–b‚‡FÖÂæ–æ6ÇVFW2‚wfVæF÷"ö†V–3&ç’ÖÆöFW"æ§2r’’f–Â‚tF6†&ö&B„T”2ÆöFW"×W7B&R&W6VçBr“°Ð¢–b‚g2æW†—7G57–æ2‡F‚æ¦ö–â„õUBÂwfVæF÷"rÂv†V–3&ç’ÖFFW"æ§2r’’’f–Â‚tF6†&ö&B„T”2FFW"×W7B&R&W6VçBr“°Ð Ð¢òò&WfVçBF†R¶æ÷vâ7FÆR×&öGV7F–öâ&Vw&W76–öâg&öÒWfW"VçFW&–æræWr'F–f7BàÐ¢–b†§2æ–æ6ÇVFW2‚&–b‡&W7öç6Rç7FGW2ÓÓÒC’µÆâv–æF÷rçWFFUT”7&VF—G2ƒ“²"’’°Ð¢f–Â‚t¶æ÷vâCÓâf¶R¦W&òÖ7&VF—B&Vw&W76–öâ—2&W6VçBr“°Ð¢ÐÐ¢–b‚§2æ–æ6ÇVFW2‚v6öç7Bg&W6„7&VF—D6†V6²Òv—Bv–æF÷ræ6†V6´7&VF—D&Ææ6R‚“²r’’°Ð¢f–Â‚tg&W6‚WF†÷&—FF—fR&Ææ6RwV&B—2'6VçBr“°Ð¢ÐÐ¢–b‚§2æ–æ6ÇVFW2‚v6öç7BWF†÷&—FF—fT&Ææ6T6†V6²Òv—Bv–æF÷ræ6†V6´7&VF—D&Ææ6R‡²f÷&6Tg&W6ƒ¢G'VRÒ“²r’’°¢f–Â‚t…EEC"WF†÷&—FF—fRvÆÆWB&RÖ6†V6²v—F‚f÷&6Tg&W6‚—2'6VçBr“°¢ÐÐ Ð¢f÷"†6öç7B&VÂöbT$Ä”5ôd”ÄU2æf–ÇFW"†f–ÆRÓâf–ÆRæVæG5v—F‚‚ræ‡FÖÂr’’’°Ð¢6öç7B‡FÖÂÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â„õUBÂ&VÂ’ÂwWFc‚r“°Ð¢–b†‡FÖÂæ–æ6ÇVFW2‚v‡GG¢òöÆö6Æ†÷7C¢¢r’ÇÂ‡FÖÂæ–æ6ÇVFW2‚ww3¢òöÆö6Æ†÷7C¢¢r’ÇÀÐ¢‡FÖÂæ–æ6ÇVFW2‚v‡GG¢òò£¢¢r’ÇÂ‡FÖÂæ–æ6ÇVFW2‚ww3¢òò£¢¢r’ÇÀÐ¢‡FÖÂæ–æ6ÇVFW2‚v‡GG3¢òò£¢¢r’ÇÂ‡FÖÂæ–æ6ÇVFW2‚ww73¢òò£¢¢r’’°Ð¢f–Â†FWfVÆ÷ÖVçB556÷W&6RVçFW&VB&öGV7F–öâ'F–f7C¢G·&VÇÖ“°Ð¢ÐÐ¢ÐÐ§ÐÐ Ð¦gVæ7F–öâfW&–g”Æö6Ä‡FÖÅ&VfW&Væ6W2‚’°Ð¢6öç7B‡FÖÄf–ÆW2ÒT$Ä”5ôd”ÄU2æf–ÇFW"†bÓâbæVæG5v—F‚‚ræ‡FÖÂr’“°Ð¢6öç7BÖ—76–ærÒµÓ°Ð¢f÷"†6öç7B&VÂöb‡FÖÄf–ÆW2’°Ð¢6öç7BFW‡BÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â„õUBÂ&VÂ’ÂwWFc‚r“°Ð¢6öç7B&RÒõÆ"ƒó§7&7Æ‡&Vb•Ç2£ÕÇ2¥²"uÒ…µâ"r3õÒ²•²"uÒöv“°Ð¢ÆWBÓ°Ð¢v†–ÆR‚†ÒÒ&RæW†V2‡FW‡B’’’°Ð¢ÆWB&VbÒÕ³ÒçG&–Ò‚“°Ð¢–b‚&VbÇÂõâƒó¦‡GG3ó§ÆÖ–ÇFó§ÇFVÃ§ÆFF§Æ&Æö#§Æ¦f67&—C¢’ö’çFW7B‡&Vb’’6öçF–çVS°Ð¢–b‡&Vbç7F'G5v—F‚‚ròòr’’6öçF–çVS°Ð¢&VbÒ&Vbç7Æ—B‚õ³ò5ÒòÂ•³Òç&WÆ6R‚õåÂòòÂrr“°Ð¢–b‚&VbÇÂ&VbæVæG5v—F‚‚ròr’’6öçF–çVS°Ð¢6öç7B6æF–FFW2Ò·&VeÓ°Ð¢–b‚F‚æW‡FæÖR‡&Vb’’°Ð¢–b‡&VbÓÓÒvr’6æF–FFW2çW6‚‚væ‡FÖÂr“°Ð¢6æF–FFW2çW6‚‡&Vb²ræ‡FÖÂr“°Ð¢ÐÐ¢–b‚6æF–FFW2ç6öÖR†6æF–FFRÓâg2æW†—7G57–æ2‡F‚æ¦ö–â„õUBÂ6æF–FFR’’’’°Ð¢Ö—76–ærçW6‚†G·&VÇÒÓâG¶Õ³×Ö“°Ð¢ÐÐ¢ÐÐ¢ÐÐ¢–b†Ö—76–æræÆVæwF‚’f–Â†Ö—76–ærÆö6Â'&÷w6W"76WG3¥ÆâG¶Ö—76–æræ¦ö–â‚uÆâr—Ö“°Ð§ÐÐ Ð¦gVæ7F–öâw&—FTÖæ–fW7B†f–ÆW2’°Ð¢6öç7B6†Ò7W'&VçDv—E6†…$ôõB“°Ð¢6öç7BÖæ–fW7BÒ°Ð¢'V–ÆC¢vg&öçFVæBÖöæÇ’ÖæWFÆ–g’rÀÐ¢6÷W&6T6öÖÖ—C¢6†ÀÐ¢f–ÆW3¢ö&¦V7Bæg&öÔVçG&–W2†f–ÆW2æ6öæ6B…²uö†VFW'2rÂu÷&VF—&V7G2uÒ’ç6÷'B‚’æÖ‡&VÂÓâ·&VÂÂ6†#Sb‡F‚æ¦ö–â„õUBÂ&VÂ’•Ò’Ð¢Ó°Ð¢g2çw&—FTf–ÆU7–æ2‡F‚æ¦ö–â„õUBÂw&VÆV6Ræ§6öâr’Â¥4ôâç7G&–æv–g’†Öæ–fW7BÂçVÆÂÂ"’²uÆârÂwWFc‚r“°Ð§ÐÐ Ð¦g2ç&Õ7–æ2„õUBÂ²&V7W'6—fS¢G'VRÂf÷&6S¢G'VRÒ“°Ð¦g2æÖ¶F—%7–æ2„õUBÂ²&V7W'6—fS¢G'VRÒ“°Ð¦f÷"†6öç7B&VÂöbT$Ä”5ôd”ÄU2’6÷”f–ÆR‡&VÂ“°Ð¦f÷"†6öç7B&VÂöbT$Ä”5ôD•%2’6÷”F—"‡&VÂ“°Ð¦Ç•vW4'V–ÆEF&vWB‚“°Ð§w&—FU6V7W&—G”f–ÆW2‚“°Ð§7G&—FWfVÆ÷ÖVçD776÷W&6W2‚“°Ð¦6öç7Bf–ÆW2ÒfW&–g”æôf÷&&–FFVäf–ÆW2‚“°Ð§fW&–g”7&—F–6Å'VçF–ÖT6öçFVçB‚“°Ð§fW&–g”Æö6Ä‡FÖÅ&VfW&Væ6W2‚“°Ð§w&—FTÖæ–fW7B†f–ÆW2“°Ð Ð¦6öç7Bf–æÄf–ÆW2ÒvÆ²„õUB“°Ð¦6öç6öÆRæÆör†¶æWFÆ–g’Ö'V–ÆEÒ6fRg&öçFVæB'F–f7B7&VFVC¢G·F‚ç&VÆF—fR…$ôõBÂõUB—Ö“°Ð¦6öç6öÆRæÆör†¶æWFÆ–g’Ö'V–ÆEÒ6÷W&6R6öÖÖ—C¢G¶7W'&VçDv—E6†…$ôõB—Ö“°Ð¦6öç6öÆRæÆör†¶æWFÆ–g’Ö'V–ÆEÒV&Æ–2f–ÆW3¢G¶f–æÄf–ÆW2æÆVæwF‡Ö“°Ð¦f÷"†6öç7B&VÂöbf–æÄf–ÆW2’6öç6öÆRæÆör†¶æWFÆ–g’Ö'V–ÆEÒT$Ä”2G·&VÇÖ“°Ð 
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { currentGitSha } = require('./process-tools');
+const { resolvePagesBuildTarget, rewriteBackendOrigin } = require('./pages-build-target');
+
+const ROOT = path.resolve(__dirname, '..');
+const OUT = path.join(ROOT, 'netlify-dist');
+const BUILD_TARGET = resolvePagesBuildTarget();
+
+// Browser/runtime assets only. Backend, migrations, tests, docs and project internals are
+// deliberately excluded from the public Netlify artifact.
+const PUBLIC_FILES = [
+  'index.html',
+  'app.html',
+  'terms.html',
+  'privacy.html',
+  'refund.html',
+  'about.html',
+  'contact.html',
+  'service-delivery.html',
+  'screenshot-reply.html',
+  'icebreaker-generator.html',
+  'dating-bio-optimizer.html',
+  'ai-conversation-coach.html',
+  '404.html',
+  'app.js',
+  'payments-client.js',
+  'config.js',
+  'accessibility.js',
+  'supabaseClient.js',
+  'output.css',
+  'style.css',
+  'feature-pages.css',
+  'robots.txt',
+  'sitemap.xml',
+  'favicon-48x48.png',
+  'favicon-96x96.png',
+  'favicon-192x192.png',
+  'favicon.ico',
+  'apple-touch-icon.png',
+  'logo.png',
+  'logo-384.webp',
+  'maeve.jpg'
+];
+const PUBLIC_DIRS = ['vendor'];
+
+const FORBIDDEN_TOP_LEVEL = new Set([
+  'server.js',
+  'database.js',
+  'package.json',
+  'package-lock.json',
+  'input.css',
+  'PROMPT_SYSTEM_MEMORY.json',
+  'PROJECT_MASTER_SPECIFICATION.md',
+  'API_DOCUMENTATION.md',
+  'PLAN.md',
+  '.env',
+  '.env.example',
+  '.gitignore',
+  '.clineignore'
+]);
+const FORBIDDEN_PREFIXES = [
+  '.git/',
+  '.github/',
+  'middleware/',
+  'migrations/',
+  'tests/',
+  'config/',
+  'utilities/',
+  'scripts/',
+  'node_modules/'
+];
+
+function fail(message) {
+  throw new Error(`[netlify-build] ${message}`);
+}
+
+function ensureInsideOutput(target) {
+  const resolved = path.resolve(target);
+  if (resolved !== OUT && !resolved.startsWith(OUT + path.sep)) {
+    fail(`Refusing to write outside output directory: ${target}`);
+  }
+}
+
+function copyFile(rel) {
+  const src = path.join(ROOT, rel);
+  const dst = path.join(OUT, rel);
+  if (!fs.existsSync(src) || !fs.statSync(src).isFile()) fail(`Required public file is missing: ${rel}`);
+  ensureInsideOutput(dst);
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  fs.copyFileSync(src, dst);
+}
+
+function copyDir(rel) {
+  const src = path.join(ROOT, rel);
+  const dst = path.join(OUT, rel);
+  if (!fs.existsSync(src) || !fs.statSync(src).isDirectory()) fail(`Required public directory is missing: ${rel}`);
+  ensureInsideOutput(dst);
+  fs.cpSync(src, dst, { recursive: true, dereference: false });
+}
+
+function walk(dir, base = dir) {
+  const result = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isSymbolicLink()) fail(`Symlinks are forbidden in Netlify artifact: ${path.relative(base, full)}`);
+    if (entry.isDirectory()) result.push(...walk(full, base));
+    else if (entry.isFile()) result.push(path.relative(base, full).replace(/\\/g, '/'));
+  }
+  return result.sort();
+}
+
+function sha256(file) {
+  return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+}
+
+function writeSecurityFiles(target = BUILD_TARGET) {
+  const railway = target.apiOrigin;
+  // The new HEIC runtime (heic-to-csp.js) is built with USE_UNSAFE_EVAL=0 and contains no eval/new Function.
+  // No unsafe-eval is needed in the CSP.
+  function cspFor(allowEval = false) {
+    const evalSource = allowEval ? " 'unsafe-eval'" : '';
+    return [
+    "default-src 'self' https://*.supabase.co",
+      `script-src 'self' 'unsafe-inline'${evalSource} https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co https://static.cloudflareinsights.com`,
+    "script-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.supabase.co https://static.cloudflareinsights.com",
+    "script-src-attr 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    "img-src 'self' data: blob: https:",
+    `connect-src 'self' https://*.supabase.co wss://*.supabase.co ${railway} https://aicredits.in https://cloudflareinsights.com`,
+    "worker-src 'self' blob:",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'"
+    ].join('; ') + ';';
+  }
+
+  const strictCsp = cspFor(false);
+  const appCsp = cspFor(false).replace("https://static.cloudflareinsights.com", "https://static.cloudflareinsights.com https://checkout.razorpay.com")
+    .replace("script-src-elem 'self'", "script-src-elem https://checkout.razorpay.com 'self'")
+    .replace("connect-src 'self'", "connect-src https://api.razorpay.com https://checkout.razorpay.com 'self'")
+    + ' frame-src https://api.razorpay.com https://checkout.razorpay.com;'; // No unsafe-eval
+  const security = [
+    '/*',
+    '  Strict-Transport-Security: max-age=31536000',
+    '  X-Frame-Options: DENY',
+    '  X-Content-Type-Options: nosniff',
+    '  Referrer-Policy: strict-origin-when-cross-origin',
+    '  Permissions-Policy: camera=(), microphone=(), geolocation=()',
+    '',
+    '/',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/index.html',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/app',
+    `  Content-Security-Policy: ${appCsp}`,
+    '  X-Robots-Tag: noindex, nofollow, noarchive',
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/app.html',
+    `  Content-Security-Policy: ${appCsp}`,
+    '  X-Robots-Tag: noindex, nofollow, noarchive',
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/terms',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/privacy',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/refund',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/terms.html',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/privacy.html',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/refund.html',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/about.html',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/about',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/contact.html',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/contact',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/service-delivery.html',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/service-delivery',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/screenshot-reply',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/icebreaker-generator',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/dating-bio-optimizer',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/ai-conversation-coach',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/404.html',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  X-Robots-Tag: noindex, nofollow',
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/app.js',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/payments-client.js',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/config.js',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/accessibility.js',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/supabaseClient.js',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/output.css',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/style.css',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/landing-output.css',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/feature-pages.css',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/robots.txt',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/sitemap.xml',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/release.json',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/fonts/*',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/vendor/*',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/logo-384.webp',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/logo.png',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/maeve.jpg',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/favicon*',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/apple-touch-icon.png',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    ''
+  ].join('\n');
+  fs.writeFileSync(path.join(OUT, '_headers'), security, 'utf8');
+
+  const redirects = [
+    '# Use the final clean URLs as permanent canonical paths.',
+    '/index.html / 301',
+    '/app.html /app 301',
+    '/privacy.html /privacy 301',
+    '/terms.html /terms 301',
+    '/refund.html /refund 301',
+    '/about.html /about 301',
+    '/contact.html /contact 301',
+    '/service-delivery.html /service-delivery 301',
+    '/screenshot-reply.html /screenshot-reply 301',
+    '/icebreaker-generator.html /icebreaker-generator 301',
+    '/dating-bio-optimizer.html /dating-bio-optimizer 301',
+    '/ai-conversation-coach.html /ai-conversation-coach 301',
+    ''
+  ].join('\n');
+  fs.writeFileSync(path.join(OUT, '_redirects'), redirects, 'utf8');
+}
+
+function stripDevelopmentCspSources() {
+  for (const rel of PUBLIC_FILES.filter(file => file.endsWith('.html'))) {
+    const target = path.join(OUT, rel);
+    const source = fs.readFileSync(target, 'utf8');
+    const production = source.replace(/<!-- Local File Protocol Warning Banner[\s\S]*?<\/script>/, '').replace(/\s+http:\/\/localhost:\*/g, '')
+      .replace(/\s+ws:\/\/localhost:\*/g, '')
+      .replace(/\s+http:\/\/\*:\*/g, '')
+      .replace(/\s+ws:\/\/\*:\*/g, '')
+      .replace(/\s+https:\/\/\*:\*/g, '')
+      .replace(/\s+wss:\/\/\*:\*/g, '');
+    fs.writeFileSync(target, production, 'utf8');
+  }
+}
+
+function verifyNoForbiddenFiles() {
+  const files = walk(OUT);
+  for (const rel of files) {
+    if (FORBIDDEN_TOP_LEVEL.has(rel)) fail(`Forbidden file entered public artifact: ${rel}`);
+    if (FORBIDDEN_PREFIXES.some(prefix => rel.startsWith(prefix))) fail(`Forbidden path entered public artifact: ${rel}`);
+    if (/\.(sql|md|sqlite|db|ps1|bat|vbs)$/i.test(rel)) fail(`Internal file type entered public artifact: ${rel}`);
+  }
+  return files;
+}
+
+function applyPagesBuildTarget(target = BUILD_TARGET) {
+  for (const rel of ['config.js', 'index.html', 'app.html']) {
+    const outputPath = path.join(OUT, rel);
+    const source = fs.readFileSync(outputPath, 'utf8');
+    const configured = rewriteBackendOrigin(source, target);
+    if (target.isPreview && configured === source) {
+      fail(`${rel} did not contain the production API origin expected for preview routing`);
+    }
+    fs.writeFileSync(outputPath, configured, 'utf8');
+  }
+}
+
+function verifyCriticalRuntimeContent(target = BUILD_TARGET) {
+  const appHtml = fs.readFileSync(path.join(OUT, 'app.html'), 'utf8');
+  const appJs = fs.readFileSync(path.join(OUT, 'app.js'), 'utf8');
+  const config = fs.readFileSync(path.join(OUT, 'config.js'), 'utf8');
+  const headers = fs.readFileSync(path.join(OUT, '_headers'), 'utf8');
+
+  const railway = target.apiOrigin;
+  const containsRailwayOrigin = (text) => text.includes(' ' + railway + ' ') || text.includes(railway + ';');
+  if (!containsRailwayOrigin(appHtml)) fail('app.html CSP does not include Railway backend');
+  if (!config.includes(`API_BASE_URL: "${railway}"`)) fail('config.js does not point to Railway backend');
+  if (!containsRailwayOrigin(headers)) fail('_headers CSP does not include Railway backend');
+  if (!headers.includes('Strict-Transport-Security: max-age=31536000')) fail('_headers does not enforce HSTS');
+  const unsafeEvalHeaderCount = (headers.match(/'unsafe-eval'/g) || []).length;
+  if (unsafeEvalHeaderCount !== 0) fail(`unsafe-eval must not appear in any CSP block with the new HEIC runtime; found ${unsafeEvalHeaderCount}`);
+    if (!appHtml.includes('vendor/heic2any-loader.js')) fail('Dashboard HEIC loader must be present');
+    if (!fs.existsSync(path.join(OUT, 'vendor', 'heic2any-adapter.js'))) fail('Dashboard HEIC adapter must be present');
+
+  // Prevent the known stale-production regression from ever entering a new artifact.
+  if (appJs.includes("if (response.status === 401) {\n                        window.updateUICredits(0);")) {
+    fail('Known 401 -> fake zero-credit regression is present');
+  }
+  if (!appJs.includes('const freshCreditCheck = await window.checkCreditBalance();')) {
+    fail('Fresh authoritative balance guard is absent');
+  }
+  if (!appJs.includes('const authoritativeBalanceCheck = await window.checkCreditBalance({ forceFresh: true });')) {
+    fail('HTTP 402 authoritative wallet re-check with forceFresh is absent');
+  }
+
+  for (const rel of PUBLIC_FILES.filter(file => file.endsWith('.html'))) {
+    const html = fs.readFileSync(path.join(OUT, rel), 'utf8');
+    if (html.includes('http://localhost:*') || html.includes('ws://localhost:*') ||
+      html.includes('http://*:*') || html.includes('ws://*:*') ||
+      html.includes('https://*:*') || html.includes('wss://*:*')) {
+      fail(`Development CSP source entered production artifact: ${rel}`);
+    }
+  }
+}
+
+function verifyLocalHtmlReferences() {
+  const htmlFiles = PUBLIC_FILES.filter(f => f.endsWith('.html'));
+  const missing = [];
+  for (const rel of htmlFiles) {
+    const text = fs.readFileSync(path.join(OUT, rel), 'utf8');
+    const re = /\b(?:src|href)\s*=\s*["']([^"'#?]+)["']/gi;
+    let m;
+    while ((m = re.exec(text))) {
+      let ref = m[1].trim();
+      if (!ref || /^(?:https?:|mailto:|tel:|data:|blob:|javascript:)/i.test(ref)) continue;
+      if (ref.startsWith('//')) continue;
+      ref = ref.split(/[?#]/, 1)[0].replace(/^\//, '');
+      if (!ref || ref.endsWith('/')) continue;
+      const candidates = [ref];
+      if (!path.extname(ref)) {
+        if (ref === 'app') candidates.push('app.html');
+        candidates.push(ref + '.html');
+      }
+      if (!candidates.some(candidate => fs.existsSync(path.join(OUT, candidate)))) {
+        missing.push(`${rel} -> ${m[1]}`);
+      }
+    }
+  }
+  if (missing.length) fail(`Missing local browser assets:\n${missing.join('\n')}`);
+}
+
+function writeManifest(files) {
+  const sha = currentGitSha(ROOT);
+  const manifest = {
+    build: 'frontend-only-netlify',
+    sourceCommit: sha,
+    files: Object.fromEntries(files.concat(['_headers', '_redirects']).sort().map(rel => [rel, sha256(path.join(OUT, rel))]))
+  };
+  fs.writeFileSync(path.join(OUT, 'release.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+}
+
+fs.rmSync(OUT, { recursive: true, force: true });
+fs.mkdirSync(OUT, { recursive: true });
+for (const rel of PUBLIC_FILES) copyFile(rel);
+for (const rel of PUBLIC_DIRS) copyDir(rel);
+applyPagesBuildTarget();
+writeSecurityFiles();
+stripDevelopmentCspSources();
+const files = verifyNoForbiddenFiles();
+verifyCriticalRuntimeContent();
+verifyLocalHtmlReferences();
+writeManifest(files);
+
+const finalFiles = walk(OUT);
+console.log(`[netlify-build] Safe frontend artifact created: ${path.relative(ROOT, OUT)}`);
+console.log(`[netlify-build] Source commit: ${currentGitSha(ROOT)}`);
+console.log(`[netlify-build] Public files: ${finalFiles.length}`);
+for (const rel of finalFiles) console.log(`[netlify-build] PUBLIC ${rel}`);
