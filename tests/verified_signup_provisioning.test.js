@@ -39,7 +39,6 @@ console.log('===================================================================
 const migrationExists = fs.existsSync(migrationPath);
 const migrationSrc = migrationExists ? fs.readFileSync(migrationPath, 'utf8') : '';
 const sql = normalizedSql(migrationSrc);
-
 test('1. A forward-only migration exists for verified-email provisioning', () => {
   assert.ok(migrationExists, 'migrations/015_provision_profile_after_email_verification.sql must exist');
 });
@@ -96,13 +95,14 @@ test('7. Existing email/password login remains available and session-verified', 
   assert.ok(appSrc.includes('verifiedSession.user.id !== authResult.user.id'), 'app must verify the returned session identity before treating login as authenticated');
 });
 
-test('8. Migration replay is extended through migration 015 and exercises its repair paths', () => {
+test('8. Migration replay is extended through migration 018 and exercises historical and 50-credit cutover paths', () => {
   assert.ok(
-    /'013'\s*,\s*'014'\s*,\s*'015'/.test(replaySrc),
-    'migration replay must assert the tracked migration chain through 015'
+    /'013'\s*,\s*'014'\s*,\s*'015'\s*,\s*'016'\s*,\s*'017'\s*,\s*'018'/.test(replaySrc),
+    'migration replay must assert the tracked migration chain through 018'
   );
   assert.ok(replaySrc.includes('unconfirmed signup must not receive a profile or credits'), 'replay must prove pending signups receive no profile/credits');
-  assert.ok(replaySrc.includes('confirmed-at-insert user must receive exactly 20 credits'), 'replay must prove confirmed-at-insert/OAuth provisioning');
+  assert.ok(replaySrc.includes('confirmed-at-insert user must receive exactly 50 credits'), 'replay must prove new confirmed-at-insert/OAuth provisioning receives 50');
+  assert.ok(replaySrc.includes('pre-cutover pending signup must retain 20 credits'), 'replay must prove pending pre-cutover email registrations retain their previous grant');
   assert.ok(replaySrc.includes('Confirmed identity missing a profile and with no credit history must be safely backfilled to 20'), 'replay must prove safe confirmed-profile backfill behavior');
 });
 
