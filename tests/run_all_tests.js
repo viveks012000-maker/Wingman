@@ -122,7 +122,12 @@ const testSuites = [
     { name: '99. Production Log Privacy & Zero-PII Suite', file: 'production_log_privacy.test.js', timeoutMs: 30_000 },
     { name: '100. Monotonic Performance Telemetry Suite', file: 'monotonic_perf_telemetry.test.js', timeoutMs: 30_000 },
     { name: '101. Homepage Auth State Rendering & Session Flicker Guard', file: 'homepage_auth_state.test.js', timeoutMs: 30_000 },
-    { name: '102. Runtime Session Restoration, Failure, and Private-State Cleanup', file: 'refresh_session_bootstrap_runtime.test.js', timeoutMs: 30_000 }
+    { name: '102. Runtime Session Restoration, Failure, and Private-State Cleanup', file: 'refresh_session_bootstrap_runtime.test.js', timeoutMs: 30_000 },
+    { name: '103. Privacy-Safe AI Middleware Timing', file: 'perf_middleware_timing.test.js', timeoutMs: 30_000 },
+    { name: '104. Analyzer Provider Attempt Telemetry', file: 'analyzer_provider_telemetry.test.js', timeoutMs: 30_000 },
+    { name: '105. Maeve Operation-Wide Deadline', file: 'maeve_operation_deadline.test.js', timeoutMs: 30_000 },
+    { name: '106. Maeve Retry Safety and Ambiguity', file: 'maeve_provider_retry_safety.test.js', timeoutMs: 30_000 },
+    { name: '107. Analyzer Image Normalization and Bounds', file: 'analyzer_payload_normalization.test.js', timeoutMs: 30_000 }
 ];
 
 console.log('========================================================================');

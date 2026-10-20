@@ -455,7 +455,11 @@ async function assertApp(browser, viewport) {
 
                 const originalViewport = { width: viewport[0], height: viewport[1] };
                 await opened.page.setViewportSize({ width: viewport[1], height: viewport[0] });
-                await opened.page.waitForTimeout(80);
+                await opened.page.waitForFunction(() => {
+                    const visualHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+                    const publishedHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--wingman-visual-height'));
+                    return Number.isFinite(publishedHeight) && Math.abs(visualHeight - publishedHeight) <= 1;
+                }, null, { timeout: 1500 });
                 const rotatedViewport = await opened.page.evaluate(() => ({
                     visualHeight: window.visualViewport ? window.visualViewport.height : window.innerHeight,
                     publishedHeight: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--wingman-visual-height'))

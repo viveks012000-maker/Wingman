@@ -124,6 +124,25 @@ app.use((req, res, next) => {
     next();
 });
 
+app.use((req, res, next) => {
+    const feature = getAiPerfFeature(req);
+    if (!feature) return next();
+    const originalJson = res.json;
+    res.json = function measuredAiJson(...args) {
+        const startedAt = performance.now();
+        try {
+            return originalJson.apply(this, args);
+        } finally {
+            recordPerfTelemetry({
+                feature,
+                stage: 'response_serialization',
+                durationMs: performance.now() - startedAt
+            });
+        }
+    };
+    next();
+});
+
 // 2. Configure Locked CORS Policy
 const productionAllowedOrigins = [
     'https://mywingmanapp.com'
@@ -178,7 +197,7 @@ app.use(cors({
 }));
 
 // 3. Global Rate Limiter (API Scoped) & Scoped Express Payload Limits
-app.use('/api/', globalLimiter);
+app.use('/api/', withPerfMiddleware('global_request_admission', globalLimiter));
 // A signed provider callback has no browser session. Verify exact bytes before JSON,
 // body sanitization and browser CSRF middleware; no other route bypasses these controls.
 app.post('/api/payments/webhook', express.raw({ type: 'application/json', limit: '256kb' }), async (req, res) => {
@@ -207,12 +226,8 @@ app.use((err, req, res, next) => {
     }
     next(err);
 });
-app.use('/api/', verifySupabaseToken);
-app.use('/api/', autoProvisionUser);
-// Screenshot payload inspection can scan tens of megabytes of attacker-controlled input.
-// Authenticate these protected routes before running the route-specific validator.
-app.use(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, validateImagePayload);
-
+app.use('/api/', withPerfMiddleware('token_verification', verifySupabaseToken));
+app.use('/api/', withPerfMiddleware('profile_provisioning', autoProvisionUser));
 // 4. Block access to sensitive files, sanitize request bodies & enforce CSRF
 app.use(blockSensitiveFiles);
 app.use(sanitizeRequestBody);
@@ -468,6 +483,51 @@ function recordPerfTelemetry(metadata) {
     }
 }
 
+function getAiPerfFeature(req) {
+    const feature = canonicalizeAiFeature(req && (req.originalUrl || req.path || req.baseUrl));
+    return ['analyze', 'icebreaker', 'optimize', 'chat', 'simulator_review'].includes(feature) ? feature : null;
+}
+
+function withPerfMiddleware(stage, middleware) {
+    return function measuredAiMiddleware(req, res, next) {
+        const feature = getAiPerfFeature(req);
+        if (!feature) return middleware(req, res, next);
+
+        const startedAt = performance.now();
+        let recorded = false;
+        const recordOnce = () => {
+            if (recorded) return;
+            recorded = true;
+            recordPerfTelemetry({
+                feature,
+                stage,
+                durationMs: performance.now() - startedAt
+            });
+        };
+
+        res.once('finish', recordOnce);
+        res.once('close', recordOnce);
+        const measuredNext = error => {
+            recordOnce();
+            return next(error);
+        };
+
+        try {
+            const result = middleware(req, res, measuredNext);
+            if (result && typeof result.then === 'function') {
+                return result.catch(error => {
+                    recordOnce();
+                    return next(error);
+                });
+            }
+            return result;
+        } catch (error) {
+            recordOnce();
+            return next(error);
+        }
+    };
+}
+
 async function withTransactionRetry(db, callback, retries = 5) {
     let attempt = 0;
     while (attempt < retries) {
@@ -530,6 +590,7 @@ const completedAiResponses = new Map();
 const COMPLETED_RESPONSES_TTL_MS = 10 * 60 * 1000; // 10 minutes cache for idempotent retransmits
 const MAX_COMPLETED_RESPONSES = 500;
 const SERVER_TOTAL_OPERATION_DEADLINE_MS = 65000;
+const MAEVE_CLEANUP_HEADROOM_MS = 5000;
 
 function canonicalizeAiFeature(routePath) {
     const p = String(routePath || '').toLowerCase();
@@ -1202,7 +1263,7 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
     }
     candidateModels = [...new Set(candidateModels)];
 
-    const retryableStatuses = new Set([429, 500, 502, 503, 504]);
+    const retryableStatuses = new Set([429]);
     let lastErr = null;
 
     for (const targetModel of candidateModels) {
@@ -1219,13 +1280,16 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
         }
 
         for (let attempt = 1; attempt <= 3; attempt++) {
-            const attemptTimeoutMs = deadlineAt
-                ? getOperationRemainingMs(deadlineAt, typeof timeoutMs === 'number' ? timeoutMs : 25000)
-                : (typeof timeoutMs === 'number' ? timeoutMs : 25000);
-            const controller = attemptTimeoutMs ? new AbortController() : null;
-            const timer = controller ? setTimeout(() => controller.abort(), attemptTimeoutMs) : null;
+            let controller = null;
+            let timer = null;
 
             try {
+                const attemptTimeoutMs = deadlineAt
+                    ? getOperationRemainingMs(deadlineAt, typeof timeoutMs === 'number' ? timeoutMs : 25000)
+                    : (typeof timeoutMs === 'number' ? timeoutMs : 25000);
+                controller = attemptTimeoutMs ? new AbortController() : null;
+                timer = controller ? setTimeout(() => controller.abort(), attemptTimeoutMs) : null;
+
                 const response = await fetch(AICREDITS_CHAT_COMPLETIONS_URL, {
                     method: "POST",
                     headers: {
@@ -1242,40 +1306,48 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
                     const err = new Error(`AI API Failure [${targetModel}]: HTTP ${response.status}.`);
                     err.statusCode = response.status;
                     lastErr = err;
-                    if (response.status === 400 || response.status === 404) {
-                        break;
-                    }
                     if (retryableStatuses.has(response.status) && attempt < 3) {
-                        const sleepMs = 300 * attempt;
-                        if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
-                            const deadlineErr = new Error("Operation deadline exceeded. Please try again.");
-                            deadlineErr.isTimeout = true;
-                            deadlineErr.statusCode = 504;
-                            throw deadlineErr;
+                        const retryDelayMs = getProviderRetryAfterMs(response, 300 * attempt);
+                        if (retryDelayMs !== null && (!deadlineAt || (deadlineAt - Date.now() - 1500) > retryDelayMs)) {
+                            await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                            continue;
                         }
-                        await new Promise(resolve => setTimeout(resolve, sleepMs));
-                        continue;
                     }
+                    if (response.status >= 500) {
+                        err.providerOutcomeUnknown = true;
+                        throw err;
+                    }
+                    if ([401, 402, 403].includes(response.status)) throw err;
                     break;
                 }
 
-                const data = await response.json();
+                let data;
+                try {
+                    data = await response.json();
+                } catch (_) {
+                    const err = new Error('AI API returned an unreadable response.');
+                    err.code = 'AI_PROVIDER_INVALID_RESPONSE';
+                    err.statusCode = 502;
+                    err.providerOutcomeUnknown = true;
+                    throw err;
+                }
                 if (data && data.error) {
                     const err = new Error('AI API returned an error response.');
                     const numericStatus = Number(data.error.status || data.error.code) || 502;
                     err.statusCode = numericStatus;
                     lastErr = err;
                     if (retryableStatuses.has(err.statusCode) && attempt < 3) {
-                        const sleepMs = 300 * attempt;
-                        if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
-                            const deadlineErr = new Error("Operation deadline exceeded. Please try again.");
-                            deadlineErr.isTimeout = true;
-                            deadlineErr.statusCode = 504;
-                            throw deadlineErr;
+                        const retryDelayMs = getProviderRetryAfterMs(response, 300 * attempt);
+                        if (retryDelayMs !== null && (!deadlineAt || (deadlineAt - Date.now() - 1500) > retryDelayMs)) {
+                            await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                            continue;
                         }
-                        await new Promise(resolve => setTimeout(resolve, sleepMs));
-                        continue;
                     }
+                    if (err.statusCode >= 500) {
+                        err.providerOutcomeUnknown = true;
+                        throw err;
+                    }
+                    if ([401, 402, 403].includes(err.statusCode)) throw err;
                     break;
                 }
 
@@ -1283,19 +1355,8 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
                     const err = new Error('AI API returned no choices.');
                     err.code = 'AI_PROVIDER_EMPTY_RESPONSE';
                     err.statusCode = 502;
-                    lastErr = err;
-                    if (attempt < 2) {
-                        const sleepMs = 250;
-                        if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
-                            const deadlineErr = new Error("Operation deadline exceeded. Please try again.");
-                            deadlineErr.isTimeout = true;
-                            deadlineErr.statusCode = 504;
-                            throw deadlineErr;
-                        }
-                        await new Promise(resolve => setTimeout(resolve, sleepMs));
-                        continue;
-                    }
-                    break;
+                    err.providerOutcomeUnknown = true;
+                    throw err;
                 }
 
                 const msg = data.choices[0].message;
@@ -1304,51 +1365,29 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
                     const err = new Error('AI API returned empty content.');
                     err.code = 'AI_PROVIDER_EMPTY_RESPONSE';
                     err.statusCode = 502;
-                    lastErr = err;
-                    if (attempt < 2) {
-                        const sleepMs = 250;
-                        if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
-                            const deadlineErr = new Error("Operation deadline exceeded. Please try again.");
-                            deadlineErr.isTimeout = true;
-                            deadlineErr.statusCode = 504;
-                            throw deadlineErr;
-                        }
-                        await new Promise(resolve => setTimeout(resolve, sleepMs));
-                        continue;
-                    }
-                    break;
+                    err.providerOutcomeUnknown = true;
+                    throw err;
                 }
 
                 return String(outputContent).trim();
             } catch (err) {
+                if (err && err.providerOutcomeUnknown) throw err;
+                if (err && err.isTimeout) throw err;
+                if (err && [401, 402, 403].includes(Number(err.statusCode))) throw err;
                 if (err && err.name === 'AbortError') {
                     const timeoutErr = new Error("Analysis timed out. Please try again.");
                     timeoutErr.isTimeout = true;
                     timeoutErr.statusCode = 504;
-                    lastErr = timeoutErr;
-                    if (attempt < 3) {
-                        const sleepMs = 300 * attempt;
-                        if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
-                            throw timeoutErr;
-                        }
-                        await new Promise(resolve => setTimeout(resolve, sleepMs));
-                        continue;
-                    }
-                    break;
+                    timeoutErr.providerOutcomeUnknown = true;
+                    throw timeoutErr;
                 }
 
+                if (!err || !err.statusCode) {
+                    const unknownErr = err instanceof Error ? err : new Error(String(err || 'Unknown provider transport error.'));
+                    unknownErr.providerOutcomeUnknown = true;
+                    throw unknownErr;
+                }
                 lastErr = err;
-                if (err.statusCode === 400 || err.statusCode === 404) {
-                    break;
-                }
-                if (attempt < 3 && (!err || !err.statusCode || retryableStatuses.has(Number(err.statusCode)))) {
-                    const sleepMs = 300 * attempt;
-                    if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
-                        throw lastErr;
-                    }
-                    await new Promise(resolve => setTimeout(resolve, sleepMs));
-                    continue;
-                }
                 break;
             } finally {
                 if (timer) clearTimeout(timer);
@@ -1395,17 +1434,24 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
     if (maxTokens) payload.max_tokens = maxTokens;
     if (topP !== null && topP !== undefined) payload.top_p = topP;
 
-    const retryableStatuses = new Set([429, 500, 502, 503, 504]);
+    // Only an explicit rate-limit response proves this inference was rejected.
+    // Timeouts, transport failures, empty bodies, and 5xx responses are ambiguous
+    // and must not be replayed as potentially billable provider work.
+    const retryableStatuses = new Set([429]);
     let lastError = null;
 
     for (let attempt = 1; attempt <= 3; attempt++) {
-        const attemptTimeoutMs = deadlineAt
-            ? getOperationRemainingMs(deadlineAt, typeof timeoutMs === 'number' ? timeoutMs : 25000)
-            : (typeof timeoutMs === 'number' ? timeoutMs : 25000);
-        const controller = attemptTimeoutMs ? new AbortController() : null;
-        const timer = controller ? setTimeout(() => controller.abort(), attemptTimeoutMs) : null;
+        const attemptStartedAt = performance.now();
+        let controller = null;
+        let timer = null;
 
         try {
+            const attemptTimeoutMs = deadlineAt
+                ? getOperationRemainingMs(deadlineAt, typeof timeoutMs === 'number' ? timeoutMs : 25000)
+                : (typeof timeoutMs === 'number' ? timeoutMs : 25000);
+            controller = attemptTimeoutMs ? new AbortController() : null;
+            timer = controller ? setTimeout(() => controller.abort(), attemptTimeoutMs) : null;
+
             const response = await fetch(AICREDITS_CHAT_COMPLETIONS_URL, {
                 method: 'POST',
                 headers: {
@@ -1424,16 +1470,11 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
                 err.analyzerStage = stage;
                 lastError = err;
                 if (retryableStatuses.has(response.status) && attempt < 3) {
-                    const sleepMs = 300 * attempt;
-                    if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
-                        const deadlineErr = new Error("Operation deadline exceeded. Please try again.");
-                        deadlineErr.isTimeout = true;
-                        deadlineErr.statusCode = 504;
-                        deadlineErr.analyzerStage = stage;
-                        throw deadlineErr;
+                    const retryDelayMs = getProviderRetryAfterMs(response, 300 * attempt);
+                    if (retryDelayMs !== null && (!deadlineAt || (deadlineAt - Date.now() - 1500) > retryDelayMs)) {
+                        await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                        continue;
                     }
-                    await new Promise(resolve => setTimeout(resolve, sleepMs));
-                    continue;
                 }
                 break;
             }
@@ -1446,16 +1487,11 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
                 err.analyzerStage = stage;
                 lastError = err;
                 if (retryableStatuses.has(err.statusCode) && attempt < 3) {
-                    const sleepMs = 300 * attempt;
-                    if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
-                        const deadlineErr = new Error("Operation deadline exceeded. Please try again.");
-                        deadlineErr.isTimeout = true;
-                        deadlineErr.statusCode = 504;
-                        deadlineErr.analyzerStage = stage;
-                        throw deadlineErr;
+                    const retryDelayMs = getProviderRetryAfterMs(response, 300 * attempt);
+                    if (retryDelayMs !== null && (!deadlineAt || (deadlineAt - Date.now() - 1500) > retryDelayMs)) {
+                        await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                        continue;
                     }
-                    await new Promise(resolve => setTimeout(resolve, sleepMs));
-                    continue;
                 }
                 break;
             }
@@ -1466,18 +1502,6 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
                 err.statusCode = 502;
                 err.analyzerStage = stage;
                 lastError = err;
-                if (attempt < 2) {
-                    const sleepMs = 250;
-                    if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
-                        const deadlineErr = new Error("Operation deadline exceeded. Please try again.");
-                        deadlineErr.isTimeout = true;
-                        deadlineErr.statusCode = 504;
-                        deadlineErr.analyzerStage = stage;
-                        throw deadlineErr;
-                    }
-                    await new Promise(resolve => setTimeout(resolve, sleepMs));
-                    continue;
-                }
                 break;
             }
 
@@ -1489,18 +1513,6 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
                 err.statusCode = 502;
                 err.analyzerStage = stage;
                 lastError = err;
-                if (attempt < 2) {
-                    const sleepMs = 250;
-                    if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
-                        const deadlineErr = new Error("Operation deadline exceeded. Please try again.");
-                        deadlineErr.isTimeout = true;
-                        deadlineErr.statusCode = 504;
-                        deadlineErr.analyzerStage = stage;
-                        throw deadlineErr;
-                    }
-                    await new Promise(resolve => setTimeout(resolve, sleepMs));
-                    continue;
-                }
                 break;
             }
 
@@ -1512,30 +1524,20 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
                 timeoutErr.statusCode = 504;
                 timeoutErr.analyzerStage = stage;
                 lastError = timeoutErr;
-                if (attempt < 3) {
-                    const sleepMs = 300 * attempt;
-                    if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
-                        throw timeoutErr;
-                    }
-                    await new Promise(resolve => setTimeout(resolve, sleepMs));
-                    continue;
-                }
                 break;
             }
 
             err.analyzerStage = err.analyzerStage || stage;
             lastError = err;
-            if (attempt < 3 && (!err || !err.statusCode || retryableStatuses.has(Number(err.statusCode)))) {
-                const sleepMs = 300 * attempt;
-                if (deadlineAt && (deadlineAt - Date.now() - 1500) <= sleepMs) {
-                    throw lastError;
-                }
-                await new Promise(resolve => setTimeout(resolve, sleepMs));
-                continue;
-            }
             break;
         } finally {
             if (timer) clearTimeout(timer);
+            recordPerfTelemetry({
+                feature: 'analyze',
+                stage: isVisionStage ? 'vision_provider_attempt' : 'generation_provider_attempt',
+                durationMs: performance.now() - attemptStartedAt,
+                attemptCount: attempt
+            });
         }
     }
 
@@ -1556,7 +1558,30 @@ function getMaeveProviderFailureCode(error) {
     return 'AI_PROVIDER_FAILURE';
 }
 
-async function queryMaeveProvider(messagesArray, temperature = 0.7, maxTokens = 120, timeoutMs = 25000) {
+function getProviderRetryAfterMs(response, fallbackMs) {
+    const retryAfter = response && response.headers && typeof response.headers.get === 'function'
+        ? response.headers.get('retry-after')
+        : null;
+    if (!retryAfter) return fallbackMs;
+
+    const seconds = Number(retryAfter);
+    const parsedMs = Number.isFinite(seconds)
+        ? seconds * 1000
+        : (Date.parse(retryAfter) - Date.now());
+    if (!Number.isFinite(parsedMs) || parsedMs < 0) return fallbackMs;
+    return parsedMs <= 25000 ? parsedMs : null;
+}
+
+async function waitForMaeveRetry(delayMs, deadlineAt, timeoutMs) {
+    if (deadlineAt) {
+        // Prove that a follow-up attempt can still finish before starting backoff,
+        // while preserving five seconds for settlement or credit release.
+        getOperationRemainingMs(deadlineAt - delayMs, timeoutMs, MAEVE_CLEANUP_HEADROOM_MS);
+    }
+    if (delayMs > 0) await new Promise(resolve => setTimeout(resolve, delayMs));
+}
+
+async function queryMaeveProvider(messagesArray, temperature = 0.7, maxTokens = 120, timeoutMs = 25000, deadlineAt = null) {
     const keysToTry = [...new Set([
         process.env.AICREDITS_API_KEY_GENERAL,
         process.env.AICREDITS_API_KEY
@@ -1570,13 +1595,19 @@ async function queryMaeveProvider(messagesArray, temperature = 0.7, maxTokens = 
         throw err;
     }
 
-    const retryableStatuses = new Set([429, 500, 502, 503, 504]);
+    // Only an explicit rate-limit response is safe to replay. Timeouts, network
+    // errors, empty bodies, and 5xx responses may follow a completed inference.
+    const retryableStatuses = new Set([429]);
     let lastError = null;
 
     for (const apiKey of keysToTry) {
         for (let attempt = 1; attempt <= 3; attempt++) {
+            const attemptStartedAt = performance.now();
+            const attemptTimeoutMs = deadlineAt
+                ? getOperationRemainingMs(deadlineAt, timeoutMs, MAEVE_CLEANUP_HEADROOM_MS)
+                : timeoutMs;
             const controller = new AbortController();
-            const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+            const timer = attemptTimeoutMs ? setTimeout(() => controller.abort(), attemptTimeoutMs) : null;
             try {
                 const response = await fetch(AICREDITS_CHAT_COMPLETIONS_URL, {
                     method: 'POST',
@@ -1600,10 +1631,13 @@ async function queryMaeveProvider(messagesArray, temperature = 0.7, maxTokens = 
                     err.statusCode = response.status;
                     lastError = err;
                     if (retryableStatuses.has(response.status) && attempt < 3) {
-                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        const retryDelayMs = getProviderRetryAfterMs(response, 300 * attempt);
+                        if (retryDelayMs === null) break;
+                        await waitForMaeveRetry(retryDelayMs, deadlineAt, timeoutMs);
                         continue;
                     }
-                    break;
+                    if (response.status === 401 || response.status === 403 || response.status === 429) break;
+                    throw err;
                 }
 
                 const data = await response.json();
@@ -1612,10 +1646,13 @@ async function queryMaeveProvider(messagesArray, temperature = 0.7, maxTokens = 
                     err.statusCode = Number(data.error.status || data.error.code) || 502;
                     lastError = err;
                     if (retryableStatuses.has(err.statusCode) && attempt < 3) {
-                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+                        const retryDelayMs = getProviderRetryAfterMs(response, 300 * attempt);
+                        if (retryDelayMs === null) break;
+                        await waitForMaeveRetry(retryDelayMs, deadlineAt, timeoutMs);
                         continue;
                     }
-                    break;
+                    if (err.statusCode === 401 || err.statusCode === 403 || err.statusCode === 429) break;
+                    throw err;
                 }
 
                 const msg = data && Array.isArray(data.choices) && data.choices[0] ? data.choices[0].message : null;
@@ -1625,11 +1662,7 @@ async function queryMaeveProvider(messagesArray, temperature = 0.7, maxTokens = 
                     err.code = 'AI_PROVIDER_EMPTY_RESPONSE';
                     err.statusCode = 502;
                     lastError = err;
-                    if (attempt < 2) {
-                        await new Promise(resolve => setTimeout(resolve, 250));
-                        continue;
-                    }
-                    break;
+                    throw err;
                 }
 
                 return String(output).trim();
@@ -1639,21 +1672,19 @@ async function queryMaeveProvider(messagesArray, temperature = 0.7, maxTokens = 
                     timeoutErr.isTimeout = true;
                     timeoutErr.statusCode = 504;
                     lastError = timeoutErr;
-                    if (attempt < 3) {
-                        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
-                        continue;
-                    }
-                    break;
+                    throw timeoutErr;
                 }
 
                 lastError = err;
-                if (attempt < 3 && (!err || !err.statusCode || retryableStatuses.has(Number(err.statusCode)))) {
-                    await new Promise(resolve => setTimeout(resolve, 300 * attempt));
-                    continue;
-                }
-                break;
+                throw err;
             } finally {
                 if (timer) clearTimeout(timer);
+                recordPerfTelemetry({
+                    feature: 'chat',
+                    stage: 'provider_attempt',
+                    durationMs: performance.now() - attemptStartedAt,
+                    attemptCount: attempt
+                });
             }
         }
     }
@@ -1695,6 +1726,7 @@ async function queryOpenRouter(modelIdentifier, messagesArray, temperature = 0.7
         } catch (err) {
             lastError = err;
             if (err && err.isTimeout) throw err;
+            if (err && err.providerOutcomeUnknown) throw err;
             console.warn('[Provider failover] API key attempt failed; trying fallback key.', safeLogValue(modelIdentifier));
         }
     }
@@ -1718,6 +1750,7 @@ async function queryOpenRouter(modelIdentifier, messagesArray, temperature = 0.7
                 } catch (err) {
                     lastError = err;
                     if (err && err.isTimeout) throw err;
+                    if (err && err.providerOutcomeUnknown) throw err;
                 }
             }
         }
@@ -2158,7 +2191,12 @@ ${getAuthoritativeProfileDirective(languageProfile, repairFeature)}
 }
 
 // ==================== THE 4 CORE FEATURE API // 1. CHAT SCREENSHOT ANALYZER (/api/analyze & /api/analyze-chat-screenshot)
-app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
+app.post(['/api/analyze', '/api/analyze-chat-screenshot'],
+    withPerfMiddleware('authentication', requireSupabaseAuth),
+    withPerfMiddleware('consent', requireActiveConsent),
+    withPerfMiddleware('feature_rate_limit', apiLimiter),
+    withPerfMiddleware('image_validation', validateImagePayload),
+    async (req, res) => {
     const uid = getUserIdFromReq(req);
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('anl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     const canonicalFeature = canonicalizeAiFeature(req.path || req.baseUrl || req.originalUrl);
@@ -2217,7 +2255,7 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
     try {
         const opStart = Date.now();
         const deadlineAt = opStart + SERVER_TOTAL_OPERATION_DEADLINE_MS;
-        let { text, messages, tone, image, images, imageBase64, shorthandOption, emojiOption } = req.body || {};
+        let { text, messages, tone, shorthandOption, emojiOption } = req.body || {};
         const language = requestLanguageMode(req.body);
         const textCheck = text || (messages && messages[0] ? messages[0].content : "");
         if (typeof textCheck === 'string' && textCheck.length > 5000) {
@@ -2227,107 +2265,13 @@ app.post(['/api/analyze', '/api/analyze-chat-screenshot'], requireSupabaseAuth, 
             });
         }
 
-        // Validate image array bounds before deduction
-        if (Array.isArray(images) && images.length > 5) {
+        if (!Array.isArray(req.validatedAnalyzerImages)) {
             return res.status(400).json({
                 success: false,
-                error: "You can analyze a maximum of 5 images at a time."
+                error: 'Image payload could not be validated.'
             });
         }
-
-        // 1. Image Normalization into a single canonical array
-        let rawImages = [];
-        if (Array.isArray(images)) {
-            rawImages = images;
-        } else if (image || imageBase64) {
-            rawImages = [image || imageBase64];
-        }
-
-        // 2. Strict Backend Image Validation (Occurs BEFORE credit reservation)
-        if (rawImages.length > 5) {
-            return res.status(400).json({
-                success: false,
-                error: "You can analyze a maximum of 5 images at a time."
-            });
-        }
-
-        let imageList = [];
-        let totalDecodedBytes = 0;
-        const MAX_SINGLE_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
-        const MAX_TOTAL_IMAGE_BYTES = 25 * 1024 * 1024; // 25 MB
-        const ALLOWED_MIMES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif', 'image/bmp'];
-
-        for (let i = 0; i < rawImages.length; i++) {
-            const item = rawImages[i];
-            if (!item || typeof item !== 'string') {
-                return res.status(400).json({
-                    success: false,
-                    error: `Screenshot #${i + 1} payload is invalid.`
-                });
-            }
-            const trimmed = item.trim();
-            if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('//')) {
-                return res.status(400).json({
-                    success: false,
-                    error: "Remote image URLs are not supported. Please upload screenshot files directly."
-                });
-            }
-
-            let mime = 'image/jpeg';
-            let base64Data = '';
-            if (trimmed.startsWith('data:')) {
-                const match = trimmed.match(/^data:([^;]+);base64,(.+)$/s);
-                if (!match) {
-                    return res.status(400).json({
-                        success: false,
-                        error: `Screenshot #${i + 1} contains an invalid data URL or unsupported encoding.`
-                    });
-                }
-                mime = match[1].toLowerCase();
-                base64Data = match[2].replace(/[\r\n\s]+/g, '');
-            } else {
-                base64Data = trimmed.replace(/[\r\n\s]+/g, '');
-            }
-
-            if (!ALLOWED_MIMES.includes(mime)) {
-                return res.status(400).json({
-                    success: false,
-                    error: `Screenshot #${i + 1} has an unsupported format (${mime}). Supported: JPG, PNG, WEBP, HEIC, BMP.`
-                });
-            }
-
-            if (!/^[A-Za-z0-9+/=]+$/.test(base64Data)) {
-                return res.status(400).json({
-                    success: false,
-                    error: `Screenshot #${i + 1} is corrupted or not valid base64 data.`
-                });
-            }
-
-            const decodedBytes = Math.floor((base64Data.length * 3) / 4) - ((base64Data.endsWith('==')) ? 2 : (base64Data.endsWith('=') ? 1 : 0));
-            if (decodedBytes <= 0) {
-                return res.status(400).json({
-                    success: false,
-                    error: `Screenshot #${i + 1} is empty or unreadable.`
-                });
-            }
-
-            if (decodedBytes > MAX_SINGLE_IMAGE_BYTES) {
-                return res.status(400).json({
-                    success: false,
-                    error: `Screenshot #${i + 1} exceeds the 5 MB per-image limit.`
-                });
-            }
-
-            totalDecodedBytes += decodedBytes;
-            if (totalDecodedBytes > MAX_TOTAL_IMAGE_BYTES) {
-                return res.status(400).json({
-                    success: false,
-                    error: "Total upload size exceeds the 25 MB maximum batch limit."
-                });
-            }
-
-            imageList.push(`data:${mime};base64,${base64Data}`);
-        }
+        const imageList = req.validatedAnalyzerImages;
 
         if (imageList.length === 0 && (!messages || messages.length === 0)) {
             return res.status(400).json({ success: false, error: "Please upload at least 1 chat screenshot to analyze." });
@@ -2840,7 +2784,11 @@ ${formattingRule}`;
     }
 });
 
-app.post('/api/icebreaker', requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
+app.post('/api/icebreaker',
+    withPerfMiddleware('authentication', requireSupabaseAuth),
+    withPerfMiddleware('consent', requireActiveConsent),
+    withPerfMiddleware('feature_rate_limit', apiLimiter),
+    async (req, res) => {
     const uid = getUserIdFromReq(req);
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('ice_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     const canonicalFeature = canonicalizeAiFeature(req.path || req.baseUrl || req.originalUrl);
@@ -3318,7 +3266,11 @@ function formatBioLineBreaks(biosArray) {
 }
 
 // 3. PROFILE BIO OPTIMIZER (/api/optimize & /api/bio-optimizer)
-app.post(['/api/optimize', '/api/bio-optimizer'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
+app.post(['/api/optimize', '/api/bio-optimizer'],
+    withPerfMiddleware('authentication', requireSupabaseAuth),
+    withPerfMiddleware('consent', requireActiveConsent),
+    withPerfMiddleware('feature_rate_limit', apiLimiter),
+    async (req, res) => {
     const uid = getUserIdFromReq(req);
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('opt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     const canonicalFeature = canonicalizeAiFeature(req.path || req.baseUrl || req.originalUrl);
@@ -3758,8 +3710,13 @@ FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(langua
 });
 
 // 4. MAEVE AI DATING COACH & EVALUATOR CHAT (/api/chat & /api/simulator/chat)
-app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
+app.post(['/api/chat', '/api/simulator/chat'],
+    withPerfMiddleware('authentication', requireSupabaseAuth),
+    withPerfMiddleware('consent', requireActiveConsent),
+    withPerfMiddleware('feature_rate_limit', apiLimiter),
+    async (req, res) => {
     const chatTotalStartedAt = process.hrtime.bigint();
+    const chatDeadlineAt = Date.now() + SERVER_TOTAL_OPERATION_DEADLINE_MS;
     const recordChatDuration = (stage, startedAt) => {
         recordPerfTelemetry({
             feature: 'chat',
@@ -3990,12 +3947,12 @@ CONVERSATIONAL FREEDOM & LAWS:
                 hotlinePayload.push({ role: "user", content: wrapUntrustedUserData('user_message', userTextRaw) });
             }
 
-            let hotlineAdvice = await runChatStage('provider_generation', () => queryMaeveProvider(hotlinePayload, 0.7, 1500));
+            let hotlineAdvice = await runChatStage('provider_generation', () => queryMaeveProvider(hotlinePayload, 0.7, 1500, 25000, chatDeadlineAt));
             if (!hotlineAdvice) {
                 throw new Error("AI Coach endpoint returned empty response.");
             }
             if (containsInternalPromptBoundary(hotlineAdvice)) {
-                hotlineAdvice = await runChatStage('provider_repair', () => repairInternalTagLeak(hotlineAdvice, "chat_hotline", language, userTextRaw, historyArr));
+                hotlineAdvice = await runChatStage('provider_repair', () => repairInternalTagLeak(hotlineAdvice, "chat_hotline", language, userTextRaw, historyArr, chatDeadlineAt));
                 if (containsInternalPromptBoundary(hotlineAdvice)) {
                     throw new Error("Coach hotline generated internal prompt boundary tags.");
                 }
@@ -4003,7 +3960,7 @@ CONVERSATIONAL FREEDOM & LAWS:
             hotlineAdvice = cleanInternalPromptTags(hotlineAdvice);
             hotlineAdvice = sanitizeResponseText(hotlineAdvice.trim());
             if (containsDevanagari(hotlineAdvice)) {
-                hotlineAdvice = await runChatStage('provider_repair', () => repairHinglishDevanagari(hotlineAdvice, "chat_hotline", language, userTextRaw, historyArr));
+                hotlineAdvice = await runChatStage('provider_repair', () => repairHinglishDevanagari(hotlineAdvice, "chat_hotline", language, userTextRaw, historyArr, chatDeadlineAt));
                 if (containsDevanagari(hotlineAdvice)) {
                     throw new Error("Coach hotline generated Devanagari text in Hinglish mode.");
                 }
@@ -4155,14 +4112,14 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
             openRouterMessages.push({ role: "user", content: wrapUntrustedUserData('user_message', enforceWordLimit(userTextRaw, 500)) });
         }
 
-        let replyText = await runChatStage('provider_generation', () => queryMaeveProvider(openRouterMessages, 0.6, 120));
+        let replyText = await runChatStage('provider_generation', () => queryMaeveProvider(openRouterMessages, 0.6, 120, 25000, chatDeadlineAt));
 
         if (!replyText) {
             throw new Error("AI provider returned empty response.");
         }
 
         if (containsInternalPromptBoundary(replyText)) {
-            replyText = await runChatStage('provider_repair', () => repairInternalTagLeak(replyText, "chat_roleplay", language, userTextRaw, historyArr));
+            replyText = await runChatStage('provider_repair', () => repairInternalTagLeak(replyText, "chat_roleplay", language, userTextRaw, historyArr, chatDeadlineAt));
             if (containsInternalPromptBoundary(replyText)) {
                 throw new Error("Roleplay chat generated internal prompt boundary tags.");
             }
@@ -4191,7 +4148,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
         replyText = sanitizeResponseText(replyText);
         replyText = applyFormattingRules(replyText, useShorthand, emojiLevel);
         if (containsDevanagari(replyText)) {
-            replyText = await runChatStage('provider_repair', () => repairHinglishDevanagari(replyText, "chat_roleplay", language, userTextRaw, historyArr));
+            replyText = await runChatStage('provider_repair', () => repairHinglishDevanagari(replyText, "chat_roleplay", language, userTextRaw, historyArr, chatDeadlineAt));
             if (containsDevanagari(replyText)) {
                 throw new Error("Roleplay chat generated Devanagari text in Hinglish mode.");
             }
@@ -4327,7 +4284,11 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
 });
 
 // 4C. DATING FLIGHT SIMULATOR REVIEW API ENGINE (`/api/simulator/review`)
-app.post('/api/simulator/review', requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
+app.post('/api/simulator/review',
+    withPerfMiddleware('authentication', requireSupabaseAuth),
+    withPerfMiddleware('consent', requireActiveConsent),
+    withPerfMiddleware('feature_rate_limit', apiLimiter),
+    async (req, res) => {
     const uid = getUserIdFromReq(req);
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('rev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     const canonicalFeature = canonicalizeAiFeature(req.path || req.baseUrl || req.originalUrl);
@@ -5117,6 +5078,8 @@ module.exports.releaseCreditsDB = releaseCreditsDB;
 module.exports.inFlightUserCreditQueries = inFlightUserCreditQueries;
 module.exports.invalidateInFlightCreditQuery = invalidateInFlightCreditQuery;
 module.exports.queryMaeveProvider = queryMaeveProvider;
+module.exports.queryAnalyzerProvider = queryAnalyzerProvider;
+module.exports.queryOpenRouter = queryOpenRouter;
 module.exports.getMaeveProviderFailureCode = getMaeveProviderFailureCode;
 module.exports.canonicalizeAiFeature = canonicalizeAiFeature;
 module.exports.makeScopedAiOperationKey = makeScopedAiOperationKey;
@@ -5127,6 +5090,7 @@ module.exports.cacheCompletedAiResponse = cacheCompletedAiResponse;
 module.exports.getCompletedAiResponse = getCompletedAiResponse;
 module.exports.getCreditTransactionState = getCreditTransactionState;
 module.exports.recordPerfTelemetry = recordPerfTelemetry;
+module.exports.withPerfMiddleware = withPerfMiddleware;
 module.exports.executeQualityPipeline = executeQualityPipeline;
 module.exports.readVerifiedCreditState = readVerifiedCreditState;
 module.exports.sanitizeBioInput = sanitizeBioInput;

@@ -8,8 +8,8 @@ const serverSource = fs.readFileSync('server.js', 'utf8');
 const appSource = fs.readFileSync('app.js', 'utf8');
 assert(serverSource.includes('const lockState = acquireUserConcurrencyLock(uid, reqId);'));
 assert(serverSource.includes('releaseUserConcurrencyLock(uid, reqId);'));
-assert(serverSource.includes('queryMaeveProvider(hotlinePayload, 0.7, 1500)'));
-assert(serverSource.includes('queryMaeveProvider(openRouterMessages, 0.6, 120)'));
+assert(serverSource.includes('queryMaeveProvider(hotlinePayload, 0.7, 1500, 25000, chatDeadlineAt)'));
+assert(serverSource.includes('queryMaeveProvider(openRouterMessages, 0.6, 120, 25000, chatDeadlineAt)'));
 assert(serverSource.includes("const model = 'qwen/qwen3-235b-a22b-2507';"));
 assert(serverSource.includes('const baseUrl = AICREDITS_BASE_URL;'));
 assert(serverSource.includes('code: providerCode'));
@@ -25,7 +25,7 @@ const { queryMaeveProvider, getMaeveProviderFailureCode } = require('../server')
         const payload = JSON.parse(options.body);
         assert.strictEqual(payload.model, 'qwen/qwen3-235b-a22b-2507');
         assert.strictEqual(options.headers.Authorization, 'Bearer unit-test-main-key');
-        if (calls === 1) return new Response('temporary', { status: 503 });
+        if (calls === 1) return new Response('rate limited', { status: 429 });
         return new Response(JSON.stringify({ choices: [{ message: { content: 'working reply' } }] }), {
             status: 200,
             headers: { 'content-type': 'application/json' }
@@ -33,7 +33,7 @@ const { queryMaeveProvider, getMaeveProviderFailureCode } = require('../server')
     };
     const result = await queryMaeveProvider([{ role: 'user', content: 'hi' }], 0.6, 120, 2000);
     assert.strictEqual(result, 'working reply');
-    assert.strictEqual(calls, 2, '503 must retry and then succeed');
+    assert.strictEqual(calls, 2, 'an explicit 429 rejection must retry and then succeed');
     assert.strictEqual(getMaeveProviderFailureCode({ statusCode: 402 }), 'AI_PROVIDER_BUDGET');
     assert.strictEqual(getMaeveProviderFailureCode({ statusCode: 429 }), 'AI_PROVIDER_RATE_LIMIT');
     assert.strictEqual(getMaeveProviderFailureCode({ isTimeout: true }), 'AI_PROVIDER_TIMEOUT');

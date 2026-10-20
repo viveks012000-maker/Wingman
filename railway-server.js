@@ -101,7 +101,18 @@ app.use((req, res, next) => {
 // into an unbounded Supabase token-verification amplifier.
 app.use((req, res, next) => {
     const pathname = typeof req.path === 'string' ? req.path : '';
-    if (req.method === 'OPTIONS' || !isLargeBodyAnalyzerPath(pathname)) {
+    if (!isLargeBodyAnalyzerPath(pathname)) {
+        return next();
+    }
+
+    if (req.method === 'OPTIONS') {
+        const origin = req.headers && req.headers.origin;
+        const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
+        const isAllowedOrigin = origin && (getGatewayAllowedOrigins().has(origin) ||
+            (!isProduction && isPrivateDevelopmentOrigin(origin)));
+        if (origin && !isAllowedOrigin) {
+            return res.status(401).json({ success: false, error: 'Unauthorized origin.' });
+        }
         return next();
     }
 

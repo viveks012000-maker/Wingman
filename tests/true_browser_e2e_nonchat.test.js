@@ -8,7 +8,7 @@
  * 2. Real Express application backend running on local loopback (port 0)
  * 3. Client clicks real UI buttons in DOM (Screenshot Analyzer, Icebreaker, Bio Optimizer)
  * 4. Real domestic ledger reservation, settlement, and release lifecycle
- * 5. Bounded server-side transient 503 provider retry resilience (Express recovers without browser error)
+ * 5. Bounded server-side explicit 429 provider retry resilience (Express recovers without browser error)
  * 6. Fail-then-next-click UI recovery (no stuck loading state, credit release verified)
  * 7. Duplicate click idempotency coalescing (exactly-once deduction)
  * 8. Authentic mixed English + Roman-Hindi output rendering in DOM cards
@@ -126,8 +126,8 @@ if (authMod.supabaseAdmin) {
 
 // Intercept AI provider requests made by server.js (AICredits / OpenRouter)
 const originalFetch = global.fetch;
-let simulateTransient503 = false;
-let transient503HitCount = 0;
+let simulateTransient429 = false;
+let transient429HitCount = 0;
 let simulateFatal500 = false;
 let providerCallCount = 0;
 
@@ -136,13 +136,13 @@ global.fetch = async (url, options = {}) => {
     if (urlStr.includes('aicredits.in') || urlStr.includes('openrouter.ai')) {
         providerCallCount++;
 
-        if (simulateTransient503) {
-            simulateTransient503 = false; // Next retry attempt will succeed
-            transient503HitCount++;
-            return new Response(JSON.stringify({ error: { message: 'Upstream gateway overload', code: 503 } }), {
-                status: 503,
-                statusText: 'Service Unavailable',
-                headers: { 'Content-Type': 'application/json' }
+        if (simulateTransient429) {
+            simulateTransient429 = false; // An explicit rate-limit rejection is safe to retry
+            transient429HitCount++;
+            return new Response(JSON.stringify({ error: { message: 'Upstream rate limit', code: 429 } }), {
+                status: 429,
+                statusText: 'Too Many Requests',
+                headers: { 'Content-Type': 'application/json', 'Retry-After': '0' }
             });
         }
 
@@ -459,10 +459,10 @@ const { app } = require('../server.js');
         console.log('✔ Test 1 Passed: Icebreaker generated rendered DOM cards strictly matching server options.\n');
 
         // -----------------------------------------------------------------
-        // TEST 2: TRANSIENT 503 PROVIDER RETRY (Express Recovers Internally)
+        // TEST 2: EXPLICIT 429 PROVIDER RETRY (Express Recovers Internally)
         // -----------------------------------------------------------------
-        console.log('▶ [TEST 2] Transient 503 Provider Retry: Express Retries Internally');
-        simulateTransient503 = true; // First attempt will 503, retry attempt will succeed
+        console.log('▶ [TEST 2] Explicit 429 Provider Retry: Express Retries Internally');
+        simulateTransient429 = true; // First attempt is rejected before processing; retry succeeds
 
         await page.click('#btn-bio');
         await page.waitForTimeout(200);
@@ -476,9 +476,9 @@ const { app } = require('../server.js');
         await page.waitForSelector('#optimizeResultsState .copy-card-btn', { timeout: 15000 });
         const bioCards = await page.$$eval('#optimizeResultsState .copy-card-btn', els => els.length);
         assert.strictEqual(bioCards, 10, `Expected exactly 10 rendered bio cards, found ${bioCards}`);
-        assert.strictEqual(transient503HitCount, 1, 'Provider 503 must have been triggered and recovered');
+        assert.strictEqual(transient429HitCount, 1, 'Provider 429 must have been triggered and safely retried');
         assert.strictEqual(userCredits, 30, `Credits must be 30 after bio generation (40 - 10). Current: ${userCredits}`);
-        console.log('✔ Test 2 Passed: Transient 503 retry succeeded internally with zero browser disruption.\n');
+        console.log('✔ Test 2 Passed: Explicit 429 retry succeeded internally with zero browser disruption.\n');
 
         // -----------------------------------------------------------------
         // TEST 3: FAIL-THEN-NEXT-CLICK (UI Recovers & Restores Credits on Failure)

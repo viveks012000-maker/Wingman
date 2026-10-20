@@ -79,8 +79,11 @@ console.log('✔ Test 6 Passed: Private conversation logs strictly gated in prod
 // 7. TEST SCREENSHOT PAYLOAD LIMITS (38MB ROUTE BODY, 25MB DECODED, REMOTE URL REJECTION)
 assert.strictEqual(serverFile.includes("app.use('/api/analyze', express.json({ limit: '38mb' }));"), true, 'server.js must allocate 38mb for /api/analyze');
 const imgValidator = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'imageValidator.js'), 'utf8');
-assert.strictEqual(imgValidator.includes('MAX_TOTAL_BYTES = 25 * 1024 * 1024;'), true, 'imageValidator must enforce 25MB total decoded limit');
-assert.strictEqual(imgValidator.includes('MAX_PER_IMAGE_BYTES = 5 * 1024 * 1024;'), true, 'imageValidator must enforce 5MB per-image limit');
+assert.strictEqual(imgValidator.includes('const maxTotalImageBytes = 25 * 1024 * 1024;'), true, 'imageValidator must enforce 25MB total decoded limit');
+assert.strictEqual(imgValidator.includes('const maxSingleImageBytes = 5 * 1024 * 1024;'), true, 'imageValidator must enforce 5MB per-image limit');
+assert.strictEqual(imgValidator.includes('if (decodedBytes > maxSingleImageBytes)'), true, 'imageValidator must enforce the decoded per-image limit');
+assert.strictEqual(imgValidator.includes('if (totalDecodedBytes > maxTotalImageBytes)'), true, 'imageValidator must enforce the decoded combined-image limit');
+assert.strictEqual(imgValidator.includes('if (rawImages.length > 5) {'), true, 'imageValidator must reject more than five normalized images');
 assert.strictEqual(imgValidator.includes('Remote image URLs are not supported'), true, 'imageValidator rejects remote image URLs');
 
 console.log('✔ Test 7 Passed: Screenshot payload size limits and remote image rejection verified');

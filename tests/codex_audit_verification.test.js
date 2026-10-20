@@ -50,11 +50,16 @@ console.log('✔ Test 4 Passed: Full account deletion (Supabase data + Auth user
 
 // 5. TEST SCREENSHOT VALIDATION (REJECT 6TH IMAGE, MAX 5MB / 25MB, VALID BASE64, REJECT REMOTE URLS)
 const imgValidator = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'imageValidator.js'), 'utf8');
-assert.strictEqual(imgValidator.includes('if (images.length > 5) {'), true, 'imageValidator must reject > 5 images');
-assert.strictEqual(imgValidator.includes('MAX_PER_IMAGE_BYTES = 5 * 1024 * 1024;'), true, 'imageValidator must enforce 5MB per-image limit');
-assert.strictEqual(imgValidator.includes('MAX_TOTAL_BYTES = 25 * 1024 * 1024;'), true, 'imageValidator must enforce 25MB total limit');
+assert.strictEqual(imgValidator.includes('function normalizeAnalyzerImages(body = {})'), true, 'imageValidator must normalize legacy and array payloads before validation');
+assert.strictEqual(imgValidator.includes('if (rawImages.length > 5) {'), true, 'imageValidator must reject > 5 normalized images');
+assert.strictEqual(imgValidator.includes('const maxSingleImageBytes = 5 * 1024 * 1024;'), true, 'imageValidator must enforce 5MB per-image limit');
+assert.strictEqual(imgValidator.includes('const maxTotalImageBytes = 25 * 1024 * 1024;'), true, 'imageValidator must enforce 25MB total limit');
+assert.strictEqual(imgValidator.includes('if (decodedBytes > maxSingleImageBytes)'), true, 'imageValidator must enforce the decoded per-image limit');
+assert.strictEqual(imgValidator.includes('if (totalDecodedBytes > maxTotalImageBytes)'), true, 'imageValidator must enforce the decoded combined-image limit');
 assert.strictEqual(imgValidator.includes('Remote image URLs are not supported'), true, 'imageValidator rejects remote image URLs');
-assert.strictEqual(serverFile.includes('if (Array.isArray(images) && images.length > 5) {'), true, 'server.js must reject > 5 images before deduction');
+const imageValidationIndex = serverFile.indexOf("withPerfMiddleware('image_validation', validateImagePayload)");
+const analyzerReserveIndex = serverFile.indexOf("deduction = await verifyAndDeductCreditsDB(req, 10, 'analyze', reqId)");
+assert(imageValidationIndex >= 0 && analyzerReserveIndex > imageValidationIndex, 'server.js must validate analyzer images before reserving credits');
 
 console.log('✔ Test 5 Passed: Screenshot validation strictly rejects 6th image, remote URLs, and enforces 5MB / 25MB bounds');
 

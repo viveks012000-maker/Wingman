@@ -10,8 +10,29 @@ console.log('============================================================\n');
 
 process.env.NODE_ENV = 'development';
 process.env.ENABLE_MOCK_AUTH = 'true';
+process.env.SUPABASE_URL = 'https://test-project.supabase.co';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-only-service-role-key';
 
-const { app, server: importedServer } = require('../server');
+const { app, server: importedServer, supabaseAdmin } = require('../server');
+const originalSupabaseFrom = supabaseAdmin.from;
+const originalSupabaseRpc = supabaseAdmin.rpc;
+supabaseAdmin.from = table => {
+    if (table !== 'user_consents') return originalSupabaseFrom.call(supabaseAdmin, table);
+    const query = {
+        select() { return this; },
+        eq() { return this; },
+        is() { return this; },
+        order() { return this; },
+        limit() { return this; },
+        async maybeSingle() {
+            return { data: { id: 'test-consent', age_18_plus: true, ai_processing_consent: true }, error: null };
+        }
+    };
+    return query;
+};
+supabaseAdmin.rpc = async name => name === 'reserve_credits'
+    ? { data: { success: false, error: 'PROFILE_MISSING', new_balance: 0 }, error: null }
+    : { data: { success: true }, error: null };
 
 function makeRequest(server, path, payload, headers = {}) {
     return new Promise((resolve, reject) => {
@@ -115,11 +136,13 @@ async function runTests() {
         // We test that a request with valid base64 passes image validation (reaches credit/ai pipeline)
         const res6 = await makeRequest(testServer, '/api/analyze', { imageBase64: legacySingle });
         // Status won't be 400 validation error (it will be 200 or 503 depending on AI key/db in test mode)
-        assert.notStrictEqual(res6.status, 400, 'Normalized legacy imageBase64 must pass image validation');
+        assert.notStrictEqual(res6.status, 400, `Normalized legacy imageBase64 must pass image validation: ${res6.raw}`);
         console.log('✔ Test 6 Passed: Legacy image / imageBase64 inputs normalized to canonical array');
     } finally {
         await closeServer(testServer);
         await closeServer(importedServer);
+        supabaseAdmin.from = originalSupabaseFrom;
+        supabaseAdmin.rpc = originalSupabaseRpc;
     }
 
     console.log('\n🎉 ALL SCREENSHOT ANALYZER IMAGE VALIDATION TESTS PASSED!\n');
