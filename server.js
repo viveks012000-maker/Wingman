@@ -1,6 +1,10 @@
 // server.js
 require('dotenv').config();
 
+// Railway production has no IPv6 egress. Prefer IPv4 when dual-stack provider DNS
+// results are used so Node's fetch does not race an unreachable IPv6 route.
+require('node:dns').setDefaultResultOrder('ipv4first');
+
 const { supabaseAdmin, verifySupabaseToken, requireSupabaseAuth, isProduction } = require('./middleware/supabaseAuth');
 
 // Startup Environment Variables Validation

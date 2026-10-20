@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const dns = require('node:dns');
 
 process.env.NODE_ENV = 'test';
 process.env.AICREDITS_API_KEY = 'analyzer-main-test-key';
@@ -9,6 +10,7 @@ process.env.AICREDITS_API_KEY_GENERAL = 'general-test-key';
 delete process.env.OPENROUTER_API_KEY;
 
 const { queryAnalyzerProvider, queryOpenRouter, queryMaeveProvider } = require('../server');
+assert.equal(dns.getDefaultResultOrder(), 'ipv4first', 'provider requests must prefer the reachable IPv4 route');
 
 const originalFetch = global.fetch;
 const originalLog = console.log;
