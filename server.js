@@ -493,6 +493,116 @@ function recordPerfTelemetry(metadata) {
     }
 }
 
+const SAFE_PROVIDER_DIAGNOSTIC_STAGES = new Set([
+    'generic_text_generation',
+    'analyzer_vision',
+    'analyzer_main',
+    'maeve_generation'
+]);
+const SAFE_PROVIDER_ERROR_NAMES = new Set([
+    'AbortError', 'AggregateError', 'DOMException', 'Error', 'FetchError', 'RequestError', 'TypeError'
+]);
+const SAFE_PROVIDER_SYSCALLS = new Set([
+    'connect', 'getaddrinfo', 'handshake', 'lookup', 'open', 'read', 'request', 'socket', 'write'
+]);
+
+function getProviderErrorCauseChain(error) {
+    const causeChain = [];
+    const seen = new Set();
+    let current = error;
+
+    for (let depth = 0; current && typeof current === 'object' && depth < 4 && !seen.has(current); depth += 1) {
+        seen.add(current);
+        const entry = {};
+        const name = current.name;
+        if (typeof name === 'string' && SAFE_PROVIDER_ERROR_NAMES.has(name)) entry.name = name;
+
+        const code = current.code;
+        if (typeof code === 'string' && /^(?:E[A-Z0-9_]{2,31}|UND_ERR_[A-Z0-9_]{1,31}|ERR_(?:TLS|SSL|SOCKET|HTTP|NETWORK)_[A-Z0-9_]{1,31}|CERT_[A-Z0-9_]{1,31}|AI_PROVIDER_[A-Z0-9_]{1,31})$/.test(code)) {
+            entry.code = code;
+        }
+
+        const syscall = current.syscall;
+        if (typeof syscall === 'string' && SAFE_PROVIDER_SYSCALLS.has(syscall)) entry.syscall = syscall;
+
+        const errno = current.errno;
+        if (typeof errno === 'number' && Number.isFinite(errno) && Math.abs(errno) <= 1_000_000) entry.errno = errno;
+
+        const statusCode = Number(current.statusCode);
+        if (Number.isInteger(statusCode) && statusCode >= 100 && statusCode <= 599) entry.statusCode = statusCode;
+
+        causeChain.push(entry);
+        current = current.cause;
+    }
+
+    return causeChain;
+}
+
+function getProviderFailureDiagnosticCode(error, upstreamStatus, causeChain) {
+    const status = Number(upstreamStatus || (error && error.statusCode));
+    if ((error && error.isTimeout) || (error && error.name === 'AbortError')) return 'AI_PROVIDER_TIMEOUT';
+    if (status === 401 || status === 403) return 'AI_PROVIDER_AUTH';
+    if (status === 402) return 'AI_PROVIDER_BUDGET';
+    if (status === 429) return 'AI_PROVIDER_RATE_LIMIT';
+    if (status >= 500 && status <= 599) return 'AI_PROVIDER_UPSTREAM';
+
+    const codes = (causeChain || []).map(item => item.code).filter(Boolean);
+    if (codes.some(code => code === 'ENOTFOUND' || code === 'EAI_AGAIN')) return 'AI_PROVIDER_DNS';
+    if (codes.some(code => code.startsWith('ERR_TLS_') || code.startsWith('ERR_SSL_') || code.startsWith('CERT_'))) return 'AI_PROVIDER_TLS';
+    if (codes.some(code => code === 'ETIMEDOUT' || code === 'UND_ERR_CONNECT_TIMEOUT')) return 'AI_PROVIDER_CONNECT_TIMEOUT';
+    if (codes.some(code => ['ECONNRESET', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'EPIPE', 'UND_ERR_SOCKET'].includes(code))) {
+        return 'AI_PROVIDER_NETWORK';
+    }
+    return 'AI_PROVIDER_FAILURE';
+}
+
+function recordProviderFailureDiagnostics({ stage, attempt, startedAt, error = null, upstreamStatus = null }) {
+    const safeStage = SAFE_PROVIDER_DIAGNOSTIC_STAGES.has(stage) ? stage : 'generic_text_generation';
+    const parsedStatus = Number(upstreamStatus || (error && error.statusCode));
+    const safeStatus = Number.isInteger(parsedStatus) && parsedStatus >= 100 && parsedStatus <= 599
+        ? parsedStatus
+        : null;
+    const causeChain = getProviderErrorCauseChain(error);
+    const errorName = error && typeof error.name === 'string' && SAFE_PROVIDER_ERROR_NAMES.has(error.name)
+        ? error.name
+        : null;
+    const requestDurationMs = Number.isFinite(startedAt)
+        ? Math.max(0, Math.round(performance.now() - startedAt))
+        : null;
+
+    // Keep the diagnostic to allowlisted transport metadata. Never log error.message,
+    // request options, prompt content, response bodies, credentials, or host addresses.
+    console.error('[AI_PROVIDER_FAILURE]', JSON.stringify({
+        provider: 'aicredits',
+        stage: safeStage,
+        attempt: Number.isInteger(attempt) && attempt > 0 ? attempt : 1,
+        failureCode: getProviderFailureDiagnosticCode(error, safeStatus, causeChain),
+        errorName,
+        upstreamStatus: safeStatus,
+        requestDurationMs,
+        causeChain,
+        timestamp: new Date().toISOString()
+    }));
+}
+
+async function fetchAICreditsResponse(stage, attempt, startedAt, requestOptions) {
+    try {
+        const response = await fetch(AICREDITS_CHAT_COMPLETIONS_URL, requestOptions);
+        if (!response.ok) {
+            recordProviderFailureDiagnostics({
+                stage,
+                attempt,
+                startedAt,
+                upstreamStatus: response.status
+            });
+        }
+        return response;
+    } catch (error) {
+        recordProviderFailureDiagnostics({ stage, attempt, startedAt, error });
+        throw error;
+    }
+}
+
 function getAiPerfFeature(req) {
     const feature = canonicalizeAiFeature(req && (req.originalUrl || req.path || req.baseUrl));
     return ['analyze', 'icebreaker', 'optimize', 'chat', 'simulator_review'].includes(feature) ? feature : null;
@@ -1292,6 +1402,7 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
         for (let attempt = 1; attempt <= 3; attempt++) {
             let controller = null;
             let timer = null;
+            const attemptStartedAt = performance.now();
 
             try {
                 const attemptTimeoutMs = deadlineAt
@@ -1300,7 +1411,7 @@ async function executeSingleOpenRouterCall(apiKey, modelIdentifier, messagesArra
                 controller = attemptTimeoutMs ? new AbortController() : null;
                 timer = controller ? setTimeout(() => controller.abort(), attemptTimeoutMs) : null;
 
-                const response = await fetch(AICREDITS_CHAT_COMPLETIONS_URL, {
+                const response = await fetchAICreditsResponse('generic_text_generation', attempt, attemptStartedAt, {
                     method: "POST",
                     headers: {
                         "Authorization": `Bearer ${apiKey}`,
@@ -1462,17 +1573,22 @@ async function queryAnalyzerProvider(stage, messagesArray, temperature = 0.7, ma
             controller = attemptTimeoutMs ? new AbortController() : null;
             timer = controller ? setTimeout(() => controller.abort(), attemptTimeoutMs) : null;
 
-            const response = await fetch(AICREDITS_CHAT_COMPLETIONS_URL, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json',
-                    'HTTP-Referer': 'http://localhost:3000',
-                    'X-Title': 'My Wingman App'
-                },
-                body: JSON.stringify(payload),
-                ...(controller ? { signal: controller.signal } : {})
-            });
+            const response = await fetchAICreditsResponse(
+                isVisionStage ? 'analyzer_vision' : 'analyzer_main',
+                attempt,
+                attemptStartedAt,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json',
+                        'HTTP-Referer': 'http://localhost:3000',
+                        'X-Title': 'My Wingman App'
+                    },
+                    body: JSON.stringify(payload),
+                    ...(controller ? { signal: controller.signal } : {})
+                }
+            );
 
             if (!response.ok) {
                 const err = new Error(`Screenshot Analyzer AI API Failure [${model}]: HTTP ${response.status}.`);
@@ -1619,7 +1735,7 @@ async function queryMaeveProvider(messagesArray, temperature = 0.7, maxTokens = 
             const controller = new AbortController();
             const timer = attemptTimeoutMs ? setTimeout(() => controller.abort(), attemptTimeoutMs) : null;
             try {
-                const response = await fetch(AICREDITS_CHAT_COMPLETIONS_URL, {
+                const response = await fetchAICreditsResponse('maeve_generation', attempt, attemptStartedAt, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${apiKey}`,
