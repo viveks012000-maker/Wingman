@@ -17,6 +17,10 @@ const production = resolvePagesBuildTarget({ CF_PAGES_BRANCH: 'main' });
 assert.equal(production.apiOrigin, PRODUCTION_API_ORIGIN, 'the production Pages branch must keep the production API');
 assert.equal(production.isPreview, false, 'the production branch must not be treated as a preview');
 
+const otherPreview = resolvePagesBuildTarget({ CF_PAGES_BRANCH: 'codex/unapproved-branch' });
+assert.equal(otherPreview.apiOrigin, PRODUCTION_API_ORIGIN, 'unapproved preview branches must never receive the staging API');
+assert.equal(otherPreview.isPreview, false, 'only the exact candidate branch may be treated as the isolated preview');
+
 const configSource = `window.WINGMAN_CONFIG = { API_BASE_URL: "${PRODUCTION_API_ORIGIN}" };`;
 const cspSource = `connect-src 'self' ${PRODUCTION_API_ORIGIN};`;
 assert.equal(

@@ -18,9 +18,12 @@ jobs:
   build-and-verify:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
       - uses: actions/setup-node@v7
@@ -35,13 +38,13 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/main'
 
-      - name: Verify checkout matches triggering SHA
+      - name: Verify checkout matches expected source SHA
         shell: bash
         run: |
           set -euo pipefail
           actual=$(git rev-parse HEAD)
-          echo "checkout=$actual event_sha=$GITHUB_SHA"
-          test "$actual" = "$GITHUB_SHA"
+          echo "checkout=$actual expected_source=$EXPECTED_SOURCE_SHA event_sha=$GITHUB_SHA"
+          test "$actual" = "$EXPECTED_SOURCE_SHA"
 
       - run: npm ci
       - run: npx playwright install --with-deps chromium webkit
@@ -67,7 +70,7 @@ jobs:
           test -f netlify-dist/_headers
           test -f netlify-dist/_redirects
           test -f netlify-dist/release.json
-          test "$(jq -r .sourceCommit netlify-dist/release.json)" = "$GITHUB_SHA"
+          test "$(jq -r .sourceCommit netlify-dist/release.json)" = "$EXPECTED_SOURCE_SHA"
           grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/app.html
           grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/_headers
           grep -q 'https://wingman-production-c6ce.up.railway.app' netlify-dist/config.js
