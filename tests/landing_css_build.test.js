@@ -11,7 +11,6 @@ const { chromium } = require('playwright');
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'netlify-dist');
 const SCREENSHOTS = path.join(ROOT, 'work', 'performance-optimization', 'screenshots');
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 
 function sha256(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -126,7 +125,7 @@ async function main() {
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const browser = await chromium.launch({ headless: true, executablePath: CHROME });
+  const browser = await chromium.launch({ headless: true });
 
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });

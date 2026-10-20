@@ -10,7 +10,6 @@ const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
 const output = path.join(root, 'netlify-dist');
 const screenshotDir = path.join(root, 'work', 'performance-optimization', 'screenshots');
-const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const pages = [
   { route: '/screenshot-reply', file: 'screenshot-reply.html', tool: 'screenshot' },
   { route: '/icebreaker-generator', file: 'icebreaker-generator.html', tool: 'icebreaker' },
@@ -64,7 +63,7 @@ async function main() {
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + server.address().port;
-  const browser = await chromium.launch({ headless: true, executablePath: chromePath });
+  const browser = await chromium.launch({ headless: true });
   const failures = [];
 
   try {
