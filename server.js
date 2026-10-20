@@ -3759,6 +3759,23 @@ FORMATTING: Use ${casingInstruction}.` + getAuthoritativeProfileDirective(langua
 
 // 4. MAEVE AI DATING COACH & EVALUATOR CHAT (/api/chat & /api/simulator/chat)
 app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiveConsent, apiLimiter, async (req, res) => {
+    const chatTotalStartedAt = process.hrtime.bigint();
+    const recordChatDuration = (stage, startedAt) => {
+        recordPerfTelemetry({
+            feature: 'chat',
+            stage,
+            durationMs: Number(process.hrtime.bigint() - startedAt) / 1e6
+        });
+    };
+    const runChatStage = async (stage, operation) => {
+        const startedAt = process.hrtime.bigint();
+        try {
+            return await operation();
+        } finally {
+            recordChatDuration(stage, startedAt);
+        }
+    };
+
     const uid = getUserIdFromReq(req);
     const reqId = req.headers['x-idempotency-key'] || (req.body && req.body.idempotencyKey) || ('chat_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
     const canonicalFeature = canonicalizeAiFeature(req.path || req.baseUrl || req.originalUrl);
@@ -3815,6 +3832,7 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
     let deduction = null;
 
     try {
+        const validationStartedAt = process.hrtime.bigint();
         let { message, userMessage, messages, conversationHistory, sessionHistory } = req.body || {};
         const lastMessage = Array.isArray(messages) && messages.length > 0 ? messages[messages.length - 1] : null;
         const rawUserMsg = message || userMessage || (lastMessage && typeof lastMessage === 'object' ? (lastMessage.content || lastMessage.text || "") : "");
@@ -3866,7 +3884,9 @@ app.post(['/api/chat', '/api/simulator/chat'], requireSupabaseAuth, requireActiv
             });
         }
 
-        deduction = await verifyAndDeductCreditsDB(req, 2, 'chat', reqId);
+        recordChatDuration('input_validation', validationStartedAt);
+
+        deduction = await runChatStage('credit_reserve', () => verifyAndDeductCreditsDB(req, 2, 'chat', reqId));
         if (!deduction.success) {
             if (deduction.profileMissing) {
                 return res.status(404).json({ success: false, error: "PROFILE_MISSING", code: "PROFILE_MISSING" });
@@ -3970,12 +3990,12 @@ CONVERSATIONAL FREEDOM & LAWS:
                 hotlinePayload.push({ role: "user", content: wrapUntrustedUserData('user_message', userTextRaw) });
             }
 
-            let hotlineAdvice = await queryMaeveProvider(hotlinePayload, 0.7, 1500);
+            let hotlineAdvice = await runChatStage('provider_generation', () => queryMaeveProvider(hotlinePayload, 0.7, 1500));
             if (!hotlineAdvice) {
                 throw new Error("AI Coach endpoint returned empty response.");
             }
             if (containsInternalPromptBoundary(hotlineAdvice)) {
-                hotlineAdvice = await repairInternalTagLeak(hotlineAdvice, "chat_hotline", language, userTextRaw, historyArr);
+                hotlineAdvice = await runChatStage('provider_repair', () => repairInternalTagLeak(hotlineAdvice, "chat_hotline", language, userTextRaw, historyArr));
                 if (containsInternalPromptBoundary(hotlineAdvice)) {
                     throw new Error("Coach hotline generated internal prompt boundary tags.");
                 }
@@ -3983,13 +4003,13 @@ CONVERSATIONAL FREEDOM & LAWS:
             hotlineAdvice = cleanInternalPromptTags(hotlineAdvice);
             hotlineAdvice = sanitizeResponseText(hotlineAdvice.trim());
             if (containsDevanagari(hotlineAdvice)) {
-                hotlineAdvice = await repairHinglishDevanagari(hotlineAdvice, "chat_hotline", language, userTextRaw, historyArr);
+                hotlineAdvice = await runChatStage('provider_repair', () => repairHinglishDevanagari(hotlineAdvice, "chat_hotline", language, userTextRaw, historyArr));
                 if (containsDevanagari(hotlineAdvice)) {
                     throw new Error("Coach hotline generated Devanagari text in Hinglish mode.");
                 }
             }
 
-            const settleResult = await settleCreditsDB(req, reqId);
+            const settleResult = await runChatStage('credit_settle', () => settleCreditsDB(req, reqId));
             if (!settleResult || !settleResult.success) {
                 console.error('[Ledger Error] Failed to settle hotline credits.', logRef(reqId), safeLogValue(settleResult && settleResult.error));
                 return res.status(503).json({
@@ -3999,7 +4019,7 @@ CONVERSATIONAL FREEDOM & LAWS:
                 });
             }
 
-            const creditState = await readVerifiedCreditState(req);
+            const creditState = await runChatStage('credit_read', () => readVerifiedCreditState(req));
             const successPayload = {
                 success: true,
                 mode: "hotline",
@@ -4135,14 +4155,14 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
             openRouterMessages.push({ role: "user", content: wrapUntrustedUserData('user_message', enforceWordLimit(userTextRaw, 500)) });
         }
 
-        let replyText = await queryMaeveProvider(openRouterMessages, 0.6, 120);
+        let replyText = await runChatStage('provider_generation', () => queryMaeveProvider(openRouterMessages, 0.6, 120));
 
         if (!replyText) {
             throw new Error("AI provider returned empty response.");
         }
 
         if (containsInternalPromptBoundary(replyText)) {
-            replyText = await repairInternalTagLeak(replyText, "chat_roleplay", language, userTextRaw, historyArr);
+            replyText = await runChatStage('provider_repair', () => repairInternalTagLeak(replyText, "chat_roleplay", language, userTextRaw, historyArr));
             if (containsInternalPromptBoundary(replyText)) {
                 throw new Error("Roleplay chat generated internal prompt boundary tags.");
             }
@@ -4171,7 +4191,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
         replyText = sanitizeResponseText(replyText);
         replyText = applyFormattingRules(replyText, useShorthand, emojiLevel);
         if (containsDevanagari(replyText)) {
-            replyText = await repairHinglishDevanagari(replyText, "chat_roleplay", language, userTextRaw, historyArr);
+            replyText = await runChatStage('provider_repair', () => repairHinglishDevanagari(replyText, "chat_roleplay", language, userTextRaw, historyArr));
             if (containsDevanagari(replyText)) {
                 throw new Error("Roleplay chat generated Devanagari text in Hinglish mode.");
             }
@@ -4237,7 +4257,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
         const attractionChange = isDryOrNonsense ? -15 : (score >= 80 ? 5 : (score < 45 ? -10 : -2));
         replyText = sanitizeTrailingConjunctions(replyText);
 
-        const settleResult = await settleCreditsDB(req, reqId);
+        const settleResult = await runChatStage('credit_settle', () => settleCreditsDB(req, reqId));
         if (!settleResult || !settleResult.success) {
             console.error('[Ledger Error] Failed to settle roleplay credits.', logRef(reqId), safeLogValue(settleResult && settleResult.error));
             return res.status(503).json({
@@ -4247,7 +4267,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
             });
         }
 
-        const creditState = await readVerifiedCreditState(req);
+        const creditState = await runChatStage('credit_read', () => readVerifiedCreditState(req));
         const successPayload = {
             success: true,
             reply: replyText,
@@ -4265,7 +4285,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
         let balanceVerified = false;
         let releaseSucceeded = false;
         if (deduction && deduction.success && !deduction.duplicate) {
-            const relRes = await releaseCreditsDB(req, reqId, error.message);
+            const relRes = await runChatStage('credit_release', () => releaseCreditsDB(req, reqId, error.message));
             if (relRes && relRes.success) {
                 releaseSucceeded = true;
                 if (typeof relRes.remainingCredits === 'number' && relRes.balanceVerified !== false) {
@@ -4300,6 +4320,7 @@ CRITICAL MAEVE PERSONA & DIALOGUE LAWS:
             creditsVerified: balanceVerified
         });
     } finally {
+        recordChatDuration('total', chatTotalStartedAt);
         inFlightAiOperations.delete(opKey);
         releaseUserConcurrencyLock(uid, reqId);
     }
