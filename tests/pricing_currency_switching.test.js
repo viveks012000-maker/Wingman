@@ -230,7 +230,10 @@ async function runPricingTests() {
             'Must disclose unavailable production checkout'
         );
         assert.ok(appHtmlContent.includes('id="confirmPurchaseBtn"') && /id="confirmPurchaseBtn"[^>]*disabled/.test(appHtmlContent), 'Must disable the purchase action while checkout is unavailable');
-        assert.ok(appHtmlContent.includes('Paid checkout unavailable'), 'Disabled purchase action must not read like an active offer');
+        assert.ok(
+            appHtmlContent.includes('id="purchaseBtnText">Purchasing not yet enabled</span>'),
+            'Disabled purchase action must state that purchasing is not enabled'
+        );
     });
 
     test('app.js purchase handlers retain strict unavailable toast (no credit minting)', () => {
