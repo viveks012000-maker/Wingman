@@ -3,11 +3,13 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
 const liveWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/verify-live-production.yml'), 'utf8');
-const routeByFileMatch = liveWorkflow.match(/const routeByFile = (\{[\s\S]*?\n\s*\});/);
+const routeByFileMatch = liveWorkflow.match(/const routeByFile = \{([\s\S]*?)\n\s*\};/);
 assert(routeByFileMatch, 'Live verifier must define its public asset route map');
-const liveAssetRoutes = vm.runInNewContext(`(${routeByFileMatch[1]})`);
+const liveAssetRoutes = new Map();
+for (const [, filename, route, status] of routeByFileMatch[1].matchAll(/'([^']+)': \['([^']+)', (\d+)\]/g)) {
+    liveAssetRoutes.set(filename, [route, Number(status)]);
+}
 const expectedPublicRoutes = [
     ['404.html', '/404'],
     ['app.html', '/app'],
@@ -25,7 +27,7 @@ const expectedPublicRoutes = [
 ];
 for (const [filename, route] of expectedPublicRoutes) {
     assert.deepEqual(
-        Array.from(liveAssetRoutes[filename] || [`/${filename}`, 200]),
+        liveAssetRoutes.get(filename) || [`/${filename}`, 200],
         [route, 200],
         `Live verifier must fetch ${filename} through its canonical Pages route ${route}`
     );
