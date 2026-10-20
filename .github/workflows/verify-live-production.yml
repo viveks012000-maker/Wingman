@@ -347,9 +347,9 @@ jobs:
               console.log(`PASS live route ${route}: HTTP 200`);
             }
             const appHtmlResponse = await fetch(`${productionUrl}/app.html?live_verify=${expectedSha}`, { redirect: 'manual', cache: 'no-store' });
-            assert.equal(appHtmlResponse.status, 308, `/app.html returned unexpected HTTP ${appHtmlResponse.status}`);
+            assert.equal(appHtmlResponse.status, 301, `/app.html returned unexpected HTTP ${appHtmlResponse.status}`);
             assert.equal(new URL(appHtmlResponse.headers.get('location'), productionUrl).pathname, '/app', `/app.html redirected to an unexpected path: ${appHtmlResponse.headers.get('location')}`);
-            console.log('PASS live route /app.html: HTTP 308 canonical redirect to /app');
+            console.log('PASS live route /app.html: HTTP 301 canonical redirect to /app');
             await verifyPermanentRedirect(wwwUrl, '/app?cutover_verify=1');
             await verifyPermanentRedirect(pagesDevUrl, '/app?cutover_verify=1');
             await verifyPreviewIsNotRedirected();
