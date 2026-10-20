@@ -182,7 +182,11 @@ jobs:
                 'service-delivery.html': ['/service-delivery', 200],
                 'privacy.html': ['/privacy', 200],
                 'refund.html': ['/refund', 200],
-                'terms.html': ['/terms', 200]
+                'terms.html': ['/terms', 200],
+                'screenshot-reply.html': ['/screenshot-reply', 200],
+                'icebreaker-generator.html': ['/icebreaker-generator', 200],
+                'dating-bio-optimizer.html': ['/dating-bio-optimizer', 200],
+                'ai-conversation-coach.html': ['/ai-conversation-coach', 200]
               };
               const [route, expectedStatus] = routeByFile[name] || [`/${name}`, 200];
               const first = await readAsset(`${productionUrl}${route}?live_asset_verify=${expectedSha}-${name}`, expectedStatus);

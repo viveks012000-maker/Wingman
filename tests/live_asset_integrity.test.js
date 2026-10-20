@@ -4,8 +4,33 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const liveWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/verify-live-production.yml'), 'utf8');
-for (const page of ['about', 'contact', 'service-delivery']) {
-    assert(liveWorkflow.includes(`'${page}.html': ['/${page}', 200]`), `Live verifier must check the canonical Pages route for ${page}`);
+const routeByFileMatch = liveWorkflow.match(/const routeByFile = \{([\s\S]*?)\n\s*\};/);
+assert(routeByFileMatch, 'Live verifier must define its public asset route map');
+const liveAssetRoutes = new Map();
+for (const [, filename, route, status] of routeByFileMatch[1].matchAll(/'([^']+)': \['([^']+)', (\d+)\]/g)) {
+    liveAssetRoutes.set(filename, [route, Number(status)]);
+}
+const expectedPublicRoutes = [
+    ['404.html', '/404'],
+    ['app.html', '/app'],
+    ['index.html', '/'],
+    ['about.html', '/about'],
+    ['contact.html', '/contact'],
+    ['service-delivery.html', '/service-delivery'],
+    ['privacy.html', '/privacy'],
+    ['refund.html', '/refund'],
+    ['terms.html', '/terms'],
+    ['screenshot-reply.html', '/screenshot-reply'],
+    ['icebreaker-generator.html', '/icebreaker-generator'],
+    ['dating-bio-optimizer.html', '/dating-bio-optimizer'],
+    ['ai-conversation-coach.html', '/ai-conversation-coach']
+];
+for (const [filename, route] of expectedPublicRoutes) {
+    assert.deepEqual(
+        liveAssetRoutes.get(filename) || [`/${filename}`, 200],
+        [route, 200],
+        `Live verifier must fetch ${filename} through its canonical Pages route ${route}`
+    );
 }
 const {
     compareAsset,
