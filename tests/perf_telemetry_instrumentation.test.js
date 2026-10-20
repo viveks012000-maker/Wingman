@@ -197,8 +197,28 @@ async function runTests() {
         passed++;
     }
 
+    // Test 5: Chat route emits privacy-safe timings for its expensive processing stages
+    console.log('Test 5: chat route records validation, credit, provider, and total timings');
+    {
+        const serverCode = fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8');
+        const chatRouteIdx = serverCode.indexOf("app.post(['/api/chat'");
+        const nextRouteIdx = serverCode.indexOf("app.post('/api/simulator/review'", chatRouteIdx);
+        assert.ok(chatRouteIdx > 0 && nextRouteIdx > chatRouteIdx, 'Could not isolate /api/chat route');
+        const chatRoute = serverCode.slice(chatRouteIdx, nextRouteIdx);
+
+        for (const stage of ['input_validation', 'credit_reserve', 'provider_generation', 'provider_repair', 'credit_settle', 'credit_read', 'credit_release', 'total']) {
+            assert.ok(chatRoute.includes("'" + stage + "'"), 'chat telemetry must include ' + stage);
+        }
+        assert.ok(chatRoute.includes("feature: 'chat'"), 'chat telemetry must use the fixed chat feature label');
+        assert.ok(chatRoute.includes('durationMs: Number(process.hrtime.bigint() - startedAt) / 1e6'),
+            'chat telemetry must measure elapsed time with the monotonic clock');
+
+        console.log('  ✓ Verified: Chat timing uses a monotonic clock and emits fixed, non-content stage labels.');
+        passed++;
+    }
+
     console.log(`\n============================================================`);
-    console.log(`🏁 PERFORMANCE TELEMETRY INSTRUMENTATION: ${passed}/4 PASSED`);
+    console.log(`🏁 PERFORMANCE TELEMETRY INSTRUMENTATION: ${passed}/5 PASSED`);
     console.log(`============================================================\n`);
 }
 
