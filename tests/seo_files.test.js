@@ -40,13 +40,17 @@ assert.deepStrictEqual(sitemapUrls, [
     'https://mywingmanapp.com/refund',
     'https://mywingmanapp.com/about',
     'https://mywingmanapp.com/contact',
-    'https://mywingmanapp.com/service-delivery'
-], 'sitemap.xml must contain only the final canonical homepage and six public information pages');
+    'https://mywingmanapp.com/service-delivery',
+    'https://mywingmanapp.com/screenshot-reply',
+    'https://mywingmanapp.com/icebreaker-generator',
+    'https://mywingmanapp.com/dating-bio-optimizer',
+    'https://mywingmanapp.com/ai-conversation-coach'
+], 'sitemap.xml must contain only final canonical public URLs, including the four feature pages');
 assert.strictEqual(sitemapUrls.some(url => /\.html(?:$|[?#])/.test(url)), false, 'sitemap.xml must not include redirecting .html paths');
 
 // Ensure no private or API paths in sitemap
 assert.strictEqual(sitemapContent.includes('/api/'), false, 'sitemap.xml must not include /api/ routes');
-assert.strictEqual(sitemapContent.includes('/app'), false, 'sitemap.xml must not include the private application workspace');
+assert.strictEqual(sitemapUrls.includes('https://mywingmanapp.com/app'), false, 'sitemap.xml must not include the private application workspace');
 assert.strictEqual(sitemapContent.includes('localhost'), false, 'sitemap.xml must not include localhost');
 console.log('✔ Test 2 Passed: sitemap.xml XML structure, canonical URLs, and private exclusions validated');
 

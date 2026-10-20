@@ -19,6 +19,10 @@ const PUBLIC_FILES = [
   'about.html',
   'contact.html',
   'service-delivery.html',
+  'screenshot-reply.html',
+  'icebreaker-generator.html',
+  'dating-bio-optimizer.html',
+  'ai-conversation-coach.html',
   '404.html',
   'app.js',
   'payments-client.js',
@@ -27,6 +31,7 @@ const PUBLIC_FILES = [
   'supabaseClient.js',
   'output.css',
   'style.css',
+  'feature-pages.css',
   'robots.txt',
   'sitemap.xml',
   'favicon-48x48.png',
@@ -196,6 +201,18 @@ function writeSecurityFiles() {
     '/service-delivery',
     `  Content-Security-Policy: ${strictCsp}`,
     '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/screenshot-reply',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/icebreaker-generator',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/dating-bio-optimizer',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
+    '/ai-conversation-coach',
+    `  Content-Security-Policy: ${strictCsp}`,
+    '  Cache-Control: no-cache, no-store, must-revalidate',
     '/404.html',
     `  Content-Security-Policy: ${strictCsp}`,
     '  X-Robots-Tag: noindex, nofollow',
@@ -213,6 +230,10 @@ function writeSecurityFiles() {
     '/output.css',
     '  Cache-Control: public, max-age=0, must-revalidate',
     '/style.css',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/landing-output.css',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '/feature-pages.css',
     '  Cache-Control: public, max-age=0, must-revalidate',
     '/robots.txt',
     '  Cache-Control: public, max-age=0, must-revalidate',
@@ -248,6 +269,10 @@ function writeSecurityFiles() {
     '/about.html /about 301',
     '/contact.html /contact 301',
     '/service-delivery.html /service-delivery 301',
+    '/screenshot-reply.html /screenshot-reply 301',
+    '/icebreaker-generator.html /icebreaker-generator 301',
+    '/dating-bio-optimizer.html /dating-bio-optimizer 301',
+    '/ai-conversation-coach.html /ai-conversation-coach 301',
     ''
   ].join('\n');
   fs.writeFileSync(path.join(OUT, '_redirects'), redirects, 'utf8');
@@ -326,10 +351,16 @@ function verifyLocalHtmlReferences() {
       let ref = m[1].trim();
       if (!ref || /^(?:https?:|mailto:|tel:|data:|blob:|javascript:)/i.test(ref)) continue;
       if (ref.startsWith('//')) continue;
-      ref = ref.replace(/^\//, '');
+      ref = ref.split(/[?#]/, 1)[0].replace(/^\//, '');
       if (!ref || ref.endsWith('/')) continue;
-      const target = path.join(OUT, ref);
-      if (!fs.existsSync(target)) missing.push(`${rel} -> ${m[1]}`);
+      const candidates = [ref];
+      if (!path.extname(ref)) {
+        if (ref === 'app') candidates.push('app.html');
+        candidates.push(ref + '.html');
+      }
+      if (!candidates.some(candidate => fs.existsSync(path.join(OUT, candidate)))) {
+        missing.push(`${rel} -> ${m[1]}`);
+      }
     }
   }
   if (missing.length) fail(`Missing local browser assets:\n${missing.join('\n')}`);

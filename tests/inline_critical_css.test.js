@@ -7,6 +7,7 @@ const http = require('http');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { chromium } = require('playwright');
+const { landingOnlyCss } = require('../scripts/postprocess-inline-critical-css');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'netlify-dist');
@@ -47,8 +48,13 @@ function verifyArtifact() {
     const html = fs.readFileSync(htmlPath, 'utf8');
     assert.strictEqual((html.match(new RegExp(MARKER, 'g')) || []).length, 1, `${target} must contain exactly one inline style.css marker`);
     assert(!/\bhref=(["'])\/?style\.css\1/i.test(html), `${target} must not request style.css as a render-blocking stylesheet`);
-    const expectedInline = `<style ${MARKER}>\n${sourceCss}\n</style>`;
+    const pageCss = target === 'index.html' ? landingOnlyCss(sourceCss) : sourceCss;
+    const expectedInline = `<style ${MARKER}>\n${pageCss}\n</style>`;
     assert(html.includes(expectedInline), `${target} must inline the exact current style.css bytes without mutation`);
+    if (target === 'index.html') {
+      assert(pageCss.length < sourceCss.length, 'homepage must omit app-scoped custom style rules');
+      assert(!/\.app-page(?=[\s.#:[>+~]|$)/.test(pageCss), 'homepage custom styles must not include app-only selectors');
+    }
   }
 
   const release = JSON.parse(fs.readFileSync(path.join(OUT, 'release.json'), 'utf8'));
@@ -160,7 +166,7 @@ async function verifyBrowserDelivery() {
     buildArtifact();
     verifyArtifact();
     await verifyBrowserDelivery();
-    console.log('✅ Critical style.css is inlined byte-for-byte on /, /app and 404 while the source asset remains preserved.');
+    console.log('✅ Homepage custom styles are safely page-scoped; the full style.css remains byte-identical on app and other protected routes.');
     console.log('✅ Chromium applied the inlined mobile/accessibility rules with zero style.css HTTP requests.');
   } finally {
     fs.rmSync(OUT, { recursive: true, force: true });

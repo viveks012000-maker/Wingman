@@ -21,6 +21,7 @@ assert(accessibility.includes('registerWingmanModal'), 'dynamic dialogs must hav
 assert(accessibility.includes('event.currentTarget'), 'modal focus restoration must prefer the invoking control');
 assert(accessibility.includes('activeModal.contains(document.activeElement)'), 'modal close focus restoration must respect an active nested dialog');
 assert(accessibility.includes('canRestoreFocus'), 'modal close focus restoration must reject hidden or inert invokers');
+assert(!/button\.innerText/.test(accessibility), 'modal close-control enhancement must avoid forcing layout while reading button labels');
 assert(supabaseClient.includes("registerWingmanModal('wingmanPasswordRecoveryOverlay'"), 'canonical password recovery dialog must use shared accessibility registration');
 assert(!runtime.includes('ensureRecoveryModal'), 'production runtime must not carry a duplicate password recovery implementation');
 assert(!runtime.includes('passwordRecoveryModal'), 'production runtime must not carry the obsolete password recovery dialog id');

@@ -29,7 +29,11 @@ try {
     '/refund.html /refund 301',
     '/about.html /about 301',
     '/contact.html /contact 301',
-    '/service-delivery.html /service-delivery 301'
+    '/service-delivery.html /service-delivery 301',
+    '/screenshot-reply.html /screenshot-reply 301',
+    '/icebreaker-generator.html /icebreaker-generator 301',
+    '/dating-bio-optimizer.html /dating-bio-optimizer 301',
+    '/ai-conversation-coach.html /ai-conversation-coach 301'
   ], 'Pages artifact must permanently redirect document aliases to their final clean URLs.');
   assert.ok(!redirects.includes('mywingmanapp.com'), 'Hostname redirects must remain in Cloudflare Bulk Redirects, not Pages path rules.');
 

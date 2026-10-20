@@ -55,7 +55,11 @@ const publicPages = [
   ['refund.html', 'refund'],
   ['about.html', 'about'],
   ['contact.html', 'contact'],
-  ['service-delivery.html', 'service-delivery']
+  ['service-delivery.html', 'service-delivery'],
+  ['screenshot-reply.html', 'screenshot-reply'],
+  ['icebreaker-generator.html', 'icebreaker-generator'],
+  ['dating-bio-optimizer.html', 'dating-bio-optimizer'],
+  ['ai-conversation-coach.html', 'ai-conversation-coach']
 ];
 const titles = new Set([index.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim()]);
 const publicPaths = ['https://mywingmanapp.com/'];
@@ -84,7 +88,7 @@ assert(!/^\s*noindex:/im.test(robots), 'robots.txt must not contain an unsupport
 assert(!robots.includes('mywingman.com'), 'robots.txt must not point to an unrelated domain.');
 
 const sitemapUrls = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1]);
-assert.strictEqual(sitemapUrls.length, 7, 'Sitemap must list the homepage and six public policy/information pages.');
+assert.strictEqual(sitemapUrls.length, 11, 'Sitemap must list the homepage, six information pages, and four feature pages.');
 assert.strictEqual(new Set(sitemapUrls).size, sitemapUrls.length, 'Sitemap URLs must be unique.');
 assert.deepStrictEqual(sitemapUrls, publicPaths, 'Sitemap must contain only the final self-canonical public URLs.');
 assert(sitemapUrls.every(url => url.startsWith('https://mywingmanapp.com/')), 'Sitemap URLs must use the canonical HTTPS host.');
@@ -98,7 +102,11 @@ for (const [source, destination] of [
   ['/refund.html', '/refund'],
   ['/about.html', '/about'],
   ['/contact.html', '/contact'],
-  ['/service-delivery.html', '/service-delivery']
+  ['/service-delivery.html', '/service-delivery'],
+  ['/screenshot-reply.html', '/screenshot-reply'],
+  ['/icebreaker-generator.html', '/icebreaker-generator'],
+  ['/dating-bio-optimizer.html', '/dating-bio-optimizer'],
+  ['/ai-conversation-coach.html', '/ai-conversation-coach']
 ]) {
   assert(build.includes("'" + source + ' ' + destination + " 301'"), source + ' must permanently redirect to ' + destination + '.');
 }

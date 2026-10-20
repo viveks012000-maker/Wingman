@@ -3226,6 +3226,20 @@ STRICT LAWS:
             window.checkServerConsentStatus();
         }
         handleUrlTierParameters();
+
+        // Public feature guides can link directly to the corresponding workspace
+        // tab without starting a billable action or changing the sign-in flow.
+        const requestedToolMatch = String(window.location && window.location.search || "").match(/[?&]tool=([a-z]+)(?:&|$)/i);
+        const requestedTool = requestedToolMatch ? requestedToolMatch[1].toLowerCase() : null;
+        const toolTabs = {
+            screenshot: "analyzeSection",
+            icebreaker: "icebreakSection",
+            bio: "optimizeSection",
+            coach: "chatboxSection"
+        };
+        if (requestedTool && toolTabs[requestedTool] && typeof window.switchTab === "function") {
+            window.switchTab(toolTabs[requestedTool]);
+        }
     }
 
     if (document.readyState === "loading") {

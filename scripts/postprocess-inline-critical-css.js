@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { filterRuleBlock, visitRuleBlock } = require('./postprocess-landing-css');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'netlify-dist');
@@ -16,6 +17,17 @@ function fail(message) {
 
 function sha256(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+}
+
+function landingOnlyCss(css) {
+  const selectors = new Set();
+  visitRuleBlock(css, 0, css.length, selector => selectors.add(selector));
+  const landingSelectors = new Set([...selectors].filter(selector => !/\.app-page(?=[\s.#:[>+~]|$)/.test(selector)));
+  const filtered = filterRuleBlock(css, 0, css.length, landingSelectors);
+  if (!filtered.keptAnything || !filtered.output.trim()) fail('Homepage-specific style.css filtering removed every rule.');
+  if (/\.app-page(?=[\s.#:[>+~]|$)/.test(filtered.output)) fail('Homepage inline CSS still contains an app-only style selector.');
+  if (filtered.output.length >= css.length) fail('Homepage style.css filtering did not reduce the inline stylesheet.');
+  return filtered.output;
 }
 
 function inlineIntoHtml(relativeFile, css) {
@@ -35,7 +47,8 @@ function inlineIntoHtml(relativeFile, css) {
     fail(`${relativeFile} already contains the inline style marker`);
   }
 
-  const inline = `<style ${INLINE_MARKER}>\n${css}\n</style>`;
+  const pageCss = relativeFile === 'index.html' ? landingOnlyCss(css) : css;
+  const inline = `<style ${INLINE_MARKER}>\n${pageCss}\n</style>`;
   html = html.replace(linkRe, inline);
 
   if (/\bhref=(["'])\/?style\.css\1/i.test(html)) {
@@ -73,4 +86,4 @@ function run() {
 
 if (require.main === module) run();
 
-module.exports = { CSS_FILE, TARGETS, INLINE_MARKER, run };
+module.exports = { CSS_FILE, TARGETS, INLINE_MARKER, landingOnlyCss, run };
