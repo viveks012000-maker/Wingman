@@ -32,6 +32,8 @@ for (const [filename, route] of expectedPublicRoutes) {
         `Live verifier must fetch ${filename} through its canonical Pages route ${route}`
     );
 }
+assert.match(liveWorkflow, /appHtmlResponse\.status,\s*301,/, "Live verifier must expect Cloudflare's permanent 301 for /app.html");
+assert.match(liveWorkflow, /appHtmlResponse\.headers\.get\('location'\).*\.pathname,\s*'\/app'/, "Live verifier must require the /app.html redirect destination to be /app");
 const {
     compareAsset,
     classifyStaleAsset,
