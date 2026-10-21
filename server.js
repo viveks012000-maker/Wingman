@@ -1,9 +1,12 @@
 // server.js
 require('dotenv').config();
 
-// Railway production has no IPv6 egress. Prefer IPv4 when dual-stack provider DNS
-// results are used so Node's fetch does not race an unreachable IPv6 route.
+// Railway has no IPv6 egress. Prefer IPv4 and disable family auto-selection there,
+// so Node does not spend time retrying an unreachable AAAA route before IPv4.
 require('node:dns').setDefaultResultOrder('ipv4first');
+if (process.env.RAILWAY_ENVIRONMENT_ID) {
+    require('node:net').setDefaultAutoSelectFamily(false);
+}
 
 const { supabaseAdmin, verifySupabaseToken, requireSupabaseAuth, isProduction } = require('./middleware/supabaseAuth');
 
