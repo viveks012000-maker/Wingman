@@ -2,8 +2,10 @@
 
 const assert = require('node:assert/strict');
 const dns = require('node:dns');
+const net = require('node:net');
 
 process.env.NODE_ENV = 'test';
+process.env.RAILWAY_ENVIRONMENT_ID = 'test-railway-environment';
 process.env.AICREDITS_API_KEY = 'analyzer-main-test-key';
 process.env.AICREDITS_API_KEY_VISION = 'analyzer-vision-test-key';
 process.env.AICREDITS_API_KEY_GENERAL = 'general-test-key';
@@ -11,6 +13,7 @@ delete process.env.OPENROUTER_API_KEY;
 
 const { queryAnalyzerProvider, queryOpenRouter, queryMaeveProvider } = require('../server');
 assert.equal(dns.getDefaultResultOrder(), 'ipv4first', 'provider requests must prefer the reachable IPv4 route');
+assert.equal(net.getDefaultAutoSelectFamily(), false, 'Railway must not race unreachable IPv6 addresses before the reachable IPv4 route');
 
 const originalFetch = global.fetch;
 const originalLog = console.log;
