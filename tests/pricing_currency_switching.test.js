@@ -424,12 +424,12 @@ async function runPricingTests() {
     });
 
     test('server.js validates currency parameter strictly against SUPPORTED_CURRENCIES', () => {
-        assert.ok(fs.readFileSync(path.join(ROOT,'middleware/razorpayPayments.js'),'utf8').includes("input.currency !== 'INR'"));
+        assert.ok(fs.readFileSync(path.join(ROOT,'middleware/razorpayPayments.js'),'utf8').includes('input.currency !== config.currency'));
     });
 
     test('server.js rejects unknown plan IDs', () => {
         assert.ok(fs.readFileSync(path.join(ROOT,'middleware/razorpayPayments.js'),'utf8').includes('Object.hasOwn(PRICING_CATALOG, input.planId)'));
-        assert.ok(fs.readFileSync(path.join(ROOT,'middleware/razorpayPayments.js'),'utf8').includes('Select a valid INR credit bundle.'));
+        assert.ok(fs.readFileSync(path.join(ROOT,'middleware/razorpayPayments.js'),'utf8').includes('Select a valid credit bundle.'));
     });
 
     console.log(`\n============================================================`);

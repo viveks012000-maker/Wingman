@@ -141,14 +141,15 @@ async function runTests() {
     });
 
     // 10. Migration replay from clean database succeeds
-    await test('10. Tracked migrations chain includes the verified 50-credit cutover in strict order', () => {
+    await test('10. Tracked migrations chain includes the verified 50-credit cutover and payment lifecycle migration in strict order', () => {
         const migrations = fs.readdirSync(migrationDir).filter(f => f.endsWith('.sql')).sort();
         assert.ok(migrations.some(f => f.startsWith('014')), 'Migration 014 must be present in migrations directory');
         assert.ok(migrations.some(f => f.startsWith('015')), 'Migration 015 must be present in migrations directory');
+        assert.ok(migrations.some(f => f.startsWith('019')), 'Payment lifecycle migration 019 must be present in migrations directory');
         const prefixes = migrations.map(m => m.slice(0, 3));
         assert.deepStrictEqual(prefixes, [
-            '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013', '014', '015', '016', '017', '018'
-        ], 'Migration chain must be strictly ordered through verified signup-credit migration 018');
+            '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019'
+        ], 'Migration chain must be strictly ordered through payment lifecycle migration 019');
     });
 
     // 11. Only migration 018 can grant 50 after the verified cutover; older migrations must retain 20.

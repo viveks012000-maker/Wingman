@@ -324,6 +324,12 @@
                         if (identityChanged && typeof window.checkServerConsentStatus === 'function') {
                             window.checkServerConsentStatus();
                         }
+                        // If checkout closed after a successful capture, retry the
+                        // authenticated server-side recovery when the session becomes
+                        // available. The server verifies ownership and provider state.
+                        if (typeof window.wingmanPayments?.reconcilePendingOrder === 'function') {
+                            Promise.resolve().then(() => window.wingmanPayments.reconcilePendingOrder());
+                        }
                     } else if (event === 'SIGNED_OUT' || event === 'INITIAL_SESSION') {
                         safeRemove('wingman_authenticated');
                         safeRemove('wingman_user_authenticated');

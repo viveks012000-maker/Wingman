@@ -5015,10 +5015,11 @@ app.get('/api/pricing', async (req, res) => {
     }
 });
 
-// Test Mode payment integration; live keys fail closed.
+// Test Mode payment integration stays isolated; live checkout requires every
+// independent merchant, tax, schema, credential, and precheck gate.
 app.get('/api/payments/config', (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ success: true, enabled: razorpayPayments.enabled(), mode: 'test', currency: 'INR' });
+    res.json({ success: true, ...razorpayPayments.config(), enabled: razorpayPayments.enabled() });
 });
 function paymentRoute(action) {
     return async (req, res) => {
@@ -5031,6 +5032,7 @@ function paymentRoute(action) {
 }
 app.post('/api/payments/orders', apiLimiter, authenticatePayment, paymentRoute('createOrder'));
 app.post('/api/payments/verify', apiLimiter, authenticatePayment, paymentRoute('verify'));
+app.post('/api/payments/reconcile', apiLimiter, authenticatePayment, paymentRoute('reconcile'));
 
 // VULN-06 FIX: Credit purchase is disabled until Razorpay production integration is verified
 app.post('/api/credits/purchase', requireSupabaseAuth, apiLimiter, (req, res) => {

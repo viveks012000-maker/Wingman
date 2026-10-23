@@ -14,7 +14,7 @@ const migrations = fs.readdirSync(migrationDir)
     .filter(name => name.endsWith('.sql'))
     .sort();
 assert.deepEqual(migrations.map(name => name.slice(0, 3)), [
-    '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013', '014', '015', '016', '017', '018'
+    '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019'
 ], 'tracked migration order must remain explicit and stable');
 
 const container = `wingman-migration-replay-${process.pid}`;
@@ -141,8 +141,16 @@ try {
                     ('83838383-8383-4838-8838-838383838383', 0, true);
             `);
         }
+        if (name.startsWith('019')) {
+            // Migration 016 logged provider IDs before payload hashes existed.
+            psql("INSERT INTO public.razorpay_events(event_id,payment_id,event_type) VALUES ('evt_legacy','pay_refund','payment.captured');");
+        }
         psql(fs.readFileSync(path.join(migrationDir, name), 'utf8'));
     }
+
+    // The new payment migration must also be safely replayable after its append-only
+    // event trigger and constraints have been installed.
+    psql(fs.readFileSync(path.join(migrationDir, '019_razorpay_live_modes_and_reconciliation.sql'), 'utf8'));
 
     // Verify Migration 014 historical reconciliation results.
     assert.equal(scalar("SELECT credits FROM public.profiles WHERE id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';"), '20',
@@ -316,6 +324,96 @@ DO $$ BEGIN
 END $$;
 ROLLBACK;
 `);
+    psql(`
+BEGIN;
+INSERT INTO auth.users(id,email_confirmed_at) VALUES ('${userId}',pg_catalog.now());
+INSERT INTO public.razorpay_orders(order_id,user_id,plan_id,credits,amount_minor,currency,mode,receipt)
+VALUES ('order_refund','${userId}','starter',250,44900,'INR','test','receipt_refund');
+INSERT INTO public.razorpay_orders(order_id,user_id,plan_id,credits,amount_minor,currency,mode,receipt)
+VALUES ('order_mismatch','${userId}','starter',250,44900,'INR','test','receipt_mismatch');
+SELECT public.fulfill_razorpay_order('order_refund','pay_refund',44900,'INR');
+UPDATE public.profiles SET credits=credits-20 WHERE id='${userId}';
+INSERT INTO public.credit_transactions(user_id,amount,type,feature,request_id,status)
+VALUES ('${userId}',-20,'feature_usage','analyze','spent-before-refund','completed');
+DO $$ DECLARE result json; balance integer; BEGIN
+ result := public.record_razorpay_event('evt_capture','pay_refund','payment.captured','test','order_refund',repeat('a',64),'captured',44900,'INR',pg_catalog.now());
+ IF result->>'success' <> 'true' OR result->>'duplicate' <> 'false' THEN RAISE EXCEPTION 'capture event was not recorded: %',result; END IF;
+ result := public.record_razorpay_event('evt_capture','pay_refund','payment.captured','test','order_refund',repeat('a',64),'captured',44900,'INR',pg_catalog.now());
+ IF result->>'duplicate' <> 'true' THEN RAISE EXCEPTION 'capture event replay was not idempotent: %',result; END IF;
+ result := public.record_razorpay_event('evt_legacy','pay_refund','payment.captured','test','order_refund',repeat('a',64),'captured',44900,'INR',pg_catalog.now());
+ IF result->>'duplicate' <> 'true' OR result->>'legacy' <> 'true' THEN RAISE EXCEPTION 'legacy capture event replay was not safely recognized: %',result; END IF;
+ result := public.record_razorpay_reconciliation('evt_refund_partial','refund.processed','test','order_refund','pay_refund','rfnd_partial',repeat('b',64),'processed',44900,10000,10000,'INR',pg_catalog.now(),NULL,false);
+ IF result->>'success' <> 'true' OR result->>'reviewRequired' <> 'true' OR result->>'refundStatus' <> 'partial' THEN RAISE EXCEPTION 'partial refund did not queue manual review: %',result; END IF;
+ result := public.record_razorpay_reconciliation('evt_refund_partial','refund.processed','test','order_refund','pay_refund','rfnd_partial',repeat('b',64),'processed',44900,10000,10000,'INR',pg_catalog.now(),NULL,false);
+ IF result->>'duplicate' <> 'true' THEN RAISE EXCEPTION 'refund event replay was not idempotent: %',result; END IF;
+ result := public.record_razorpay_reconciliation('evt_refund_pending','refund.created','test','order_refund','pay_refund','rfnd_pending',repeat('f',64),'created',44900,1000,10000,'INR',pg_catalog.now(),NULL,false);
+ IF result->>'refundStatus' <> 'pending' OR result->>'reviewRequired' <> 'true' THEN RAISE EXCEPTION 'pending refund state was not durably queued: %',result; END IF;
+ result := public.record_razorpay_reconciliation('evt_refund_failed','refund.failed','test','order_refund','pay_refund','rfnd_failed',repeat('1',64),'failed',44900,1000,10000,'INR',pg_catalog.now(),NULL,false);
+ IF result->>'refundStatus' <> 'failed' OR result->>'reviewRequired' <> 'true' THEN RAISE EXCEPTION 'failed refund state was not durably queued: %',result; END IF;
+ result := public.record_razorpay_reconciliation('evt_refund_mismatch','refund.processed','test','order_mismatch','pay_mismatch','rfnd_mismatch',repeat('2',64),'processed',44000,1000,1000,'INR',pg_catalog.now(),NULL,false);
+ IF result->>'reviewRequired' <> 'true' OR result->>'reason' <> 'provider_reference_or_amount_mismatch' THEN RAISE EXCEPTION 'mismatched refund did not enter review: %',result; END IF;
+ IF (SELECT payment_id FROM public.razorpay_orders WHERE order_id='order_mismatch') IS NOT NULL OR
+    (SELECT refunded_amount_minor FROM public.razorpay_orders WHERE order_id='order_mismatch') <> 0 OR
+    (SELECT captured_at FROM public.razorpay_orders WHERE order_id='order_mismatch') IS NOT NULL OR
+    (SELECT lifecycle_state FROM public.razorpay_orders WHERE order_id='order_mismatch') <> 'pending' THEN
+   RAISE EXCEPTION 'mismatched refund altered the order ledger';
+ END IF;
+ SELECT credits INTO balance FROM public.profiles WHERE id='${userId}';
+ IF balance <> 280 THEN RAISE EXCEPTION 'partial refund changed spent/free wallet credits: %',balance; END IF;
+ result := public.record_razorpay_reconciliation('evt_refund_full','refund.processed','test','order_refund','pay_refund','rfnd_final',repeat('c',64),'processed',44900,34900,44900,'INR',pg_catalog.now(),NULL,false);
+ IF result->>'lifecycleState' <> 'refunded' OR result->>'refundStatus' <> 'full' THEN RAISE EXCEPTION 'full refund state was not recorded: %',result; END IF;
+ result := public.record_razorpay_reconciliation('evt_dispute','payment.dispute.under_review','test','order_refund','pay_refund','disp_review',repeat('d',64),'under_review',44900,44900,44900,'INR',pg_catalog.now(),'under_review',true);
+ IF result->>'disputeStatus' <> 'under_review' OR result->>'lifecycleState' <> 'refunded' THEN RAISE EXCEPTION 'dispute state was not reconciled safely: %',result; END IF;
+ BEGIN
+   UPDATE public.razorpay_events SET payload_sha256=repeat('e',64) WHERE event_id='evt_dispute';
+   RAISE EXCEPTION 'payment event evidence was mutable';
+ EXCEPTION WHEN OTHERS THEN
+   IF SQLERRM = 'payment event evidence was mutable' THEN RAISE; END IF;
+ END;
+ SELECT credits INTO balance FROM public.profiles WHERE id='${userId}';
+ IF balance <> 280 THEN RAISE EXCEPTION 'refund/dispute reconciliation changed the aggregate wallet: %',balance; END IF;
+ IF (SELECT count(*) FROM public.credit_transactions WHERE user_id='${userId}' AND request_id='pay_refund') <> 1 THEN RAISE EXCEPTION 'purchase credit provenance was lost'; END IF;
+ IF pg_catalog.has_function_privilege('authenticated','public.record_razorpay_event(text,text,text,text,text,text,text,integer,text,timestamp with time zone)','EXECUTE') THEN RAISE EXCEPTION 'browser can record provider events'; END IF;
+ IF pg_catalog.has_function_privilege('authenticated','public.record_razorpay_reconciliation(text,text,text,text,text,text,text,text,integer,integer,integer,text,timestamp with time zone,text,boolean)','EXECUTE') THEN RAISE EXCEPTION 'browser can reconcile payments'; END IF;
+ IF pg_catalog.has_table_privilege('anon','public.razorpay_events','SELECT') THEN RAISE EXCEPTION 'anonymous event access'; END IF;
+END $$;
+ROLLBACK;
+`);
+    // Race two service-role fulfillment transactions against the same order. The
+    // first holds the row lock while the second waits; after commit the second must
+    // observe the fulfilled row and return duplicate=true without granting again.
+    psql(`
+INSERT INTO auth.users(id,email_confirmed_at) VALUES ('44444444-4444-4444-8444-444444444444',pg_catalog.now());
+INSERT INTO public.razorpay_orders(order_id,user_id,plan_id,credits,amount_minor,currency,mode)
+VALUES ('order_concurrent','44444444-4444-4444-8444-444444444444','starter',250,44900,'INR','test');
+`);
+    const concurrentSqlPath = `/tmp/wingman-concurrent-${process.pid}.sql`;
+    const concurrentOutputPath = `/tmp/wingman-concurrent-${process.pid}.out`;
+    docker(['exec', '-i', container, 'sh', '-c', `cat > ${concurrentSqlPath}`], `
+SET ROLE service_role;
+BEGIN;
+SELECT public.fulfill_razorpay_order('order_concurrent','pay_concurrent',44900,'INR');
+SELECT pg_catalog.pg_sleep(2);
+COMMIT;
+RESET ROLE;
+`);
+    docker(['exec', '-d', container, 'sh', '-c', `psql -t -A -v ON_ERROR_STOP=1 -U postgres -d wingman_replay < ${concurrentSqlPath} > ${concurrentOutputPath} 2>&1`]);
+    let firstTransactionHoldingLock = false;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+        if (scalar("SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname='wingman_replay' AND state='active' AND query LIKE 'SELECT pg_catalog.pg_sleep(2)%';") === '1') {
+            firstTransactionHoldingLock = true;
+            break;
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+    }
+    assert.equal(firstTransactionHoldingLock, true, 'first concurrent payment transaction did not acquire its lock');
+    const secondTransaction = psql("SET ROLE service_role; SELECT public.fulfill_razorpay_order('order_concurrent','pay_concurrent',44900,'INR'); RESET ROLE;");
+    assert.match(secondTransaction, /"duplicate"\s*:\s*true/, 'second fulfillment must return as an idempotent duplicate');
+    const firstTransaction = docker(['exec', container, 'cat', concurrentOutputPath]);
+    assert.match(firstTransaction, /"duplicate"\s*:\s*false/, 'first fulfillment must be the only credit grant');
+    assert.equal(scalar("SELECT credits FROM public.profiles WHERE id='44444444-4444-4444-8444-444444444444';"), '300', 'concurrent callbacks must grant the package exactly once');
+    assert.equal(scalar("SELECT count(*) FROM public.credit_transactions WHERE user_id='44444444-4444-4444-8444-444444444444' AND request_id='pay_concurrent';"), '1', 'concurrent callbacks must retain one purchase provenance row');
+
     assert.equal(scalar("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='updated_at';"), '1');
     assert.equal(scalar("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='credit_transactions' AND column_name='type';"), '1');
     console.log(`✔ Migration replay and recovery smoke passed (${migrations.length} tracked migrations, disposable Postgres only).`);

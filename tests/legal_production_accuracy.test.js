@@ -14,7 +14,7 @@ const allHtml = [index, refund, privacy, terms, ...addedPages];
 // Payment verification and fail-closed state
 assert.ok(server.includes('razorpayPayments') && !server.includes('ENABLE_MOCK_PAYMENTS'), 'payment routes must use verified provider service, never mock minting');
 assert.ok(refund.includes('Paid credit checkout is currently paused and unavailable in production.'), 'policy must disclose live checkout state');
-assert.ok(refund.includes('final customer prices'), 'policy must show final approved pricing');
+assert.ok(refund.includes('published package prices') && refund.includes('any applicable tax treatment will be shown before payment is enabled'), 'policy must distinguish published prices from unconfirmed checkout tax treatment');
 assert.ok(refund.includes('5–7 days or earlier') && !refund.includes('business days'), 'owner calendar-day timeline must be preserved');
 assert.ok(refund.includes('original payment method used for purchase'), 'refund destination must be clear');
 assert.ok(refund.includes('none of the purchased credits') && refund.includes('generally non-refundable'), 'unused and used eligibility must be clear');

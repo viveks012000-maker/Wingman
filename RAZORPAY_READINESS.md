@@ -1,41 +1,39 @@
-# Razorpay readiness deployment notes
+# Razorpay payment readiness
 
-This branch prepares the website and an isolated Test Mode integration. Production checkout and Live Mode remain disabled. No remote database migration or deployment has been performed by this work.
+## Verified merchant status
 
-## Merchant information
+Checked in the existing Razorpay account dashboard on 23 October 2026. The account shows **Access Complete**, and the registered `https://mywingmanapp.com/` website is **Approved**. An earlier dashboard review recorded an existing Test Mode API key, but this session could not confirm whether that secret remains configured or valid in Railway because the Railway connection requires reauthentication.
 
-- Operator / Merchant: Naresh Kumar
-- Business type: Individual
-- Brand: Wingman / MyWingman
-- Support email: support.mywingman@gmail.com
-- Support phone: +91 9079666632
-- Address: Ward No. 6, Sadulpur, Churu, Rajasthan, India – 331023
+The Live Mode dashboard has no live API key listed and the webhook page has no configured webhook. The account's International Payments settings say that this business type is not supported for international card payments and that international bank transfers are not eligible under the risk policy. Razorpay presents a **Link Account** option for PayPal, described as collecting international currencies through Razorpay Checkout; it is not linked or verified for this merchant. These screens do not establish eligibility for live INR payments or direct USD collection. No key was generated, no webhook or PayPal account was linked, and no payment setting was changed during this check.
 
-These are owner-verified details. Do not invent additional address components. Any additional house/street detail requested by Razorpay is OWNER INPUT REQUIRED.
+## Application behavior
 
-## Website-only deployment
+Production paid checkout is disabled by default. The backend keeps separate Test, Live INR and Live USD modes and fails closed unless the matching server-side gates, credentials, schema, provider status and explicit approval are present. Test credentials cannot activate production checkout. Live USD requires a fixed server-side price map; the indicative exchange-rate display is never used to charge a customer. The VIP package remains separately gated pending commercial approval.
 
-The frontend artifact is `netlify-dist`, produced by `npm run build:production`. It includes About, Contact, Terms, Privacy, Refund/Cancellation and Service Delivery. Deploy the reviewed artifact through the existing approved Cloudflare Pages process after owner authorization. Preserve the canonical domain and existing auth configuration.
+The published INR catalog remains Starter ₹449 / 250 credits, Pro ₹899 / 600 credits, Elite ₹1,799 / 3,000 credits and VIP ₹4,499 / 100,000 credits. USD amounts remain display-only. MyWingman does not add a service or convenience fee. Any applicable tax treatment must be confirmed and disclosed before checkout is enabled.
 
-Published INR package prices are Starter ₹449 / 250 credits; Pro ₹899 / 600; Elite ₹1,799 / 3,000; VIP ₹4,499 / 100,000. MyWingman adds no service or convenience fee. TAX TREATMENT REQUIRES OWNER/ACCOUNTANT CONFIRMATION and must be disclosed before checkout is enabled. USD display prices remain the existing approved values: $4.99, $9.99, $19.99 and $49.00. USD/international collection is not enabled; selecting USD keeps checkout disabled and states that the prices are display-only. No currency conversion is performed. The shared backend/browser catalog controls the same package IDs, amounts and entitlements.
+## Database and reconciliation
 
-## Test Mode gate
+Migration `019_razorpay_live_modes_and_reconciliation.sql` is forward-only and additive to the existing order ledger. It records mode, currency, lifecycle, refund/dispute summaries and an operator-review flag; provider events retain their signed-payload hash and append-only evidence. Refund and dispute reconciliation does not subtract from a customer's aggregate balance. Any refund or dispute is queued for manual review so complimentary credits and already-used purchased credits are not misattributed.
 
-1. Use a separate test Supabase database and test user. Never point a test payment integration at customer wallets in the production database.
-2. Replay all migrations, including `016_razorpay_payment_ledger.sql`, in disposable PostgreSQL. Run `npm run verify:migrations` and `node tests/razorpay_payments.test.js`. Docker is required by migration replay; its absence means NOT VERIFIED — DOCKER UNAVAILABLE.
-3. Only after migration verification, configure server-side `RAZORPAY_KEY_ID` (Test Mode), `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAY_SCHEMA_READY=true`, `RAZORPAY_PAYMENTS_ENABLED=true`. This branch rejects Live keys and any production NODE_ENV or Railway environment.
-4. Configure automatic capture in the Razorpay Test Mode dashboard. Configure `/api/payments/webhook` on a reachable test backend for `payment.captured` and `order.paid`, using the matching webhook secret. Retain the old secret during provider retries if rotating secrets; rotation support needs operational planning before activation.
-5. Exercise official Standard Checkout success/failure/cancellation; callback and webhook duplicates; browser-close recovery; tampered references; user ownership; captured versus authorized payments. Check provider records and SQL balances, not browser messages alone.
-6. Live Mode needs a separate reviewed activation change after those tests pass, website approval and authorized deployment. Changing environment flags alone cannot activate Live Mode on this branch.
+The captured-payment path still verifies provider state and transactionally grants credits once. The authenticated recovery endpoint looks up the user's own pending order, checks authoritative provider state, and either safely fulfills an unrefunded capture or records an ambiguous/refunded case for review. There is no automated refund, dispute acceptance or balance clawback action.
 
-## Payment guarantees and limits
+## Activation requirements
 
-Orders derive amount/credits from trusted plan IDs. Checkout signatures use the server-stored order ID. The server fetches the payment and requires matching order, amount, currency and captured status before SQL fulfillment. The order lock, unique payment ID and transactional call to the existing credit RPC prevent repeat grants. Signed raw-body webhooks can reconcile a completed payment if the browser closes. The unit suite models the store contract; durable database behavior is not proven until migration replay passes.
+Keep live checkout disabled until each applicable requirement is verified:
 
-The application has no automated refund endpoint. Operator refunds are handled through Razorpay's payment record to the original method after checking the cancellation policy, usage and receipt. Refund/chargeback webhooks are not implemented in this branch; do not use external refunds without manual ledger reconciliation. Before live activation, establish a verified process to identify purchased-credit usage, remove an approved refunded bundle exactly once without affecting unrelated credits, preserve the refund audit record, and reconcile partial refunds/chargebacks. Dashboard refund execution is an owner financial action.
+1. Confirm live INR payment eligibility and obtain an active live API key in the existing Razorpay account. Configure the key and webhook secret as Railway secrets without exposing them in source control or chat.
+2. Configure the existing `/api/payments/webhook` endpoint once for the supported capture, refund and dispute events, then confirm the live webhook signature and account mapping.
+3. Apply the payment migration through the approved Supabase release process and pass the disposable PostgreSQL migration replay and payment-ledger checks.
+4. Pass the non-billable release checks and Razorpay Test Mode checkout, webhook replay and browser-close recovery checks.
+5. Confirm the checkout tax treatment with the account owner/accountant and disclose it before enabling payment. Live configuration also requires `RAZORPAY_LIVE_TAX_APPROVED=true`.
+6. Approve VIP pricing separately before making that bundle available for live purchase.
+7. Do not enable direct USD collection unless Razorpay separately confirms direct USD settlement for this merchant. The dashboard shows PayPal as a possible Razorpay Checkout route for international currencies, but the owner must link and verify that account and confirm the required approval first. Keep the current USD selector display-only until then.
 
-## Submission
+The Railway connection was unavailable for secret-status verification and deployment inspection in the current session. Do not infer the presence or validity of a production secret from the earlier Test Mode setup. Reconnect the existing Railway app integration before configuring or verifying deployment variables; never recreate a sealed variable.
 
-Razorpay currently requires website verification. The website submission form requests a dedicated reviewer username/email and password because Wingman purchases require login. Enter disposable reviewer credentials directly through a secure channel; never use a personal account or store them in source control. Submit only after corrected public pages are deployed and checked in the in-app browser. Confirm the actual digital-service category with Razorpay without disguising the dating-conversation coaching use case. Approval remains Razorpay's decision.
+## Safe Test Mode setup
 
-International application work was deferred at the owner's request and nothing was submitted.
+Use only an isolated database and non-customer test user. Configure the explicit `RAZORPAY_TEST_*` variables and Test Mode webhook secret outside production. The legacy `RAZORPAY_KEY_*` aliases remain supported only for non-production compatibility. Never point a test transaction at production wallets, and do not set `RAZORPAY_PAYMENTS_ENABLED=true` until the isolated database migration and required tests pass.
+
+The source template `.env.example` documents the payment flags. All activation flags remain false/disabled there; secret values are intentionally blank.
