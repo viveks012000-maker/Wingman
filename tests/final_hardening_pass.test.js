@@ -138,7 +138,7 @@ const supAuth = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'supaba
 
 assert.strictEqual(authJs.includes("require('./supabaseAuth')"), true, 'auth.js delegates to canonical Supabase Auth');
 assert.strictEqual(authJs.includes('jsonwebtoken'), false, 'auth.js must not retain a second local JWT verifier');
-assert.strictEqual(supAuth.includes('const isProduction = process.env.NODE_ENV === \'production\' || Boolean(process.env.RAILWAY_ENVIRONMENT);'), true, 'supabaseAuth detects production environment');
+assert.strictEqual(supAuth.includes('const isProduction = isProductionRuntime();'), true, 'supabaseAuth detects production environment');
 assert.strictEqual(supAuth.includes('if (!isProduction && (process.env.ENABLE_MOCK_AUTH === \'true\' || req.headers[\'x-mock-auth\'] === \'true\'))'), true, 'supabaseAuth blocks mock auth in production');
 assert.strictEqual(supAuth.includes('SUPABASE_ANON_KEY') && !supAuth.includes('SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY'), true, 'supabaseAuth does not fall back from service role to anon key');
 console.log('✔ Passed: Production environment strictly enforces Supabase Auth and removes silent service-role fallback.');

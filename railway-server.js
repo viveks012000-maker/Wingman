@@ -6,6 +6,7 @@ const express = require('express');
 const { verifySupabaseToken, requireSupabaseAuth } = require('./middleware/supabaseAuth');
 const { analyzerAdmissionLimiter } = require('./middleware/security');
 const { isPrivateDevelopmentOrigin } = require('./middleware/developmentOrigin');
+const { isProductionRuntime } = require('./middleware/railwayEnvironment');
 const {
     ISOLATED_STAGING_RAILWAY_ENVIRONMENT_ID,
     ISOLATED_STAGING_PREVIEW_ORIGIN
@@ -40,7 +41,7 @@ const GATEWAY_DEVELOPMENT_ALLOWED_ORIGINS = [
 ];
 
 function getGatewayAllowedOrigins() {
-    const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
+    const isProduction = isProductionRuntime();
     const isolatedStagingPreviewOrigins = process.env.RAILWAY_ENVIRONMENT_ID === ISOLATED_STAGING_RAILWAY_ENVIRONMENT_ID
         ? [ISOLATED_STAGING_PREVIEW_ORIGIN]
         : [];
@@ -58,7 +59,7 @@ function getGatewayAllowedOrigins() {
 
 function applyAnalyzerAdmissionCors(req, res) {
     const origin = req && req.headers ? req.headers.origin : null;
-    const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
+    const isProduction = isProductionRuntime();
     if (origin === 'https://mywingman.com') return false;
     const isAllowedOrigin = origin && (getGatewayAllowedOrigins().has(origin) ||
         (!isProduction && isPrivateDevelopmentOrigin(origin)));
@@ -120,7 +121,7 @@ app.use((req, res, next) => {
 
     if (req.method === 'OPTIONS') {
         const origin = req.headers && req.headers.origin;
-        const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
+        const isProduction = isProductionRuntime();
         const isAllowedOrigin = origin && (getGatewayAllowedOrigins().has(origin) ||
             (!isProduction && isPrivateDevelopmentOrigin(origin)));
         if (origin && !isAllowedOrigin) {

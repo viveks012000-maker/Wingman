@@ -54,7 +54,7 @@ async function main() {
     const svc = createPaymentService({ env, store, fetchImpl: provider });
     assert(testConfig(env)); assert(!testConfig({ ...env, RAZORPAY_KEY_ID: 'rzp_live_fixture' }));
     assert(!testConfig({ ...env, NODE_ENV: 'production' }));
-    assert(!testConfig({ ...env, RAILWAY_ENVIRONMENT: 'production' }));
+    assert(!testConfig({ ...env, RAILWAY_ENVIRONMENT_NAME: 'production', RAILWAY_ENVIRONMENT_ID: '30e98667-a8a1-415d-8cf1-55e670f45bd0' }));
     assert(!signatureMatches('x', 'bad', env.RAZORPAY_KEY_SECRET));
     assert(!signatureMatches('x', sign('y'), env.RAZORPAY_KEY_SECRET));
     await assert.rejects(createPaymentService({ env: {}, store }).createOrder('alice', { planId: 'starter' }), { status: 503 });

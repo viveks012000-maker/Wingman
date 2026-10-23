@@ -9,6 +9,7 @@ if (process.env.RAILWAY_ENVIRONMENT_ID) {
 }
 
 const { supabaseAdmin, verifySupabaseToken, requireSupabaseAuth, isProduction } = require('./middleware/supabaseAuth');
+const { isProductionRuntime } = require('./middleware/railwayEnvironment');
 
 // Startup Environment Variables Validation
 const requiredEnvVars = ['AICREDITS_API_KEY', 'AICREDITS_API_KEY_VISION', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'];
@@ -5187,7 +5188,7 @@ app.use((err, req, res, next) => {
 // Server Startup (Supabase Postgres Primary, Optional Local SQLite Fallback)
 async function startWingmanServer() {
     try {
-        const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
+        const isProduction = isProductionRuntime();
         if (!isProduction && process.env.ENABLE_LOCAL_SQLITE === 'true') {
             try {
                 const { initializeDatabase } = require('./database');

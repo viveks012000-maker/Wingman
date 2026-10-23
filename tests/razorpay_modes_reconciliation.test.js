@@ -6,7 +6,8 @@ const { createPaymentService, resolvePaymentConfig } = require('../middleware/ra
 
 const baseLiveEnv = {
     NODE_ENV: 'production',
-    RAILWAY_ENVIRONMENT: 'production',
+    RAILWAY_ENVIRONMENT_NAME: 'production',
+    RAILWAY_ENVIRONMENT_ID: '30e98667-a8a1-415d-8cf1-55e670f45bd0',
     RAZORPAY_MODE: 'live_inr',
     RAZORPAY_PAYMENTS_ENABLED: 'true',
     RAZORPAY_SCHEMA_READY: 'true',
@@ -40,7 +41,9 @@ async function main() {
     assert.equal(resolvePaymentConfig({ ...baseLiveEnv, RAZORPAY_LIVE_KEY_ID: 'rzp_test_fixture' }).enabled, false);
     assert.equal(resolvePaymentConfig({ ...baseLiveEnv, RAZORPAY_LIVE_KEY_SECRET: '' }).enabled, false);
     assert.equal(resolvePaymentConfig({ ...baseLiveEnv, RAZORPAY_RECONCILIATION_SCHEMA_READY: 'false' }).enabled, false);
-    assert.equal(resolvePaymentConfig({ ...baseLiveEnv, RAILWAY_ENVIRONMENT: 'staging' }).enabled, false);
+    assert.equal(resolvePaymentConfig({ ...baseLiveEnv, RAILWAY_ENVIRONMENT_NAME: 'razorpay-staging', RAILWAY_ENVIRONMENT_ID: '438d986c-d799-42a0-9149-ef0eef809486' }).enabled, false);
+    assert.equal(resolvePaymentConfig({ ...baseLiveEnv, RAILWAY_ENVIRONMENT: 'production', RAILWAY_ENVIRONMENT_NAME: undefined, RAILWAY_ENVIRONMENT_ID: undefined }).enabled, false,
+        'the obsolete environment variable cannot authorize live payments without Railway-provided identity');
     const live = resolvePaymentConfig(baseLiveEnv);
     assert.equal(live.enabled, true);
     assert.equal(live.mode, 'live_inr');

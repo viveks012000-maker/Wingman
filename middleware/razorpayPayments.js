@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { PRICING_CATALOG } = require('../config/pricingCatalog');
+const { isProductionRuntime, isProductionRailwayEnvironment } = require('./railwayEnvironment');
 
 class PaymentError extends Error {
     constructor(status, message) { super(message); this.status = status; }
@@ -24,7 +25,7 @@ function signatureMatches(body, signature, secret) {
     return crypto.timingSafeEqual(expected, Buffer.from(signature, 'hex'));
 }
 function isProduction(env) {
-    return env.NODE_ENV === 'production' || env.RAILWAY_ENVIRONMENT === 'production';
+    return isProductionRuntime(env);
 }
 function validCredentialPair(keyId, keySecret, prefix) {
     return typeof keyId === 'string' && new RegExp(`^rzp_${prefix}_[A-Za-z0-9]+$`).test(keyId) &&
@@ -72,7 +73,7 @@ function resolvePaymentConfig(env = process.env) {
             availablePlanIds: Object.keys(PRICING_CATALOG)
         };
     }
-    if (env.NODE_ENV !== 'production' || env.RAILWAY_ENVIRONMENT !== 'production' || env.RAZORPAY_RECONCILIATION_SCHEMA_READY !== 'true' ||
+    if (env.NODE_ENV !== 'production' || !isProductionRailwayEnvironment(env) || env.RAZORPAY_RECONCILIATION_SCHEMA_READY !== 'true' ||
         env.RAZORPAY_LIVE_PRECHECKS_PASSED !== 'true' || env.RAZORPAY_LIVE_TAX_APPROVED !== 'true' ||
         env.RAZORPAY_LIVE_ACCOUNT_ID && !/^acc_[A-Za-z0-9]{1,64}$/.test(env.RAZORPAY_LIVE_ACCOUNT_ID)) {
         return disabledConfig();
@@ -104,7 +105,7 @@ function credentialsForMode(mode, env = process.env) {
         // and customer recovery after new checkout has been disabled. Activation
         // approvals gate resolvePaymentConfig(); these checks only authorize access to
         // the separately scoped credentials for an already persisted live order.
-        if (env.NODE_ENV !== 'production' || env.RAILWAY_ENVIRONMENT !== 'production' ||
+        if (env.NODE_ENV !== 'production' || !isProductionRailwayEnvironment(env) ||
             env.RAZORPAY_RECONCILIATION_SCHEMA_READY !== 'true' ||
             !/^acc_[A-Za-z0-9]{1,64}$/.test(env.RAZORPAY_LIVE_ACCOUNT_ID || '')) return null;
         const credentials = liveCredentials(env);

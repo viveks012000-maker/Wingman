@@ -6,6 +6,8 @@ const request = require('supertest');
 
 // Keep production secrets out of this suite. Mock auth is requested per request only.
 delete process.env.RAILWAY_ENVIRONMENT;
+delete process.env.RAILWAY_ENVIRONMENT_NAME;
+delete process.env.RAILWAY_ENVIRONMENT_ID;
 delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 delete process.env.ENABLE_MOCK_AUTH;
 delete process.env.ALLOWED_ORIGINS;
@@ -58,7 +60,8 @@ async function runVerify(req) {
 
 (async () => {
   // Railway's documented X-Real-IP is trusted only inside Railway and only as a literal IP.
-  process.env.RAILWAY_ENVIRONMENT = 'production';
+  process.env.RAILWAY_ENVIRONMENT_NAME = 'production';
+  process.env.RAILWAY_ENVIRONMENT_ID = '30e98667-a8a1-415d-8cf1-55e670f45bd0';
   assert.strictEqual(
     getRateLimitClientIp(mockReq({ realIp: '203.0.113.41' })),
     '203.0.113.41',
@@ -134,8 +137,9 @@ async function runVerify(req) {
   }
 
   const previousEnvironmentId = process.env.RAILWAY_ENVIRONMENT_ID;
+  const previousEnvironmentName = process.env.RAILWAY_ENVIRONMENT_NAME;
   const previewOrigin = 'https://codex-maeve-request-deadline.mywingman.pages.dev';
-  process.env.RAILWAY_ENVIRONMENT = 'razorpay-staging';
+  process.env.RAILWAY_ENVIRONMENT_NAME = 'razorpay-staging';
   process.env.RAILWAY_ENVIRONMENT_ID = '438d986c-d799-42a0-9149-ef0eef809486';
   allowed = getGatewayAllowedOrigins();
   assert(allowed.has(previewOrigin), 'the isolated staging environment must allow its exact Cloudflare branch preview');
@@ -152,7 +156,7 @@ async function runVerify(req) {
   assert.strictEqual(wrongEnvironmentRes.headers['access-control-allow-origin'], undefined);
   assert.strictEqual(wrongEnvironmentRes.headers['access-control-allow-credentials'], undefined);
 
-  process.env.RAILWAY_ENVIRONMENT = 'production';
+  process.env.RAILWAY_ENVIRONMENT_NAME = 'production';
   process.env.RAILWAY_ENVIRONMENT_ID = '30e98667-a8a1-415d-8cf1-55e670f45bd0';
   allowed = getGatewayAllowedOrigins();
   assert(!allowed.has(previewOrigin), 'production gateway must reject the staging preview origin');
@@ -162,7 +166,10 @@ async function runVerify(req) {
   assert.strictEqual(productionPreviewRes.headers['access-control-allow-credentials'], undefined);
   if (previousEnvironmentId === undefined) delete process.env.RAILWAY_ENVIRONMENT_ID;
   else process.env.RAILWAY_ENVIRONMENT_ID = previousEnvironmentId;
-  process.env.RAILWAY_ENVIRONMENT = 'production';
+  if (previousEnvironmentName === undefined) delete process.env.RAILWAY_ENVIRONMENT_NAME;
+  else process.env.RAILWAY_ENVIRONMENT_NAME = previousEnvironmentName;
+  process.env.RAILWAY_ENVIRONMENT_NAME = 'production';
+  process.env.RAILWAY_ENVIRONMENT_ID = '30e98667-a8a1-415d-8cf1-55e670f45bd0';
 
   process.env.ALLOWED_ORIGINS = 'https://mywingman.com,https://preview.mywingman.com';
   allowed = getGatewayAllowedOrigins();
@@ -170,6 +177,8 @@ async function runVerify(req) {
   assert(!allowed.has('https://preview.mywingman.com'), 'configured custom domains must not widen production CORS');
 
   delete process.env.RAILWAY_ENVIRONMENT;
+  delete process.env.RAILWAY_ENVIRONMENT_NAME;
+  delete process.env.RAILWAY_ENVIRONMENT_ID;
   delete process.env.ALLOWED_ORIGINS;
   assert.strictEqual(
     getRateLimitClientIp(mockReq({ realIp: '203.0.113.41' })),
@@ -191,9 +200,11 @@ async function runVerify(req) {
   // Express removes a mounted prefix from req.path. The global limiter must inspect the
   // original URL so /api/* calls are counted even while it is mounted at /api/.
   const previousNodeEnv = process.env.NODE_ENV;
-  const previousRailwayEnv = process.env.RAILWAY_ENVIRONMENT;
+  const previousRailwayEnvName = process.env.RAILWAY_ENVIRONMENT_NAME;
+  const previousRailwayEnvId = process.env.RAILWAY_ENVIRONMENT_ID;
   process.env.NODE_ENV = 'production';
-  process.env.RAILWAY_ENVIRONMENT = 'production';
+  process.env.RAILWAY_ENVIRONMENT_NAME = 'production';
+  process.env.RAILWAY_ENVIRONMENT_ID = '30e98667-a8a1-415d-8cf1-55e670f45bd0';
   const limiterApp = express();
   limiterApp.use('/api/', globalLimiter);
   limiterApp.get('/api/limiter-probe', (req, res) => res.status(204).end());
@@ -245,8 +256,10 @@ async function runVerify(req) {
 
   if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
   else process.env.NODE_ENV = previousNodeEnv;
-  if (previousRailwayEnv === undefined) delete process.env.RAILWAY_ENVIRONMENT;
-  else process.env.RAILWAY_ENVIRONMENT = previousRailwayEnv;
+  if (previousRailwayEnvName === undefined) delete process.env.RAILWAY_ENVIRONMENT_NAME;
+  else process.env.RAILWAY_ENVIRONMENT_NAME = previousRailwayEnvName;
+  if (previousRailwayEnvId === undefined) delete process.env.RAILWAY_ENVIRONMENT_ID;
+  else process.env.RAILWAY_ENVIRONMENT_ID = previousRailwayEnvId;
 
   assert(LARGE_BODY_ANALYZER_PATHS.has('/api/analyze'));
   assert(LARGE_BODY_ANALYZER_PATHS.has('/api/analyze/'));

@@ -2,7 +2,7 @@
 
 // Compatibility entry point for older local imports only. Authentication is canonicalized in
 // supabaseAuth.js. This module deliberately has no JWT, cookie, custom-header, or local-session
-// fallback; production is detected by NODE_ENV=production or RAILWAY_ENVIRONMENT there.
+// fallback; production is detected by NODE_ENV=production or Railway's documented environment name and ID there.
 const { requireSupabaseAuth, verifySupabaseToken } = require('./supabaseAuth');
 
 function getAuthenticatedUid(req) {

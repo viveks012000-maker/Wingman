@@ -3,6 +3,7 @@ const rateLimit = rateLimitModule.rateLimit || rateLimitModule;
 const { ipKeyGenerator } = rateLimitModule;
 const net = require('net');
 const crypto = require('crypto');
+const { isRailwayRuntime } = require('./railwayEnvironment');
 
 // Railway's edge provides X-Real-IP as the client address. Trust that header only when the
 // process is actually running inside Railway, validate it as a literal IP, and otherwise fall
@@ -15,7 +16,7 @@ function getRateLimitClientIp(req) {
         '127.0.0.1'
     );
 
-    if (!process.env.RAILWAY_ENVIRONMENT) return fallback;
+    if (!isRailwayRuntime()) return fallback;
 
     const rawRealIp = request.headers && request.headers['x-real-ip'];
     const candidate = Array.isArray(rawRealIp) ? rawRealIp[0] : rawRealIp;

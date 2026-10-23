@@ -21,8 +21,8 @@ const authContent = fs.readFileSync(authPath, 'utf8').replace(/\r\n/g, '\n');
 const serverContent = fs.readFileSync(serverPath, 'utf8').replace(/\r\n/g, '\n');
 
 // Test 1: Canonical Railway & NODE_ENV checks present in middleware and server
-assert.strictEqual(supabaseAuthContent.includes('RAILWAY_ENVIRONMENT'), true);
-assert.strictEqual(authContent.includes('RAILWAY_ENVIRONMENT'), true);
+assert.strictEqual(supabaseAuthContent.includes("require('./railwayEnvironment')"), true);
+assert.strictEqual(authContent.includes('documented environment name and ID'), true);
 assert.strictEqual(serverContent.includes('isProduction'), true);
 console.log('✔ Test 1 Passed: Canonical production detection covers NODE_ENV=production and Railway environment variables');
 
