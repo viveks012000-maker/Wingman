@@ -23,6 +23,7 @@ const request = require('supertest');
 
 const ROOT = path.resolve(__dirname, '..');
 const { app } = require('../server');
+const { createIndicativeUsdPricing, buildIndicativeCatalog, MAX_RATE_AGE_MS } = require('../middleware/indicativeUsdPricing');
 const {
     SUPPORTED_CURRENCIES,
     CHECKOUT_CURRENCIES,
@@ -119,31 +120,63 @@ async function runPricingTests() {
         assert.strictEqual(PRICING_CATALOG.limited.credits, 100000);
     });
 
-    test('All plan prices use integer minor units (no floating-point authority)', () => {
+    test('Only approved INR prices are stored in the authoritative catalog', () => {
         for (const [planId, plan] of Object.entries(PRICING_CATALOG)) {
-            assert.ok(Number.isInteger(plan.prices.USD.amountMinor), `${planId} USD amountMinor must be an integer`);
             assert.ok(Number.isInteger(plan.prices.INR.amountMinor), `${planId} INR amountMinor must be an integer`);
-            if (plan.prices.USD.regularMinor !== null) {
-                assert.ok(Number.isInteger(plan.prices.USD.regularMinor), `${planId} USD regularMinor must be an integer`);
-            }
+            assert.strictEqual(Object.hasOwn(plan.prices, 'USD'), false, `${planId} must not imply an approved fixed USD price`);
             if (plan.prices.INR.regularMinor !== null) {
                 assert.ok(Number.isInteger(plan.prices.INR.regularMinor), `${planId} INR regularMinor must be an integer`);
             }
         }
     });
 
-    test('USD catalog sale prices remain stable without unverified compare-at claims', () => {
-        assert.strictEqual(PRICING_CATALOG.starter.prices.USD.amountMinor, 499); // $4.99
-        assert.strictEqual(PRICING_CATALOG.pro.prices.USD.amountMinor, 999); // $9.99
-        assert.strictEqual(PRICING_CATALOG.pro.prices.USD.regularMinor, null);
-        assert.strictEqual(PRICING_CATALOG.elite.prices.USD.amountMinor, 1999); // $19.99
-        assert.strictEqual(PRICING_CATALOG.elite.prices.USD.regularMinor, null);
-        assert.strictEqual(PRICING_CATALOG.limited.prices.USD.amountMinor, 4900); // $49.00
-        assert.strictEqual(PRICING_CATALOG.limited.prices.USD.regularMinor, null);
-        assert.strictEqual(PRICING_CATALOG.starter.prices.USD.formattedPerCredit, '2¢ per credit');
-        assert.strictEqual(PRICING_CATALOG.pro.prices.USD.formattedPerCredit, '1.67¢ per credit');
-        assert.strictEqual(PRICING_CATALOG.elite.prices.USD.formattedPerCredit, '0.67¢ per credit');
-        assert.strictEqual(PRICING_CATALOG.limited.prices.USD.formattedPerCredit, '0.049¢ per credit');
+    test('Indicative USD display is computed from dated INR reference data, not stored fixed prices', () => {
+        const now = Date.parse('2026-10-23T12:00:00.000Z');
+        const result = buildIndicativeCatalog(PRICING_CATALOG, {
+            base: 'INR', quote: 'USD', rate: 0.01056, date: '2026-10-23', fetchedAt: now
+        }, now);
+        assert.deepStrictEqual(Object.values(result.plans).map(plan => plan.prices.USD.displayAmountMinor), [474, 949, 1900, 4751]);
+        assert.deepStrictEqual(Object.values(result.plans).map(plan => plan.prices.USD.formattedSale), ['≈$4.74', '≈$9.49', '≈$19.00', '≈$47.51']);
+        assert.deepStrictEqual(Object.values(result.plans).map(plan => plan.prices.USD.indicative), [true, true, true, true]);
+        assert.deepStrictEqual(Object.values(result.plans).map(plan => plan.prices.USD.amountMinor), [undefined, undefined, undefined, undefined]);
+        assert.strictEqual(result.exchangeRate.asOfDate, '2026-10-23');
+        assert.strictEqual(result.exchangeRate.base, 'INR');
+        assert.strictEqual(result.exchangeRate.quote, 'USD');
+    });
+
+    test('Stale reference rates fail closed without USD amounts', () => {
+        const now = Date.parse('2026-10-23T12:00:00.000Z');
+        const result = buildIndicativeCatalog(PRICING_CATALOG, {
+            base: 'INR', quote: 'USD', rate: 0.01056, date: '2026-10-01', fetchedAt: now
+        }, now);
+        assert.strictEqual(result.exchangeRate.available, false);
+        assert(Object.values(result.plans).every(plan => plan.prices.USD.available === false));
+        assert(Object.values(result.plans).every(plan => plan.prices.USD.displayAmountMinor === undefined));
+        assert(MAX_RATE_AGE_MS >= 7 * 24 * 60 * 60 * 1000);
+    });
+
+    await asyncTest('Rate fetch is server-side, cached, and fails closed after its maximum age', async () => {
+        let now = Date.parse('2026-10-23T12:00:00.000Z');
+        let calls = 0;
+        const service = createIndicativeUsdPricing({
+            catalog: PRICING_CATALOG,
+            now: () => now,
+            cacheTtlMs: 1000,
+            fetchImpl: async () => {
+                calls++;
+                if (calls === 1) return { ok: true, json: async () => ({ date: '2026-10-23', base: 'INR', quote: 'USD', rate: 0.01056 }) };
+                return { ok: false };
+            }
+        });
+        assert.strictEqual((await service.getPricing()).exchangeRate.available, true);
+        assert.strictEqual((await service.getPricing()).exchangeRate.available, true);
+        assert.strictEqual(calls, 1, 'fresh reference rate is cached server-side');
+        now += 2000;
+        assert.strictEqual((await service.getPricing()).exchangeRate.available, true, 'recent cached rate can cover a temporary provider outage');
+        assert.strictEqual(calls, 2);
+        now = Date.parse('2026-11-02T12:00:00.000Z');
+        assert.strictEqual((await service.getPricing()).exchangeRate.available, false, 'expired cached rate must not be presented');
+        assert(Object.values((await service.getPricing()).plans).every(plan => plan.prices.USD.available === false));
     });
 
     test('Final INR prices retain their values and per-credit ratios without compare-at claims', () => {
@@ -314,7 +347,7 @@ async function runPricingTests() {
         assert.strictEqual(res.body.currency, 'INR');
         assert.ok(res.body.plans && res.body.plans.starter);
         assert.strictEqual(res.body.plans.starter.credits, 250);
-        assert.strictEqual(res.body.plans.starter.prices.USD.amountMinor, 499);
+        assert.strictEqual(res.body.plans.starter.prices.USD, undefined);
         assert.strictEqual(res.body.plans.starter.prices.INR.amountMinor, 44900);
 
         // Zero secrets exposed
@@ -330,12 +363,47 @@ async function runPricingTests() {
         assert.strictEqual(res.body.currency, 'INR');
     });
 
-    await asyncTest('USD display catalog is available while collection stays INR-only', async () => {
-        const res = await request(app).get('/api/pricing?currency=USD');
-        assert.strictEqual(res.status, 200);
-        assert.strictEqual(res.body.currency, 'USD');
-        assert.deepStrictEqual(res.body.checkoutCurrencies, ['INR']);
-        assert.deepStrictEqual(Object.values(res.body.plans).map(plan => plan.prices.USD.amountMinor), [499, 999, 1999, 4900]);
+    await asyncTest('USD endpoint returns date-stamped approximate prices while collection stays INR-only', async () => {
+        const previousPricingService = app.locals.indicativeUsdPricing;
+        const fetchedAt = Date.parse('2026-10-23T12:00:00.000Z');
+        app.locals.indicativeUsdPricing = createIndicativeUsdPricing({
+            catalog: PRICING_CATALOG,
+            now: () => fetchedAt,
+            fetchImpl: async url => {
+                assert.strictEqual(url, 'https://api.frankfurter.dev/v2/rate/inr/usd');
+                return { ok: true, json: async () => ({ date: '2026-10-23', base: 'INR', quote: 'USD', rate: 0.01056 }) };
+            }
+        });
+        try {
+            const res = await request(app).get('/api/pricing?currency=USD');
+            assert.strictEqual(res.status, 200);
+            assert.strictEqual(res.body.currency, 'USD');
+            assert.deepStrictEqual(res.body.checkoutCurrencies, ['INR']);
+            assert.deepStrictEqual(Object.values(res.body.plans).map(plan => plan.prices.USD.displayAmountMinor), [474, 949, 1900, 4751]);
+            assert.deepStrictEqual(Object.values(res.body.plans).map(plan => plan.prices.USD.indicative), [true, true, true, true]);
+            assert.strictEqual(res.body.exchangeRate.available, true);
+            assert.strictEqual(res.body.exchangeRate.asOfDate, '2026-10-23');
+            assert.strictEqual(res.headers['cache-control'], 'no-store');
+        } finally {
+            app.locals.indicativeUsdPricing = previousPricingService;
+        }
+    });
+
+    await asyncTest('USD endpoint reports unavailable for a stale reference rate', async () => {
+        const previousPricingService = app.locals.indicativeUsdPricing;
+        app.locals.indicativeUsdPricing = createIndicativeUsdPricing({
+            catalog: PRICING_CATALOG,
+            now: () => Date.parse('2026-10-23T12:00:00.000Z'),
+            fetchImpl: async () => ({ ok: true, json: async () => ({ date: '2026-10-01', base: 'INR', quote: 'USD', rate: 0.01056 }) })
+        });
+        try {
+            const res = await request(app).get('/api/pricing?currency=USD');
+            assert.strictEqual(res.status, 200);
+            assert.strictEqual(res.body.exchangeRate.available, false);
+            assert(Object.values(res.body.plans).every(plan => plan.prices.USD.available === false));
+        } finally {
+            app.locals.indicativeUsdPricing = previousPricingService;
+        }
     });
 
     await asyncTest('GET /api/pricing?currency=EUR returns 400 for unsupported currency', async () => {

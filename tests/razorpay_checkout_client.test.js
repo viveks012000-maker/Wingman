@@ -14,14 +14,14 @@ async function main() {
     require('../config.js');
     const currencyContext = { window: global.window };
     assert.equal(global.window.wingmanCurrency.canonicalize('usd'),'USD');
-    assert.equal(global.window.wingmanCurrency.formatPlanSale('limited','USD'),'$49');
+    assert.equal(global.window.wingmanCurrency.formatPlanSale('limited','USD'),'USD estimate unavailable');
     assert.equal(global.window.wingmanCurrency.canonicalize('EUR'),'INR');
     const catalog = require('../config/pricingCatalog').PRICING_CATALOG;
     const sql = fs.readFileSync(path.join(root,'migrations/016_razorpay_payment_ledger.sql'),'utf8');
     for (const [id,plan] of Object.entries(catalog)) {
         assert.equal(currencyContext.window.WINGMAN_PRICING_CATALOG[id].credits,plan.credits);
         assert.equal(currencyContext.window.WINGMAN_PRICING_CATALOG[id].prices.INR.amountMinor,plan.prices.INR.amountMinor);
-        assert.equal(currencyContext.window.WINGMAN_PRICING_CATALOG[id].prices.USD.amountMinor,plan.prices.USD.amountMinor);
+        assert.equal(currencyContext.window.WINGMAN_PRICING_CATALOG[id].prices.USD,undefined);
         assert(sql.includes(`plan_id='${id}' AND credits=${plan.credits} AND amount_minor=${plan.prices.INR.amountMinor}`));
     }
     let selectedCurrency = 'INR';

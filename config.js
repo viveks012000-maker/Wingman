@@ -665,10 +665,11 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 })();
 
 /**
- * WINGMAN CLIENT-SIDE DOMESTIC PRICING (INR)
+ * WINGMAN CLIENT-SIDE PRICING DISPLAY
  * -------------------------------------------------------------------------
  * - Default: 'INR'
- * - Display currencies: USD and INR; Razorpay collection remains INR-only
+ * - INR is the authoritative chargeable catalog; USD is a server-derived estimate
+ * - Razorpay collection remains INR-only
  * - Persistence: localStorage['wingman_setting_currency'] (safe fail-soft)
  * - Single source of truth for presentation across index.html & app.html
  */
@@ -687,8 +688,12 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
     var DEFAULT_CURRENCY = pricingSource.DEFAULT_CURRENCY;
     var SUPPORTED_CURRENCIES = pricingSource.SUPPORTED_CURRENCIES;
     var PRICING_CATALOG = pricingSource.PRICING_CATALOG;
+    var displayCatalog = PRICING_CATALOG;
     var currentCurrency = DEFAULT_CURRENCY;
     var listeners = [];
+    var usdEstimateState = 'unloaded';
+    var usdExchangeRate = null;
+    var usdPricingRequest = null;
 
     function safeGetStorage(key) {
         try {
@@ -719,30 +724,137 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
     }
 
     function getPlan(planId) {
-        return PRICING_CATALOG[planId] || null;
+        return displayCatalog[planId] || null;
     }
 
     function getPlanPricing(planId, curr) {
         var plan = getPlan(planId);
         if (!plan) return null;
         var c = canonicalize(curr || currentCurrency);
-        return plan.prices[c] || plan.prices.INR;
+        return plan.prices[c] || null;
     }
 
     function formatPlanSale(planId, curr) {
         var pricing = getPlanPricing(planId, curr);
-        return pricing ? pricing.formattedSale : '';
+        if (pricing) return pricing.formattedSale;
+        if (canonicalize(curr || currentCurrency) === 'USD') {
+            return usdEstimateState === 'loading' ? 'Loading USD estimate…' : 'USD estimate unavailable';
+        }
+        return '';
     }
 
     function getPlanPriceNumber(planId, curr) {
         var pricing = getPlanPricing(planId, curr);
-        if (!pricing) return 0;
-        return pricing.amountMinor / 100;
+        if (!pricing) return null;
+        var amountMinor = canonicalize(curr || currentCurrency) === 'USD'
+            ? pricing.displayAmountMinor
+            : pricing.amountMinor;
+        return Number.isInteger(amountMinor) ? amountMinor / 100 : null;
     }
 
     function getCredits(planId) {
         var plan = getPlan(planId);
         return plan ? plan.credits : 0;
+    }
+
+    function updateCurrencyDisclosure() {
+        if (typeof document === 'undefined') return;
+        var message;
+        if (currentCurrency !== 'USD') {
+            message = 'Prices shown in INR. Paid checkout is currently unavailable in production.';
+        } else if (usdEstimateState === 'loading') {
+            message = 'Loading approximate USD equivalents. USD is display-only; checkout remains INR-only and is currently unavailable.';
+        } else if (usdEstimateState === 'available' && usdExchangeRate) {
+            message = 'Approximate USD equivalents use a Frankfurter reference rate dated ' + usdExchangeRate.asOfDate + '. Display only; checkout remains INR-only and is currently unavailable.';
+        } else {
+            message = 'USD estimates are temporarily unavailable because a recent reference rate could not be verified. Switch to INR for listed prices. Checkout is currently unavailable.';
+        }
+        ['pricingCurrencyDisclosure', 'appPricingCurrencyDisclosure'].forEach(function (id) {
+            var disclosure = document.getElementById(id);
+            if (disclosure) disclosure.textContent = message;
+        });
+    }
+
+    function emitCurrencyChange() {
+        for (var i = 0; i < listeners.length; i++) {
+            try { listeners[i](currentCurrency); } catch (e) { console.error('[currency listener error]', e); }
+        }
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+            try {
+                var evt = new CustomEvent('wingman:currencychange', { detail: { currency: currentCurrency } });
+                window.dispatchEvent(evt);
+            } catch (_) {}
+        }
+    }
+
+    function loadIndicativeUsdPricing() {
+        if (usdEstimateState === 'available') return Promise.resolve(true);
+        if (usdPricingRequest) return usdPricingRequest;
+
+        usdEstimateState = 'loading';
+        updatePricingDisplay();
+        updateCurrencyDisclosure();
+        var apiBase = typeof window.getApiBase === 'function' ? window.getApiBase() : '';
+        if (!apiBase || typeof window.fetch !== 'function') {
+            usdEstimateState = 'unavailable';
+            updatePricingDisplay();
+            updateCurrencyDisclosure();
+            return Promise.resolve(false);
+        }
+
+        var controller = typeof AbortController === 'function' ? new AbortController() : null;
+        var timeout = controller ? window.setTimeout(function () { controller.abort(); }, 8000) : null;
+        usdPricingRequest = window.fetch(apiBase + '/api/pricing?currency=USD', {
+            method: 'GET',
+            cache: 'no-store',
+            credentials: 'omit',
+            headers: { Accept: 'application/json' },
+            ...(controller ? { signal: controller.signal } : {})
+        }).then(function (response) {
+            if (!response.ok) throw new Error('USD estimate request failed.');
+            return response.json();
+        }).then(function (payload) {
+            var rate = payload && payload.exchangeRate;
+            if (!payload || payload.success !== true || !rate || rate.available !== true ||
+                rate.base !== 'INR' || rate.quote !== 'USD' || !Number.isFinite(rate.rate) || rate.rate <= 0 ||
+                typeof rate.asOfDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(rate.asOfDate) ||
+                typeof rate.source !== 'string' || !payload.plans) throw new Error('A current USD estimate is unavailable.');
+
+            var nextCatalog = {};
+            Object.keys(PRICING_CATALOG).forEach(function (planId) {
+                var basePlan = PRICING_CATALOG[planId];
+                var remotePlan = payload.plans[planId];
+                var usd = remotePlan && remotePlan.prices && remotePlan.prices.USD;
+                if (!usd || usd.available !== true || usd.indicative !== true ||
+                    !Number.isInteger(usd.displayAmountMinor) || usd.displayAmountMinor <= 0 ||
+                    typeof usd.formattedSale !== 'string' || usd.formattedSale.indexOf('≈$') !== 0 ||
+                    typeof usd.formattedPerCredit !== 'string' || !usd.formattedPerCredit.includes('¢ per credit')) {
+                    throw new Error('A complete USD estimate is unavailable.');
+                }
+                nextCatalog[planId] = {
+                    ...basePlan,
+                    prices: { ...basePlan.prices, USD: usd }
+                };
+            });
+            displayCatalog = nextCatalog;
+            window.WINGMAN_PRICING_CATALOG = displayCatalog;
+            if (window.wingmanCurrency) window.wingmanCurrency.catalog = displayCatalog;
+            usdExchangeRate = rate;
+            usdEstimateState = 'available';
+            return true;
+        }).catch(function () {
+            usdEstimateState = 'unavailable';
+            usdExchangeRate = null;
+            return false;
+        }).then(function (available) {
+            if (timeout) window.clearTimeout(timeout);
+            usdPricingRequest = null;
+            updatePricingDisplay();
+            updateCurrencyDisclosure();
+            emitCurrencyChange();
+            return available;
+        });
+        return usdPricingRequest;
     }
 
     function updateToggleButtonStates() {
@@ -775,7 +887,20 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             var planId = el.getAttribute('data-plan');
             var role = el.getAttribute('data-price-role');
             var pricing = getPlanPricing(planId, currentCurrency);
-            if (!pricing) continue;
+            if (!pricing) {
+                if (currentCurrency === 'USD') {
+                    var unavailableLabel = usdEstimateState === 'loading' ? 'Loading USD estimate…' : 'USD estimate unavailable';
+                    if (role === 'sale' || role === 'per-credit') el.textContent = unavailableLabel;
+                    if (role === 'regular' || role === 'saving') {
+                        el.textContent = '';
+                        el.hidden = true;
+                        el.style.display = 'none';
+                    }
+                    if (role === 'button-price') el.textContent = unavailableLabel;
+                    if (role === 'button-text') el.textContent = unavailableLabel;
+                }
+                continue;
+            }
 
             if (role === 'sale') {
                 el.textContent = pricing.formattedSale;
@@ -811,8 +936,14 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
             var rPlan = radio.value;
             var rPricing = getPlanPricing(rPlan, currentCurrency);
             if (rPricing) {
-                radio.setAttribute('data-price', (rPricing.amountMinor / 100).toFixed(2));
+                var radioAmountMinor = currentCurrency === 'USD' ? rPricing.displayAmountMinor : rPricing.amountMinor;
+                if (Number.isInteger(radioAmountMinor)) radio.setAttribute('data-price', (radioAmountMinor / 100).toFixed(2));
+                else radio.removeAttribute('data-price');
                 radio.setAttribute('data-price-formatted', rPricing.formattedSale);
+                radio.setAttribute('data-currency', currentCurrency);
+            } else if (currentCurrency === 'USD') {
+                radio.removeAttribute('data-price');
+                radio.setAttribute('data-price-formatted', usdEstimateState === 'loading' ? 'Loading USD estimate…' : 'USD estimate unavailable');
                 radio.setAttribute('data-currency', currentCurrency);
             }
         }
@@ -839,21 +970,9 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 
         updateToggleButtonStates();
         updatePricingDisplay();
-
-        for (var i = 0; i < listeners.length; i++) {
-            try {
-                listeners[i](valid);
-            } catch (e) {
-                console.error('[currency listener error]', e);
-            }
-        }
-
-        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-            try {
-                var evt = new CustomEvent('wingman:currencychange', { detail: { currency: valid } });
-                window.dispatchEvent(evt);
-            } catch (_) {}
-        }
+        updateCurrencyDisclosure();
+        emitCurrencyChange();
+        if (valid === 'USD' && usdEstimateState !== 'available') loadIndicativeUsdPricing();
 
         return valid;
     }
@@ -888,9 +1007,11 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         currentCurrency = initial;
         bindCurrencyButtons();
         updatePricingDisplay();
+        updateCurrencyDisclosure();
+        if (initial === 'USD') loadIndicativeUsdPricing();
     }
 
-    window.WINGMAN_PRICING_CATALOG = PRICING_CATALOG;
+    window.WINGMAN_PRICING_CATALOG = displayCatalog;
     window.wingmanCurrency = {
         getCurrency: getCurrency,
         setCurrency: setCurrency,
@@ -901,9 +1022,12 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         getPlanPriceNumber: getPlanPriceNumber,
         getCredits: getCredits,
         updatePricingDisplay: updatePricingDisplay,
+        loadIndicativeUsdPricing: loadIndicativeUsdPricing,
+        getUsdEstimateState: function () { return usdEstimateState; },
+        getUsdExchangeRate: function () { return usdExchangeRate; },
         onCurrencyChange: onCurrencyChange,
         bindButtons: bindCurrencyButtons,
-        catalog: PRICING_CATALOG,
+        catalog: displayCatalog,
         supportedCurrencies: SUPPORTED_CURRENCIES,
         defaultCurrency: DEFAULT_CURRENCY,
         storageKey: STORAGE_KEY,
