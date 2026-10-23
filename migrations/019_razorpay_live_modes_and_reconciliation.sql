@@ -413,6 +413,24 @@ BEGIN
         v_reason := 'provider_reference_or_amount_mismatch';
     END IF;
 
+    -- Preserve evidence for a signed but mismatched provider event without binding
+    -- its payment or refund totals to this order. Only its durable review flag changes.
+    IF v_reason = 'provider_reference_or_amount_mismatch' THEN
+        UPDATE public.razorpay_orders
+        SET review_required = true,
+            review_reason = v_reason,
+            updated_at = pg_catalog.now()
+        WHERE order_id = p_order_id;
+        UPDATE public.razorpay_events
+        SET processing_status = 'review_required'
+        WHERE event_id = p_event_id;
+        RETURN pg_catalog.json_build_object(
+            'success', true, 'duplicate', false, 'reviewRequired', true,
+            'reason', v_reason, 'lifecycleState', v_order.lifecycle_state,
+            'refundStatus', v_order.refund_status, 'disputeStatus', v_order.dispute_status
+        );
+    END IF;
+
     IF p_event_type LIKE 'refund.%' THEN
         v_needs_review := true;
         v_reason := 'refund_requires_operator_review';

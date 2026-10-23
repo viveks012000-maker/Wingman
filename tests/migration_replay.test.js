@@ -329,6 +329,8 @@ BEGIN;
 INSERT INTO auth.users(id,email_confirmed_at) VALUES ('${userId}',pg_catalog.now());
 INSERT INTO public.razorpay_orders(order_id,user_id,plan_id,credits,amount_minor,currency,mode,receipt)
 VALUES ('order_refund','${userId}','starter',250,44900,'INR','test','receipt_refund');
+INSERT INTO public.razorpay_orders(order_id,user_id,plan_id,credits,amount_minor,currency,mode,receipt)
+VALUES ('order_mismatch','${userId}','starter',250,44900,'INR','test','receipt_mismatch');
 SELECT public.fulfill_razorpay_order('order_refund','pay_refund',44900,'INR');
 UPDATE public.profiles SET credits=credits-20 WHERE id='${userId}';
 INSERT INTO public.credit_transactions(user_id,amount,type,feature,request_id,status)
@@ -348,6 +350,14 @@ DO $$ DECLARE result json; balance integer; BEGIN
  IF result->>'refundStatus' <> 'pending' OR result->>'reviewRequired' <> 'true' THEN RAISE EXCEPTION 'pending refund state was not durably queued: %',result; END IF;
  result := public.record_razorpay_reconciliation('evt_refund_failed','refund.failed','test','order_refund','pay_refund','rfnd_failed',repeat('1',64),'failed',44900,1000,10000,'INR',pg_catalog.now(),NULL,false);
  IF result->>'refundStatus' <> 'failed' OR result->>'reviewRequired' <> 'true' THEN RAISE EXCEPTION 'failed refund state was not durably queued: %',result; END IF;
+ result := public.record_razorpay_reconciliation('evt_refund_mismatch','refund.processed','test','order_mismatch','pay_mismatch','rfnd_mismatch',repeat('2',64),'processed',44000,1000,1000,'INR',pg_catalog.now(),NULL,false);
+ IF result->>'reviewRequired' <> 'true' OR result->>'reason' <> 'provider_reference_or_amount_mismatch' THEN RAISE EXCEPTION 'mismatched refund did not enter review: %',result; END IF;
+ IF (SELECT payment_id FROM public.razorpay_orders WHERE order_id='order_mismatch') IS NOT NULL OR
+    (SELECT refunded_amount_minor FROM public.razorpay_orders WHERE order_id='order_mismatch') <> 0 OR
+    (SELECT captured_at FROM public.razorpay_orders WHERE order_id='order_mismatch') IS NOT NULL OR
+    (SELECT lifecycle_state FROM public.razorpay_orders WHERE order_id='order_mismatch') <> 'pending' THEN
+   RAISE EXCEPTION 'mismatched refund altered the order ledger';
+ END IF;
  SELECT credits INTO balance FROM public.profiles WHERE id='${userId}';
  IF balance <> 280 THEN RAISE EXCEPTION 'partial refund changed spent/free wallet credits: %',balance; END IF;
  result := public.record_razorpay_reconciliation('evt_refund_full','refund.processed','test','order_refund','pay_refund','rfnd_final',repeat('c',64),'processed',44900,34900,44900,'INR',pg_catalog.now(),NULL,false);
