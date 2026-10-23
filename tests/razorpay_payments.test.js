@@ -85,6 +85,10 @@ async function main() {
     entity.amount_refunded = 100;
     await assert.rejects(svc.verify('alice', callback), { status: 409 }); entity.amount_refunded = 0;
     const raw = Buffer.from(JSON.stringify({ event: 'payment.captured', payload: { payment: { entity } } }));
+    const callsBeforeInvalidWebhookBodies = calls;
+    await assert.rejects(svc.webhook('not-a-buffer', '', 'event_invalid_string'), { status: 400 });
+    await assert.rejects(svc.webhook([123, 125], '', 'event_invalid_array'), { status: 400 });
+    assert.equal(calls, callsBeforeInvalidWebhookBodies, 'non-Buffer webhook bodies must be rejected before provider access');
     await assert.rejects(svc.webhook(raw, '0'.repeat(64), 'event_fixture'), { status: 400 });
     const sig = sign(raw, env.RAZORPAY_WEBHOOK_SECRET);
     await assert.rejects(svc.webhook(Buffer.concat([raw, Buffer.from(' ')]), sig, 'event_fixture'), { status: 400 });

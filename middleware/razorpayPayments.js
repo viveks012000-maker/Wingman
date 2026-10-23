@@ -315,14 +315,16 @@ function createPaymentService({ store, env = process.env, fetchImpl = fetch }) {
     }
     async function webhook(rawBody, signature, eventId) {
         if (!store || env.RAZORPAY_SCHEMA_READY !== 'true') throw new PaymentError(503, 'Payment processing is unavailable.');
-        if (!Buffer.isBuffer(rawBody) || rawBody.length > 256 * 1024) throw new PaymentError(400, 'Invalid webhook payload.');
-        const match = await matchWebhookCredentials(rawBody, signature);
+        if (!Buffer.isBuffer(rawBody)) throw new PaymentError(400, 'Invalid webhook payload.');
+        const body = rawBody;
+        if (!Number.isSafeInteger(body.byteLength) || body.byteLength > 256 * 1024) throw new PaymentError(400, 'Invalid webhook payload.');
+        const match = await matchWebhookCredentials(body, signature);
         let event;
-        try { event = JSON.parse(rawBody.toString('utf8')); } catch (_) { throw new PaymentError(400, 'Invalid webhook payload.'); }
+        try { event = JSON.parse(body.toString('utf8')); } catch (_) { throw new PaymentError(400, 'Invalid webhook payload.'); }
         if (typeof eventId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(eventId)) throw new PaymentError(400, 'Invalid webhook event ID.');
         const expectedAccountId = match.mode === 'test' ? env.RAZORPAY_TEST_ACCOUNT_ID : env.RAZORPAY_LIVE_ACCOUNT_ID;
         if (expectedAccountId && event.account_id !== expectedAccountId) throw new PaymentError(400, 'Webhook account does not match.');
-        const payloadSha256 = crypto.createHash('sha256').update(rawBody).digest('hex');
+        const payloadSha256 = crypto.createHash('sha256').update(body).digest('hex');
         const eventCreatedAt = safeEventTime(event.created_at);
         if (event.event === 'payment.captured' || event.event === 'order.paid') {
             const payment = event.payload && event.payload.payment && event.payload.payment.entity;
