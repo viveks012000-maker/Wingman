@@ -29,9 +29,22 @@
     function sync() {
         const button = document.getElementById('confirmPurchaseBtn');
         const text = document.getElementById('purchaseBtnText');
-        const currencyAllowed = !window.wingmanCurrency || window.wingmanCurrency.getCurrency() === 'INR';
+        const currency = window.wingmanCurrency ? window.wingmanCurrency.getCurrency() : 'INR';
+        const currencyAllowed = currency === 'INR';
         if (button) { button.disabled = !enabled || busy || !currencyAllowed; button.setAttribute && button.setAttribute('aria-disabled', String(button.disabled)); }
-        if (text) text.textContent = !currencyAllowed ? 'USD payments unavailable — choose INR' : (enabled ? (busy ? 'Preparing test checkout…' : 'Continue to Test Mode checkout') : 'Purchasing not yet enabled');
+        if (text) text.textContent = enabled
+            ? (!currencyAllowed ? 'USD payments unavailable — choose INR' : (busy ? 'Preparing test checkout…' : 'Continue to Test Mode checkout'))
+            : 'Purchasing not yet enabled';
+        const notice = document.getElementById('paymentAvailabilityNotice');
+        if (notice) {
+            notice.textContent = currency === 'USD'
+                ? (enabled
+                    ? 'USD prices are for display only; international collection is not enabled. Select INR for Test Mode checkout. No USD payment will be collected.'
+                    : 'USD prices are for display only; international collection is not enabled. Paid checkout is unavailable in production. No payment will be collected.')
+                : (enabled
+                    ? 'Test Mode checkout: no real money is charged. Live purchases remain unavailable.'
+                    : 'Paid checkout is unavailable in production. INR is the only supported payment currency. No payment will be collected.');
+        }
     }
     async function purchase() {
         const currency = window.wingmanCurrency ? window.wingmanCurrency.getCurrency() : 'INR';
@@ -70,10 +83,6 @@
             if (response.ok) {
                 const config = await response.json();
                 enabled = config.enabled === true && config.mode === 'test' && config.currency === 'INR';
-                if (enabled) {
-                    const notice = document.getElementById('paymentAvailabilityNotice');
-                    if (notice) notice.textContent = 'Test Mode checkout: no real money is charged. Live purchases remain unavailable.';
-                }
             }
         } catch (_) { enabled = false; }
         sync();

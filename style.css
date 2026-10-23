@@ -1401,3 +1401,17 @@ body.app-page #mainContentCanvas > section.hidden {
 .auth-state-hidden {
     display: none !important;
 }
+
+/* Consistent touch targets and keyboard focus for the pricing currency controls. */
+.currency-toggle-btn {
+    min-height: 38px;
+    min-width: 48px;
+    touch-action: manipulation;
+}
+
+.currency-toggle-btn:focus-visible {
+    outline: 2px solid #c4b5fd;
+    outline-offset: 2px;
+    position: relative;
+    z-index: 1;
+}
