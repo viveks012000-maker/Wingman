@@ -42,6 +42,8 @@ let db = null; // Global SQLite database instance (disabled in production, optio
 
 const { BIO_MODE_PROMPTS, MAEVE_SYSTEM_PROMPT } = require('./config/promptSystem');
 const { PRICING_CATALOG, SUPPORTED_CURRENCIES, CHECKOUT_CURRENCIES, DEFAULT_CURRENCY } = require('./config/pricingCatalog');
+const { createIndicativeUsdPricing } = require('./middleware/indicativeUsdPricing');
+const indicativeUsdPricing = createIndicativeUsdPricing({ catalog: PRICING_CATALOG });
 const { createPaymentService, supabasePaymentStore, requirePaymentAuth, PaymentError } = require('./middleware/razorpayPayments');
 const razorpayPayments = createPaymentService({ store: supabasePaymentStore(supabaseAdmin) });
 const authenticatePayment = requirePaymentAuth(supabaseAdmin);
@@ -92,6 +94,7 @@ const AICREDITS_CHAT_COMPLETIONS_URL = 'https://api.aicredits.in/v1/chat/complet
 
 
 const app = express();
+app.locals.indicativeUsdPricing = indicativeUsdPricing;
 const PORT = process.env.PORT || 3000;
 const IS_PROD = isProduction;
 const developmentCspDefaultSources = IS_PROD ? [] : ['http://localhost:*', 'ws://localhost:*'];
@@ -4980,14 +4983,22 @@ app.get('/api/health', async (req, res) => {
 });
 
 // Public Authoritative Pricing Catalog Endpoint (Read-only, zero secrets)
-app.get('/api/pricing', (req, res) => {
+app.get('/api/pricing', async (req, res) => {
     try {
         const requestedCurrency = req.query.currency ? String(req.query.currency).trim().toUpperCase() : null;
+        res.setHeader('Cache-Control', 'no-store');
         if (requestedCurrency && !SUPPORTED_CURRENCIES.includes(requestedCurrency)) {
             return res.status(400).json({
                 success: false,
                 error: 'Unsupported display currency. Only USD and INR are available.'
             });
+        }
+        let plans = PRICING_CATALOG;
+        let exchangeRate = null;
+        if (requestedCurrency === 'USD') {
+            const pricing = await app.locals.indicativeUsdPricing.getPricing();
+            plans = pricing.plans;
+            exchangeRate = pricing.exchangeRate;
         }
         res.json({
             success: true,
@@ -4995,7 +5006,8 @@ app.get('/api/pricing', (req, res) => {
             supportedCurrencies: SUPPORTED_CURRENCIES,
             checkoutCurrencies: CHECKOUT_CURRENCIES,
             currency: requestedCurrency || DEFAULT_CURRENCY,
-            plans: PRICING_CATALOG
+            plans,
+            ...(requestedCurrency === 'USD' ? { exchangeRate } : {})
         });
     } catch (err) {
         console.error('[Pricing API Error]', err);

@@ -5,6 +5,16 @@ const path = require('node:path');
 const http = require('node:http');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..', 'netlify-dist');
+const { PRICING_CATALOG } = require('../pricing-catalog');
+const { buildIndicativeCatalog } = require('../middleware/indicativeUsdPricing');
+
+const rateNow = Date.parse('2026-10-23T12:00:00.000Z');
+const indicativeFixture = buildIndicativeCatalog(PRICING_CATALOG, {
+    date: '2026-10-23', base: 'INR', quote: 'USD', rate: 0.01056, fetchedAt: rateNow
+}, rateNow);
+const staleIndicativeFixture = buildIndicativeCatalog(PRICING_CATALOG, {
+    date: '2026-10-01', base: 'INR', quote: 'USD', rate: 0.01056, fetchedAt: rateNow
+}, rateNow);
 
 async function main() {
     for (const file of ['index.html', 'app.html']) {
@@ -42,14 +52,28 @@ async function main() {
             page.on('pageerror', error => scriptErrors.push(error.message));
             // No external AI, payment, auth or account writes during this local UI check.
             await page.route('**/*', route => {
-                if (route.request().url().startsWith('http://127.0.0.1:')) return route.continue();
+                const requestUrl = route.request().url();
+                if (requestUrl.startsWith('http://127.0.0.1:')) return route.continue();
                 return route.abort();
             });
             let consentPostCount = 0;
             page.on('request', request => {
                 if (request.url().endsWith('/api/consent') && request.method() === 'POST') consentPostCount += 1;
             });
-            await page.addInitScript(() => localStorage.setItem('wingman_setting_currency', 'USD'));
+            await page.addInitScript(pricingResponse => {
+                localStorage.setItem('wingman_setting_currency', 'USD');
+                const nativeFetch = window.fetch.bind(window);
+                window.fetch = (input, options) => {
+                    if (String(input).includes('/api/pricing?currency=USD')) {
+                        return Promise.resolve({ ok: true, status: 200, json: async () => pricingResponse });
+                    }
+                    return nativeFetch(input, options);
+                };
+            }, {
+                success: true, defaultCurrency: 'INR', supportedCurrencies: ['USD', 'INR'],
+                checkoutCurrencies: ['INR'], currency: 'USD', plans: indicativeFixture.plans,
+                exchangeRate: indicativeFixture.exchangeRate
+            });
             await page.goto(base + '/', { waitUntil: 'load' });
             assert.equal(await page.locator('#interstitialCheckbox').count(), 0, 'landing age checkbox must be removed');
             assert(await page.locator('#workspaceConsentNotice').innerText().then(text => text.includes('18') && text.includes('AI')));
@@ -64,11 +88,14 @@ async function main() {
             assert.equal(await page.locator('img[src="maeve.jpg"]:visible').count(), 0, 'preserve the requested hidden coach image');
             assert.equal(await page.locator('[data-currency="USD"]:visible').count(), 1, 'USD display option must be visible');
             assert.equal(await page.evaluate(() => window.wingmanCurrency.getCurrency()), 'USD', 'saved display currency must be restored');
+            await page.waitForFunction(() => window.wingmanCurrency.getUsdEstimateState() === 'available', null, { timeout: 5000 });
+            assert((await page.locator('#pricingCurrencyDisclosure').innerText()).includes('2026-10-23'));
+            assert((await page.locator('#pricingCurrencyDisclosure').innerText()).includes('Approximate USD equivalents'));
             const displayPrices = [
-                ['starter', '$4.99', '2¢ per credit', '₹449', '₹1.80 per credit'],
-                ['pro', '$9.99', '1.67¢ per credit', '₹899', '₹1.50 per credit'],
-                ['elite', '$19.99', '0.67¢ per credit', '₹1,799', '₹0.60 per credit'],
-                ['limited', '$49', '0.049¢ per credit', '₹4,499', '₹0.045 per credit']
+                ['starter', '≈$4.74', '1.9¢ per credit', '₹449', '₹1.80 per credit'],
+                ['pro', '≈$9.49', '1.58¢ per credit', '₹899', '₹1.50 per credit'],
+                ['elite', '≈$19.00', '0.63¢ per credit', '₹1,799', '₹0.60 per credit'],
+                ['limited', '≈$47.51', '0.05¢ per credit', '₹4,499', '₹0.045 per credit']
             ];
             for (const [planId, usdPrice, usdRate] of displayPrices) {
                 assert.equal(await page.locator('[data-plan="' + planId + '"][data-price-role="sale"]').innerText(), usdPrice);
@@ -136,10 +163,10 @@ async function main() {
             assert.equal(await page.locator('#interstitialModal').isVisible(), false);
 
             for (const [id, name, credits, inrPrice, usdPrice] of [
-                ['starter', 'Starter Pack', '250', '₹449', '$4.99'],
-                ['pro', 'Pro Pack', '600', '₹899', '$9.99'],
-                ['elite', 'Elite Pack', '3,000', '₹1,799', '$19.99'],
-                ['limited', 'VIP Pack', '1,00,000', '₹4,499', '$49']
+                ['starter', 'Starter Pack', '250', '₹449', '≈$4.74'],
+                ['pro', 'Pro Pack', '600', '₹899', '≈$9.49'],
+                ['elite', 'Elite Pack', '3,000', '₹1,799', '≈$19.00'],
+                ['limited', 'VIP Pack', '1,00,000', '₹4,499', '≈$47.51']
             ]) {
                 await page.goto(base + '/?review-plan=' + id + '#pricing', { waitUntil: 'load' });
                 await page.locator('a[href="app.html?tier=' + id + '"]').click();
@@ -217,6 +244,30 @@ async function main() {
             console.log('UI viewport', viewport.width, ': summary, INR, disabled checkout, removed checkbox, retained consent disclosure and no overflow passed.');
             await page.close();
         }
+
+        const stalePage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+        await stalePage.route('**/*', route => route.request().url().startsWith('http://127.0.0.1:') ? route.continue() : route.abort());
+        await stalePage.addInitScript(pricingResponse => {
+            localStorage.setItem('wingman_setting_currency', 'USD');
+            const nativeFetch = window.fetch.bind(window);
+            window.fetch = (input, options) => String(input).includes('/api/pricing?currency=USD')
+                ? Promise.resolve({ ok: true, status: 200, json: async () => pricingResponse })
+                : nativeFetch(input, options);
+        }, {
+            success: true, defaultCurrency: 'INR', supportedCurrencies: ['USD', 'INR'],
+            checkoutCurrencies: ['INR'], currency: 'USD', plans: staleIndicativeFixture.plans,
+            exchangeRate: staleIndicativeFixture.exchangeRate
+        });
+        await stalePage.goto(base + '/', { waitUntil: 'load' });
+        await stalePage.waitForFunction(() => window.wingmanCurrency.getUsdEstimateState() === 'unavailable');
+        assert((await stalePage.locator('#pricingCurrencyDisclosure').innerText()).includes('temporarily unavailable'));
+        for (const planId of ['starter', 'pro', 'elite', 'limited']) {
+            assert.equal(await stalePage.locator('[data-plan="' + planId + '"][data-price-role="sale"]').innerText(), 'USD estimate unavailable');
+        }
+        await stalePage.locator('#pricingCurrencySelectorWrapper [data-currency="INR"]').click();
+        assert.equal(await stalePage.locator('[data-plan="starter"][data-price-role="sale"]').innerText(), '₹449');
+        await stalePage.close();
+        console.log('UI stale-rate fallback: USD estimates suppressed; INR prices remain available.');
     } finally {
         if (browser) await browser.close();
         await new Promise(resolve => server.close(resolve));

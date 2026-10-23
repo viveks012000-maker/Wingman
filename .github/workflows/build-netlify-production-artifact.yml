@@ -57,6 +57,9 @@ jobs:
       - name: Build strict public artifact
         run: npm run build:production
 
+      - name: Verify INR/USD display and payment safety in desktop and mobile browsers
+        run: node tests/razorpay_readiness.test.js
+
       - name: Verify release truth, API path and public allowlist
         shell: bash
         run: |

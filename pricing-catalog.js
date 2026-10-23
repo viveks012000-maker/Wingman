@@ -7,7 +7,10 @@
  * Single source of truth for credit tiers, pricing, integer minor amounts, and formatting.
  *
  * NOTE ON CURRENCY COMPLIANCE:
- * - Display currencies are USD and INR. Razorpay collection remains INR-only.
+ * - INR prices below are the owner-approved package prices.
+ * - USD is an indicative display conversion calculated by the backend at runtime;
+ *   it is intentionally not stored as an approved or chargeable catalog price.
+ * - Razorpay collection remains INR-only.
  * - Integer minor units are mandatory on the backend:
  *     USD: cents (1 USD = 100 cents)
  *     INR: paise (1 INR = 100 paise)
@@ -28,15 +31,6 @@ const PRICING_CATALOG = {
         modalBundleName: 'Starter Bundle',
         credits: 250,
         prices: {
-            USD: {
-                amountMinor: 499,
-                regularMinor: null,
-                formattedSale: '$4.99',
-                formattedRegular: null,
-                formattedPerCredit: '2¢ per credit',
-                formattedSaving: null,
-                ctaPrice: '$4.99'
-            },
             INR: {
                 amountMinor: 44900,
                 regularMinor: null,
@@ -54,15 +48,6 @@ const PRICING_CATALOG = {
         modalBundleName: 'Pro Bundle',
         credits: 600,
         prices: {
-            USD: {
-                amountMinor: 999,
-                regularMinor: null,
-                formattedSale: '$9.99',
-                formattedRegular: null,
-                    formattedPerCredit: '1.67¢ per credit',
-                formattedSaving: null,
-                ctaPrice: '$9.99'
-            },
             INR: {
                 amountMinor: 89900,
                 regularMinor: null,
@@ -80,15 +65,6 @@ const PRICING_CATALOG = {
         modalBundleName: 'Elite Bundle',
         credits: 3000,
         prices: {
-            USD: {
-                amountMinor: 1999,
-                regularMinor: null,
-                formattedSale: '$19.99',
-                formattedRegular: null,
-                    formattedPerCredit: '0.67¢ per credit',
-                formattedSaving: null,
-                ctaPrice: '$19.99'
-            },
             INR: {
                 amountMinor: 179900,
                 regularMinor: null,
@@ -106,17 +82,6 @@ const PRICING_CATALOG = {
         modalBundleName: 'VIP Bundle',
         credits: 100000,
         prices: {
-            USD: {
-                amountMinor: 4900,
-                regularMinor: null,
-                formattedSale: '$49',
-                formattedRegular: null,
-                formattedPerCredit: '0.049¢ per credit',
-                formattedSavingLanding: null,
-                formattedSavingApp: null,
-                ctaPrice: '$49',
-                buttonText: 'View VIP Bundle'
-            },
             INR: {
                 amountMinor: 449900,
                 regularMinor: null,
@@ -188,7 +153,7 @@ function getPlanPricing(planId, currency) {
     const plan = PRICING_CATALOG[planId];
     if (!plan) return null;
     const cur = canonicalizeCurrency(currency);
-    return plan.prices[cur] || plan.prices.INR;
+    return plan.prices[cur] || null;
 }
 
 // Universal module export: both the backend and browser use this exact catalog.

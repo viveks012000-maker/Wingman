@@ -10,6 +10,7 @@ const testSuites = [
     { name: 'Request Lifecycle & Idempotency Replay Guard', file: 'request_lifecycle_and_idempotency_replay.test.js' },
     { name: 'Razorpay Trust Boundary and Fulfillment', file: 'razorpay_payments.test.js' },
     { name: 'Razorpay Checkout Client and Catalog Consistency', file: 'razorpay_checkout_client.test.js' },
+    { name: 'INR Catalog and Dated Indicative USD Pricing', file: 'pricing_currency_switching.test.js' },
     { name: '0. Focused Release Repair Regression Guard', file: 'focused_release_repair.test.js' },
     { name: '1. Final Technical Hardening Pass Verification', file: 'final_hardening_pass.test.js' },
     { name: '2. Codex Comprehensive Audit Verification', file: 'codex_audit_verification.test.js' },
