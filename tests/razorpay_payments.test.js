@@ -99,7 +99,7 @@ async function main() {
     const ignored = Buffer.from(JSON.stringify({ event: 'payment.failed' }));
     assert((await svc.webhook(ignored, sign(ignored, env.RAZORPAY_WEBHOOK_SECRET), 'event_failed')).ignored);
     assert.equal(grants, 2); assert(calls > 0);
-    for (const route of ['/api/payments/orders','/api/payments/verify']) {
+    for (const route of ['/api/payments/orders','/api/payments/verify','/api/payments/reconcile']) {
         assert.equal((await request(app).post(route).send({})).status, 401);
         assert.equal((await request(app).post(route).set('x-mock-auth','true').set('x-test-user-id','victim').send({})).status, 401);
     }

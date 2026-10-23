@@ -18,11 +18,16 @@ async function main() {
     assert.equal(global.window.wingmanCurrency.canonicalize('EUR'),'INR');
     const catalog = require('../config/pricingCatalog').PRICING_CATALOG;
     const sql = fs.readFileSync(path.join(root,'migrations/016_razorpay_payment_ledger.sql'),'utf8');
+    const paymentMigration = fs.readFileSync(path.join(root,'migrations/019_razorpay_live_modes_and_reconciliation.sql'),'utf8');
+    const authClient = fs.readFileSync(path.join(root,'supabaseClient.js'),'utf8');
+    assert(authClient.includes('window.wingmanPayments.reconcilePendingOrder'), 'an authenticated session must retry pending payment recovery');
+    assert(paymentMigration.includes('razorpay_events_append_only'), 'provider event evidence must be append-only');
     for (const [id,plan] of Object.entries(catalog)) {
         assert.equal(currencyContext.window.WINGMAN_PRICING_CATALOG[id].credits,plan.credits);
         assert.equal(currencyContext.window.WINGMAN_PRICING_CATALOG[id].prices.INR.amountMinor,plan.prices.INR.amountMinor);
         assert.equal(currencyContext.window.WINGMAN_PRICING_CATALOG[id].prices.USD,undefined);
         assert(sql.includes(`plan_id='${id}' AND credits=${plan.credits} AND amount_minor=${plan.prices.INR.amountMinor}`));
+        assert(paymentMigration.includes(`plan_id = '${id}' AND credits = ${plan.credits}`), 'forward migration must preserve the INR catalog package quantities');
     }
     let selectedCurrency = 'INR';
     let checkout, verified = false, rejectVerify = false, refreshes = 0, providerOpened = 0;
@@ -39,7 +44,7 @@ async function main() {
         querySelector: () => ({value:'starter'})
     };
     const fetch = async (url, options) => {
-        if (url.endsWith('/config')) return {ok:true,json:async()=>({enabled:true,mode:'test',currency:'INR'})};
+        if (url.endsWith('/config')) return {ok:true,json:async()=>({enabled:true,mode:'test',currency:'INR',keyId:'rzp_test_fixture',availablePlanIds:['starter','pro','elite','limited']})};
         assert.equal(options.headers.Authorization,'Bearer fixture');
         posts.push({url,body:JSON.parse(options.body)});
         if (url.endsWith('/orders')) return {ok:true,json:async()=>({keyId:'rzp_test_fixture',orderId:'order_fixture',amount:44900,currency:'INR',mode:'test',name:'Starter Pack'})};
