@@ -39,6 +39,10 @@ const configJsContent = fs.readFileSync(path.join(ROOT, 'config.js'), 'utf8').re
 const appJsContent = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8').replace(/\r\n/g, '\n');
 const indexHtmlContent = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 const appHtmlContent = fs.readFileSync(path.join(ROOT, 'app.html'), 'utf8').replace(/\r\n/g, '\n');
+const sharedCatalogContent = fs.readFileSync(path.join(ROOT, 'pricing-catalog.js'), 'utf8');
+const nodeCatalogWrapperContent = fs.readFileSync(path.join(ROOT, 'config', 'pricingCatalog.js'), 'utf8');
+const pagesBuildContent = fs.readFileSync(path.join(ROOT, 'scripts', 'build-netlify-dist.js'), 'utf8');
+const sharedStylesContent = fs.readFileSync(path.join(ROOT, 'style.css'), 'utf8');
 
 async function runPricingTests() {
     console.log('============================================================');
@@ -97,7 +101,7 @@ async function runPricingTests() {
     console.log('\n--- B. PERSISTENCE & SAFE STORAGE WHITELIST ---');
     test('Persistence key is wingman_setting_currency', () => {
         assert.strictEqual(STORAGE_KEY, 'wingman_setting_currency');
-        assert.ok(configJsContent.includes("'wingman_setting_currency'"));
+        assert.ok(sharedCatalogContent.includes("'wingman_setting_currency'"));
     });
 
     test('app.js PERSISTED_SETTING_KEYS explicitly whitelists wingman_setting_currency', () => {
@@ -136,6 +140,10 @@ async function runPricingTests() {
         assert.strictEqual(PRICING_CATALOG.elite.prices.USD.regularMinor, null);
         assert.strictEqual(PRICING_CATALOG.limited.prices.USD.amountMinor, 4900); // $49.00
         assert.strictEqual(PRICING_CATALOG.limited.prices.USD.regularMinor, null);
+        assert.strictEqual(PRICING_CATALOG.starter.prices.USD.formattedPerCredit, '2¢ per credit');
+        assert.strictEqual(PRICING_CATALOG.pro.prices.USD.formattedPerCredit, '1.67¢ per credit');
+        assert.strictEqual(PRICING_CATALOG.elite.prices.USD.formattedPerCredit, '0.67¢ per credit');
+        assert.strictEqual(PRICING_CATALOG.limited.prices.USD.formattedPerCredit, '0.049¢ per credit');
     });
 
     test('Final INR prices retain their values and per-credit ratios without compare-at claims', () => {
@@ -158,6 +166,19 @@ async function runPricingTests() {
         assert.strictEqual(limitedInr.formattedPerCredit, '₹0.045 per credit');
     });
 
+    test('Node and browser use one shared authoritative package catalog', () => {
+        assert.strictEqual(require('../pricing-catalog').PRICING_CATALOG, PRICING_CATALOG);
+        assert.match(nodeCatalogWrapperContent, /require\(['"]\.\.\/pricing-catalog\.js['"]\)/);
+        assert.doesNotMatch(configJsContent, /var\s+PRICING_CATALOG\s*=\s*\{/);
+        assert.match(configJsContent, /require\('\.\/pricing-catalog\.js'\)/, 'direct Node imports must use the same source');
+        assert.ok(sharedCatalogContent.includes('PRICING_CATALOG'));
+        assert.ok(pagesBuildContent.includes("'pricing-catalog.js'"), 'Cloudflare artifact must include the shared browser catalog');
+        for (const [name, html] of [['index.html', indexHtmlContent], ['app.html', appHtmlContent]]) {
+            assert.match(html, /<script\s+src=["'](?:\.\/)?pricing-catalog\.js["']><\/script>\s*<script\s+src=["']config\.js["']><\/script>/,
+                name + ' must load the authoritative catalog before config.js');
+        }
+    });
+
     // -------------------------------------------------------------
     // SECTION D: MARKUP & ACCESSIBILITY AUDIT
     // -------------------------------------------------------------
@@ -170,12 +191,28 @@ async function runPricingTests() {
         assert.ok(indexHtmlContent.includes('data-currency="INR"'));
         assert.ok(indexHtmlContent.includes('aria-label="USD — US Dollar"'));
         assert.ok(indexHtmlContent.includes('aria-label="INR — Indian Rupee"'));
+        const usdButton = indexHtmlContent.match(/<button\b(?=[^>]*data-currency="USD")[^>]*>/);
+        assert.ok(usdButton, 'USD selector button must exist');
+        assert.doesNotMatch(usdButton[0], /\bhidden\b|display\s*:\s*none/i, 'USD selector must be visible');
+        assert.match(sharedStylesContent, /\.currency-toggle-btn\s*:\s*focus-visible/);
+        assert.match(sharedStylesContent, /\.currency-toggle-btn\s*\{[^}]*min-height/s);
     });
 
     test('app.html contains accessible segmented currency selector in modal header', () => {
         assert.ok(appHtmlContent.includes('id="appPricingCurrencySelectorWrapper"'));
         assert.ok(appHtmlContent.includes('data-currency="USD"'));
         assert.ok(appHtmlContent.includes('data-currency="INR"'));
+        const usdButton = appHtmlContent.match(/<button\b(?=[^>]*data-currency="USD")[^>]*>/);
+        assert.ok(usdButton, 'USD selector button must exist');
+        assert.doesNotMatch(usdButton[0], /\bhidden\b|display\s*:\s*none/i, 'USD selector must be visible');
+        assert.match(sharedStylesContent, /\.currency-toggle-btn\s*:\s*focus-visible/);
+    });
+
+    test('Display currency is independent from the INR-only checkout currency', () => {
+        assert.ok(!indexHtmlContent.includes('data-purchase-currency="INR"'), 'landing body must not pin display currency to INR');
+        assert.ok(!appHtmlContent.includes('data-purchase-currency="INR"'), 'app body must not pin display currency to INR');
+        assert.ok(!configJsContent.includes("document.body.getAttribute('data-purchase-currency')"), 'currency selection must not force display to checkout currency');
+        assert.ok(configJsContent.includes('wingman_setting_currency'));
     });
 
     test('Pricing cards in index.html have structured data-plan and data-price-role attributes', () => {

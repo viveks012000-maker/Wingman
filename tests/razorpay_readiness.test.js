@@ -62,8 +62,31 @@ async function main() {
                 'The reply you keep rewriting', 'The first-message dilemma', 'Your words, just clearer'
             ]) assert((await page.locator('body').innerText()).includes(phrase), 'Missing marketing copy: ' + phrase);
             assert.equal(await page.locator('img[src="maeve.jpg"]:visible').count(), 0, 'preserve the requested hidden coach image');
-            assert.equal(await page.locator('[data-currency="USD"]:visible').count(), 0);
-            assert.equal(await page.evaluate(() => window.wingmanCurrency.getCurrency()), 'INR');
+            assert.equal(await page.locator('[data-currency="USD"]:visible').count(), 1, 'USD display option must be visible');
+            assert.equal(await page.evaluate(() => window.wingmanCurrency.getCurrency()), 'USD', 'saved display currency must be restored');
+            const displayPrices = [
+                ['starter', '$4.99', '2¢ per credit', '₹449', '₹1.80 per credit'],
+                ['pro', '$9.99', '1.67¢ per credit', '₹899', '₹1.50 per credit'],
+                ['elite', '$19.99', '0.67¢ per credit', '₹1,799', '₹0.60 per credit'],
+                ['limited', '$49', '0.049¢ per credit', '₹4,499', '₹0.045 per credit']
+            ];
+            for (const [planId, usdPrice, usdRate] of displayPrices) {
+                assert.equal(await page.locator('[data-plan="' + planId + '"][data-price-role="sale"]').innerText(), usdPrice);
+                assert.equal(await page.locator('[data-plan="' + planId + '"][data-price-role="per-credit"]').innerText(), usdRate);
+            }
+            const landingInr = page.locator('#pricingCurrencySelectorWrapper [data-currency="INR"]');
+            await landingInr.focus();
+            await landingInr.press('Enter');
+            assert.equal(await page.evaluate(() => window.wingmanCurrency.getCurrency()), 'INR', 'keyboard activation must switch display currency');
+            for (const [planId, , , inrPrice, inrRate] of displayPrices) {
+                assert.equal(await page.locator('[data-plan="' + planId + '"][data-price-role="sale"]').innerText(), inrPrice);
+                assert.equal(await page.locator('[data-plan="' + planId + '"][data-price-role="per-credit"]').innerText(), inrRate);
+            }
+            assert.equal(await page.locator('#pricingCurrencySelectorWrapper [data-currency="USD"]').getAttribute('aria-pressed'), 'false');
+            const landingUsd = page.locator('#pricingCurrencySelectorWrapper [data-currency="USD"]');
+            await landingUsd.focus();
+            await landingUsd.press('Enter');
+            assert.equal(await page.evaluate(() => window.wingmanCurrency.getCurrency()), 'USD');
             assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
             await page.waitForFunction(() => Number(getComputedStyle(document.getElementById('hero-reveal-container')).opacity) === 1);
             await page.screenshot({ path: path.join(root, '..', '..', 'homepage-' + viewport.width + '.png') });
@@ -112,11 +135,11 @@ async function main() {
             assert.equal(await page.evaluate(() => window.checkServerConsentStatus()), true, 'the current session remains unlocked after app re-entry');
             assert.equal(await page.locator('#interstitialModal').isVisible(), false);
 
-            for (const [id, name, credits, price] of [
-                ['starter', 'Starter Pack', '250', '₹449'],
-                ['pro', 'Pro Pack', '600', '₹899'],
-                ['elite', 'Elite Pack', '3,000', '₹1,799'],
-                ['limited', 'VIP Pack', '1,00,000', '₹4,499']
+            for (const [id, name, credits, inrPrice, usdPrice] of [
+                ['starter', 'Starter Pack', '250', '₹449', '$4.99'],
+                ['pro', 'Pro Pack', '600', '₹899', '$9.99'],
+                ['elite', 'Elite Pack', '3,000', '₹1,799', '$19.99'],
+                ['limited', 'VIP Pack', '1,00,000', '₹4,499', '$49']
             ]) {
                 await page.goto(base + '/?review-plan=' + id + '#pricing', { waitUntil: 'load' });
                 await page.locator('a[href="app.html?tier=' + id + '"]').click();
@@ -125,20 +148,29 @@ async function main() {
                 await page.waitForFunction(() => typeof window.openPurchaseModal === 'function');
                 assert.equal(await page.locator('#purchaseModal').isVisible(), true);
                 const linkedSummary = await page.locator('#purchaseOrderSummary').innerText();
-                assert(linkedSummary.includes(name) && linkedSummary.includes(price), 'pricing link must open matching order summary: ' + linkedSummary);
+                assert(linkedSummary.includes(name) && linkedSummary.includes(usdPrice) && linkedSummary.includes('USD'), 'pricing link must use the saved display currency: ' + linkedSummary);
                 await page.evaluate(id => {
                     window.openPurchaseModal();
                     const radio = document.querySelector('input[name="pricing_tier"][value="' + id + '"]');
                     window.selectPricingCard(radio.closest('.pricing-tier-card'));
                 }, id);
                 const summary = await page.locator('#purchaseOrderSummary').innerText();
-                assert(summary.includes(name) && summary.includes(credits) && summary.includes(price), summary);
-                assert(summary.includes('INR') && summary.includes('No additional') && summary.includes('Terms') && summary.includes('Refund'));
+                assert(summary.includes(name) && summary.includes(credits) && summary.includes(usdPrice), summary);
+                assert(summary.includes('USD') && summary.includes('No additional') && summary.includes('Terms') && summary.includes('Refund'));
                 assert.equal(await page.locator('#confirmPurchaseBtn').isDisabled(), true);
-                assert.equal(await page.locator('[data-currency="USD"]:visible').count(), 0);
-                assert.equal(await page.evaluate(() => window.wingmanCurrency.getCurrency()), 'INR');
+                assert.equal(await page.locator('#appPricingCurrencySelectorWrapper [data-currency="USD"]:visible').count(), 1);
+                const appInr = page.locator('#appPricingCurrencySelectorWrapper [data-currency="INR"]');
+                await appInr.focus();
+                await appInr.press('Enter');
+                const inrSummary = await page.locator('#purchaseOrderSummary').innerText();
+                assert(inrSummary.includes(inrPrice) && inrSummary.includes('INR'), 'order summary must update to INR: ' + inrSummary);
+                const appUsd = page.locator('#appPricingCurrencySelectorWrapper [data-currency="USD"]');
+                await appUsd.focus();
+                await appUsd.press('Enter');
+                assert.equal(await page.evaluate(() => window.wingmanCurrency.getCurrency()), 'USD');
+                assert((await page.locator('#purchaseOrderSummary').innerText()).includes(usdPrice), 'order summary must restore USD display');
             }
-            assert.equal(await page.evaluate(() => window.wingmanCurrency.setCurrency('USD')), 'INR');
+            assert.equal(await page.evaluate(() => window.wingmanCurrency.setCurrency('USD')), 'USD');
             await page.screenshot({ path: path.join(root, '..', '..', 'purchase-' + viewport.width + '.png') });
             assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
             assert.equal(await page.locator('img[src="maeve.jpg"]:visible').count(), 0, 'workspace coach image must remain hidden');

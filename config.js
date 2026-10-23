@@ -675,121 +675,18 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 (function () {
     'use strict';
 
-    var STORAGE_KEY = 'wingman_setting_currency';
-    var DEFAULT_CURRENCY = 'INR';
-    var SUPPORTED_CURRENCIES = ['USD', 'INR'];
-
-    var PRICING_CATALOG = {
-        starter: {
-            id: 'starter',
-            name: 'Starter Pack',
-            modalBundleName: 'Starter Bundle',
-            credits: 250,
-            prices: {
-                USD: {
-                    amountMinor: 499,
-                    regularMinor: null,
-                    formattedSale: '$4.99',
-                    formattedRegular: null,
-                    formattedPerCredit: '2¢ per credit',
-                    formattedSaving: null,
-                    ctaPrice: '$4.99'
-                },
-                INR: {
-                    amountMinor: 44900,
-                    regularMinor: null,
-                    formattedSale: '₹449',
-                    formattedRegular: null,
-                    formattedPerCredit: '₹1.80 per credit',
-                    formattedSaving: null,
-                    ctaPrice: '₹449'
-                }
-            }
-        },
-        pro: {
-            id: 'pro',
-            name: 'Pro Pack',
-            modalBundleName: 'Pro Bundle',
-            credits: 600,
-            prices: {
-                USD: {
-                    amountMinor: 999,
-                    regularMinor: null,
-                    formattedSale: '$9.99',
-                    formattedRegular: null,
-                    formattedPerCredit: '1.6¢ per credit',
-                    formattedSaving: null,
-                    ctaPrice: '$9.99'
-                },
-                INR: {
-                    amountMinor: 89900,
-                    regularMinor: null,
-                    formattedSale: '₹899',
-                    formattedRegular: null,
-                    formattedPerCredit: '₹1.50 per credit',
-                    formattedSaving: null,
-                    ctaPrice: '₹899'
-                }
-            }
-        },
-        elite: {
-            id: 'elite',
-            name: 'Elite Pack',
-            modalBundleName: 'Elite Bundle',
-            credits: 3000,
-            prices: {
-                USD: {
-                    amountMinor: 1999,
-                    regularMinor: null,
-                    formattedSale: '$19.99',
-                    formattedRegular: null,
-                    formattedPerCredit: '0.6¢ per credit',
-                    formattedSaving: null,
-                    ctaPrice: '$19.99'
-                },
-                INR: {
-                    amountMinor: 179900,
-                    regularMinor: null,
-                    formattedSale: '₹1,799',
-                    formattedRegular: null,
-                    formattedPerCredit: '₹0.60 per credit',
-                    formattedSaving: null,
-                    ctaPrice: '₹1,799'
-                }
-            }
-        },
-        limited: {
-            id: 'limited',
-            name: 'VIP Pack',
-            modalBundleName: 'VIP Bundle',
-            credits: 100000,
-            prices: {
-                USD: {
-                    amountMinor: 4900,
-                    regularMinor: null,
-                    formattedSale: '$49',
-                    formattedRegular: null,
-                    formattedPerCredit: '0.049¢ per credit',
-                    formattedSavingLanding: null,
-                    formattedSavingApp: null,
-                    ctaPrice: '$49',
-                    buttonText: 'View VIP Bundle'
-                },
-                INR: {
-                    amountMinor: 449900,
-                    regularMinor: null,
-                    formattedSale: '₹4,499',
-                    formattedRegular: null,
-                    formattedPerCredit: '₹0.045 per credit',
-                    formattedSavingLanding: null,
-                    formattedSavingApp: null,
-                    ctaPrice: '₹4,499',
-                    buttonText: 'View VIP Bundle'
-                }
-            }
-        }
-    };
-
+    var pricingSource = window.WINGMAN_PRICING;
+    // Node-based tests import config.js directly; browser pages load the shared script first.
+    if (!pricingSource && typeof module !== 'undefined' && module.exports) {
+        pricingSource = require('./pricing-catalog.js');
+    }
+    if (!pricingSource || !pricingSource.PRICING_CATALOG) {
+        throw new Error('The authoritative Wingman pricing catalog did not load.');
+    }
+    var STORAGE_KEY = pricingSource.STORAGE_KEY;
+    var DEFAULT_CURRENCY = pricingSource.DEFAULT_CURRENCY;
+    var SUPPORTED_CURRENCIES = pricingSource.SUPPORTED_CURRENCIES;
+    var PRICING_CATALOG = pricingSource.PRICING_CATALOG;
     var currentCurrency = DEFAULT_CURRENCY;
     var listeners = [];
 
@@ -854,12 +751,11 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         for (var i = 0; i < buttons.length; i++) {
             var btn = buttons[i];
             var btnCurr = canonicalize(btn.getAttribute('data-currency'));
+            btn.classList.remove('bg-violet-600', 'text-white', 'shadow-sm', 'text-slate-300', 'text-slate-400');
             if (btnCurr === currentCurrency) {
                 btn.classList.add('bg-violet-600', 'text-white', 'shadow-sm');
-                btn.classList.remove('text-slate-400');
                 btn.setAttribute('aria-pressed', 'true');
             } else {
-                btn.classList.remove('bg-violet-600', 'text-white', 'shadow-sm');
                 btn.classList.add('text-slate-400');
                 btn.setAttribute('aria-pressed', 'false');
             }
@@ -869,6 +765,9 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
     function updatePricingDisplay(root) {
         if (typeof document === 'undefined') return;
         var container = root || document;
+
+        var summaryCurrencyLabel = document.getElementById('summaryCurrencyLabel');
+        if (summaryCurrencyLabel) summaryCurrencyLabel.textContent = currentCurrency;
 
         var priceElements = container.querySelectorAll('[data-plan][data-price-role]');
         for (var i = 0; i < priceElements.length; i++) {
@@ -934,7 +833,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
     }
 
     function setCurrency(newCurrency) {
-        var valid = document.body && document.body.getAttribute('data-purchase-currency') === 'INR' ? 'INR' : canonicalize(newCurrency);
+        var valid = canonicalize(newCurrency);
         currentCurrency = valid;
         safeSetStorage(STORAGE_KEY, valid);
 
@@ -985,7 +884,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
 
     function init() {
         var saved = safeGetStorage(STORAGE_KEY);
-        var initial = document.body && document.body.getAttribute('data-purchase-currency') === 'INR' ? 'INR' : canonicalize(saved || DEFAULT_CURRENCY);
+        var initial = canonicalize(saved || DEFAULT_CURRENCY);
         currentCurrency = initial;
         bindCurrencyButtons();
         updatePricingDisplay();

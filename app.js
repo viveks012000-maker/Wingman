@@ -2552,10 +2552,11 @@ STRICT LAWS:
         const priceNumber = window.wingmanCurrency ? window.wingmanCurrency.getPlanPriceNumber(tierValue, currentCurrency) : (Number(radio.getAttribute("data-price")) || 1799);
 
         const summaryPlan = window.wingmanCurrency && window.wingmanCurrency.getPlan(tierValue);
-        const summaryName = $("summaryPlanName"), summaryCredits = $("summaryCredits"), summaryAmount = $("summaryAmount");
+        const summaryName = $("summaryPlanName"), summaryCredits = $("summaryCredits"), summaryAmount = $("summaryAmount"), summaryCurrency = $("summaryCurrencyLabel");
         if (summaryName && summaryPlan) summaryName.textContent = summaryPlan.name;
         if (summaryCredits) summaryCredits.textContent = credits.toLocaleString('en-IN');
         if (summaryAmount) summaryAmount.textContent = formattedPrice;
+        if (summaryCurrency) summaryCurrency.textContent = currentCurrency;
 
         state.selectedTier = {
             value: tierValue,

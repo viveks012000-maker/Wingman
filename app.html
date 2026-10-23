@@ -25,6 +25,7 @@
         <!-- HEIC/HEIF Image Converter for iOS Screenshots - now local (lazy-loaded) -->
         <script src="./vendor/heic2any-loader.js"></script>
     <!-- Supabase Authentication JS SDK & Central Client Helper -->
+    <script src="./pricing-catalog.js"></script>
     <script src="config.js"></script>
     <script src="vendor/supabase.min.js"></script>
     <script src="supabaseClient.js"></script>
@@ -857,7 +858,7 @@
     </style>
     <link rel="stylesheet" href="style.css"/>
 </head>
-<body data-purchase-currency="INR" class="app-page bg-[#090d16] text-on-surface font-sans min-h-screen md:h-screen flex flex-col md:flex-row antialiased selection:bg-primary-container selection:text-white relative overflow-x-hidden md:overflow-hidden">
+<body class="app-page bg-[#090d16] text-on-surface font-sans min-h-screen md:h-screen flex flex-col md:flex-row antialiased selection:bg-primary-container selection:text-white relative overflow-x-hidden md:overflow-hidden">
 
     <!-- Local File Protocol Warning Banner (Only visible when opened directly as file:// from Downloads) -->
     <div id="fileProtocolWarningBanner" class="hidden fixed top-0 left-0 right-0 z-[100] w-full bg-amber-950/90 backdrop-blur-md border-b border-amber-500/40 px-4 py-2.5 text-center text-xs text-amber-200 font-medium shadow-lg">
@@ -1931,13 +1932,14 @@
                 <h2 class="font-headline text-2xl font-extrabold text-white tracking-tight">Flexible Credit Pricing</h2>
                 <p class="font-body text-xs text-slate-300 mt-1 max-w-sm leading-relaxed">Explore one-time AI usage credit packs for the existing tools. Secure purchasing will be enabled after payment activation. No recurring subscriptions.</p>
                 <p id="purchaseCreditContext" class="hidden mt-2 max-w-sm rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 font-body text-[11px] font-semibold leading-relaxed text-amber-200" role="status" aria-live="polite"></p>
-                <!-- Domestic INR pricing -->
+                <!-- Display currency is independent from INR-only payment collection. -->
                 <div class="flex items-center justify-center mt-3" id="appPricingCurrencySelectorWrapper">
                     <div class="inline-flex items-center rounded-full bg-slate-900/80 p-0.5 border border-violet-500/30 shadow-[0_0_15px_rgba(124,58,237,0.15)]" role="group" aria-label="Display currency">
 
-                        <button type="button" hidden style="display:none" class="currency-toggle-btn px-3 py-1 text-xs font-semibold rounded-full transition-all cursor-pointer text-slate-300 hover:text-white" data-currency="USD" aria-label="USD — US Dollar" aria-pressed="false">USD</button>
-                        <button type="button" class="currency-toggle-btn px-3 py-1 text-xs font-semibold rounded-full transition-all cursor-pointer bg-violet-600 text-white shadow-sm" data-currency="INR" aria-label="INR — Indian Rupee" aria-pressed="true">INR</button>
+                        <button type="button" class="currency-toggle-btn px-3 py-1.5 text-xs font-semibold rounded-full transition-all cursor-pointer text-slate-300 hover:text-white" data-currency="USD" aria-label="USD — US Dollar" aria-pressed="false">USD</button>
+                        <button type="button" class="currency-toggle-btn px-3 py-1.5 text-xs font-semibold rounded-full transition-all cursor-pointer bg-violet-600 text-white shadow-sm" data-currency="INR" aria-label="INR — Indian Rupee" aria-pressed="true">INR</button>
                     </div>
+                    <p id="appPricingCurrencyDisclosure" class="mt-1 text-center text-[10px] leading-relaxed text-slate-400" aria-live="polite">USD prices are for display only; international payment collection is not enabled.</p>
                 </div>
             </div>
 
@@ -2177,15 +2179,16 @@
             <div id="purchaseOrderSummary" class="p-4 border-t border-white/10 text-xs text-slate-200" aria-live="polite">
                 <p class="font-bold text-white">Order summary: <span id="summaryPlanName">Elite Pack</span></p>
                 <p><span id="summaryCredits">3,000</span> credits • One-time bundle</p>
-                <p>Package total (INR): <strong id="summaryAmount">₹1,799</strong></p>
-                <p>No additional tax or checkout fees are added to this displayed final total.</p>
+                <p>Package price display (<span id="summaryCurrencyLabel">INR</span>): <strong id="summaryAmount">₹1,799</strong></p>
+                <p>Credits are added only after the server verifies a successful payment.</p>
+                <p>No additional service or convenience fee is added by MyWingman. Any applicable tax treatment will be shown before payment; checkout is currently unavailable.</p>
                 <p><a href="terms.html" target="_blank" rel="noopener noreferrer" class="underline">Terms</a> • <a href="refund.html" target="_blank" rel="noopener noreferrer" class="underline">Cancellation &amp; Refund Policy</a></p>
             </div>
             <!-- Compact Bottom Action Bar -->
             <div class="p-4 border-t border-white/10 bg-[#06040d]/95 backdrop-blur-md mt-auto shrink-0 z-10 flex flex-col items-center justify-between gap-2.5 text-center">
                 <p class="font-mono text-[10px] text-slate-400 flex items-center justify-center gap-1.5" aria-live="polite">
                     <span class="material-symbols-outlined text-[14px] text-violet-400">info</span>
-                    <span id="paymentAvailabilityNotice">Paid checkout is unavailable in production. Secure purchasing may be enabled after payment activation. Displayed INR prices are final customer totals with no extra checkout fees. This purchase experience displays INR only. International payment collection is not enabled.</span>
+                    <span id="paymentAvailabilityNotice">Paid checkout is unavailable in production. USD prices are for display only; international payment collection is not enabled. No payment will be collected.</span>
                 </p>
                 <button type="button" id="confirmPurchaseBtn" class="w-full primary-btn bg-violet-600 hover:bg-violet-500 text-white font-label text-sm py-3 px-6 rounded-full border border-violet-400/40 transition-all flex items-center justify-center gap-2 font-bold cursor-not-allowed shrink-0 shadow-none" aria-disabled="true" disabled>
                     <span id="purchaseBtnText">Purchasing not yet enabled</span>

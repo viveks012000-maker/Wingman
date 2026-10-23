@@ -69,6 +69,21 @@ async function main() {
     window.currentSupabaseSession=null; const before=posts.length;
     await window.wingmanPayments.purchase(); assert.equal(posts.length,before);
     assert(notices.includes('Please sign in to purchase credits.'));
+
+    // Disabled production checkout must not imply that switching to INR enables payments.
+    const disabledButton = {}, disabledLabel = {}, disabledNotice = {};
+    global.window = {wingmanCurrency:{getCurrency:()=> 'USD'},getApiBase:()=> 'https://backend.example'};
+    global.document = {
+        readyState:'complete',
+        getElementById:id=>({confirmPurchaseBtn:disabledButton,purchaseBtnText:disabledLabel,paymentAvailabilityNotice:disabledNotice}[id])
+    };
+    global.fetch = async()=>({ok:true,json:async()=>({enabled:false,mode:'test',currency:'INR'})});
+    delete require.cache[require.resolve('../payments-client.js')];
+    require('../payments-client.js');
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(disabledButton.disabled,true);
+    assert.equal(disabledLabel.textContent,'Purchasing not yet enabled');
+    assert(disabledNotice.textContent.includes('Paid checkout is unavailable in production'));
     console.log('PASS: Checkout client sends only planId and supported currency, blocks USD collection, never optimistically grants credits, handles dismissal/verification failure, and refreshes after server verification. Catalog mirrors match.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

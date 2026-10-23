@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const { isPrivateDevelopmentOrigin } = require('../middleware/developmentOrigin');
+const WINGMAN_PRICING = require('../pricing-catalog');
 
 const ROOT = path.resolve(__dirname, '..');
 const read = relative => fs.readFileSync(path.join(ROOT, relative), 'utf8').replace(/\r\n/g, '\n');
@@ -168,6 +169,8 @@ function resolveConfiguredApiBase(location) {
     const window = {
         location,
         WINGMAN_CONFIG: { API_BASE_URL: 'https://wingman-production-c6ce.up.railway.app' },
+        WINGMAN_PRICING,
+        WINGMAN_PRICING_CATALOG: WINGMAN_PRICING.PRICING_CATALOG,
         addEventListener() {}
     };
     const document = { readyState: 'loading', addEventListener() {} };

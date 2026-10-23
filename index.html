@@ -83,6 +83,7 @@
         }
     </script>
     <!-- Supabase Authentication JS SDK & Central Client Helper -->
+    <script src="pricing-catalog.js"></script>
     <script src="config.js"></script>
     <script src="vendor/supabase.min.js"></script>
     <script src="supabaseClient.js"></script>
@@ -232,7 +233,7 @@
     </style>
 </head>
 
-<body data-purchase-currency="INR"     class="landing-page bg-[#090d16] text-on-surface font-sans min-h-screen flex flex-col antialiased selection:bg-primary-container selection:text-white relative">
+<body class="landing-page bg-[#090d16] text-on-surface font-sans min-h-screen flex flex-col antialiased selection:bg-primary-container selection:text-white relative">
 
     <!-- Local File Protocol Warning Banner (Only visible when opened directly as file:// from Downloads) -->
     <div id="fileProtocolWarningBanner"
@@ -1061,9 +1062,10 @@
             <div class="flex items-center justify-center -mt-4 mb-2" id="pricingCurrencySelectorWrapper">
                 <div class="inline-flex items-center rounded-full bg-slate-900/80 p-1 border border-violet-500/30 shadow-[0_0_15px_rgba(124,58,237,0.15)]" role="group" aria-label="Display currency">
 
-                    <button type="button" hidden style="display:none" class="currency-toggle-btn px-4 py-1.5 text-xs sm:text-sm font-semibold rounded-full transition-all cursor-pointer text-slate-300 hover:text-white" data-currency="USD" aria-label="USD — US Dollar" aria-pressed="false">USD</button>
+                    <button type="button" class="currency-toggle-btn px-4 py-1.5 text-xs sm:text-sm font-semibold rounded-full transition-all cursor-pointer text-slate-300 hover:text-white" data-currency="USD" aria-label="USD — US Dollar" aria-pressed="false">USD</button>
                     <button type="button" class="currency-toggle-btn px-4 py-1.5 text-xs sm:text-sm font-semibold rounded-full transition-all cursor-pointer bg-violet-600 text-white shadow-sm" data-currency="INR" aria-label="INR — Indian Rupee" aria-pressed="true">INR</button>
                 </div>
+                <p id="pricingCurrencyDisclosure" class="mt-2 text-center text-[11px] leading-relaxed text-slate-400">USD prices are display-only; international collection is disabled. Checkout is currently unavailable.</p>
             </div>
 
             <!-- Decoupled 4-Card Multi-Pack Grid (Exact Design Match) -->
@@ -1353,7 +1355,7 @@
                     <h3 class="font-headline text-base md:text-lg font-bold text-white mb-2">How do credit packs work?
                     </h3>
                     <p class="text-xs md:text-sm text-slate-300 leading-relaxed">
-                        Paid checkout is currently unavailable in production; secure purchasing will be enabled after payment activation. The catalog offers 250, 600, 3,000, or 100,000 one-time AI usage credits, with no recurring subscriptions. The displayed INR price is the final total. See our Cancellation &amp; Refund Policy.
+                        Paid checkout is currently unavailable in production. The catalog offers one-time AI usage credit packs of 250, 600, 3,000, or 100,000 credits; there are no recurring subscriptions. USD prices are for display only and international collection is not enabled. MyWingman adds no service or convenience fee; any applicable tax treatment will be shown before payment is enabled. See our Cancellation &amp; Refund Policy.
                     </p>
                 </div>
             </div>
