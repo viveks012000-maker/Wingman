@@ -64,4 +64,3 @@ The current source changes have not been merged or deployed. The production fron
 - Obtain the owner's explicit final confirmation immediately before exposing real INR checkout to customers.
 
 After credential rotation, continue from the current branch, compare it with the latest main, rerun the build, push/open the PR through the existing GitHub workflow, and deploy only after the security, provider, tax, and owner-authorization gates are satisfied. Do not trigger a duplicate Cloudflare deployment; the Pages project currently has automatic deployments disabled.
-
