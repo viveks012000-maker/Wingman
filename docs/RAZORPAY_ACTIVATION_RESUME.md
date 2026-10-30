@@ -1,113 +1,66 @@
-# MyWingman Razorpay Activation Resume Checkpoint
+# MyWingman payment and release checkpoint
 
-**Saved:** 2026-10-23 (Asia/Kolkata)
+**Updated:** 2026-10-30 (Asia/Kolkata)
+**Repository:** viveks012000-maker/Wingman
+**Branch:** codex/railway-environment-name-razorpay-activation
 
-**State:** Paused at the user's request. Resume only when the user sends `resume`.
-**Repository:** `viveks012000-maker/Wingman`
+## Current verified production state
 
-## Git checkpoint
+- Railway project: cooperative-nourishment (dda20725-30ef-4770-ab4e-d24a5c5cb5a3), production environment (30e98667-a8a1-415d-8cf1-55e670f45bd0), service Wingman (ce064d3b-9dcc-43d4-9a37-b99878fa18b1).
+- Current production deployment: 7d78d229-d211-454a-bf3e-ac13a80c0160, SUCCESS, commit 611b374252b4f9c4011961db19d53582d799a39b (PR #179). Railway reports one running replica, no current warnings/failures, and no staged configuration changes. Do not accept the stale zero-change pending-work record surfaced by the status summary.
+- Production service variable names were inspected without exposing values. They include AICredits and Supabase configuration, but no Razorpay key, webhook, mode, activation, tax, or readiness variables. No secret values were retrieved, printed, or copied.
+- Production source at 611b374 requires payment enablement and schema flags before checkout. With no Razorpay variables present, paid checkout remains disabled. Do not claim live payments are operational.
+- The existing Supabase migration 019_razorpay_live_modes_and_reconciliation was already applied. Its reconciliation functions and service-role-only access were previously verified. Do not rerun the migration or make production database writes for this release.
+- The authenticated Razorpay session remains available. A current dashboard Home view showed no pending actions and no payment activity; it did not establish Live Mode approval. Earlier dashboard inspection showed domestic methods available, no live API key or webhook configured, and international cards unsupported for this business type. USD collection must remain disabled.
 
-- Last known deployed production baseline: `611b374252b4f9c4011961db19d53582d799a39b` (PR #179 merge). This matches the local `origin/main` tracking ref and the previously inspected live release manifest. Recheck the remote and live deployments on resume; the Railway connector was not available for a fresh check during this checkpoint.
-- Local working branch: `codex/railway-environment-name-razorpay-activation`.
-- Local code checkpoint commit: `2c2824f44d1153b1c21eb8f896f31b73eb76600e` (`checkpoint: correct Railway environment identity gates`). It is local only: not pushed, merged, or deployed.
-- The checkpoint document is saved in a subsequent local commit on the same branch. Inspect `git log --oneline -- docs/RAZORPAY_ACTIVATION_RESUME.md` to find that documentation commit.
-- Do not stage or remove the pre-existing untracked images under `work/performance-optimization/screenshots/` (10 files). They are unrelated workspace data and were preserved untouched.
+## Security gate
 
-## What was completed locally
+Railway's Oct 21 security disclosure says encrypted environment variables were accessed and a subset were decrypted; Railway recommends rotating sensitive variables. The owner received a direct Railway notice that this workspace may be at risk. This is a credible risk signal, not proof that any particular key was decrypted. Rotation status for the AICredits and Supabase server-side keys is unknown and cannot be verified from Railway's OAuth connection, which returns variable names only.
 
-The Railway environment identity correction now uses Railway's documented `RAILWAY_ENVIRONMENT_NAME` and `RAILWAY_ENVIRONMENT_ID`. A valid environment ID and name are required to identify a Railway runtime. The production payment gate requires the exact production environment ID `30e98667-a8a1-415d-8cf1-55e670f45bd0` together with the name `production`; the obsolete `RAILWAY_ENVIRONMENT` variable alone cannot authorize live payments. Production-safe authentication behavior remains in place for Railway deployments. `X-Real-IP` is trusted only in a recognized Railway runtime and only after literal IP validation.
+Official Railway references:
 
-The code checkpoint contains these 27 files:
+- https://blog.railway.com/p/security-disclosure-wednesday-october-21st
+- https://blog.railway.com/p/preliminary-report-october-security-incident
 
-- `middleware/auth.js`
-- `middleware/railwayEnvironment.js`
-- `middleware/razorpayPayments.js`
-- `middleware/security.js`
-- `middleware/securityBoundaries.js`
-- `middleware/supabaseAuth.js`
-- `railway-server.js`
-- `server.js`
-- `tests/auto_language_runtime.test.js`
-- `tests/codex_audit_verification.test.js`
-- `tests/cors_production_policy.test.js`
-- `tests/error_disclosure.test.js`
-- `tests/final_hardening_pass.test.js`
-- `tests/internal_prompt_tag_leak_regression.test.js`
-- `tests/maeve_modes_matrix.test.js`
-- `tests/malformed_jwt_fast_reject.test.js`
-- `tests/railway_environment_identity.test.js`
-- `tests/railway_request_admission.test.js`
-- `tests/razorpay_modes_reconciliation.test.js`
-- `tests/razorpay_payments.test.js`
-- `tests/request_lifecycle_and_idempotency_replay.test.js`
-- `tests/roleplay_provider_path.test.js`
-- `tests/run_all_tests.js`
-- `tests/second_pass_verification.test.js`
-- `tests/security_hardening_audit.test.js`
-- `tests/ui_api_contract.test.js`
-- `tests/universal_auto_language.test.js`
+Before a production code deployment or live payment activation:
 
-## Verification already completed
+1. Rotate both AICredits provider keys in the AICredits account, review provider usage/audit logs, and update the matching Railway variables securely.
+2. Rotate the Supabase server-side service-role credential through the Supabase project, review Supabase audit/auth/database logs, and update Railway securely. Do not expose keys in chat, source, logs, or this checkpoint. The browser-facing anon key is public by design; do not treat it as a service-role secret.
+3. Recheck the Railway and Supabase credential changes and verify the service still works after the coordinated update. Never redeploy with an old key after revocation.
 
-- Full `npm test`: exit 0; 128 passed, 0 failed.
-- Additional focused Railway identity, Razorpay mode/reconciliation, payment mock/security, request admission, CORS and hardening checks passed.
-- Disposable migration replay was skipped because Docker was unavailable. Migration 019 was already applied; do not rerun it against production.
-- `git -c core.whitespace=cr-at-eol diff --cached --check` passed before the code checkpoint commit.
-- A scan of the code changes found no credential-like token, private-key block, or credential-bearing URL. Secret values were not added to files or logs.
+The Railway and Supabase incident logs previously reviewed showed no confirmed successful unauthorized secret use, but absence of such evidence does not establish that stored credentials were not exposed. No production credentials have been rotated or changed as part of this code work.
 
-## Production and payment state last observed
+## Code prepared locally
 
-- The API health endpoint returned `status: ok` with Supabase active. `/app` loaded. No authenticated AI/credit workflow was invoked during the payment work.
-- `/api/payments/config` returned `enabled: false`, `mode: disabled`, `currency: INR`, `keyId: null`, and no available plan IDs. Real INR collection is not operational. No payment activation, production variable change, payment, or deployment was performed for this local fix.
-- The frontend release manifest reported source commit `611b374252b4f9c4011961db19d53582d799a39b` at the time previously checked. Treat this as the last known observation and recheck on resume.
-- Supabase project was previously confirmed active. Migration `019_razorpay_live_modes_and_reconciliation` was applied at `20261023161423`; reconciliation functions were present and executable only by `service_role`. No production database write was made.
-- USD collection remains disabled. The Razorpay account's international-card screen reported that this business type is unsupported. Keep the USD pricing display intact.
+The branch contains the Railway environment identity correction using the provider's RAILWAY_ENVIRONMENT_NAME and RAILWAY_ENVIRONMENT_ID, plus the following current working-tree changes:
 
-## Railway connection and identifiers
+- Fixed display-only USD prices: $4.99, $9.99, $19.99, $49.99; removed reference-rate requests and dated/approximate pricing copy.
+- Changed the 100,000-credit card badge to “LIMITED TIME,” per the owner's request. Confirm that a genuine limited-time offer is active before publishing this marketing claim.
+- Fixed the desktop sidebar credit-card text/button layout while retaining the existing visual design.
+- Made new USD checkout fail closed even if environment flags are set; INR remains the only potentially supported checkout currency.
+- Updated focused regression/UI tests and patched dependency versions used by the security audit.
 
-These IDs were previously observed through the existing Railway project/configuration; reconfirm them with the authenticated Railway connector before using them:
+Do not include the pre-existing untracked work/ directory in a commit. The intended source files are tracked changes only. Do not merge into main or deploy the production service until the security gate above is resolved; merging to main triggers Railway production deployment.
 
-- Project `Wingman`: `dda20725-30ef-4770-ab4e-d24a5c5cb5a3`
-- Service `Wingman`: `ce064d3b-9dcc-43d4-9a37-b99878fa18b1`
-- Production environment: `30e98667-a8a1-415d-8cf1-55e670f45bd0`
-- Staging environment: `438d986c-d799-42a0-9149-ef0eef809486`
+## Verification
 
-The last Railway connector call returned `UNAUTHORIZED` and requested app reauthentication. A Railway website login does not restore the Codex connection. The user must reconnect Railway under Codex **Settings → Apps & Connections → Railway** and complete authorization personally. Do not retry login repeatedly or request credentials in chat.
+Most recent checks after the code changes:
 
-## Razorpay status and blockers
+- Full npm test: passed, 128 suites passed and 0 failed.
+- Focused payment readiness, checkout, reconciliation, and mobile/sidebar checks passed.
+- npm run verify:migrations passed; disposable Docker replay was unavailable. Production migration 019 is already applied.
+- npm run build:netlify passed before the final release commit; rerun after the commit so the release manifest records its final SHA.
+- Production dependency audit reported zero production vulnerabilities and no moderate-or-higher development findings.
 
-Previously inspected Razorpay dashboard state:
+The current source changes have not been merged or deployed. The production frontend remains on its existing release; the live website has not been used to run a real or sandbox payment. No real payment, refund, transfer, or credit change was performed.
 
-- Existing MyWingman merchant account: account access complete; website `https://mywingmanapp.com/` approved.
-- Domestic cards, UPI, and displayed netbanking methods: activated in the dashboard.
-- The inspected API keys page showed no existing key entry and offered `Generate Key`. Do not generate or replace keys until Railway access is restored, existing Railway variable presence is safely checked, and the live activation gates are satisfied.
-- The inspected webhook page had no configured endpoint. Check again before creating exactly one endpoint; avoid duplicate webhook registrations.
-- Automatic capture was shown as enabled (within 12 minutes); refunds used the normal 5–7 day schedule.
-- The international-payment screen rejected international cards for this business type. Do not enable USD collection or add another provider.
-- GST addition was reported unsupported for this business type. This does not establish tax exemption. A qualified owner/accountant determination remains required before setting `RAZORPAY_LIVE_TAX_APPROVED=true`.
-- The merchant dashboard state does not prove a completed live transaction or that the production API currently has valid live keys. The Railway environment variables have not been safely inspected because the connector is unauthorized.
+## Remaining activation checks
 
-The live config endpoint was disabled, but current Railway flags, secret presence, key validity, webhook signature secret, and any incident-related rotation status remain unverified. Do not deploy the environment correction until a safe variable-name/presence audit proves it cannot unexpectedly enable live checkout. Never print or copy secret values into chat, logs, commits, or this document.
+- Confirm domestic INR live eligibility and capture settings in Razorpay; do not infer approval solely from website approval or available payment methods.
+- Create exactly one correct production webhook only after confirming none exists; configure its secret securely and verify signature handling.
+- Obtain a qualified owner/accountant determination for tax treatment. Never set the live tax approval flag without it.
+- Keep USD payment collection disabled.
+- Use isolated provider test mode and test database fixtures for checkout, ownership, signature, idempotency, failure/cancellation, refunds/disputes, and credit reconciliation. Never run a real-money test.
+- Obtain the owner's explicit final confirmation immediately before exposing real INR checkout to customers.
 
-## Exact resume plan
-
-When the user sends `resume`, continue this existing task in order; do not restart its implementation:
-
-1. Read this checkpoint. Confirm the current branch, code commit, documentation commit, preserved `work/` images, current remote `main`, latest production SHA, Railway connector status, and production health.
-2. Check current official Railway incident guidance and whether this workspace received an affected-account notice. The user's prior prompt identified a possible October 20–22, 2026 incident; that notice and any account exposure have not been verified here. If access is available, inspect unusual account/provider usage. If credible compromise evidence appears, alert the user and prioritize containment. Do not rotate shared credentials blindly; map every consumer and coordinate authorized rotation safely.
-3. If Railway is still unauthorized, request the one exact action: reconnect the Railway app in Codex Settings → Apps & Connections. Continue independent local work, but do not claim production variables or deployment state are verified.
-4. With Railway access, inspect production variable **names and presence only** plus safe format/enablement booleans, without displaying values. Verify current Railway identity, deployment SHA, payment configuration, and whether deploying this fix could activate collection. Preserve existing secrets, data, credits, payment settings, and rollback.
-5. Recheck Railway's documented environment identity and the X-Real-IP trust boundary. Maintain a separate disabled-by-default payment activation gate. Do not deploy if the fix could turn on live collection unexpectedly.
-6. Run the relevant tests, compare against the latest `main`, create a PR on the existing repository branch workflow, satisfy required checks, and deploy only through the existing Railway pipeline after the safety property is proven. Do not deploy Cloudflare for this backend-only change or trigger a deployment hook.
-7. Reinspect the existing Razorpay merchant account. Confirm domestic INR eligibility, key/webhook state, capture, account mapping, signature verification, order amount/currency, fulfillment, idempotency, refund/dispute reconciliation, authenticated checkout, and browser-close recovery. Configure secrets only in Railway after provider approval and authorization; configure one correct webhook if needed.
-8. Resolve tax treatment with a verified owner/accountant decision. Do not invent a tax rate or exemption, change approved package prices, or set the tax approval flag without that determination.
-9. Keep USD collection disabled while preserving the USD display selector. Use isolated, non-billable/provider-test checks; do not perform an unapproved real-money transaction.
-10. Before real INR collection, verify every provider, security, tax, deployment, rollback, and reconciliation gate and obtain the user's explicit authorization to activate real-money collection. Then verify the live release and checkout configuration. Never claim payments are operational without actual evidence.
-
-## Fresh-session recovery
-
-Open this repository directory:
-
-`C:\Users\sumit\Documents\Codex\2026-10-19\files-pasted-by-the-user-mywingman\wingman-ai-failure-investigation`
-
-Read this document first. Check `git status --short --branch` and `git log --oneline -5`. Continue from `codex/railway-environment-name-razorpay-activation` and code checkpoint `2c2824f44d1153b1c21eb8f896f31b73eb76600e`. Do not run `git clean`, reset, or overwrite local work. Preserve the untracked `work/performance-optimization/screenshots/` files. Compare the branch to the current remote `main` and resolve intervening changes safely before opening or merging a PR.
+After credential rotation, continue from the current branch, compare it with the latest main, rerun the build, push/open the PR through the existing GitHub workflow, and deploy only after the security, provider, tax, and owner-authorization gates are satisfied. Do not trigger a duplicate Cloudflare deployment; the Pages project currently has automatic deployments disabled.

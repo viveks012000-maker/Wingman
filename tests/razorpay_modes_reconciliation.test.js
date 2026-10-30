@@ -62,14 +62,10 @@ async function main() {
         RAZORPAY_LIVE_USD_PRICES_JSON: '{"starter":499,"pro":999,"elite":1999,"limited":4999}'
     };
     const liveUsd = resolvePaymentConfig(usdEnv);
-    assert.equal(liveUsd.enabled, true);
-    assert.equal(liveUsd.mode, 'live_usd');
-    assert.equal(liveUsd.currency, 'USD');
-    assert.equal(liveUsd.usdPrices.starter, 499);
-    for (const prices of ['{"starter":499}', '{"starter":499,"pro":0,"elite":1999,"limited":4999}', '{"starter":499.5,"pro":999,"elite":1999,"limited":4999}', 'not-json']) {
-        assert.equal(resolvePaymentConfig({ ...usdEnv, RAZORPAY_LIVE_USD_PRICES_JSON: prices }).enabled, false);
-    }
-    assert.equal(resolvePaymentConfig({ ...usdEnv, RAZORPAY_LIVE_USD_APPROVED: 'false' }).enabled, false);
+    assert.equal(liveUsd.enabled, false, 'the account restriction must block new USD checkout even if all environment flags are set');
+    assert.equal(liveUsd.mode, 'disabled');
+    assert.equal(liveUsd.currency, 'INR');
+    assert.deepEqual(liveUsd.availablePlanIds, []);
 
     let created = null;
     const noOpStore = {
@@ -97,17 +93,14 @@ async function main() {
     assert.equal(created.mode, 'live_inr');
     await assert.rejects(liveService.createOrder('owner', { planId: 'limited' }), { status: 403 });
 
-    let usdOrderPayload;
-    const usdService = createPaymentService({ env: usdEnv, store: noOpStore, fetchImpl: async (url, options) => {
-        usdOrderPayload = JSON.parse(options.body);
-        return { ok: true, json: async () => ({ ...usdOrderPayload, id: 'order_usd' }) };
+    let usdProviderCalls = 0;
+    const usdService = createPaymentService({ env: usdEnv, store: noOpStore, fetchImpl: async () => {
+        usdProviderCalls++;
+        throw new Error('new USD checkout must not contact Razorpay');
     } });
-    const createdUsd = await usdService.createOrder('owner', { planId: 'starter', currency: 'USD' });
-    assert.equal(usdOrderPayload.amount, 499);
-    assert.equal(usdOrderPayload.currency, 'USD');
-    assert.equal(createdUsd.currency, 'USD');
-    assert.equal(createdUsd.mode, 'live_usd');
-    assert.equal(usdService.config().usdPrices, undefined, 'the public config endpoint must not expose internal price-map configuration');
+    assert.equal(usdService.config().enabled, false);
+    await assert.rejects(usdService.createOrder('owner', { planId: 'starter', currency: 'USD' }), { status: 503 });
+    assert.equal(usdProviderCalls, 0, 'a disallowed USD checkout must not create a provider order');
 
     let reconciled = null;
     let walletCredits = 300;

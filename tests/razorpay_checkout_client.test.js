@@ -14,7 +14,7 @@ async function main() {
     require('../config.js');
     const currencyContext = { window: global.window };
     assert.equal(global.window.wingmanCurrency.canonicalize('usd'),'USD');
-    assert.equal(global.window.wingmanCurrency.formatPlanSale('limited','USD'),'USD estimate unavailable');
+    assert.equal(global.window.wingmanCurrency.formatPlanSale('limited','USD'),'$49.99');
     assert.equal(global.window.wingmanCurrency.canonicalize('EUR'),'INR');
     const catalog = require('../config/pricingCatalog').PRICING_CATALOG;
     const sql = fs.readFileSync(path.join(root,'migrations/016_razorpay_payment_ledger.sql'),'utf8');
@@ -22,10 +22,13 @@ async function main() {
     const authClient = fs.readFileSync(path.join(root,'supabaseClient.js'),'utf8');
     assert(authClient.includes('window.wingmanPayments.reconcilePendingOrder'), 'an authenticated session must retry pending payment recovery');
     assert(paymentMigration.includes('razorpay_events_append_only'), 'provider event evidence must be append-only');
+    const fixedUsdDisplay = {starter:['$4.99',499],pro:['$9.99',999],elite:['$19.99',1999],limited:['$49.99',4999]};
     for (const [id,plan] of Object.entries(catalog)) {
         assert.equal(currencyContext.window.WINGMAN_PRICING_CATALOG[id].credits,plan.credits);
         assert.equal(currencyContext.window.WINGMAN_PRICING_CATALOG[id].prices.INR.amountMinor,plan.prices.INR.amountMinor);
-        assert.equal(currencyContext.window.WINGMAN_PRICING_CATALOG[id].prices.USD,undefined);
+        assert.equal(currencyContext.window.WINGMAN_PRICING_CATALOG[id].prices.USD.formattedSale,fixedUsdDisplay[id][0]);
+        assert.equal(currencyContext.window.WINGMAN_PRICING_CATALOG[id].prices.USD.displayAmountMinor,fixedUsdDisplay[id][1]);
+        assert.equal(currencyContext.window.wingmanCurrency.formatPlanSale(id,'USD'),fixedUsdDisplay[id][0]);
         assert(sql.includes(`plan_id='${id}' AND credits=${plan.credits} AND amount_minor=${plan.prices.INR.amountMinor}`));
         assert(paymentMigration.includes(`plan_id = '${id}' AND credits = ${plan.credits}`), 'forward migration must preserve the INR catalog package quantities');
     }
