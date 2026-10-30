@@ -49,7 +49,7 @@ Most recent checks after the code changes:
 - Full npm test: passed, 128 suites passed and 0 failed.
 - Focused payment readiness, checkout, reconciliation, and mobile/sidebar checks passed.
 - npm run verify:migrations passed; disposable Docker replay was unavailable. Production migration 019 is already applied.
-- npm run build:netlify passed before the final release commit; rerun after the commit so the release manifest records its final SHA.
+- npm run build:netlify passed after source commit 2090bfc048a6500d15664fefa9952e0d8ff2c9bc; its release manifest records that source SHA. GitHub rebuilds and verifies the public artifact for the final PR head.
 - Production dependency audit reported zero production vulnerabilities and no moderate-or-higher development findings.
 
 The current source changes have not been merged or deployed. The production frontend remains on its existing release; the live website has not been used to run a real or sandbox payment. No real payment, refund, transfer, or credit change was performed.
@@ -64,3 +64,4 @@ The current source changes have not been merged or deployed. The production fron
 - Obtain the owner's explicit final confirmation immediately before exposing real INR checkout to customers.
 
 After credential rotation, continue from the current branch, compare it with the latest main, rerun the build, push/open the PR through the existing GitHub workflow, and deploy only after the security, provider, tax, and owner-authorization gates are satisfied. Do not trigger a duplicate Cloudflare deployment; the Pages project currently has automatic deployments disabled.
+
