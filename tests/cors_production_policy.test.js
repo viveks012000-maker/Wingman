@@ -53,7 +53,7 @@ const runtimeOutput = execFileSync(process.execPath, ['-e', runtimeProbe], {
   env: {
     ...process.env,
     NODE_ENV: 'production',
-    RAILWAY_ENVIRONMENT: 'production',
+    RAILWAY_ENVIRONMENT_NAME: 'production',
     RAILWAY_ENVIRONMENT_ID: '30e98667-a8a1-415d-8cf1-55e670f45bd0',
     ALLOWED_ORIGINS: 'https://attacker.example',
     AICREDITS_API_KEY: 'test_key',
@@ -89,7 +89,7 @@ const stagingRuntimeOutput = execFileSync(process.execPath, ['-e', stagingRuntim
   env: {
     ...process.env,
     NODE_ENV: 'production',
-    RAILWAY_ENVIRONMENT: 'razorpay-staging',
+    RAILWAY_ENVIRONMENT_NAME: 'razorpay-staging',
     RAILWAY_ENVIRONMENT_ID: '438d986c-d799-42a0-9149-ef0eef809486',
     ALLOWED_ORIGINS: 'https://attacker.example',
     AICREDITS_API_KEY: 'test_key',

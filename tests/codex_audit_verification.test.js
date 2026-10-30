@@ -84,7 +84,7 @@ assert.strictEqual(authJs.includes("require('./supabaseAuth')"), true, 'auth.js 
 assert.strictEqual(authJs.includes('jsonwebtoken'), false, 'auth.js must not retain local JWT decoding');
 
 const supAuth = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'supabaseAuth.js'), 'utf8').replace(/\r\n/g, '\n');
-assert.strictEqual(supAuth.includes('const isProduction = process.env.NODE_ENV === \'production\' || Boolean(process.env.RAILWAY_ENVIRONMENT);'), true, 'supabaseAuth detects production');
+assert.strictEqual(supAuth.includes('const isProduction = isProductionRuntime();'), true, 'supabaseAuth detects production');
 assert.strictEqual(supAuth.includes('if (!isProduction && (process.env.ENABLE_MOCK_AUTH === \'true\' || req.headers[\'x-mock-auth\'] === \'true\'))'), true, 'supabaseAuth gates mock auth behind !isProduction');
 
 console.log('✔ Test 8 Passed: Production auth strictly enforces Supabase authentication and rejects local JWT');

@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { PRICING_CATALOG } = require('../config/pricingCatalog');
+const { isProductionRuntime, isProductionRailwayEnvironment } = require('./railwayEnvironment');
 
 class PaymentError extends Error {
     constructor(status, message) { super(message); this.status = status; }
@@ -24,7 +25,7 @@ function signatureMatches(body, signature, secret) {
     return crypto.timingSafeEqual(expected, Buffer.from(signature, 'hex'));
 }
 function isProduction(env) {
-    return env.NODE_ENV === 'production' || env.RAILWAY_ENVIRONMENT === 'production';
+    return isProductionRuntime(env);
 }
 function validCredentialPair(keyId, keySecret, prefix) {
     return typeof keyId === 'string' && new RegExp(`^rzp_${prefix}_[A-Za-z0-9]+$`).test(keyId) &&
@@ -44,26 +45,15 @@ function liveCredentials(env = process.env) {
     if (!validCredentialPair(keyId, keySecret, 'live') || typeof webhookSecret !== 'string' || webhookSecret.length < 8) return null;
     return { keyId, keySecret, webhookSecret };
 }
-function parseFixedUsdPrices(value) {
-    if (typeof value !== 'string' || !value.trim()) return null;
-    let parsed;
-    try { parsed = JSON.parse(value); } catch (_) { return null; }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    const planIds = Object.keys(PRICING_CATALOG).sort();
-    if (Object.keys(parsed).sort().join('|') !== planIds.join('|')) return null;
-    const prices = {};
-    for (const planId of planIds) {
-        if (!Number.isSafeInteger(parsed[planId]) || parsed[planId] <= 0) return null;
-        prices[planId] = parsed[planId];
-    }
-    return prices;
-}
 function disabledConfig() {
     return { enabled: false, mode: 'disabled', currency: 'INR', keyId: null, availablePlanIds: [] };
 }
 function resolvePaymentConfig(env = process.env) {
     if (!env || env.RAZORPAY_PAYMENTS_ENABLED !== 'true' || env.RAZORPAY_SCHEMA_READY !== 'true') return disabledConfig();
     const requestedMode = env.RAZORPAY_MODE || (testCredentials(env) ? 'test' : 'disabled');
+    // This merchant is not approved for international USD collection. USD prices are
+    // display-only, so no environment-variable combination can enable new USD orders.
+    if (requestedMode === 'live_usd') return disabledConfig();
     if (requestedMode === 'test') {
         const credentials = testCredentials(env);
         if (!credentials) return disabledConfig();
@@ -72,7 +62,7 @@ function resolvePaymentConfig(env = process.env) {
             availablePlanIds: Object.keys(PRICING_CATALOG)
         };
     }
-    if (env.NODE_ENV !== 'production' || env.RAILWAY_ENVIRONMENT !== 'production' || env.RAZORPAY_RECONCILIATION_SCHEMA_READY !== 'true' ||
+    if (env.NODE_ENV !== 'production' || !isProductionRailwayEnvironment(env) || env.RAZORPAY_RECONCILIATION_SCHEMA_READY !== 'true' ||
         env.RAZORPAY_LIVE_PRECHECKS_PASSED !== 'true' || env.RAZORPAY_LIVE_TAX_APPROVED !== 'true' ||
         env.RAZORPAY_LIVE_ACCOUNT_ID && !/^acc_[A-Za-z0-9]{1,64}$/.test(env.RAZORPAY_LIVE_ACCOUNT_ID)) {
         return disabledConfig();
@@ -84,12 +74,6 @@ function resolvePaymentConfig(env = process.env) {
         if (env.RAZORPAY_LIVE_INR_ELIGIBLE !== 'true' || env.RAZORPAY_LIVE_INR_APPROVED !== 'true' || !/^acc_[A-Za-z0-9]{1,64}$/.test(env.RAZORPAY_LIVE_ACCOUNT_ID || '')) return disabledConfig();
         const availablePlanIds = Object.keys(PRICING_CATALOG).filter(id => id !== 'limited' || env.RAZORPAY_LIVE_VIP_APPROVED === 'true');
         return { enabled: true, mode: 'live_inr', currency: 'INR', keyId: credentials.keyId, availablePlanIds };
-    }
-    if (requestedMode === 'live_usd') {
-        const usdPrices = parseFixedUsdPrices(env.RAZORPAY_LIVE_USD_PRICES_JSON);
-        if (env.RAZORPAY_LIVE_USD_ELIGIBLE !== 'true' || env.RAZORPAY_LIVE_USD_APPROVED !== 'true' || !usdPrices || !/^acc_[A-Za-z0-9]{1,64}$/.test(env.RAZORPAY_LIVE_ACCOUNT_ID || '')) return disabledConfig();
-        const availablePlanIds = Object.keys(PRICING_CATALOG).filter(id => id !== 'limited' || env.RAZORPAY_LIVE_VIP_APPROVED === 'true');
-        return { enabled: true, mode: 'live_usd', currency: 'USD', keyId: credentials.keyId, availablePlanIds, usdPrices };
     }
     return disabledConfig();
 }
@@ -104,7 +88,7 @@ function credentialsForMode(mode, env = process.env) {
         // and customer recovery after new checkout has been disabled. Activation
         // approvals gate resolvePaymentConfig(); these checks only authorize access to
         // the separately scoped credentials for an already persisted live order.
-        if (env.NODE_ENV !== 'production' || env.RAILWAY_ENVIRONMENT !== 'production' ||
+        if (env.NODE_ENV !== 'production' || !isProductionRailwayEnvironment(env) ||
             env.RAZORPAY_RECONCILIATION_SCHEMA_READY !== 'true' ||
             !/^acc_[A-Za-z0-9]{1,64}$/.test(env.RAZORPAY_LIVE_ACCOUNT_ID || '')) return null;
         const credentials = liveCredentials(env);
@@ -205,7 +189,7 @@ function createPaymentService({ store, env = process.env, fetchImpl = fetch }) {
         if (!plan) throw new PaymentError(400, 'Select a valid credit bundle.');
         if (!config.availablePlanIds.includes(plan.id)) throw new PaymentError(403, 'This credit bundle is not currently available for checkout.');
         if (Object.hasOwn(input, 'currency') && input.currency !== config.currency) throw new PaymentError(400, `Select a valid ${config.currency} credit bundle.`);
-        const amount = config.mode === 'live_usd' ? config.usdPrices[plan.id] : plan.prices.INR.amountMinor;
+        const amount = plan.prices.INR.amountMinor;
         const receipt = crypto.randomUUID();
         const order = await api(config.mode, 'orders', 'POST', { amount, currency: config.currency, receipt });
         if (!order || !validId(order.id, 'order') || order.amount !== amount || order.currency !== config.currency || order.receipt !== receipt) {
@@ -539,5 +523,5 @@ function supabasePaymentStore(client) {
 
 module.exports = {
     createPaymentService, supabasePaymentStore, signatureMatches, testConfig,
-    resolvePaymentConfig, parseFixedUsdPrices, requirePaymentAuth, PaymentError
+    resolvePaymentConfig, requirePaymentAuth, PaymentError
 };

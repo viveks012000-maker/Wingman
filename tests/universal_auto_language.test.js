@@ -26,6 +26,8 @@ process.env.AICREDITS_API_KEY = 'stub-general-key';
 process.env.AICREDITS_API_KEY_GENERAL = 'stub-general-key';
 process.env.AICREDITS_API_KEY_VISION = 'stub-vision-key';
 delete process.env.RAILWAY_ENVIRONMENT;
+delete process.env.RAILWAY_ENVIRONMENT_NAME;
+delete process.env.RAILWAY_ENVIRONMENT_ID;
 
 const AUTH_USER_ID = '77777777-7777-7777-7777-777777777777';
 

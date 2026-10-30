@@ -4,12 +4,11 @@
  * =========================================================================================
  * WINGMAN AUTHORITATIVE PRICING & CURRENCY CATALOG
  * =========================================================================================
- * Single source of truth for credit tiers, pricing, integer minor amounts, and formatting.
+ * Single source of truth for credit tiers and owner-approved INR pricing.
  *
  * NOTE ON CURRENCY COMPLIANCE:
  * - INR prices below are the owner-approved package prices.
- * - USD is an indicative display conversion calculated by the backend at runtime;
- *   it is intentionally not stored as an approved or chargeable catalog price.
+ * - Fixed USD presentation values live in config.js and are never used as checkout amounts.
  * - Razorpay collection remains INR-only.
  * - Integer minor units are mandatory on the backend:
  *     USD: cents (1 USD = 100 cents)

@@ -6,7 +6,8 @@ const { createPaymentService, resolvePaymentConfig } = require('../middleware/ra
 
 const baseLiveEnv = {
     NODE_ENV: 'production',
-    RAILWAY_ENVIRONMENT: 'production',
+    RAILWAY_ENVIRONMENT_NAME: 'production',
+    RAILWAY_ENVIRONMENT_ID: '30e98667-a8a1-415d-8cf1-55e670f45bd0',
     RAZORPAY_MODE: 'live_inr',
     RAZORPAY_PAYMENTS_ENABLED: 'true',
     RAZORPAY_SCHEMA_READY: 'true',
@@ -40,7 +41,9 @@ async function main() {
     assert.equal(resolvePaymentConfig({ ...baseLiveEnv, RAZORPAY_LIVE_KEY_ID: 'rzp_test_fixture' }).enabled, false);
     assert.equal(resolvePaymentConfig({ ...baseLiveEnv, RAZORPAY_LIVE_KEY_SECRET: '' }).enabled, false);
     assert.equal(resolvePaymentConfig({ ...baseLiveEnv, RAZORPAY_RECONCILIATION_SCHEMA_READY: 'false' }).enabled, false);
-    assert.equal(resolvePaymentConfig({ ...baseLiveEnv, RAILWAY_ENVIRONMENT: 'staging' }).enabled, false);
+    assert.equal(resolvePaymentConfig({ ...baseLiveEnv, RAILWAY_ENVIRONMENT_NAME: 'razorpay-staging', RAILWAY_ENVIRONMENT_ID: '438d986c-d799-42a0-9149-ef0eef809486' }).enabled, false);
+    assert.equal(resolvePaymentConfig({ ...baseLiveEnv, RAILWAY_ENVIRONMENT: 'production', RAILWAY_ENVIRONMENT_NAME: undefined, RAILWAY_ENVIRONMENT_ID: undefined }).enabled, false,
+        'the obsolete environment variable cannot authorize live payments without Railway-provided identity');
     const live = resolvePaymentConfig(baseLiveEnv);
     assert.equal(live.enabled, true);
     assert.equal(live.mode, 'live_inr');
@@ -59,14 +62,10 @@ async function main() {
         RAZORPAY_LIVE_USD_PRICES_JSON: '{"starter":499,"pro":999,"elite":1999,"limited":4999}'
     };
     const liveUsd = resolvePaymentConfig(usdEnv);
-    assert.equal(liveUsd.enabled, true);
-    assert.equal(liveUsd.mode, 'live_usd');
-    assert.equal(liveUsd.currency, 'USD');
-    assert.equal(liveUsd.usdPrices.starter, 499);
-    for (const prices of ['{"starter":499}', '{"starter":499,"pro":0,"elite":1999,"limited":4999}', '{"starter":499.5,"pro":999,"elite":1999,"limited":4999}', 'not-json']) {
-        assert.equal(resolvePaymentConfig({ ...usdEnv, RAZORPAY_LIVE_USD_PRICES_JSON: prices }).enabled, false);
-    }
-    assert.equal(resolvePaymentConfig({ ...usdEnv, RAZORPAY_LIVE_USD_APPROVED: 'false' }).enabled, false);
+    assert.equal(liveUsd.enabled, false, 'the account restriction must block new USD checkout even if all environment flags are set');
+    assert.equal(liveUsd.mode, 'disabled');
+    assert.equal(liveUsd.currency, 'INR');
+    assert.deepEqual(liveUsd.availablePlanIds, []);
 
     let created = null;
     const noOpStore = {
@@ -94,17 +93,14 @@ async function main() {
     assert.equal(created.mode, 'live_inr');
     await assert.rejects(liveService.createOrder('owner', { planId: 'limited' }), { status: 403 });
 
-    let usdOrderPayload;
-    const usdService = createPaymentService({ env: usdEnv, store: noOpStore, fetchImpl: async (url, options) => {
-        usdOrderPayload = JSON.parse(options.body);
-        return { ok: true, json: async () => ({ ...usdOrderPayload, id: 'order_usd' }) };
+    let usdProviderCalls = 0;
+    const usdService = createPaymentService({ env: usdEnv, store: noOpStore, fetchImpl: async () => {
+        usdProviderCalls++;
+        throw new Error('new USD checkout must not contact Razorpay');
     } });
-    const createdUsd = await usdService.createOrder('owner', { planId: 'starter', currency: 'USD' });
-    assert.equal(usdOrderPayload.amount, 499);
-    assert.equal(usdOrderPayload.currency, 'USD');
-    assert.equal(createdUsd.currency, 'USD');
-    assert.equal(createdUsd.mode, 'live_usd');
-    assert.equal(usdService.config().usdPrices, undefined, 'the public config endpoint must not expose internal price-map configuration');
+    assert.equal(usdService.config().enabled, false);
+    await assert.rejects(usdService.createOrder('owner', { planId: 'starter', currency: 'USD' }), { status: 503 });
+    assert.equal(usdProviderCalls, 0, 'a disallowed USD checkout must not create a provider order');
 
     let reconciled = null;
     let walletCredits = 300;

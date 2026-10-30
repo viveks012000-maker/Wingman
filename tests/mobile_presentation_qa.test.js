@@ -66,6 +66,9 @@ async function openPage(browser, pageName, viewport) {
         const transform = getComputedStyle(hero).transform;
         return transform === 'none' || Math.abs(new DOMMatrix(transform).m42) < 0.5;
     }, null, { timeout: 2000 });
+    if (pageName === 'app.html') {
+        await page.waitForSelector('#simulatorReviewBtn', { state: 'attached', timeout: 2000 });
+    }
     return { context, page, pageErrors, failedRequests };
 }
 

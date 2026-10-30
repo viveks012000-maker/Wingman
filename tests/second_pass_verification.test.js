@@ -25,7 +25,7 @@ console.log('✔ Test 1 Passed: 500-word boundary strictly validated (500 allowe
 // 2. TEST MOCK AUTH SECURITY IN PRODUCTION
 const authFile = fs.readFileSync(path.join(__dirname, '..', 'middleware', 'supabaseAuth.js'), 'utf8').replace(/\r\n/g, '\n');
 assert.strictEqual(
-    authFile.includes("const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);"),
+    authFile.includes("const { isProductionRuntime } = require('./railwayEnvironment');"),
     true,
     'supabaseAuth.js must detect production and Railway environments'
 );

@@ -5,6 +5,8 @@ const assert = require('assert');
 // Keep this suite independent from production secrets and prove the REST fallback behavior.
 delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 delete process.env.RAILWAY_ENVIRONMENT;
+delete process.env.RAILWAY_ENVIRONMENT_NAME;
+delete process.env.RAILWAY_ENVIRONMENT_ID;
 delete process.env.ENABLE_MOCK_AUTH;
 process.env.NODE_ENV = 'test';
 

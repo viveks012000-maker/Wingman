@@ -4,6 +4,7 @@ const DEFAULT_SUPABASE_HOST = 'gstnghuhhrxtwjdafufd.supabase.co';
 // Railway staging uses production-grade auth settings, so permit its test database only
 // when Railway identifies the exact isolated staging environment at runtime.
 const ISOLATED_STAGING_RAILWAY_ENVIRONMENT_ID = '438d986c-d799-42a0-9149-ef0eef809486';
+const PRODUCTION_RAILWAY_ENVIRONMENT_ID = '30e98667-a8a1-415d-8cf1-55e670f45bd0';
 const ISOLATED_STAGING_SUPABASE_HOST = 'mshlbvbbbzlykfpavekh.supabase.co';
 const ISOLATED_STAGING_PREVIEW_ORIGIN = 'https://codex-maeve-request-deadline.mywingman.pages.dev';
 const PRODUCTION_API_ORIGIN = 'https://wingman-production-c6ce.up.railway.app';
@@ -100,6 +101,7 @@ function logRef(value) {
 module.exports = {
     DEFAULT_SUPABASE_HOST,
     ISOLATED_STAGING_RAILWAY_ENVIRONMENT_ID,
+    PRODUCTION_RAILWAY_ENVIRONMENT_ID,
     ISOLATED_STAGING_SUPABASE_HOST,
     ISOLATED_STAGING_PREVIEW_ORIGIN,
     ISOLATED_STAGING_PREVIEW_BRANCH,

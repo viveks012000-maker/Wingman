@@ -24,6 +24,8 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'stub-service-role-key-for-tests';
 process.env.ENABLE_MOCK_AUTH = 'true';
 process.env.NODE_ENV = 'test';
 delete process.env.RAILWAY_ENVIRONMENT;
+delete process.env.RAILWAY_ENVIRONMENT_NAME;
+delete process.env.RAILWAY_ENVIRONMENT_ID;
 
 const AUTH_USER_ID = '44444444-4444-4444-4444-444444444444';
 

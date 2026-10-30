@@ -1,8 +1,9 @@
 const { createClient } = require('@supabase/supabase-js');
 const { installCreditSettlementTransportRetry } = require('./creditSettlementTransportRetry');
 const { configuredOrigin, DEFAULT_SUPABASE_HOST } = require('./securityBoundaries');
+const { isProductionRuntime } = require('./railwayEnvironment');
 
-const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT);
+const isProduction = isProductionRuntime();
 
 const SUPABASE_URL = configuredOrigin(
     'SUPABASE_URL',
