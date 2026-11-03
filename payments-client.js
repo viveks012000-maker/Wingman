@@ -7,11 +7,11 @@
     let recoveryRunning = false;
     const toast = (message, kind) => { if (typeof window.showToast === 'function') window.showToast(message, kind || 'info'); };
     const validModes = new Set(['test', 'live_inr', 'live_usd']);
+    const checkoutModes = new Set(['test', 'live_inr']);
     function expectedKeyPrefix(mode) { return mode === 'test' ? 'rzp_test_' : (mode === 'live_inr' || mode === 'live_usd' ? 'rzp_live_' : ''); }
     function validConfig(config) {
-        if (!config || config.enabled !== true || !validModes.has(config.mode)) return false;
-        const expectedCurrency = config.mode === 'live_usd' ? 'USD' : 'INR';
-        return config.currency === expectedCurrency && typeof config.keyId === 'string' &&
+        if (!config || config.success !== true || config.enabled !== true || !checkoutModes.has(config.mode)) return false;
+        return config.currency === 'INR' && typeof config.keyId === 'string' &&
             config.keyId.startsWith(expectedKeyPrefix(config.mode)) && Array.isArray(config.availablePlanIds);
     }
     async function paymentRequest(path, body) {
@@ -163,9 +163,15 @@
     window.wingmanPayments = { purchase, sync, reconcilePendingOrder };
     async function initialize() {
         try {
-            const response = await fetch(window.getApiBase() + '/api/payments/config', { signal: AbortSignal.timeout(5000) });
-            if (response.ok) {
-                const config = await response.json();
+            let config;
+            if (window.wingmanCurrency && typeof window.wingmanCurrency.getPaymentConfig === 'function') {
+                config = await window.wingmanCurrency.getPaymentConfig();
+            } else {
+                const response = await fetch(window.getApiBase() + '/api/payments/config', { signal: AbortSignal.timeout(5000) });
+                if (!response.ok) throw new Error('Payment configuration is unavailable.');
+                config = await response.json();
+            }
+            if (config) {
                 paymentConfig = validConfig(config) ? {
                     enabled: true, mode: config.mode, currency: config.currency, keyId: config.keyId,
                     availablePlanIds: config.availablePlanIds.filter(id => typeof id === 'string' && /^[a-z0-9_-]{1,32}$/.test(id))
