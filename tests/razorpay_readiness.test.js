@@ -39,12 +39,18 @@ async function main() {
         }
         browser = await chromium.launch({ headless: true });
         for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
-            const page = await browser.newPage({ viewport });
+            // The test artifact resolves loopback API requests to localhost:3000, which is intentionally not in production CSP.
+            const context = await browser.newContext({ viewport, bypassCSP: true });
+            const page = await context.newPage();
             const scriptErrors = [];
             page.on('pageerror', error => scriptErrors.push(error.message));
+            const disabledPaymentConfig = { success: true, enabled: false, mode: 'disabled', currency: 'INR', keyId: null, availablePlanIds: [] };
             // No external AI, payment, auth or account writes during this local UI check.
             await page.route('**/*', route => {
                 const requestUrl = route.request().url();
+                if (requestUrl.endsWith('/api/payments/config')) {
+                    return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(disabledPaymentConfig) });
+                }
                 if (requestUrl.startsWith('http://127.0.0.1:')) return route.continue();
                 return route.abort();
             });
@@ -72,11 +78,17 @@ async function main() {
             assert.equal(await page.locator('[data-currency="USD"]:visible').count(), 1, 'USD display option must be visible');
             assert.equal(await page.evaluate(() => window.wingmanCurrency.getCurrency()), 'USD', 'saved display currency must be restored');
             await page.waitForFunction(() => document.querySelector('[data-plan="starter"][data-price-role="sale"]').textContent === '$4.99');
+            await page.waitForFunction(() => document.getElementById('pricingCurrencyDisclosure').textContent.includes('INR checkout is currently unavailable'));
             const pricingDisclosure = await page.locator('#pricingCurrencyDisclosure').innerText();
             assert(pricingDisclosure.includes('Fixed USD prices are for display only'));
-            assert(pricingDisclosure.includes('INR checkout is unavailable'));
+            assert(pricingDisclosure.includes('USD payments are unavailable'));
+            assert(pricingDisclosure.includes('INR checkout is currently unavailable'));
             assert(!/≈|approximate|Frankfurter|reference rate|exchange rate|\b202\d-\d\d-\d\d\b/i.test(pricingDisclosure));
             assert.equal(usdPricingRequestCount, 0, 'fixed USD display must not request reference-rate pricing');
+            await page.locator('#pricingCurrencySelectorWrapper [data-currency="INR"]').click();
+            await page.waitForFunction(() => document.getElementById('pricingCurrencyDisclosure').textContent.includes('INR checkout is currently unavailable'));
+            assert((await page.locator('#pricingCurrencyDisclosure').innerText()).includes('No payment will be collected'));
+            await page.locator('#pricingCurrencySelectorWrapper [data-currency="USD"]').click();
             const displayPrices = [
                 ['starter', '$4.99', '2.0¢ per credit', '₹449', '₹1.80 per credit'],
                 ['pro', '$9.99', '1.67¢ per credit', '₹899', '₹1.50 per credit'],
@@ -328,10 +340,55 @@ async function main() {
             ]);
             assert.deepEqual(scriptErrors, [], 'desktop/mobile page scripts must not throw');
             console.log('UI viewport', viewport.width, ': summary, INR, disabled checkout, removed checkbox, retained consent disclosure and no overflow passed.');
-            await page.close();
+            await context.close();
         }
 
-        console.log('Fixed USD display uses the static catalog; no reference-rate request is made.');
+        async function verifyDisclosureScenario(name, response, expectedUsd, expectedInr, responseStatus = 200) {
+            // The test artifact resolves loopback API requests to localhost:3000, which is intentionally not in production CSP.
+            const context = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+            const page = await context.newPage();
+            await page.route('**/*', route => {
+                const requestUrl = route.request().url();
+                if (requestUrl.endsWith('/api/payments/config')) {
+                    return route.fulfill({ status: responseStatus, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(response || {}) });
+                }
+                if (requestUrl.startsWith('http://127.0.0.1:')) return route.continue();
+                return route.abort();
+            });
+            await page.addInitScript(() => localStorage.setItem('wingman_setting_currency', 'USD'));
+            await page.goto(base + '/', { waitUntil: 'load' });
+            const disclosure = page.locator('#pricingCurrencyDisclosure');
+            await page.waitForFunction(expected => document.getElementById('pricingCurrencyDisclosure').textContent.includes(expected), expectedUsd);
+            assert((await disclosure.innerText()).includes(expectedUsd), name + ': USD disclosure');
+            await page.locator('#pricingCurrencySelectorWrapper [data-currency="INR"]').click();
+            await page.waitForFunction(expected => document.getElementById('pricingCurrencyDisclosure').textContent.includes(expected), expectedInr);
+            assert((await disclosure.innerText()).includes(expectedInr), name + ': INR disclosure');
+            await page.getByRole('link', { name: /Explore the Tools/ }).click();
+            await page.waitForURL('**/app.html');
+            const appDisclosure = page.locator('#appPricingCurrencyDisclosure');
+            await page.waitForFunction(expected => document.getElementById('appPricingCurrencyDisclosure').textContent.includes(expected), expectedInr);
+            assert((await appDisclosure.innerText()).includes(expectedInr), name + ': app pricing disclosure');
+            assert.equal(await page.locator('#confirmPurchaseBtn').isDisabled(), true, name + ': no isolated scenario may initiate a real payment');
+            await context.close();
+        }
+
+        await verifyDisclosureScenario(
+            'live INR',
+            { success: true, enabled: true, mode: 'live_inr', currency: 'INR', keyId: 'rzp_live_fixture', availablePlanIds: ['starter', 'pro'] },
+            'USD payments are unavailable', 'INR checkout is enabled'
+        );
+        await verifyDisclosureScenario(
+            'Test Mode',
+            { success: true, enabled: true, mode: 'test', currency: 'INR', keyId: 'rzp_test_fixture', availablePlanIds: ['starter'] },
+            'USD payments are unavailable', 'Test Mode; no real payment will be collected'
+        );
+        await verifyDisclosureScenario(
+            'unknown API status',
+            {},
+            'could not be confirmed', 'could not be confirmed', 503
+        );
+
+        console.log('Fixed USD display uses the static catalog; dynamic payment disclosure covers disabled, Test Mode, live INR and unknown API states.');
     } finally {
         if (browser) await browser.close();
         await new Promise(resolve => server.close(resolve));

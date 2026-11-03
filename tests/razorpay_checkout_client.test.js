@@ -13,6 +13,7 @@ async function main() {
     global.document = { readyState: 'loading', addEventListener() {} };
     require('../config.js');
     const currencyContext = { window: global.window };
+    assert.equal(typeof global.window.wingmanCurrency.getPaymentConfig, 'function', 'pricing disclosure and checkout client must share the same backend payment-config request');
     assert.equal(global.window.wingmanCurrency.canonicalize('usd'),'USD');
     assert.equal(global.window.wingmanCurrency.formatPlanSale('limited','USD'),'$49.99');
     assert.equal(global.window.wingmanCurrency.canonicalize('EUR'),'INR');
@@ -32,6 +33,19 @@ async function main() {
         assert(sql.includes(`plan_id='${id}' AND credits=${plan.credits} AND amount_minor=${plan.prices.INR.amountMinor}`));
         assert(paymentMigration.includes(`plan_id = '${id}' AND credits = ${plan.credits}`), 'forward migration must preserve the INR catalog package quantities');
     }
+    let sharedConfigRequests = 0;
+    global.window.getApiBase = () => 'https://backend.example';
+    global.fetch = async (url, options) => {
+        sharedConfigRequests++;
+        assert.equal(url, 'https://backend.example/api/payments/config');
+        assert.equal(options.cache, 'no-store');
+        assert.equal(options.credentials, 'omit');
+        return { ok: true, json: async () => ({ success: true, enabled: false, mode: 'disabled', currency: 'INR', keyId: null, availablePlanIds: [] }) };
+    };
+    assert.equal((await currencyContext.window.wingmanCurrency.getPaymentConfig()).mode, 'disabled');
+    assert.equal((await currencyContext.window.wingmanCurrency.getPaymentConfig()).enabled, false);
+    assert.equal(sharedConfigRequests, 1, 'pricing and checkout must reuse a single no-store status request');
+
     let selectedCurrency = 'INR';
     let checkout, verified = false, rejectVerify = false, refreshes = 0, providerOpened = 0;
     const posts = [], notices = [], button = {}, label = {}, notice = {};
@@ -47,7 +61,7 @@ async function main() {
         querySelector: () => ({value:'starter'})
     };
     const fetch = async (url, options) => {
-        if (url.endsWith('/config')) return {ok:true,json:async()=>({enabled:true,mode:'test',currency:'INR',keyId:'rzp_test_fixture',availablePlanIds:['starter','pro','elite','limited']})};
+        if (url.endsWith('/config')) return {ok:true,json:async()=>({success:true,enabled:true,mode:'test',currency:'INR',keyId:'rzp_test_fixture',availablePlanIds:['starter','pro','elite','limited']})};
         assert.equal(options.headers.Authorization,'Bearer fixture');
         posts.push({url,body:JSON.parse(options.body)});
         if (url.endsWith('/orders')) return {ok:true,json:async()=>({keyId:'rzp_test_fixture',orderId:'order_fixture',amount:44900,currency:'INR',mode:'test',name:'Starter Pack'})};
@@ -92,6 +106,32 @@ async function main() {
     assert.equal(disabledButton.disabled,true);
     assert.equal(disabledLabel.textContent,'Purchasing not yet enabled');
     assert(disabledNotice.textContent.includes('Paid checkout is unavailable in production'));
+
+    // USD remains a display currency even if a future backend accidentally returns a live USD mode.
+    const usdButton = {}, usdLabel = {}, usdNotice = {};
+    global.window = {wingmanCurrency:{getCurrency:()=> 'USD'},getApiBase:()=> 'https://backend.example'};
+    global.document = {
+        readyState:'complete',
+        getElementById:id=>({confirmPurchaseBtn:usdButton,purchaseBtnText:usdLabel,paymentAvailabilityNotice:usdNotice}[id])
+    };
+    global.fetch = async()=>({ok:true,json:async()=>({success:true,enabled:true,mode:'live_usd',currency:'USD',keyId:'rzp_live_fixture',availablePlanIds:['starter']})});
+    delete require.cache[require.resolve('../payments-client.js')];
+    require('../payments-client.js');
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(usdButton.disabled,true, 'USD checkout must stay disabled even if the backend response is misconfigured');
+    assert(usdNotice.textContent.includes('Paid checkout is unavailable in production'));
+
+    const invalidSuccessButton = {}, invalidSuccessLabel = {}, invalidSuccessNotice = {};
+    global.window = {wingmanCurrency:{getCurrency:()=> 'INR'},getApiBase:()=> 'https://backend.example'};
+    global.document = {
+        readyState:'complete',
+        getElementById:id=>({confirmPurchaseBtn:invalidSuccessButton,purchaseBtnText:invalidSuccessLabel,paymentAvailabilityNotice:invalidSuccessNotice}[id])
+    };
+    global.fetch = async()=>({ok:true,json:async()=>({success:false,enabled:true,mode:'live_inr',currency:'INR',keyId:'rzp_live_fixture',availablePlanIds:['starter']})});
+    delete require.cache[require.resolve('../payments-client.js')];
+    require('../payments-client.js');
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(invalidSuccessButton.disabled,true, 'a failed configuration response must not enable checkout');
     console.log('PASS: Checkout client sends only planId and supported currency, blocks USD collection, never optimistically grants credits, handles dismissal/verification failure, and refreshes after server verification. Catalog mirrors match.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

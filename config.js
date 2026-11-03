@@ -707,6 +707,8 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
     });
     var currentCurrency = DEFAULT_CURRENCY;
     var listeners = [];
+    var paymentConfigPromise = null;
+    var paymentAvailability = 'checking';
 
     function safeGetStorage(key) {
         try {
@@ -767,11 +769,59 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         return plan ? plan.credits : 0;
     }
 
+    function classifyPaymentAvailability(config) {
+        if (!config || config.success !== true || typeof config.enabled !== 'boolean') return 'unknown';
+        if (!config.enabled) return 'disabled';
+        if (config.currency !== 'INR' || !Array.isArray(config.availablePlanIds) || config.availablePlanIds.length === 0 ||
+            config.availablePlanIds.some(function (id) { return typeof id !== 'string' || !/^[a-z0-9_-]{1,32}$/.test(id); })) return 'unknown';
+        if (config.mode === 'test' && typeof config.keyId === 'string' && /^rzp_test_[A-Za-z0-9]+$/.test(config.keyId)) return 'test';
+        if (config.mode === 'live_inr' && typeof config.keyId === 'string' && /^rzp_live_[A-Za-z0-9]+$/.test(config.keyId)) return 'live_inr';
+        return 'unknown';
+    }
+
+    function getPaymentConfig() {
+        if (!paymentConfigPromise) {
+            var apiBase = typeof window.getApiBase === 'function' ? window.getApiBase() : '';
+            if (!apiBase || typeof fetch !== 'function') {
+                paymentAvailability = 'unknown';
+                paymentConfigPromise = Promise.resolve(null);
+            } else {
+                var requestOptions = { cache: 'no-store', credentials: 'omit' };
+                if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+                    requestOptions.signal = AbortSignal.timeout(5000);
+                }
+                paymentConfigPromise = fetch(apiBase + '/api/payments/config', requestOptions)
+                    .then(function (response) {
+                        if (!response || !response.ok) throw new Error('Payment configuration is unavailable.');
+                        return response.json();
+                    })
+                    .then(function (config) {
+                        paymentAvailability = classifyPaymentAvailability(config);
+                        return config;
+                    })
+                    .catch(function () {
+                        paymentAvailability = 'unknown';
+                        return null;
+                    });
+            }
+        }
+        return paymentConfigPromise;
+    }
+
+    function paymentAvailabilityDisclosure() {
+        if (paymentAvailability === 'checking') return 'INR checkout availability is being checked.';
+        if (paymentAvailability === 'unknown') return 'INR checkout availability could not be confirmed. No payment will be collected.';
+        if (paymentAvailability === 'test') return 'INR checkout is in Test Mode; no real payment will be collected.';
+        if (paymentAvailability === 'live_inr') return 'INR checkout is enabled. Secure checkout confirms payment before credits are added.';
+        return 'INR checkout is currently unavailable. No payment will be collected.';
+    }
+
     function updateCurrencyDisclosure() {
         if (typeof document === 'undefined') return;
+        var inrStatus = paymentAvailabilityDisclosure();
         var message = currentCurrency === 'USD'
-            ? 'Fixed USD prices are for display only; INR checkout is unavailable.'
-            : 'Prices shown in INR. Paid checkout is currently unavailable in production.';
+            ? 'Fixed USD prices are for display only. USD payments are unavailable. ' + inrStatus
+            : inrStatus;
         ['pricingCurrencyDisclosure', 'appPricingCurrencyDisclosure'].forEach(function (id) {
             var disclosure = document.getElementById(id);
             if (disclosure) disclosure.textContent = message;
@@ -940,6 +990,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         bindCurrencyButtons();
         updatePricingDisplay();
         updateCurrencyDisclosure();
+        getPaymentConfig().then(updateCurrencyDisclosure);
     }
 
     window.WINGMAN_PRICING_CATALOG = displayCatalog;
@@ -952,6 +1003,7 @@ window.WINGMAN_CONFIG = window.WINGMAN_CONFIG || {
         formatPlanSale: formatPlanSale,
         getPlanPriceNumber: getPlanPriceNumber,
         getCredits: getCredits,
+        getPaymentConfig: getPaymentConfig,
         updatePricingDisplay: updatePricingDisplay,
         onCurrencyChange: onCurrencyChange,
         bindButtons: bindCurrencyButtons,
