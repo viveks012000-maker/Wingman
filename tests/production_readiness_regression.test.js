@@ -140,7 +140,7 @@ console.log("▶ [TEST 5] Deferred Payments Status & Fail-Closed Purchase Handli
 assert.strictEqual(serverCode.includes('razorpayPayments') && require('../middleware/razorpayPayments').testConfig({}) === false, true, "Payment routes in server.js must be explicitly fail-closed");
 
 // Frontend purchase modal copy
-assert.strictEqual(appHtmlCode.includes("Paid checkout is unavailable in production."), true, "app.html purchase modal must disclose paused checkout");
+assert.strictEqual(appHtmlCode.includes("Checking secure INR checkout availability."), true, "app.html purchase modal must check current checkout state");
 assert.strictEqual(/id="confirmPurchaseBtn"[^>]*disabled/.test(appHtmlCode), true, "app.html purchase action must be disabled while checkout is unavailable");
 assert.strictEqual(appJsCode.includes("Credit purchasing is currently unavailable while payment gateway upgrades are underway."), true, "app.js must display purchase unavailable notice");
 console.log("✔ Test 5 Passed: Deferred payments and purchase modal fail-closed handling verified.");
