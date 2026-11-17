@@ -2604,6 +2604,11 @@ STRICT LAWS:
         window.showToast('Credit purchasing is currently unavailable while payment gateway upgrades are underway.', 'warning');
     };
 
+    const confirmPurchaseButton = document.getElementById('confirmPurchaseBtn');
+    if (confirmPurchaseButton) {
+        confirmPurchaseButton.addEventListener('click', window.confirmPurchase);
+    }
+
     // ============================================================
     // SET OR CHANGE PASSWORD MODAL (AUTHENTICATED USERS)
     // ============================================================
