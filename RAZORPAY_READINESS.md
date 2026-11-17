@@ -1,16 +1,23 @@
 # Razorpay payment readiness
 
-## Verified merchant status
+## Current verified status — 17 November 2026
 
-Checked in the existing Razorpay account dashboard on 23 October 2026. The account shows **Access Complete**, and the registered `https://mywingmanapp.com/` website is **Approved**. An earlier dashboard review recorded an existing Test Mode API key, but this session could not confirm whether that secret remains configured or valid in Railway because the Railway connection requires reauthentication.
+- The authenticated Razorpay dashboard shows the account was activated on 3 October 2026 and **Account Access: Complete**.
+- The dashboard shows domestic Visa, Mastercard, RuPay, and UPI as **Activated**. The owner confirms the MyWingman website is approved.
+- A Live Mode API key is present in the dashboard. The secret is masked. Railway's `Wingman` production service has the three existing live credential variable names (`RAZORPAY_LIVE_KEY_ID`, `RAZORPAY_LIVE_KEY_SECRET`, and `RAZORPAY_LIVE_WEBHOOK_SECRET`). A no-charge Razorpay API authentication check using the existing Railway key pair succeeded: the probe requested a randomly generated nonexistent order ID and received a not-found response rather than an authentication rejection. No payment/customer data was retrieved or printed. No key was copied, rotated, or replaced.
+- One enabled Razorpay webhook points to `https://wingman-production-c6ce.up.railway.app/api/payments/webhook`. It has 11 active events, including capture, refund, and dispute events. The secret is masked in the dashboard. The URL and event selection are verified; an end-to-end live webhook delivery was not triggered.
+- The focused payment, reconciliation, checkout, readiness (desktop and mobile), credit, and Railway-environment regression checks passed. Supabase reports migration `019_razorpay_live_modes_and_reconciliation` applied; it was not rerun.
+- A signed, unknown-event fixture was sent to the deployed production webhook using the existing Railway webhook secret. The endpoint returned HTTP 200 with `success: true` and `ignored: true`. The fixture is ignored before any store or provider operation, so it created no order, payment, event record, or credit change. This verifies that the live endpoint accepts the current Railway secret; it does **not** prove a Razorpay-generated event was delivered or that the masked Dashboard secret is byte-for-byte identical.
+- `RAZORPAY_LIVE_PRECHECKS_PASSED=true` is now configured. Railway deployment `dd9ae1c9-b0ac-43d6-8521-47bf69ef99e6` is **SUCCESS** on `main` at `a4c9941493077299a5c35b7dd92b3d506fa13df9`.
+- At that deployment snapshot, `/api/payments/config` returned `{success:true, enabled:false, mode:"disabled", currency:"INR", keyId:null, availablePlanIds:[]}` because `RAZORPAY_LIVE_TAX_APPROVED` and `RAZORPAY_PAYMENTS_ENABLED` were unset. No live order or payment was created or charged. Runtime status must be checked from `/api/payments/config` after any later activation.
 
-The Live Mode dashboard has no live API key listed and the webhook page has no configured webhook. The account's International Payments settings say that this business type is not supported for international card payments and that international bank transfers are not eligible under the risk policy. Razorpay presents a **Link Account** option for PayPal, described as collecting international currencies through Razorpay Checkout; it is not linked or verified for this merchant. These screens do not establish eligibility for live INR payments or direct USD collection. No key was generated, no webhook or PayPal account was linked, and no payment setting was changed during this check.
+The account's prior International Payments review said this business type is not supported for international card payments and international bank transfers are not eligible under the risk policy. Keep direct USD payment collection disabled. USD remains display-only.
 
 ## Application behavior
 
 Production paid checkout is disabled by default. The backend keeps separate Test, Live INR and Live USD modes and fails closed unless the matching server-side gates, credentials, schema, provider status and explicit approval are present. Test credentials cannot activate production checkout. Live USD requires a fixed server-side price map; the indicative exchange-rate display is never used to charge a customer. The VIP package remains separately gated pending commercial approval.
 
-The published INR catalog remains Starter ₹449 / 250 credits, Pro ₹899 / 600 credits, Elite ₹1,799 / 3,000 credits and VIP ₹4,499 / 100,000 credits. USD amounts remain display-only. MyWingman does not add a service or convenience fee. Any applicable tax treatment must be confirmed and disclosed before checkout is enabled.
+The published INR catalog remains Starter ₹449 / 250 credits, Pro ₹899 / 600 credits, Elite ₹1,799 / 3,000 credits and VIP ₹4,499 / 100,000 credits. USD amounts remain display-only. MyWingman adds no service or convenience fee. Under the owner-declared facts below, the supplier is not GST-registered and does not collect GST; the listed INR prices are the full amounts payable.
 
 ## Database and reconciliation
 
@@ -18,19 +25,23 @@ Migration `019_razorpay_live_modes_and_reconciliation.sql` is forward-only and a
 
 The captured-payment path still verifies provider state and transactionally grants credits once. The authenticated recovery endpoint looks up the user's own pending order, checks authoritative provider state, and either safely fulfills an unrefunded capture or records an ambiguous/refunded case for review. There is no automated refund, dispute acceptance or balance clawback action.
 
-## Activation requirements
+## Tax basis for the live INR price disclosure
 
-Keep live checkout disabled until each applicable requirement is verified:
+- On 17 November 2026, the owner confirmed two separate facts: the supplier is not registered for GST, and aggregate turnover under the supplier's PAN did not exceed ₹20 lakh in FY 2025–26 or from 1 April 2026 through the date of confirmation. The owner explicitly said the calculation includes all businesses and inter-State/export supplies and excludes GST.
+- Public Terms identify the supplier as Naresh Kumar, an individual trading as MyWingman, at an address in Churu, Rajasthan. The turnover and registration facts above are owner declarations; no PAN, GSTIN, tax return, or other private financial record was supplied for independent verification.
+- CGST Act section 22 sets the ordinary-state registration threshold at aggregate turnover above ₹20 lakh. Notification 10/2017–Integrated Tax, issued under CGST Act section 23(2), also exempts qualifying suppliers of inter-State taxable services with all-India aggregate turnover not exceeding ₹20 lakh. Rajasthan is not a special-category State for this threshold. The described sale is MyWingman's own service through its own website, with Razorpay acting as payment processor; no third-party supplier marketplace or agency activity is known. On the facts supplied, no separate section 24 compulsory-registration category has been identified. This conclusion depends on those facts remaining accurate.
+- CGST Act section 32 prohibits an unregistered person from collecting an amount as GST. Therefore, no GST is charged or displayed as a tax line; the published INR prices remain unchanged and are the full checkout totals. No GST rate or tax-inclusive breakdown is represented. Customer-facing pricing, Terms, Refund, Privacy, and Service Delivery copy now discloses this treatment and keeps USD payment collection disabled.
+- `RAZORPAY_LIVE_TAX_APPROVED=true` is supportable for this documented treatment: MyWingman is currently unregistered and does not collect GST at the owner-confirmed below-threshold turnover. Reassess before further checkout if GST registration occurs, PAN-wide turnover crosses the applicable threshold, MyWingman begins marketplace/agency activity, or another compulsory-registration condition becomes applicable. This is an engineering readiness record based on the owner's declarations, not an independent tax audit.
 
-1. Confirm live INR payment eligibility and obtain an active live API key in the existing Razorpay account. Configure the key and webhook secret as Railway secrets without exposing them in source control or chat.
-2. Configure the existing `/api/payments/webhook` endpoint once for the supported capture, refund and dispute events, then confirm the live webhook signature and account mapping.
-3. Apply the payment migration through the approved Supabase release process and pass the disposable PostgreSQL migration replay and payment-ledger checks.
-4. Pass the non-billable release checks and Razorpay Test Mode checkout, webhook replay and browser-close recovery checks.
-5. Confirm the checkout tax treatment with the account owner/accountant and disclose it before enabling payment. Live configuration also requires `RAZORPAY_LIVE_TAX_APPROVED=true`.
-6. Approve VIP pricing separately before making that bundle available for live purchase.
-7. Do not enable direct USD collection unless Razorpay separately confirms direct USD settlement for this merchant. The dashboard shows PayPal as a possible Razorpay Checkout route for international currencies, but the owner must link and verify that account and confirm the required approval first. Keep the current USD selector display-only until then.
+The focused automated payment and UI checks passed on 17 November 2026. The separate no-charge API probe confirms the current Railway live key pair is accepted by Razorpay. The signed production fixture verified the application-side signature check without writing data. No Razorpay-generated webhook delivery, real payment, capture, or production credit fulfillment was performed. No credential was changed, replaced, or revoked.
 
-The Railway connection was unavailable for secret-status verification and deployment inspection in the current session. Do not infer the presence or validity of a production secret from the earlier Test Mode setup. Reconnect the existing Railway app integration before configuring or verifying deployment variables; never recreate a sealed variable.
+## Official tax references checked
+
+- [CGST Act, section 22 registration threshold](https://taxinformation.cbic.gov.in/content-page/explore-act/1000291/1000001)
+- [Notification 10/2017-Integrated Tax for certain inter-State taxable service suppliers](https://cbic-gst.gov.in/hindi/pdf/integrated-tax/10_2017_IT.pdf)
+- [CGST Act, section 32 prohibition on an unregistered person collecting GST](https://cbic-gst.gov.in/pdf/CGST-Act-Updated-01082021.pdf)
+- [CBIC Circular 243/37/2024-GST on vouchers](https://gstcouncil.gov.in/sites/default/files/2025-01/circular-no-243-2024.pdf)
+- [CBIC Circular 242/36/2024-GST on place of supply for online services to unregistered recipients](https://gstcouncil.gov.in/sites/default/files/2025-01/circular-no-242-2024.pdf)
 
 ## Safe Test Mode setup
 
