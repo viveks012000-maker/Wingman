@@ -296,8 +296,8 @@ async function runPricingTests() {
     console.log('\n--- F. PAYMENT SAFETY & PRODUCTION FAIL-CLOSED ---');
     test('Production checkout status is explicit and purchase action is disabled in app.html', () => {
         assert.ok(
-            appHtmlContent.includes('Paid checkout is unavailable in production.'),
-            'Must disclose unavailable production checkout'
+            appHtmlContent.includes('Checking secure INR checkout availability.'),
+            'Must begin by checking the live checkout status'
         );
         assert.ok(appHtmlContent.includes('id="confirmPurchaseBtn"') && /id="confirmPurchaseBtn"[^>]*disabled/.test(appHtmlContent), 'Must disable the purchase action while checkout is unavailable');
         assert.ok(

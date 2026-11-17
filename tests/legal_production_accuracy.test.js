@@ -13,8 +13,8 @@ const allHtml = [index, refund, privacy, terms, ...addedPages];
 
 // Payment verification and fail-closed state
 assert.ok(server.includes('razorpayPayments') && !server.includes('ENABLE_MOCK_PAYMENTS'), 'payment routes must use verified provider service, never mock minting');
-assert.ok(refund.includes('Paid credit checkout is currently paused and unavailable in production.'), 'policy must disclose live checkout state');
-assert.ok(refund.includes('published package prices') && refund.includes('any applicable tax treatment will be shown before payment is enabled'), 'policy must distinguish published prices from unconfirmed checkout tax treatment');
+assert.ok(refund.includes('one-time INR purchases') && refund.includes('Razorpay Checkout'), 'policy must describe the active one-time INR checkout');
+assert.ok(refund.includes('not registered for GST and does not collect GST') && refund.includes('full amounts payable'), 'refund policy must accurately disclose the current GST status and full INR amount');
 assert.ok(refund.includes('5–7 days or earlier') && !refund.includes('business days'), 'owner calendar-day timeline must be preserved');
 assert.ok(refund.includes('original payment method used for purchase'), 'refund destination must be clear');
 assert.ok(refund.includes('none of the purchased credits') && refund.includes('generally non-refundable'), 'unused and used eligibility must be clear');
@@ -25,7 +25,7 @@ assert.ok(!privacy.includes('up to ninety (90) days'), 'privacy policy must not 
 assert.ok(!privacy.includes('up to seven (7) years'), 'privacy policy must not promise an unverified exact transaction-retention period');
 assert.ok(privacy.includes('Actual retention can also depend on infrastructure-provider settings.'), 'privacy policy must acknowledge infrastructure retention settings');
 assert.ok(privacy.includes('requirements in force at the relevant time'), 'grievance copy must avoid overclaiming a specific statutory procedure');
-assert.ok(privacy.includes('Paid checkout is currently unavailable in production.'), 'billing privacy language must reflect production payment state');
+assert.ok(privacy.includes('One-time INR credit-pack checkout is handled through Razorpay Standard Checkout') && !privacy.includes('Paid checkout is currently unavailable in production.'), 'billing privacy language must describe the active INR payment flow');
 for (const policy of [privacy, terms]) {
     assert.ok(policy.includes('Razorpay') && policy.includes('Standard Checkout'), 'policies must explain the prepared provider flow');
     assert.ok(policy.includes('does not store raw card numbers'), 'policies must disclose raw card-data handling');
@@ -50,11 +50,11 @@ for (const html of allHtml) {
 assert.ok(terms.includes('Purchased credits do not currently have a scheduled expiration date'), 'Terms must use safe credit expiration wording');
 
 // One-time purchases vs subscriptions
-assert.ok(terms.includes('If paid credit purchases are enabled, they will be one-time payments'), 'Terms must clarify one-time purchases');
-assert.ok(refund.includes('Planned purchases are one-time credit bundles, not recurring monthly or annual subscriptions'), 'Refund must clarify one-time purchases');
+assert.ok(terms.includes('Paid credit packs are one-time INR purchases and do not constitute recurring monthly or annual subscriptions'), 'Terms must clarify one-time purchases');
+assert.ok(refund.includes('Paid credit packs are one-time INR purchases, not recurring monthly or annual subscriptions'), 'Refund must clarify one-time purchases');
 assert.ok(terms.includes('does not connect users with one another') && terms.includes('does not guarantee dating outcomes'), 'Terms must accurately classify Wingman as coaching software rather than a matching service');
 assert.ok(!index.includes('real-world dates') && !index.includes('Match Probability'), 'Landing page must not promise dating outcomes or present fictitious probability scores');
-assert.ok(index.includes('not customer testimonials') && index.includes('Paid checkout is currently unavailable in production'), 'Landing page must label demonstrations and paid checkout status accurately');
+assert.ok(index.includes('not customer testimonials') && index.includes('MyWingman is not registered for GST and does not collect GST'), 'Landing page must label demonstrations and current customer price/tax treatment accurately');
 
 // Additional Terms clauses
 assert.ok(terms.includes('ARTICLE XI: OTHER TERMS'), 'Terms must include the additional legal terms article');
